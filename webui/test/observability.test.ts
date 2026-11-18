@@ -51,7 +51,7 @@ const sfc = readFileSync(
 );
 const app = readFileSync(join(root, "webui", "app", "app.vue"), "utf8");
 
-// -- the fixture: the capsule's events body, verbatim shape ------------- One turn.
+// the fixture: the capsule's events body, verbatim shape ------------- One turn.
 const FIXTURE = {
   events: [
     {
@@ -117,7 +117,7 @@ const FIXTURE = {
   capacity: 1024,
 };
 
-// -- the wire guards --------------------------------------------------
+// the wire guards ------------------------------------------------
 
 test("parseEventsPayload reads the events body and keeps the ring size", () => {
   const body = parseEventsPayload(FIXTURE);
@@ -185,7 +185,7 @@ test("parseLogsPayload keeps the tail verbatim", () => {
   assert.deepEqual(parseLogsPayload({ lines: [1, "ok"] }).lines, ["ok"]);
 });
 
-// -- the reads' queries -----------------------------------------------
+// the reads' queries ---------------------------------------------
 
 test("eventsQuery scopes the session only when one is in scope", () => {
   assert.equal(eventsQuery(""), `limit=${EVENTS_LIMIT}`);
@@ -205,7 +205,7 @@ test("the read paths are the capsule's two routes", () => {
   assert.equal(LOGS_PATH, "/observability/logs");
 });
 
-// -- the errors-only filter + the newest-first render -----------------
+// the errors-only filter + the newest-first render ---------------
 
 test("visibleEvents paints newest first (the wire is oldest first)", () => {
   const events = parseEventsPayload(FIXTURE).events;
@@ -239,7 +239,7 @@ test("visibleEvents bounds the DOM at the render cap, newest kept", () => {
   assert.equal(shown[RENDER_CAP - 1]!.seq, 51, "the oldest 50 fell off the DOM");
 });
 
-// -- session scope ----------------------------------------------------
+// session scope --------------------------------------------------
 
 test("shortSession attributes a row in the all-sessions scope", () => {
   const events = parseEventsPayload(FIXTURE).events;
@@ -248,7 +248,7 @@ test("shortSession attributes a row in the all-sessions scope", () => {
   assert.equal(shortSession("tny"), "tny");
 });
 
-// -- the formatters ---------------------------------------------------
+// the formatters -------------------------------------------------
 
 test("formatEventTime renders the row's clock reading", () => {
   const at = new Date(2026, 10, 11, 1, 20, 3, 0); // local 01:20:03
@@ -267,7 +267,7 @@ test("formatDuration reads the derived pair duration", () => {
   assert.equal(formatDuration(-1), "-");
 });
 
-// -- the honest 404s --------------------------------------------------
+// the honest 404s ------------------------------------------------
 
 test("describeReadError turns the capsule's 404s into states, not failures", () => {
   assert.match(describeReadError(EVENTS_PATH, 404), /module .* not loaded/);
@@ -275,7 +275,7 @@ test("describeReadError turns the capsule's 404s into states, not failures", () 
   assert.equal(describeReadError(EVENTS_PATH, 500), "GET /observability/events: 500");
 });
 
-// -- the registry / manifests -----------------------------------------
+// the registry / manifests ---------------------------------------
 
 test("the tab is declared in TAB_MODULES, with its own registry entry", () => {
   assert.ok(
@@ -284,13 +284,11 @@ test("the tab is declared in TAB_MODULES, with its own registry entry", () => {
   );
   const entry = DOCKABLES.find((d) => d.id === "observability");
   assert.ok(entry, "the registry carries the tab");
-  // the surviving logs pane is named "Logs".
   assert.equal(entry!.title, "Logs");
   assert.equal(entry!.area, "bottom", "the logs home - a wide, short stream reads best");
   assert.equal(entry!.closable, false, "the pinned-bottom shape");
   assert.equal(entry!.policy, "singleton");
   assert.equal(entry!.icon, "activity", "its own glyph, not the logs scroll");
-  // the fresh bottom strip seats the terminal and the Logs tab.
   assert.deepEqual(defaultHostTabs("bottom"), ["terminal", "observability"]);
   assert.ok(
     !DOCKABLES.some((d) => (d.id as string) === "http_channel"),
@@ -311,7 +309,7 @@ test("app.vue binds the tab from the tabs manifest, never a hardcoded import", (
   );
 });
 
-// -- the SFC wiring (shape pins) --------------------------------------
+// the SFC wiring (shape pins) ------------------------------------
 
 test("the band carries the three controls, aria-pressed throughout", () => {
   assert.ok(sfc.includes('title="Logs"'), "the universal band");
@@ -330,7 +328,6 @@ test("the stream is the PRIMARY view and the tail the SECONDARY one", () => {
   assert.ok(sfc.includes("{{ formatDuration(e.duration_ms) }}"), "the duration cell");
   assert.ok(sfc.includes("{{ e.tool || \"\" }}"), "the tool cell");
   assert.ok(sfc.includes('class="obs-cell obs-errline"'), "the failure text rides the row");
-  // errors are visually distinct.
   assert.ok(sfc.includes(':class="[e.level, { allscope: allScope }]"'), "level classes on the row");
   assert.ok(sfc.includes(".obs-row.error"), "the error rail is styled");
   assert.ok(sfc.includes('color: var(--err)'), "the error colour is the theme's");
@@ -350,7 +347,6 @@ test("the refresh is bounded by mount, not a permanent poll", () => {
   assert.ok(sfc.includes("setInterval(() => void refresh(), REFRESH_MS)"), "the bounded refresh");
   assert.ok(sfc.includes("clearInterval(timer)"), "and it dies with the component");
   assert.ok(REFRESH_MS >= 2500, "the ring is quieter than a log every request writes to");
-  // the push channel's topic set is closed and carries no observability topic.
   assert.ok(
     sfc.includes("no observability topic"),
     "the deviation from 'ride the hub' is named where a reader looks",

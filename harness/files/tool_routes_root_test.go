@@ -18,16 +18,14 @@ import (
 // Every test here drives the HTTP handlers, never the resolver alone - the law lives on
 // the wire.
 
-// filesRootServer wires the capsule's routes with an in-memory store (cwd is `cwd` via
-// chdirToWorkdir).
+// filesRootServer wires the capsule's routes with an in-memory store.
 func filesRootServer(t *testing.T) (*http.ServeMux, string, agent.StoreProvider, func(string)) {
 	t.Helper()
 	mux, r, st, cwd := filesRouteMuxWithStore(t)
 	return mux, cwd, st, filesDefaultSetter(r)
 }
 
-// createWorkspaceSession mints one real store session whose Workspace column pins
-// `dir`.
+// createWorkspaceSession mints one real store session whose Workspace column pins.
 func createWorkspaceSession(t *testing.T, st agent.StoreProvider, dir string) string {
 	t.Helper()
 	sst, ok := st.(interface {
@@ -50,7 +48,7 @@ func createWorkspaceSession(t *testing.T, st agent.StoreProvider, dir string) st
 	return id
 }
 
-// browseRoot GETs the root listing and returns the resolved root + source the.
+// browseRoot GETs the root listing and returns the resolved root + source.
 func browseRoot(t *testing.T, s *http.ServeMux, url string) (int, string, string) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodGet, url, nil)

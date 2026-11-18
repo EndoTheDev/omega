@@ -1,13 +1,9 @@
 package agent
 
-// EphemeralSessionID reads: the ephemeral (no-persist) session id namespace. The `eph-`
-// ids live in memory only (the /chat ephemeral lane, agent/api/server_ephemeral.go); a
-// durable session id may never fall inside the namespace.
-
-// EphemeralIDPrefix is the reserved id namespace of no-persist sessions.
+// EphemeralIDPrefix is the reserved id namespace of no-persist sessions: `eph-` ids
+// live in memory only, so a durable session id may never fall inside it.
 const EphemeralIDPrefix = "eph-"
 
-// IsEphemeralID reports whether an id belongs to the ephemeral namespace (the "eph-".
 func IsEphemeralID(id string) bool {
 	return len(id) > len(EphemeralIDPrefix) && id[:len(EphemeralIDPrefix)] == EphemeralIDPrefix
 }

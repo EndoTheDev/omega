@@ -2,10 +2,6 @@
   <header class="menubar">
     <!-- ONE brand - the omega glyph and the word in a SINGLE element, far left. -->
     <span class="brand">Ωmega</span>
-    <!--
-      the nav cluster - back / forward / the fake-input palette affordance / the
-      palette trigger.
-    -->
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
@@ -30,10 +26,6 @@
         name="panel-left-open"
         :size="16" />
     </button>
-    <!--
-      history: the bottom panel's toggle joined this cluster; it routes through app.vue
-      like its siblings.
-    -->
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle bottom panel"
@@ -80,10 +72,8 @@
 <script setup lang="ts">
   // the toggles drive app.vue's emits; app.vue routes each one on isMobile.
   import Icon from "../ui/Icon.vue";
-  // the notifications surface is the notifications DOCK TAB (the panel lives in
-  // app.vue's outlet).
+  // the notifications surface is the notifications DOCK TAB.
   import NotificationToasts from "./NotificationToasts.vue";
-  // the back/forward/palette cluster; it seats inline after the brand.
   import NavCluster from "../nav/NavCluster.vue";
 
   defineProps<{

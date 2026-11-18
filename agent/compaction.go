@@ -7,12 +7,12 @@ import (
 // charsPerToken is the char-to-token ratio used by estimateTokens.
 const charsPerToken = 4
 
-// DefaultContextWindow is the nominal model context in tokens used when neither the.
+// DefaultContextWindow is the nominal model context in tokens used when neither.
 const DefaultContextWindow = 32768
 
 const defaultReserveTokens = 16384
 
-// CompactionConfig controls when the agent summarizes old messages to stay within the.
+// CompactionConfig controls when the agent summarizes old messages to stay within.
 type CompactionConfig struct {
 	Enabled       bool    `yaml:"enabled"`
 	Threshold     float64 `yaml:"threshold"`
@@ -27,7 +27,7 @@ type CompactionConfig struct {
 	Model string `yaml:"-"`
 }
 
-// Budget returns the token count at which compaction triggers, computed against the.
+// Budget returns the token count at which compaction triggers, computed against.
 func (c CompactionConfig) Budget() int {
 	return c.BudgetWith(c.ContextWindow)
 }

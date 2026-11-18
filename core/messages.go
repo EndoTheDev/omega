@@ -77,7 +77,7 @@ type LastRunStats struct {
 	ChunksPerSecond int `json:"chunks_per_second"`
 }
 
-// SessionCounts is per-session activity computed at read time (SQL COUNT over the.
+// SessionCounts is per-session activity computed at read time.
 type SessionCounts struct {
 	MessageCount int `json:"message_count"`
 	ToolCount    int `json:"tool_count"`

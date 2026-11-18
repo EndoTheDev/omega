@@ -1,5 +1,4 @@
 <template>
-  <!-- the chat surface of a pending gate question. -->
   <div
     class="verdict-card gate-card"
     :class="{ settled: resolved }">
@@ -12,11 +11,9 @@
       class="verdict-body">{{ card.body }}</p>
 
     <template v-if="resolved">
-      <!-- the resolution (this client or another surface): collapse. -->
       <p class="verdict-outcome">{{ resolvedText }}</p>
     </template>
     <template v-else-if="mode === 'followup'">
-      <!-- the follow-up input swaps the three rows. -->
       <div class="verdict-free">
         <input
           v-model="draft"
@@ -79,8 +76,7 @@
   const answering = ref(false);
   const error = ref("");
   const mode = ref<"choose" | "followup">("choose");
-  // the resolution holder: set by this client's own POST, or by a lost race (the 409's
-  // settled vocabulary).
+  // the resolution holder: set by this client's own POST, or by a lost race.
   const resolved = ref<"" | "approve" | "deny" | "race">("");
   const resolvedText = computed(() => {
     switch (resolved.value) {

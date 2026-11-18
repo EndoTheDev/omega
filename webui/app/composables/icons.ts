@@ -73,11 +73,10 @@ export const ICONS = {
   kanban: Kanban, // the board
   insights: ChartColumn, // usage bars
   mcp: PlugZap, // the MCP servers tab (bridge connections + tools)
-  terminal: SquareTerminal, // the terminal tab (card t_55a3fc4b: the
+  terminal: SquareTerminal, // the terminal tab
   activity: Activity,
-  browser: Globe, // the general web browser tab (card t_95c91f9c)
+  browser: Globe, // the general web browser tab
   module: Box,
-  // the nav cluster (back / forward) + the command palette trigger.
   "nav-back": ArrowLeft, // the back arrow (history bottom dims)
   "nav-forward": ArrowRight, // the forward arrow (stack top dims)
   "palette": Command, // the command palette button (Ctrl+K)
@@ -94,9 +93,9 @@ export const ICONS = {
   "chevron-right": ChevronRight, // row expanders: closed at rest, rotate 90deg when open
   star: Star, // pinned sessions
   download: Download, // session export
-  copy: Copy, // the row's copy-session-id action (card t_61cc8762)
+  copy: Copy, // the row's copy-session-id action
   pencil: Pencil, // inline rename
-  plus: Plus, // the cron tab's add-job editor tool (card t_ecec864e)
+  plus: Plus, // the cron tab's add-job editor tool
   branch: GitFork, // session fork
   archive: Archive,
   unarchive: ArchiveRestore,

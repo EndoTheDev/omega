@@ -1,12 +1,11 @@
 package cron
 
-// cli.go: the crons subcommand (card t_aca45258) - `omega crons
-// list|add|edit|delete`, the terminal face of the cron tab's editor. The capsule
-// registers the name at mount (RegisterSubcommand, v0.12 phase D Q6: the module owns
-// its argv), exactly like kanban and curator. The CLI adds no second writer: an `omega
-// crons add` and a webui editor save land byte- identically in crons.yaml. Agent-home
-// ownership: SaveJob/DeleteJob already refuse a wake job by name (that file belongs to
-// another home); the CLI only surfaces the refusal - it never crosses homes.
+// cli.go: the crons subcommand. The capsule registers the name at mount
+// (RegisterSubcommand, v0.12 phase D Q6: the module owns its argv), exactly like kanban
+// and curator. The CLI adds no second writer: an `omega crons add` and a webui editor
+// save land byte- identically in crons.yaml. Agent-home ownership: SaveJob/DeleteJob
+// already refuse a wake job by name (that file belongs to another home); the CLI only
+// surfaces the refusal - it never crosses homes.
 
 import (
 	"flag"

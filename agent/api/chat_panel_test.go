@@ -58,7 +58,7 @@ func waitRunQuiescent(t *testing.T, s *Server, id string) {
 	t.Fatalf("run on %q never finished", id)
 }
 
-// chatPanelPayload decodes one panel's payload verbatim (the wire shape, not the Go.
+// chatPanelPayload decodes one panel's payload verbatim.
 func chatPanelPayload(t *testing.T, p core.Panel) core.ChatPayload {
 	t.Helper()
 	b, err := json.Marshal(p.Payload)
@@ -80,8 +80,7 @@ func chatRowRoles(rows []core.ChatRow) []string {
 	return roles
 }
 
-// TestChatRowsMapTheTranscriptVocabulary: the view-model row map is one row per
-// transcript item.
+// TestChatRowsMapTheTranscriptVocabulary: the view-model row map is one row.
 func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	rows := chatRows([]transcriptItem{
 		{Kind: "user", ID: "u1", Content: "hi", Time: "2026-11-15T09:00:00Z", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
@@ -105,14 +104,12 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	if rows[1].Role != core.ChatRoleAssistant || rows[1].Blocks[0].Type != core.ChatBlockThinking || rows[1].Status != core.ChatStatusStreaming {
 		t.Fatalf("thinking row = %+v", rows[1])
 	}
-	// the streaming reasoning row owns its meter anchor.
 	if !rows[1].Blocks[0].Running || rows[1].Blocks[0].ElapsedMs != 2600 {
 		t.Fatalf("thinking block anchor = %+v", rows[1].Blocks[0])
 	}
 	if rows[2].Status != core.ChatStatusComplete {
 		t.Fatalf("message status = %+v", rows[2])
 	}
-	// a completed answer row carries its measured span so a remount keeps the frozen.
 	if rows[2].Blocks[0].ResponseMs != 1800 || rows[2].Blocks[0].Running {
 		t.Fatalf("message block span = %+v", rows[2].Blocks[0])
 	}
@@ -143,7 +140,7 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	}
 	composed := composeItems(persisted, []transcriptItem{
-		// already persisted twins (AssistantMessageEvent landed, the accumulator's split.
+		// already persisted twins.
 		{Kind: "message", Content: "hello"},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl2", Name: "shell.run"}, Running: true},
@@ -158,7 +155,7 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 	}
 }
 
-// TestComposeItemsAdoptsTheRunningAnchor: the loop persists the assistant row with.
+// TestComposeItemsAdoptsTheRunningAnchor: the loop persists the assistant row.
 func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	persisted := []transcriptItem{
 		{Kind: "user", ID: "u1", Content: "run it"},
@@ -188,7 +185,7 @@ func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	}
 }
 
-// TestChatPanelSnapshotDeclaresNewestSession: the load-time catch-up names the.
+// TestChatPanelSnapshotDeclaresNewestSession: the load-time catch-up names.
 func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -235,9 +232,9 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	}
 }
 
-// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their own when the
-// cadence holds. batch=1h pins the law: exactly the structural flushes plus the exit
-// one, no token deltas in between.
+// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their own when.
+// batch=1h pins the law: exactly the structural flushes plus the exit one, no token
+// deltas in between.
 func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	prov := newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
@@ -403,13 +400,12 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 		t.Fatalf("running call started_at = %q (parse err %v), want the call's open clock ~%v", stamp, err, builtAt)
 	}
 	s.chat.endRun("sess-tool")
-	// the aging read copies: the hub's snapshot still carries its own anchor for the.
 	if open, _, live := s.runs.openSnapshot("sess-tool"); live && len(open) > 0 && open[0].ElapsedMs != 0 {
 		t.Fatalf("the stored snapshot was mutated in place: %d, want the call-open 0", open[0].ElapsedMs)
 	}
 }
 
-// lastPanel returns the newest recorded panel and the count (zero value and 0 when.
+// lastPanel returns the newest recorded panel and the count.
 func lastPanel(panels []core.Panel) (core.Panel, int) {
 	if len(panels) == 0 {
 		return core.Panel{}, 0
@@ -496,8 +492,6 @@ func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
 		t.Fatal("the run never reached its tool call")
 	}
 
-	// the canvas snapshot is what a remounted pane rebuilds its items from (the last
-	// pushed payload).
 	toolElapsed := func() int64 {
 		for _, p := range s.canvas.Snapshot() {
 			if p.Kind != core.PanelKindChat {
@@ -522,7 +516,7 @@ func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
 	waitRunQuiescent(t, s, "t1")
 }
 
-// TestChatPanelStaleRunNeverPaints: a run whose session lost focus (a newer run took.
+// TestChatPanelStaleRunNeverPaints: a run whose session lost focus.
 func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 	s := newTestServer()
 	s.chat.batch = 0 // flush per token event
@@ -582,7 +576,6 @@ func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 		t.Fatalf("start run")
 	}
 	s.chat.beginRun("sess-stale")
-	// the stale session sits in a tool call.
 	s.runs.setOpenTail(run, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-stale", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 	}, time.Now())
@@ -609,10 +602,10 @@ func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 	s.chat.endRun("sess-focus")
 }
 
-// TestChatPanelTickAfterTheExitFlushStaysQuiet: endRun runs before the run's finish
-// (LIFO in launchRun). A batcher tick that got past its select before endRun must stay
-// quiet in that window: a running=true push after the exit flush is the failure the
-// paint lock exists to prevent.
+// TestChatPanelTickAfterTheExitFlushStaysQuiet: endRun runs before the run's finish. A
+// batcher tick that got past its select before endRun must stay quiet in that window: a
+// running=true push after the exit flush is the failure the paint lock exists to
+// prevent.
 func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	if err := st.CreateSession(context.Background(), "sess-cancel", "", "Cancelled run"); err != nil {
@@ -632,7 +625,6 @@ func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 		t.Fatalf("start run")
 	}
 	s.chat.beginRun("sess-cancel")
-	// the call opened and the run was cancelled before its result.
 	s.runs.setOpenTail(run, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-cancel", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 	}, time.Now())
@@ -674,7 +666,7 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	s.store = st
 	s.chat.batch = time.Hour
 	recorder := newChatRecorder()
-	// The real wiring order: newCanvas registers the capsule (the runtime installs its.
+	// The real wiring order: newCanvas registers the capsule.
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
 	}
@@ -730,8 +722,7 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	}
 }
 
-// TestBranchPathCutsTheOldSiblingKeepsRunRows: the pure cut behind the in-place retry
-// composition.
+// TestBranchPathCutsTheOldSiblingKeepsRunRows: the pure cut behind the in-place retry.
 func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	path := []core.StoredMessage{
 		{ID: 1},
@@ -747,7 +738,6 @@ func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	if got := branchPath(path, "zap", 3); len(got) != 3 {
 		t.Fatalf("malformed branch = %d rows, want 3", len(got))
 	}
-	// the retry window: everything after the branch row pre-dates the run.
 	if got := branchPath(path, "1", 3); len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("retry cut = %+v, want row 1 only", got)
 	}
@@ -763,8 +753,7 @@ func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	}
 }
 
-// gateHoldProvider streams one response chunk, then holds the stream open until release
-// closes, then ends.
+// gateHoldProvider streams one response chunk, then holds the stream open until.
 type gateHoldProvider struct {
 	release chan struct{}
 }
@@ -787,8 +776,7 @@ func (p *gateHoldProvider) Stream(context.Context, []core.Message, []llm.ToolSch
 	return events
 }
 
-// TestRetryRendersInPlaceMidRun: while a retry streams, the panel payload carries the
-// old response NOWHERE.
+// TestRetryRendersInPlaceMidRun: while a retry streams, the panel payload carries.
 func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := agent.NewAgent(prov, nil, 0)
@@ -865,7 +853,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 		t.Fatalf("mid-run panel assistant = %+v", midPanel.Rows[1])
 	}
 
-	// the transcript endpoint's reattach merge agrees.
 	tres, err := http.Get(ts.URL + "/sessions/s-ip/transcript")
 	if err != nil {
 		t.Fatalf("get transcript: %v", err)
@@ -976,7 +963,7 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	}
 }
 
-// TestChatPanelEphemeralRowsFromRegistry: a store-less session composes its rows from.
+// TestChatPanelEphemeralRowsFromRegistry: a store-less session composes its rows.
 func TestChatPanelEphemeralRowsFromRegistry(t *testing.T) {
 	s := newTestServer()
 	s.chat.batch = time.Hour
@@ -988,7 +975,7 @@ func TestChatPanelEphemeralRowsFromRegistry(t *testing.T) {
 	}
 }
 
-// postChatGetSessionID posts one /chat send and returns the session id from the.
+// postChatGetSessionID posts one /chat send and returns the session id.
 func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 	t.Helper()
 	res, err := http.Post(ts.URL+"/chat", "application/json",
@@ -1008,7 +995,6 @@ func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 	if err := json.Unmarshal(frame.data, &f); err != nil || f.ID == "" {
 		t.Fatalf("session frame = %q (%v)", frame.data, err)
 	}
-	// The run is detached; this client's remaining frames stream while the test lives.
 	return f.ID
 }
 
@@ -1143,8 +1129,7 @@ func (g *gateStore) GetActiveView(ctx context.Context, sessionID string) (core.A
 	return g.StoreProvider.GetActiveView(ctx, sessionID)
 }
 
-// TestBatcherPushCannotOutliveTheRun: a batcher tick past takeDirty builds for ms-scale
-// with no liveness check.
+// TestBatcherPushCannotOutliveTheRun: a batcher tick past takeDirty builds.
 func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	prov := newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
@@ -1160,7 +1145,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	gated := &gateStore{StoreProvider: st}
 	s := NewServer(a, nil, gated, nil, nil, nil)
 	s.chat.batch = 20 * time.Millisecond
-	// Real wiring order: the canvas registers the capsule, the test overrides the.
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
 	}
@@ -1175,7 +1159,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	sessionID := postChatGetSessionID(t, ts)
 	waitRunQuiescent(t, s, sessionID)
 
-	// Stage the doomed interleaving.
 	s.chat.beginRun(sessionID) // the batcher spawns; its begin push composes behind the unarmed store
 	entered, closeRelease := gated.arm()
 	s.chat.runEvent(sessionID, core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
@@ -1189,7 +1172,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 		s.chat.endRun(sessionID)
 		close(done)
 	}()
-	// Old code: the exit push landed here already, and the tick still stuck mid-build.
 	time.Sleep(30 * time.Millisecond)
 	closeRelease()
 	select {
@@ -1220,7 +1202,7 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	}
 }
 
-// TestChatPanelPendingCallCarriesItsStart: a YIELD-class call (past the loop's inline.
+// TestChatPanelPendingCallCarriesItsStart: a YIELD-class call.
 func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -1254,7 +1236,6 @@ func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start stamp %q does not parse: %v", block.StartedAt, err)
 	}
-	// the anchor is the assistant row's write time.
 	msgs, err := st.GetActiveView(ctx, "sess-yield")
 	if err != nil {
 		t.Fatalf("active view: %v", err)
@@ -1311,8 +1292,7 @@ func toolCallBlock(t *testing.T, payload core.ChatPayload) core.ChatBlock {
 	return core.ChatBlock{}
 }
 
-// TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's own HTTP status
-// through.
+// TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's own HTTP.
 func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := agent.NewAgent(prov, nil, 0)

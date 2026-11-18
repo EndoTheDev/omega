@@ -19,9 +19,9 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// ephSpyStore wraps the real store and records every pending-call Register that names
-// an `eph-` session. A row that never reaches the store cannot be asserted off the
-// table (Settle would have deleted it), so the CALL is the pin.
+// ephSpyStore wraps the real store and records every pending-call Register that names.
+// A row that never reaches the store cannot be asserted off the table (Settle would
+// have deleted it), so the CALL is the pin.
 type ephSpyStore struct {
 	*store.Store
 	mu          sync.Mutex
@@ -138,7 +138,7 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	}
 }
 
-// TestSessionTypedLedgerRoutesByNamespace: the composite table's.
+// TestSessionTypedLedgerRoutesByNamespace: the composite.
 func TestSessionTypedLedgerRoutesByNamespace(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -209,7 +209,6 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The sweep settles every row.
 	if left := s.yieldLedger.All(); len(left) != 0 {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}

@@ -16,7 +16,7 @@ import (
 
 // isStdlib reports whether an import path belongs to the Go standard library. Stdlib
 // paths never contain a dot in their first path segment ("encoding/json", "context");
-// everything else does ("github.com/..", "omega/llm"), including every golang.org/x and
+// everything else does ("github.com/.", "omega/llm"), including every golang.org/x and
 // every omega-internal package.
 func isStdlib(path string) bool {
 	first := path
@@ -66,7 +66,7 @@ func TestCoreImportsStdlibOnly(t *testing.T) {
 //     under need keys and never import these names.
 // Class B owner faces (wave 1): deleted everywhere; a consumer
 //     declares its own local interface and resolves by the string key.
-// the slot-era types that referenced them (CronDeps, Frontend,..).
+// the slot-era types that referenced them (CronDeps, Frontend,.).
 //
 // Identifier-level via go/ast: comments and the accepted residual
 // string keys never trip. The complement (the faces pinned at their

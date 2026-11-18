@@ -42,8 +42,7 @@ func (n *TurnNudger) ObserveToolRun(name string, args map[string]any, _ error) {
 	}
 }
 
-// skillsPersistedLesson reports whether one executed tool call was a skills write or
-// update.
+// skillsPersistedLesson reports whether one executed tool call was a skills write.
 func skillsPersistedLesson(name string, _ map[string]any) bool {
 	switch name {
 	case "skills.write", "skills.update":

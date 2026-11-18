@@ -9,7 +9,6 @@
         class="md"
         v-html="rendered" />
       <template v-else-if="msgParts">
-        <!-- the user bubble's reference pills. -->
         <template
           v-for="(seg, i) in msgParts"
           :key="i">
@@ -143,14 +142,13 @@
     retryable?: boolean;
   }>();
 
-  // the variant affordances surface upward.
   const emit = defineEmits<{
     (e: "select", index: number): void;
     (e: "fork"): void;
     (e: "retry"): void;
   }>();
 
-  // -- the sent-message pills --- USER bubbles only. The scan is the shared token model
+  // the sent-message pills --- USER bubbles only. The scan is the shared token model
   // (pills.ts), not a transcript heuristic: pills exist exactly where the invocation
   // grammar is.
   const msgParts = computed(() =>
@@ -162,12 +160,11 @@
     openViewerRef?.({ kind: t.kind, name: t.name });
   }
 
-  // Click-to-open: a data URL in a new browser tab is the plain full view (no.
+  // Click-to-open: a data URL in a new browser tab is the plain full view.
   function openImage(img: OmegaImage) {
     window.open(dataUrl(img), "_blank");
   }
 
-  // Assistant bubbles render markdown.
   const rendered = ref("");
   const scheduler = createRenderScheduler((src) => {
     rendered.value = renderMarkdown(src);
@@ -198,7 +195,6 @@
     () => props.elapsedMs ?? 0,
   );
 
-  // Hover timestamp: an empty ref removes the title attribute entirely (malformed or.
   const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
 
   // Copy message: the bubble's RAW text reaches the clipboard - the markdown source for

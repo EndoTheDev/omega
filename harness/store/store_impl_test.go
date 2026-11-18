@@ -381,7 +381,6 @@ func TestSessionCounts(t *testing.T) {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
-	// s1: 5 stored messages (2 user, 1 assistant, 2 tool results) + 2 bookkeeping.
 	for _, m := range []core.Message{
 		core.NewUser("a"),
 		core.NewAssistant("b"),
@@ -408,7 +407,7 @@ func TestSessionCounts(t *testing.T) {
 	}
 }
 
-// TestMigrationAddsTokenColumns upgrades a pre-migration database and verifies the.
+// TestMigrationAddsTokenColumns upgrades a pre-migration database and verifies.
 func TestMigrationAddsTokenColumns(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -491,7 +490,7 @@ CREATE TABLE IF NOT EXISTS messages (
 	}
 }
 
-// TestMigrationAddsPinnedColumn upgrades a database that predates the pinned flag and.
+// TestMigrationAddsPinnedColumn upgrades a database that predates the pinned flag.
 func TestMigrationAddsPinnedColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -660,7 +659,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 	defer s.Close()
 
-	// Migration data-fix: the old row's stamp is its own updated_at, so everything the.
+	// Migration data-fix: the old row's stamp is its own updated_at, so everything.
 	old, err := s.GetSession(ctx, "old")
 	if err != nil {
 		t.Fatalf("get old session: %v", err)
@@ -686,7 +685,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("never-touched session unread = true, want false")
 	}
 
-	// A message landing after last_read_at flips unread on.
+	// A message landing after last_read_at flips unread.
 	if err := s.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -797,7 +796,7 @@ func assertToolResult(t *testing.T, m core.Message, wantContent, wantID string, 
 	}
 }
 
-// TestDeleteSessionCascades verifies deleting a session removes its messages and.
+// TestDeleteSessionCascades verifies deleting a session removes its messages.
 func TestDeleteSessionCascades(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -831,7 +830,7 @@ func TestDeleteSessionCascades(t *testing.T) {
 	}
 }
 
-// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session is not an.
+// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session is not.
 func TestDeleteSessionMissingIsNoOp(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.DeleteSession(context.Background(), "nope"); err != nil {
@@ -939,7 +938,7 @@ func TestSearchSessions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	// s1 matches by BOTH label and content; title must win (one hit, Title=true, snippet.
+	// s1 matches by BOTH label and content; title must win.
 	helperSessionWithContent(t, s, "s1", "Fibonacci series",
 		"why does the fibonacci sequence grow so fast")
 	helperSessionWithContent(t, s, "s2", "Weather notes",
@@ -1004,7 +1003,6 @@ func TestSearchSessions(t *testing.T) {
 		t.Fatalf("want 0 hits for no-match, got %+v", none)
 	}
 
-	// Renaming the label updates the title index both ways.
 	if err := s.UpdateSession(ctx, "s1", "Prime numbers"); err != nil {
 		t.Fatalf("rename s1: %v", err)
 	}
@@ -1302,7 +1300,6 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Errorf("sum of Daily counts = %d, want 1", sum)
 	}
 
-	// The lone session owns the msgs and tokens maxima.
 	if insights.NotableMsgs.Value != 1 || !strings.HasSuffix(insights.NotableMsgs.Detail, ", only turn") {
 		t.Errorf("NotableMsgs = %+v, want value 1, detail suffix \", only turn\"", insights.NotableMsgs)
 	}
@@ -1427,7 +1424,7 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("state-2 write overwrote: %+v", after)
 	}
 
-	// Final directly from 0 (provisional never fired, e.g. the session was retired.
+	// Final directly from 0.
 	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}

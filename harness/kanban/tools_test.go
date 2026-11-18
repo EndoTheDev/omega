@@ -402,7 +402,7 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 }
 
-// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the B ruling: the wire
+// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the B rule: the wire
 // is exactly the seven dotted names - the legacy alias shims and the flat domain tool
 // never register.
 func TestTaskAliasesRetired(t *testing.T) {

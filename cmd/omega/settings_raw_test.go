@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// -- the whole-document door ----------------------
+// the whole-document door --------------------
 
 // TestMaskConfigSecretsMasksEveryAPIKey pins the export mask: a secret VALUE never
 // leaves the process, in block or flow style, keyed by name anywhere in the document -

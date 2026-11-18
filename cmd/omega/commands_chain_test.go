@@ -53,7 +53,7 @@ func (commandCanary) MountWithAPI(_ *core.Context, api *agent.ExtensionAPI) erro
 		})
 }
 
-// mountCommandChain mounts the plugin set into a fresh Context (a temp home, so no.
+// mountCommandChain mounts the plugin set into a fresh Context.
 func mountCommandChain(t *testing.T, plugins []agent.Plugin) *agent.Context {
 	t.Helper()
 	ctx := &agent.Context{CWD: cwd(), Configs: agent.RouteConfigs(plugins, DefaultConfig())}
@@ -94,7 +94,6 @@ func TestCommandChainAnswersPerName(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	ctx := mountCommandChain(t, fullPlugins(t))
 
-	// Every banner a module prints for itself.
 	owners := map[string]string{
 		"[cron]":                   "/cron",
 		"[verdicts]":               "/verdict",
@@ -112,7 +111,6 @@ func TestCommandChainAnswersPerName(t *testing.T) {
 	}
 
 	for _, c := range ctx.Commands {
-		// one run per name; args stay empty.
 		res, _ := ctx.CommandHandler(context.Background(), c.Name, "")
 		for banner, owner := range owners {
 			if banner == owner || c.Name == owner {

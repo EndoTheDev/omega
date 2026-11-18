@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-// Context is the shared service container that extensions mount into.
+// Context is the shared service container that extensions mount.
 type Context struct {
 	eventOb *eventObserverSet
 
@@ -25,7 +25,6 @@ type Context struct {
 
 	services *Services
 
-	// Nudge is gone with the Class A flip (part 3, the seam constitution).
 
 	Channels []Channel
 
@@ -107,8 +106,7 @@ func (c *Context) EventObservers() []EventObserver {
 	return out
 }
 
-// AddSessionEventObserver subscribes one session-attributed observer to the run event
-// spine.
+// AddSessionEventObserver subscribes one session-attributed observer to the run event.
 func (c *Context) AddSessionEventObserver(o SessionEventObserver) {
 	s := c.obsSet()
 	s.mu.Lock()
@@ -132,7 +130,7 @@ func (c *Context) SessionEventObservers() []SessionEventObserver {
 // EmitTick fires one module tick through the spine. The payload travels as raw JSON
 // (the payload law); a marshal failure never blocks the emitter - it degrades to an
 // empty payload, the loud consumers validate and refuse. Observers are cheap by
-// contract; a tick emitter runs on the module's own goroutine, never on a run's.
+// contract; a tick emitter runs on the module's own goroutine, never.
 func (c *Context) EmitTick(module, kind string, payload any) {
 	raw, err := json.Marshal(payload)
 	if err != nil {

@@ -212,7 +212,7 @@ func TestDeleteSkillUnknownIsTheNotFoundLaw(t *testing.T) {
 	}
 }
 
-// -- the wire handlers --------------------------------------------------
+// the wire handlers ------------------------------------------------
 
 func editorRoutes(t *testing.T) (*Routes, string) {
 	t.Helper()

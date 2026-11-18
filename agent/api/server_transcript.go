@@ -59,7 +59,7 @@ type transcriptItem struct {
 // order (assistant segments carry thinking -> calls -> content in message order; tool
 // results sit where history placed them), so timing and ordering are the store's facts,
 // recomputed on every read: old sessions written before a persistence fix keep whatever
-// shape they were saved with.
+// shape they were saved.
 func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -70,7 +70,6 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
 	}
-	// Ephemeral transcripts come from the registry.
 	if s.serveEphemeralTranscript(w, id) {
 		return
 	}
@@ -96,10 +95,10 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		path = branchPath(path, branch, floor)
 	}
 	items := buildTranscriptItems(path)
-	// Reattach completeness: a session with a live run owns items the store has not seen
-	// yet. The tail is a SNAPSHOT (rebuilt per event), so its running tool line ages with
-	// the snapshot: a reload mid-call must anchor the meter at the call's true elapsed,
-	// not the call-open anchor the last event baked.
+	// Reattach completeness: a session with a live run owns items the store has not seen.
+	// The tail is a SNAPSHOT (rebuilt per event), so its running tool line ages with the
+	// snapshot: a reload mid-call must anchor the meter at the call's true elapsed, not
+	// the call-open anchor the last event baked.
 	if tail, builtAt, live := s.runs.tailSnapshot(id); live {
 		items = composeItems(items, freshenRunningCalls(tail, time.Since(builtAt)))
 	}
@@ -107,9 +106,7 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"session": sess,
 			"items":   items,
-			// live-run flag (always present, running:true/false).
 			"running": s.runs.active(id),
-			// variants block: branch points with >=2 sibling runs.
 			"variants": view.Branches,
 		})
 		return
@@ -119,7 +116,6 @@ func (s *Server) handleSessionTranscript(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"session": sess,
 		"items":   items,
-		// live-run flag (always present, running:true/false).
 		"running": s.runs.active(id),
 	})
 }
@@ -171,7 +167,6 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			for i := range m.ToolCalls {
 				tc := m.ToolCalls[i]
 				it := transcriptItem{Kind: "tool_call", ToolCall: &tc}
-				// an unanswered call is the pending/yield shape.
 				if !answered[tc.ID] {
 					it.StartedAt = transcriptTime(sm.CreatedAt, m.Timestamp)
 				}
@@ -195,7 +190,6 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 			it.AnswerMs = answerWindowMs(msgs, i+1)
 			items = append(items, it)
 		case core.YieldResult:
-			// The synthetic re-entry message renders as its call's result row.
 			if m.ToolCallID == "" {
 				continue
 			}
@@ -217,7 +211,7 @@ func buildTranscriptItems(msgs []core.StoredMessage) []transcriptItem {
 	return items
 }
 
-// answeredCalls collects the call ids history holds a result row for.
+// answeredCalls collects the call ids history holds a result row.
 func answeredCalls(msgs []core.StoredMessage) map[string]bool {
 	answered := make(map[string]bool, len(msgs))
 	for _, sm := range msgs {
@@ -245,8 +239,7 @@ func callStartStamp(t time.Time) string {
 	return t.UTC().Format(time.RFC3339Nano)
 }
 
-// answerWindowMs looks ahead from a tool result's position for the answer segment the
-// result unlocked.
+// answerWindowMs looks ahead from a tool result's position for the answer segment.
 func answerWindowMs(msgs []core.StoredMessage, from int) int64 {
 	for _, sm := range msgs[from:] {
 		switch m := sm.Message.(type) {
@@ -270,8 +263,8 @@ func transcriptTime(createdAt, stamp string) string {
 	return stamp
 }
 
-// liveTranscriptItems maps a detached run's accumulated state into transcript wire
-// items. Pure and race-free: the run's own goroutine builds the slice just after
+// liveTranscriptItems maps a detached run's accumulated state into transcript wire.
+// Pure and race-free: the run's own goroutine builds the slice just after
 // accumulateAssistant advanced the records, so callStarts reads (and clears) race
 // nothing; the hub stores the finished slice by replace, never mutation.
 func liveTranscriptItems(closed []assistantRecord, open assistantRecord, now time.Time) []transcriptItem {
@@ -307,7 +300,6 @@ func appendRecordItems(items []transcriptItem, rec assistantRecord, open bool, n
 		// the reasoning phase is over once content started or a tool call closed the segment.
 		if open && !rec.segDone && rec.content == "" {
 			it.Running = true
-			// the open span's elapsed-so-far.
 			it.ElapsedMs = phaseElapsed(rec.thinkDur, rec.lastThink, rec.openAt, now)
 		} else {
 			it.ThinkingMs = rec.thinkDur.Milliseconds()

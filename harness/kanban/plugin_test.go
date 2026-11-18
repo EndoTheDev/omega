@@ -119,7 +119,7 @@ func TestMountSeesCurrentBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the flag moves; the FIRST mount's "" resolution reads the registry live (the row.
+	// the flag moves; the FIRST mount's "" resolution reads the registry live.
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
@@ -208,7 +208,6 @@ func TestCommandChainDelegates(t *testing.T) {
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		return core.CommandResult{}, fmt.Errorf("unreachable: %s", name)
 	}
-	// rewrite the chain the way a later extension would.
 	kanbanOnly := func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/board" || name == "/boards" {
 			return p.handleCommand(name, args)

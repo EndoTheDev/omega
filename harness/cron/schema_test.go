@@ -18,7 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// -- schema: kinds, minutes, schedule laws --
+// schema: kinds, minutes, schedule laws
 
 func TestIntervalKindParses(t *testing.T) {
 	raw := `jobs:
@@ -77,7 +77,7 @@ func TestIntervalKindValidation(t *testing.T) {
 	}
 }
 
-// -- schema: the deliver enum + legacy aliases --
+// schema: the deliver enum + legacy aliases
 
 func TestDeliverEnumResolution(t *testing.T) {
 	cases := []struct{ raw, want string }{
@@ -105,7 +105,7 @@ func TestDeliverEnumResolution(t *testing.T) {
 	}
 }
 
-// -- schema: agent + model fields, the defaulting law --
+// schema: agent + model fields, the defaulting law
 
 func TestAgentDefaultLaw(t *testing.T) {
 	if got := (Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p"}).ResolveAgent(); got != agent.DefaultAgentName {
@@ -159,7 +159,7 @@ func TestFileFieldValidation(t *testing.T) {
 	}
 }
 
-// -- the interval schedule --
+// the interval schedule
 
 func TestEveryScheduleNext(t *testing.T) {
 	// the grid is aligned to epoch minutes: an exact boundary returns
@@ -229,7 +229,6 @@ func TestIntervalJobCatchUpFiresOnGrid(t *testing.T) {
 	default:
 		t.Fatal("catch-up did not fire the interval job")
 	}
-	// the recorded fire is the missed grid time.
 	last, _ := r.lastFireOf("pulse")
 	if last >= now.Unix() {
 		t.Fatalf("catch-up recorded %d, want the missed grid time < %d", last, now.Unix())
@@ -263,7 +262,7 @@ func TestIntervalJobNextFireInInspector(t *testing.T) {
 	}
 }
 
-// -- the defaulting law at fire time: model override --
+// the defaulting law at fire time: model override
 
 // streamSpy records the ModelName of the provider each Stream rides, into a recorder.
 type modelLog struct {
@@ -322,7 +321,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	r.ag = agent.NewAgent(spawner, nil, 0)
 	r.ag.SetLoopProvider(loop.Loop{})
 
-	// the defaulting law, model side.
 	if _, err := r.agentTurn(context.Background(), "s1", Job{Name: "m", Prompt: "p"}, "p"); err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +331,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	if _, err := r.agentTurn(context.Background(), "s2", Job{Name: "m", Prompt: "p", Model: "cron-model"}, "p"); err != nil {
 		t.Fatal(err)
 	}
-	// the derived spy sees the override.
 	for i := 0; i < 200; i++ {
 		if got := spawner.log.last(); got == "cron-model" {
 			break
@@ -348,7 +345,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	}
 }
 
-// -- wake-target dispatch --
+// wake-target dispatch
 
 func TestWakeTickCarriesModel(t *testing.T) {
 	var got wakeTickPayload

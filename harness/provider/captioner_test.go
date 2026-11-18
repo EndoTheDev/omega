@@ -244,8 +244,7 @@ func TestImageIDIsContentAddressed(t *testing.T) {
 	}
 }
 
-// imageCallModels names the model behind every Stream call whose messages carried an
-// image.
+// imageCallModels names the model behind every Stream call whose messages carried.
 func (p *countingProvider) imageCallModels() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()

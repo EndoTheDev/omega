@@ -70,7 +70,7 @@ func (s *Services) Resolve(key string) any {
 	return s.values[key]
 }
 
-// Has reports whether key is currently offered (the census reads presence, never the.
+// Has reports whether key is currently offered.
 // Nil-receiver safe.
 func (s *Services) Has(key string) bool {
 	if s == nil {

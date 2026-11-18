@@ -21,7 +21,7 @@ type FileLogger struct {
 	lastErrAt time.Time
 }
 
-// NewFileLogger opens the log file (append mode) and returns a FileLogger writing to.
+// NewFileLogger opens the log file (append mode) and returns a FileLogger writing.
 func NewFileLogger(path string) (*FileLogger, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -53,13 +53,11 @@ func (l *FileLogger) Errorf(format string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.log.Printf("ERROR: "+format, args...)
-	// The health fact keeps the newest entry only.
 	l.lastErr = fmt.Sprintf(format, args...)
 	l.lastErrAt = time.Now().Truncate(time.Second)
 }
 
-// LastError returns the newest ERROR-level entry and when it was written
-// (agent.LoggerLastError.
+// LastError returns the newest ERROR-level entry and when it was written.
 func (l *FileLogger) LastError() (string, time.Time, bool) {
 	l.mu.Lock()
 	defer l.mu.Unlock()

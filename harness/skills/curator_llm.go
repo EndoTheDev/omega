@@ -34,7 +34,7 @@ func complete(ctx context.Context, prov agent.Provider, prompt string) (string, 
 	return sb.String(), nil
 }
 
-// extractJSON pulls the first JSON object out of a model answer that may wrap it in.
+// extractJSON pulls the first JSON object out of a model answer that may wrap it.
 func extractJSON(s string) string {
 	if i := strings.Index(s, "{"); i >= 0 {
 		if start := strings.Index(s, "```"); start >= 0 && start <= i {

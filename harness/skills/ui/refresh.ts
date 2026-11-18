@@ -1,6 +1,6 @@
 // omega webui: the skills tab's fetch chain.
 
-// the loaded skill inventory, from GET /skills (a live scan.
+// the loaded skill inventory, from GET /skills.
 export interface SkillInfo {
   name: string;
   description: string;
@@ -8,8 +8,7 @@ export interface SkillInfo {
 
 export interface SkillsUpdate {
   skills: SkillInfo[];
-  // the fold re-read (/disabled): null means the read never landed (unreachable, 501, a
-  // plain non-501 refusal).
+  // the fold re-read (/disabled): null means the read never landed.
   fold: string[] | null;
   toggleable: boolean | null;
 }
@@ -36,7 +35,6 @@ export async function refreshSkills(): Promise<SkillsUpdate> {
         : [];
       update.toggleable = true;
     }
-    // a plain non-501 refusal is neither.
   } catch {
     // /disabled unreachable is not fatal to the LIST.
     update.toggleable = false;

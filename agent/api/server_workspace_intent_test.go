@@ -37,8 +37,7 @@ func sessionRowWorkspace(t *testing.T, s *Server, id string) (found bool, worksp
 	return true, detail.Session.Workspace
 }
 
-// TestSessionCreateWorkspace: POST /sessions {workspace} creates the row already
-// pinned.
+// TestSessionCreateWorkspace: POST /sessions {workspace} creates the row already.
 func TestSessionCreateWorkspace(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ws := t.TempDir()
@@ -98,7 +97,6 @@ func TestChatCreateWorkspace(t *testing.T) {
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	// Bare create with the intent: the run streams, the row is born pinned.
 	res, err := http.Post(ts.URL+"/chat", "application/json",
 		strings.NewReader(`{"messages":[{"role":"user","content":"say hi"}],"workspace":`+
 			string(jsonMarshal(ws))+`}`))
@@ -139,7 +137,6 @@ func TestChatCreateWorkspace(t *testing.T) {
 		t.Fatalf("ephemeral + workspace: status = %d, want 400", rec.Code)
 	}
 
-	// A bad folder on the bare-create path.
 	rows, err := st.ListSessions(context.Background())
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
@@ -165,7 +162,7 @@ func TestChatCreateWorkspace(t *testing.T) {
 
 // TestWorkspaceFilesListing moved with the /workspaces/files route to the files.
 
-// firstSessionID returns the store's only session id (the /chat run creates exactly.
+// firstSessionID returns the store's only session id.
 func firstSessionID(t *testing.T, st *store.Store) string {
 	t.Helper()
 	rows, err := st.ListSessions(context.Background())

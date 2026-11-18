@@ -59,8 +59,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return nil
 		},
 		func() error { return api.RegisterPromptSectioner(p) },
-		// /tools stays an extension command (it returns CommandResult with display-mode
-		// actions the shell interprets).
+		// /tools stays an extension command.
 		func() error {
 			return api.RegisterCommand("/tools", "list tools or toggle tool result display [on|off|auto|list]",
 				[]string{"on", "off", "auto", "list"}, func(_ context.Context, name, args string) (core.CommandResult, error) {

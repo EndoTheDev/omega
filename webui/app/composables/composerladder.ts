@@ -1,5 +1,5 @@
 // omega webui: the composer's progressive collapse ladder
-// the Hermes-desktop composer pattern, Endo's ruling ).
+// the Hermes-desktop composer pattern,).
 //
 // THE LADDER - one rung per width band, in order, never two at once:
 //
@@ -8,7 +8,7 @@
 //   stacked the model + effort chips take row one, send keeps row two
 //
 // No rung truncates. The pre-ladder squeeze shrank the chip first and the
-// label died mid-word ("deepse.."), then the row wrapped by accident and
+// label died mid-word ("deepse."), then the row wrapped by accident and
 // stranded controls on a second line (composer 82px -> 112px). A label now
 // fits whole or is gone - the whole law, no ellipsis anywhere.
 //
@@ -24,14 +24,14 @@
 // MEASURED BUDGETS (dev lane, 1440x900, model "deepseek-v4.1-flash",
 // effort "default", send "send", JetBrains Mono 12px):
 //
-// model chip, whole label..... 178.8 (label 136.8 + 42 chrome)
-// model chip, icon only...... 36.0 (the 6px seat left of the
+// model chip, whole label.. 178.8 (label 136.8 + 42 chrome)
+// model chip, icon only.. 36.0 (the 6px seat left of the
 //                                             label dies with the label)
-// effort chip, "default"..... 92.4 (label 50.4 + 42 chrome)
-// send, "send".......... 62.3 (padding 6/16, no border)
-// toolbar gap........... 8
-// toolbar padding......... 8 + 8
-// composer inset / border..... 12 / 1
+// effort chip, "default".. 92.4 (label 50.4 + 42 chrome)
+// send, "send"... 62.3 (padding 6/16, no border)
+// toolbar gap... 8
+// toolbar padding... 8 + 8
+// composer inset / border.. 12 / 1
 //
 // so the one-row bands need (the number is the composer's own client
 // width: pane - 24 inset - 2 border):
@@ -58,7 +58,7 @@ import {
 /** the ladder's rungs, narrowest last */
 export type ComposerStage = "full" | "icon" | "stacked";
 
-// --- the measured box costs (see the table above) ---
+// - the measured box costs (see the table above) -
 /** the model chip around a full label: 14+14 padding, 6 gap, 6 chevron, 2 border */
 export const MODEL_CHIP_FULL_CHROME_PX = 42;
 /** the model chip around the chevron alone: the label's 6px gap seat goes too */
@@ -75,7 +75,7 @@ export const TOOLBAR_PAD_PX = 8;
 export const LADDER_SLACK_PX = 8;
 
 /**
- * the live widths the fit is computed from.
+ * the live widths the fit is computed.
  * `rest` is everything on the row besides.model-group (the send, plus the expanded
  * seat's + when fullscreen mounts it into the toolbar) - both are measured, never
  * assumed, because the send's face morphs send <-> stop and the + comes and goes with
@@ -89,8 +89,7 @@ export interface ComposerRowCosts {
 }
 
 /**
- * THE LADDER's band edges, in the same px unit as `composerStageFor` (the composer's
- * own client width).
+ * THE LADDER's band edges, in the same px unit as `composerStageFor`.
  */
 export interface ComposerStageBands {
   full: number;
@@ -142,7 +141,7 @@ export function composerStageFor(
 
 /**
  * the row's measured costs, or null while the composer is not mounted (or a host
- * stripped a chip - then the caller keeps the rung it has)
+ * stripped a chip - then the caller keeps the rung it has) / /
  */
 export function readComposerRow(
   root: HTMLElement | null,

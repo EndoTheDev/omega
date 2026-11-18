@@ -46,7 +46,7 @@ func TestShapeReportStripsUnbackedClaim(t *testing.T) {
 	rows := []record{row(7, true, "file:exists:/tmp/other.txt")}
 	// A checkable object with no ledger row strips; a claim verb over
 	// a non-statable noun ("the config") cannot be cheaply verified
-	// either way, so it stays - the ruling's verifier is the file stat.
+	// either way, so it stays - the rule's verifier is the file stat.
 	out := shapeReport("I updated the config. Nothing else happened.", rows)
 	if !strings.Contains(out, "I updated the config") {
 		t.Errorf("verbless-object claim stripped: %q", out)

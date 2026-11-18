@@ -60,7 +60,6 @@ test("drawerTabsForEdge: a live edge pane drives the tab set (its actual tabs, i
 });
 
 test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector tabs surfaces them", () => {
-  // the left shell is sessions home but accepts free tabs.
   const live = pane(["sidebar", "files"], "left");
   const tabs = drawerTabsForEdge(live, ["sidebar"], title);
   assert.deepEqual(
@@ -70,7 +69,7 @@ test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector t
 });
 
 test("drawerTabsForEdge: the injected title resolver wins over the registry fallback", () => {
-  // the resolver carries what the registry title cannot say (chat's session label, a.
+  // the resolver carries what the registry title cannot say.
   const resolve = (id: DockComponentName) =>
     id === "observability" ? "Logs (resolved)" : COMPONENT_TITLES[id];
   const tabs = drawerTabsForEdge(null, defaultHostTabs("bottom"), resolve);

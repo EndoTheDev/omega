@@ -14,8 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// sseAnthropicServer serves a canned anthropic SSE stream shaped like the live keypool
-// /v1/messages surface.
+// sseAnthropicServer serves a canned anthropic SSE stream shaped like the live.
 func sseAnthropicServer(t *testing.T, events ...string) *httptest.Server {
 	t.Helper()
 	var sb strings.Builder
@@ -224,7 +223,6 @@ func TestStreamOpenAISynthesizesToolCallIDs(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
-		// index 0: no id ever; index 1: id arrives on the fragment.
 		chunk := func(calls []map[string]any) string {
 			b, _ := json.Marshal(map[string]any{
 				"choices": []map[string]any{{
@@ -302,7 +300,7 @@ func TestStreamOpenAIAbsentUsage(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAIUsageReported verifies the usage chunk (opt-in via.
+// TestStreamOpenAIUsageReported verifies the usage chunk.
 func TestStreamOpenAIUsageReported(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -337,7 +335,7 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	}
 }
 
-// -- ollama done_reason "load" retry --
+// ollama done_reason "load" retry
 
 // ollamaNDJSONServer writes canned ollama /api/chat responses as NDJSON.
 func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httptest.Server, *uint32) {

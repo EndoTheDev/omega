@@ -63,8 +63,7 @@ func TestYieldResultSerializesAsToolRow(t *testing.T) {
 					t.Errorf("row %d serialized without a role: %s", i, body)
 				}
 			}
-			// The Anthropic path folds every "tool" row into a tool_result block keyed by that
-			// id.
+			// The Anthropic path folds every "tool" row into a tool_result block keyed.
 			_, conv := anthropicConvertMessages(wire)
 			last := conv[len(conv)-1]
 			if role, _ := last["role"].(string); role != "user" {

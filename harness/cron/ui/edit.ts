@@ -67,7 +67,7 @@ export function emptyDraft(): JobDraft {
   };
 }
 
-// draftOf prefills the form from a wire row (kind defaulting to cron.
+// draftOf prefills the form from a wire row.
 export function draftOf(j: CronJobWireFull): JobDraft {
   return {
     name: j.name,
@@ -132,7 +132,7 @@ export function parseSkills(s: string): string[] {
   return out;
 }
 
-// -- the field option sources ---------------------
+// the field option sources -------------------
 //
 // Three GETs, all pre-existing, no new registry:
 //
@@ -219,7 +219,7 @@ export interface ModelCatalog {
 // Offering an instance-qualified value here would write a string every fire fails on,
 // so the list is the base provider's own catalog (the flat `models` array the settings
 // pickers fall back to); an operator who needs another instance's model types it,
-// exactly as before.
+// exactly.
 export async function fetchModelOptions(): Promise<ModelCatalog> {
   const res = await fetch("/models");
   if (!res.ok) throw new Error(`GET /models: ${res.status}`);
@@ -260,7 +260,7 @@ export async function fetchSkillOptions(): Promise<FieldOption[]> {
   return out;
 }
 
-// filterFieldOptions narrows a dropdown by the typed query, matching the value or the.
+// filterFieldOptions narrows a dropdown by the typed query, matching the value.
 export function filterFieldOptions(
   options: FieldOption[],
   query: string,
@@ -290,35 +290,12 @@ export function moveComboIndex(
   return (((index + delta) % length) + length) % length;
 }
 
-// -- the inheritance chain ------------------------
-//
-// ONE state machine, two links:
-//
-// agent: "" -> INHERITED from the main agent
-// agent: "scout" -> AUTHORED
-// model: "" -> INHERITED from the agent the fire resolves to
-// model: "glm" -> AUTHORED
-//
-// The STATE is presence - an absent field inherits, a present one is
-// authored - and the chain never writes a resolved value back into the
-// field (the pencil fix's law, one field read two ways is
-// a bug waiting for its second reader). What the chain adds is the
-// DISPLAY: a chip that says "inherited" plus the link that supplies
-// the value, so an empty box stops being a mystery.
-//
-// The model link follows the agent the FIRE runs under, not the name
-// in the box: an in-process fire runs as the main agent
-// (runner.go's wrong-target law), so its model is the main agent's;
-// a wake runs inside the agent's own home, where the agent's config
-// layer answers and a layer that authors nothing inherits the main
-// again (agent/configedit.go's LayerValue presence law: "an
-// explicitly empty value is a real override" - for the chain, an
-// absent model_name is the inherit).
-//
-// The same state machine rules the agents panel (its config layer
-// carries the identical authored-vs-inherited question); each module
-// keeps its own copy, the narrow.ts precedent - module UI imports no
-// other module's code.
+// the inheritance chain ------------------------ ONE state machine, two links: agent:
+// "" -> INHERITED from the main agent agent: "scout" -> AUTHORED model: "" -> INHERITED
+// from the agent the fire resolves to model: "glm" -> AUTHORED The STATE is presence -
+// an absent field inherits, a present one is authored - and the chain never writes a
+// resolved value back into the field (the pencil fix's law, one field read two ways is
+// a bug waiting for its second reader).
 
 // ChainValue is one field's chain state.
 export interface ChainValue {
@@ -436,7 +413,7 @@ export function modelChain(
     note: mainModel
       ? `inherits the main agent (${mainModel})`
       : "inherits the main agent",
-    // a wake inheriting the main agent cannot fire at all.
+    // a wake inheriting the main agent cannot fire.
     blocked: agent.blocked,
   };
 }
@@ -450,7 +427,7 @@ export function chainViolation(d: ChainDraft, mainAgent: string): string {
   return `continuous-agent needs its own agent - an empty agent inherits the main agent (${mainAgent}), which never wakes`;
 }
 
-// -- the strict skills multi-select ----------------------
+// the strict skills multi-select --------------------
 
 // strictSkills splits a job's pinned names into what the registry can serve and what it
 // cannot. STRICT means the control loads only known names: an unknown one cannot be
@@ -569,8 +546,7 @@ export function lastMeta(j: CronJobWireFull): string {
   return ` - last ${j.status} ${stamp}`;
 }
 
-// statusStamp renders an RFC3339 timestamp as a local, compact date-time ("11/07
-// 02:14").
+// statusStamp renders an RFC3339 timestamp as a local, compact date-time.
 export function statusStamp(rfc3339: string): string {
   const t = new Date(rfc3339);
   if (Number.isNaN(t.getTime())) return rfc3339;

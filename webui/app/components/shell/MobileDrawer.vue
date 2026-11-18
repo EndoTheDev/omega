@@ -38,7 +38,6 @@
 </template>
 
 <script setup lang="ts">
-  // side: which edge the drawer slides from.
   import Icon from "../ui/Icon.vue";
 
   defineProps<{

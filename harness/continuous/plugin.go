@@ -28,7 +28,7 @@ var _ agent.Plugin = (*Plugin)(nil)
 // NewPlugin creates the plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-// NewPluginWithHome creates the plugin against an explicit root home (tests.
+// NewPluginWithHome creates the plugin against an explicit root home.
 func NewPluginWithHome(home string) *Plugin { return &Plugin{home: home} }
 
 // Name returns the plugin name shown in the /extensions listing.
@@ -68,7 +68,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	p.home = home
 	machine := NewMachine(home, cfg)
 	// The store seam, resolved PER CALL (the live re-wire law). An agent home's chat opens
-	// its own file and never touches this.
+	// its own file and never touches.
 	machine.SetStoreResolver(func() agent.StoreProvider {
 		st, _ := ctx.Services().Resolve("store").(agent.StoreProvider)
 		return st
@@ -80,7 +80,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := machine.MigrateCanonicalIDs(); err != nil {
 		return err
 	}
-	// The visibility repair: homes created before the canonical seed went through the.
+	// The visibility repair: homes created before the canonical seed went through.
 	// Boot- time, idempotent, hides canonical-id rows only.
 	if err := machine.MigrateCanonicalVisibility(); err != nil {
 		return err
@@ -94,7 +94,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("continuous: ledger: %w", err)
 	}
-	// A same-instance re-mount (the double-mount removal proofs) opens a second ledger.
 	if p.ledger != nil {
 		_ = p.ledger.Close()
 	}
@@ -114,9 +113,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }
 
-// SetDisabledAgents swaps the disabled.agents soft-toggle list live (v0.14.1
-// registry-browser. Nil before Mount is recorded - the mount reads it first, but a
-// toggle that early never happens (the seam only exists on a wired channel).
+// SetDisabledAgents swaps the disabled.agents soft-toggle list live (v0.14.1. Nil
+// before Mount is recorded - the mount reads it first, but a toggle that early never
+// happens (the seam only exists on a wired channel).
 func (p *Plugin) SetDisabledAgents(names []string) {
 	if p.machine != nil {
 		p.machine.SetDisabledAgents(names)

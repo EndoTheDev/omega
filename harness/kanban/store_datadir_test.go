@@ -13,7 +13,7 @@ func TestOpenMigratesLegacyHome(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, "kanban.db")
 
-	// Real legacy db at the root (root path is outside a data dir, so setup itself.
+	// Real legacy db at the root.
 	s0, err := Open(legacy)
 	if err != nil {
 		t.Fatalf("create legacy db: %v", err)

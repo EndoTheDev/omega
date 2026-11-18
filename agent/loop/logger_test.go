@@ -88,7 +88,7 @@ func TestLoopWithLogger(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerMaxTurns verifies the logger records "max turns reached" when the.
+// TestLoopLoggerMaxTurns verifies the logger records "max turns reached" when.
 func TestLoopLoggerMaxTurns(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -134,7 +134,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerStreamError verifies the logger records "stream error" when the.
+// TestLoopLoggerStreamError verifies the logger records "stream error" when.
 func TestLoopLoggerStreamError(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},

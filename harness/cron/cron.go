@@ -21,7 +21,7 @@ var scheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Mo
 // namePattern restricts job names to [a-z0-9-].
 var namePattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Deliver targets (Endo ruling, ONE enum - the curator,
+// Deliver targets (ONE enum - the curator,
 // hygiene and delegation job definitions author through this list):
 //
 // new-session fresh in-process session, the fire runs cron:<name>
@@ -58,7 +58,7 @@ const (
 // minutes: 5 # required iff kind interval, >= 1
 // agent: scout # optional; empty = default agent
 // model: glm-5.3 # optional; empty = session provider model
-// prompt: ".." # required, the user message the run sends
+// prompt: "." # required, the user message the run sends
 // skills: omega-dev # optional; skill names pinned into the fire
 // deliver: new-session # see the deliver enum above, default new-session
 // file: notes/report.md # required iff append-to-file, home-relative
@@ -131,8 +131,7 @@ func (j Job) IsEnabled() bool {
 	return j.Enabled == nil || *j.Enabled
 }
 
-// DeliverTarget returns the deliver mode with its default and the legacy aliases
-// resolved (the ONE enum above).
+// DeliverTarget returns the deliver mode with its default and the legacy aliases.
 func (j Job) DeliverTarget() string {
 	switch j.Deliver {
 	case "", deliverNone:
@@ -312,9 +311,9 @@ func parseJob(node *yaml.Node) (*Job, error) {
 	if err := node.Decode(job); err != nil {
 		return nil, fmt.Errorf("line %d: bad job: %w", node.Line, err)
 	}
-	// The skills list normalizes here, the one place a yaml-authored value takes its final
-	// shape. The name grammar and the duplicates reject in validateJob with the line in
-	// the error (the schema keeps its one rejection voice).
+	// The skills list normalizes here, the one place a yaml-authored value takes its. The
+	// name grammar and the duplicates reject in validateJob with the line in the error
+	// (the schema keeps its one rejection voice).
 	job.Skills = normalizeSkills(job.Skills)
 
 	if err := validateJob(*job, node.Line); err != nil {

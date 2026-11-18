@@ -25,12 +25,10 @@ const asPane = (n: unknown) => n as DockPane;
 const asSplit = (n: unknown) => n as DockSplit;
 
 describe("dragSplitDivider characterization: the fixed absorbing neighbor", () => {
-  // a row of TWO fixed panes (rare - the contract port's real case is the split pane
-  // beside a fixed shell).
+  // a row of TWO fixed panes.
   const twoFixed = () => makeSplit("row", [makePane("sidebar", 240), makePane("files", 300)]);
 
   it("left fixed over a fixed neighbor: the cap reads the neighbor's 128 floor", () => {
-    // req 240 + 200 = 440 <= cap (540 - 128 = 412?
     const out = dragSplitDivider(twoFixed(), 1, [240, 300], 200, 540);
     assert.equal(asPane(out.split.children[0]).fixed, 412, "clamped at room - 128");
   });

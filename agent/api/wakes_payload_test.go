@@ -46,7 +46,7 @@ func TestWakeHubPayloadIsolation(t *testing.T) {
 	}
 }
 
-// TestWakeHubPushFrontKeepsPayload: the lost-slot-race path re-queues a result at the.
+// TestWakeHubPushFrontKeepsPayload: the lost-slot-race path re-queues a result.
 // The re-queued slot must carry the same payload it went in with - a re-queue that
 // rebuilt or truncated it would hand the model a different result than the call
 // produced.

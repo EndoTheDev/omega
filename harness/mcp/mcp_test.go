@@ -29,7 +29,7 @@ func TestPluginInterface(t *testing.T) {
 	var _ core.ToolProvider = bridgeToolProvider{}
 }
 
-// TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools and a.
+// TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools.
 func TestEmptyBridge(t *testing.T) {
 	b, err := NewBridge(nil)
 	if err != nil {
@@ -66,8 +66,7 @@ func TestPluginMetadata(t *testing.T) {
 	}
 }
 
-// TestNilBridgePlugin verifies a nil-bridge plugin still registers the runtime tool
-// provider.
+// TestNilBridgePlugin verifies a nil-bridge plugin still registers the runtime tool.
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
@@ -82,7 +81,7 @@ func TestNilBridgePlugin(t *testing.T) {
 	}
 }
 
-// TestBridgeWithFakeServer verifies tool discovery and call routing work through a.
+// TestBridgeWithFakeServer verifies tool discovery and call routing work through.
 func TestBridgeWithFakeServer(t *testing.T) {
 	b := &Bridge{
 		servers:  make(map[string]MCPConn),

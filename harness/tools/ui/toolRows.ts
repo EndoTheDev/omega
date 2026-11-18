@@ -15,7 +15,7 @@ export interface ToolWire {
   disabled?: boolean;
 }
 
-// Structural RegistryRow (module UI imports no shell code.
+// Structural RegistryRow.
 export interface ToolRow {
   name: string;
   description: string;
@@ -70,11 +70,10 @@ export function toolRows(
   for (const t of tools) {
     if (consumed.has(t.name)) continue;
     const d = domainOf(t.name);
-    // a dotted tool whose prefix is a dotless domain tool is absorbed by that.
     if (d && domains.has(d)) continue;
     const group = d && (members.get(d)?.length ?? 0) >= 2;
     if (group) {
-      // the group parent row: the prefix is the row, each member's full identity is a.
+      // the group parent row: the prefix is the row, each member's full identity is.
       const siblings = tools.filter((s) => domainOf(s.name) === d);
       for (const s of siblings) consumed.add(s.name);
       rows.push({
@@ -85,7 +84,6 @@ export function toolRows(
       });
       continue;
     }
-    // a tool that is its own domain (dotless).
     const merged = tools.filter((s) => domainOf(s.name) === t.name);
     for (const s of merged) consumed.add(s.name);
     rows.push({
@@ -106,8 +104,7 @@ export function toolRows(
   return rows;
 }
 
-// toggleTargets fans the parent row's toggle out to the actual tool names the fold
-// stores.
+// toggleTargets fans the parent row's toggle out to the actual tool names the fold.
 export function toggleTargets(rowName: string, tools: readonly ToolWire[]): string[] {
   if (tools.some((t) => t.name === rowName)) {
     return [

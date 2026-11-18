@@ -1,4 +1,4 @@
-// omega webui: the general browser tab - the registry contract (main-pane singleton.
+// omega webui: the general browser tab - the registry contract.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,7 +27,7 @@ import {
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-// -- the registry contract ----------------------------------------------------
+// the registry contract --------------------------------------------------
 
 describe("the browser dockable (t_95c91f9c)", () => {
   it("is in the registry: a main-pane singleton, closable", () => {
@@ -63,7 +63,7 @@ describe("the browser dockable (t_95c91f9c)", () => {
   });
 });
 
-// -- the pure logic ------------------------------------------------------------
+// the pure logic ----------------------------------------------------------
 
 describe("browserLogic: url normalization", () => {
   it("prefixes the https law on schemeless input", () => {
@@ -127,7 +127,6 @@ describe("browserLogic: the refused-embed fallback", () => {
   });
 
   it("the fallback rule is probe-gated, the timer stays the slow path", () => {
-    // the component's wiring, pinned structurally.
     const src = read("../harness/browser/ui/BrowserTab.vue");
     assert.ok(src.includes("FALLBACK_AFTER_MS"), "the constant is used");
     assert.ok(src.includes("onFrameLoad"), "the load handler exists");
@@ -163,7 +162,7 @@ describe("browserLogic: the probe verdict", () => {
   });
 });
 
-// -- the structural wiring ------------------------------------------------------
+// the structural wiring ----------------------------------------------------
 
 describe("browser wiring", () => {
   it("the outlet template mounts the manifest's browser view", () => {

@@ -24,7 +24,7 @@ import {
 const here = dirname(fileURLToPath(import.meta.url));
 const src = (p: string) => readFileSync(join(here, "..", p), "utf8");
 
-// the measured row: the label's own 136.8px, the effort chip's 92.4px, the send's.
+// the measured row: the label's own 136.8px, the effort chip's 92.4px,.
 const MEASURED: ComposerRowCosts = {
   label: 136.8,
   effort: 92.4,
@@ -56,7 +56,6 @@ describe("the ladder's measured chrome (the numbers, not a guess)", () => {
 
   it("the ladder ENDS at the stacked rung - omega needs no fourth", () => {
     const bands = composerStageBands(MEASURED);
-    // the narrowest real composer.
     const narrowestPane = 200 - 24 - 2;
     assert.equal(narrowestPane, 174);
     assert.ok(
@@ -117,7 +116,7 @@ describe("the ladder's order: full -> icon -> stacked, one rung per band", () =>
     assert.equal(composerStageFor(bands.icon, MEASURED), "icon");
     assert.equal(composerStageFor(bands.icon - 1, MEASURED), "stacked");
     // the maintainer's 294px pane: the composer is 294 - 24 - 2 = 268 wide there - the
-    // shed rung, which is exactly the "deepse.." fix
+    // shed rung, which is exactly the "deepse." fix
     assert.equal(composerStageFor(268, MEASURED), "icon");
   });
 

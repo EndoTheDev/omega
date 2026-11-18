@@ -30,7 +30,7 @@ type answerSink interface {
 	Pending(sessionID string) []core.QuestionPrompt
 }
 
-// The run-origin values the issuer gate compares (the launch surfaces write them.
+// The run-origin values the issuer gate compares.
 const (
 	originScheduled = "cron"
 	originSubagent  = "delegate"
@@ -44,7 +44,6 @@ type Hub struct {
 
 	mu    sync.Mutex
 	cards []*cardState
-	// listeners are the issuance notifications.
 	listeners []func(core.QuestionPrompt)
 }
 
@@ -135,7 +134,6 @@ func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionA
 		}
 		return v, nil
 	case <-ctx.Done():
-		// Run stop / shutdown: settle the card so a later Answer is rejected cleanly.
 		h.mu.Lock()
 		state.settled = true
 		h.mu.Unlock()
@@ -317,7 +315,7 @@ func (h *Hub) byIDLocked(cardID string) *cardState {
 	return nil
 }
 
-// persist appends one record to the session transcript when the hub has a store and.
+// persist appends one record to the session transcript when the hub has a store.
 // Best effort: a persistence failure logs and moves on - the question itself must not
 // fail because the audit row could not be written.
 func (h *Hub) persist(msg core.Message) {
@@ -371,7 +369,7 @@ func cardOf(msg core.Message) string {
 	return ""
 }
 
-// resultMap is the wire shape the verdict TOOL RESULT carries back to the model (the.
+// resultMap is the wire shape the verdict TOOL RESULT carries back to the model.
 func resultMap(v core.QuestionAnswer) string {
 	out := map[string]any{
 		"card_id": v.CardID,

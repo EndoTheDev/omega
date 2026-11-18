@@ -4,8 +4,7 @@
     class="tools-list"
     :class="{ narrow: narrow }">
     <!--
-      the UNIVERSAL band (the shared TabBand) - title left, the refresh action right,
-      ONE row..
+      the UNIVERSAL band (the shared TabBand).
       The band renders BEFORE the scroll body: scrolling the list never moves it.: the
       compact in-band search (TabBand's shared.band-search seat) - the query filters
       the LOADED registry by name or description, client-side on the grouped rows
@@ -60,7 +59,7 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { nativeTools, toggleTargets, toolRows, type ToolWire } from "./toolRows";
-  // the band search's filter (name / description on the GROUPED rows), pure so the.
+  // the band search's filter (name / description on the GROUPED rows), pure.
   import { filterToolRows } from "./search";
 
   // Module-owned UI canary, now the inspector's Tools tab content.
@@ -70,10 +69,9 @@
   const loaded = ref(false);
   const error = ref("");
   const busy = ref<string | null>(null);
-  // the refresh's lock: a second click while a chain is in flight is dropped (the.
+  // the refresh's lock: a second click while a chain is in flight is dropped.
   const refreshing = ref(false);
   const toggleError = ref<string | null>(null);
-  // false when the host serves no toggle seam (501 on /disabled).
   const toggleable = ref(false);
 
   // the row model lives in./toolRows - the pure grouping the node suite pins. rows are
@@ -111,7 +109,6 @@
     }
   }
 
-  // the refresh: re-run the fetch chain without a remount.
   async function refresh(): Promise<void> {
     if (refreshing.value) return;
     refreshing.value = true;
@@ -126,7 +123,7 @@
     }
   }
 
-  // -- narrow adaptation, the module-UI recipe.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -192,7 +189,6 @@
 </script>
 
 <style scoped>
-  /* Module-owned look built on the shell's design tokens. */
   /*
    * the root stops being a flat scroll child - the TabBand stays fixed, the body owns
    * the scroll (structurally, never sticky).

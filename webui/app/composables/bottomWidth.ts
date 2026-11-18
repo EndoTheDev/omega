@@ -11,8 +11,7 @@ export function parseBottomWidthMode(v: unknown): BottomWidthMode {
   return v === "full" ? "full" : "aligned";
 }
 
-// Module-scoped ref: the mode is read by the applier (app.vue's geometry pass) and
-// written by the settings knob.
+// Module-scoped ref: the mode is read by the applier (app.vue's geometry pass).
 const mode = ref<BottomWidthMode>(DEFAULT_BOTTOM_WIDTH_MODE);
 if (typeof window !== "undefined") {
   mode.value = parseBottomWidthMode(

@@ -24,7 +24,7 @@ export function serverEnabled(s: McpServerWire): boolean {
   return s.enabled !== false;
 }
 
-// the per-server truth line, in priority order: a disabled server says exactly that.
+// the per-server truth line, in priority order: a disabled server says exactly.
 export function statusLabel(s: McpServerWire): string {
   if (!serverEnabled(s)) return "disabled";
   if (s.error && s.error.length > 0) return s.error;

@@ -29,7 +29,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// curatorHelp documents the curator subcommand (the module's own help.
+// curatorHelp documents the curator subcommand.
 const curatorHelp = `omega curator - the weekly skills curator pass
 
 Usage:
@@ -322,7 +322,7 @@ func skillBody(f *skillsWriteFlags, stdin io.Reader) (string, error) {
 	return string(raw), nil
 }
 
-// skillsDelete removes one skill through the tab's own removal law (backup.
+// skillsDelete removes one skill through the tab's own removal law.
 func skillsDelete(sp *SkillsProvider, stdout io.Writer, args []string) error {
 	name, rest, err := skillName("delete", args)
 	if err != nil {

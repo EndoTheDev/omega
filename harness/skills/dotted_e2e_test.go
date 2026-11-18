@@ -28,7 +28,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	sp := NewSkillsProvider(dir)
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises every dotted tool back to back.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "skills.read", Arguments: map[string]any{"name": "test-skill"},
@@ -76,7 +75,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 4", results)
 	}
 
-	// the dir is the truth: the write landed with the loader's frontmatter, the update.
 	raw, err := os.ReadFile(filepath.Join(dir, "born-on-the-wire", "SKILL.md"))
 	if err != nil {
 		t.Fatalf("skills.write never landed: %v", err)

@@ -26,7 +26,7 @@ const tool = (name: string, id?: string): TranscriptItem => ({
   id,
 });
 
-// -- groupToolRuns: the run folding --
+// groupToolRuns: the run folding
 
 test("two or more consecutive tool rows fold into ONE group entry", () => {
   const a = tool("shell.run", "t1");
@@ -90,7 +90,7 @@ test("empty transcript, empty result", () => {
   assert.deepEqual(groupToolRuns([]), []);
 });
 
-// -- toolGroupWantOpen: the group's auto state machine --
+// toolGroupWantOpen: the group's auto state machine
 
 test("expanded/collapsed force one state regardless of run state", () => {
   for (const live of [true, false]) {
@@ -107,7 +107,7 @@ test("auto keeps the group open while the run is live or any row runs", () => {
   assert.equal(toolGroupWantOpen(false, false, "auto"), false, "settled collapses");
 });
 
-// -- toolChildKey: the group's children key on the CALL, not the slot --
+// toolChildKey: the group's children key on the CALL, not the slot
 
 // callRow mirrors what the two producers mint.
 const callRow = (name: string, callId?: string, rowId?: string): ToolItem => ({
@@ -146,7 +146,7 @@ test("identity ladder: call id, then store row id, then the slot", () => {
   assert.notEqual(toolChildKey(callRow("a"), 0), toolChildKey(callRow("a", "0"), 0));
 });
 
-// -- structural wiring: the card's must-haves --
+// structural wiring: the card's must-haves
 
 test("ChatTab renders the group at BOTH sites and keys on item identity", () => {
   const t = src("components/ChatTab.vue");
@@ -154,11 +154,10 @@ test("ChatTab renders the group at BOTH sites and keys on item identity", () => 
   assert.match(t, /import \{ groupToolRuns, isToolRun, type ChatEntry \}/);
   assert.match(t, /groupToolRuns\(transcript\.value, variantOfItem\)/);
   assert.match(t, /groupToolRuns\(block, variantOfItem\)/);
-  // the third site retired with the run-only live body.
   assert.doesNotMatch(t, /groupToolRuns\(liveRun\.value\.body/);
   // the group's key is its HEAD ROW's key.
   assert.match(t, /return isToolRun\(entry\) \? itemKey\(entry\.items\[0\]!\) : itemKey\(entry\)/);
-  // the live gate rides the busy slot so auto stays open across the whole run (no.
+  // the live gate rides the busy slot so auto stays open across the whole run.
   assert.match(t, /:live="busy"/);
   assert.equal(t.match(/<ToolGroup(?![\w-])/g)?.length, 2, "one render per site");
 });

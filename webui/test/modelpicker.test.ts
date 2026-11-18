@@ -27,11 +27,9 @@ describe("model picker groups by provider (t_1914a8c9)", () => {
     const src = picker();
     assert.match(src, /v-for="g in visibleGroups"/, "sections iterate");
     assert.match(src, /class="model-section"/, "the section wrapper");
-    // ..
     assert.match(src, /class="model-sec-head"/, "the section header button");
     assert.match(src, /:aria-expanded="isExpanded\(g\)"/, "the collapse state");
     assert.match(src, /function toggle\(/, "the toggle");
-    // ..
     assert.match(src, /model-search/, "the search input survives");
     assert.match(
       src,

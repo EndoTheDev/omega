@@ -1,4 +1,4 @@
-// omega webui: unit tests for the pane-width math in composables/panes.ts (the +320.
+// omega webui: unit tests for the pane-width math in composables/panes.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {

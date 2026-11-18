@@ -107,7 +107,7 @@ describe("the fix wires itself into the boot paths (structural pins)", () => {
   });
 
   it("every boot branch carries the ACTIVE chat tab, not the first", () => {
-    // the URL-carried fallback branch, the unknown-id branch, the home branch, and.
+    // the URL-carried fallback branch, the unknown-id branch, the home branch,.
     const carries = app.match(/dock\.activeChatTab\(\) \?\? dock\.firstChatTab\(\)/g) ?? [];
     assert.ok(carries.length >= 4, `expected >=4 active-first carry sites, got ${carries.length}`);
   });
@@ -119,7 +119,6 @@ describe("the fix wires itself into the boot paths (structural pins)", () => {
   });
 
   it("the no-session cwd-fallback law stays INTACT (fresh boot, no sessions)", () => {
-    // a boot with no focused session keeps the deliberate bare tree.
     assert.equal(filesHeaderVisible("cwd"), false);
     assert.equal(filesHeaderVisible(undefined), false);
     assert.equal(filesHeaderVisible("session"), true);

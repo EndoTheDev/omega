@@ -17,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// serveRoute serves one request through the named route pattern on the context (both.
+// serveRoute serves one request through the named route pattern on the context.
 func serveRoute(t *testing.T, ctx *core.Context, pattern, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -51,7 +51,7 @@ func decodeReport(t *testing.T, w *httptest.ResponseRecorder) StatusReport {
 	return rep
 }
 
-// TestReloadRouteEmptyToLive verifies the exact Endo scenario: no config at boot (nil.
+// TestReloadRouteEmptyToLive verifies the exact Endo scenario: no config at boot.
 func TestReloadRouteEmptyToLive(t *testing.T) {
 	srv := mockMCPServer(t, "reload-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -217,8 +217,8 @@ func TestReloadPartialFailure(t *testing.T) {
 	}
 }
 
-// TestReloadConcurrentReads races the swap against reader goroutines (Tools and the
-// status route). Run with -race in the verify pass.
+// TestReloadConcurrentReads races the swap against reader goroutines.
+// Run with -race in the verify pass.
 func TestReloadConcurrentReads(t *testing.T) {
 	srv := mockMCPServer(t, "race-session")
 	srvCfg := func() string {

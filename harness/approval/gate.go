@@ -27,8 +27,7 @@ type Gate struct {
 	questionsFP   string
 }
 
-// verdictHub is the consumer-side face of the verdict capsules question cards (part 3
-// seam constitution).
+// verdictHub is the consumer-side face of the verdict capsules question cards.
 type verdictHub interface {
 	// Ask registers the card and BLOCKS for the answer (see the
 	// implementing capsule for the race and expiry law).
@@ -43,7 +42,7 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// The run-origin values the gate compares (the launch surfaces write them.
+// The run-origin values the gate compares.
 const (
 	originScheduled = "cron"
 	originSubagent  = "delegate"
@@ -92,8 +91,7 @@ const (
 	GateEscAnswered = "smart gate: escalated -> answered"
 )
 
-// followUpReasonPrefix marks a follow-up resolution's reason (before the guidance
-// text).
+// followUpReasonPrefix marks a follow-up resolution's reason.
 const followUpReasonPrefix = "follow-up guidance: "
 
 // followUpMax is the guidance size cap.
@@ -152,7 +150,6 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 	sanitized, redacted := sanitize(p.Canonical)
 	targets := TargetContentHash(p.Segments)
 	if p.ParseErr != nil {
-		// unparsable static form: review the raw shape minus hygiene.
 		sanitized, redacted = sanitize(command)
 	}
 	live := g.config()
@@ -176,7 +173,6 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		return rec.stamp, outcomeError(rec.outcome)
 	}
 
-	// The deciding pass.
 	var (
 		outcome   Outcome
 		answers   Answers
@@ -238,7 +234,6 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 
 	stamp := g.stamp(outcome, fromCard)
 	if fromCard && followUp != "" && g.mode() == ModeSmart {
-		// the follow-up resolution's stamp carries the guidance.
 		stamp = GateEscAnswered + ": " + truncTo(followUp, stampGuidanceMax)
 	}
 	g.audit.Append(g.row(rowInput{
@@ -300,7 +295,7 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 			{Label: "approve", Description: "run the command"},
 			{Label: "deny", Description: "refuse; the agent is told the command did not run"},
 		},
-		AllowText: true, // the follow-up surface (card t_63204dfd)
+		AllowText: true, // the follow-up surface
 		TimeoutS:  0,    // the hub's 20-minute default (Q13)
 	}
 	verdict, err := hub.Ask(ctx, card)
@@ -373,7 +368,7 @@ type rowInput struct {
 	latency               time.Duration
 }
 
-// row renders the audit record (Q6.
+// row renders the audit record.
 func (g *Gate) row(in rowInput) AuditRow {
 	answers, rawVerdict, outcome := in.answers, in.rawVerdict, in.outcome
 	if in.cached {

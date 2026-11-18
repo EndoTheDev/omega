@@ -209,7 +209,6 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
   });
 
   it("card t_81d0901b: a stored layout naming the removed modules tab boots as a clean no-op", () => {
-    // Layouts persisted before the modules cockpit retired still name it.
     const raw = JSON.stringify({
       v: 3,
       tree: { kind: "split", id: "n1", direction: "row", px: [760, 240], children: [
@@ -234,7 +233,6 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
       p.repairs.some((r) => r.includes("extensions") && /dropped/i.test(r)),
       `the receipt names the dropped id: ${JSON.stringify(p.repairs)}`,
     );
-    // the store's own load is the same no-op.
     const store = new MemoryStorage();
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const dock = createDock(store as unknown as Storage);
@@ -251,9 +249,7 @@ describe("serialize v:4: integer px on disk (ruling 6)", () => {
     const rec = JSON.parse(serialize(root, [])) as { v: number; tree: DockSplit };
     assert.equal(rec.v, 4);
     assert.equal(rec.tree.sizes, undefined, "fraction sizes are gone from disk");
-    // chat flexes over the 760px remainder (1/3 vs files' fixed 240).
     assert.deepEqual(rec.tree.px, [760, 240]);
-    // px -> fractions derive back.
     const back = parseAnyLayout(JSON.stringify(rec), fallback);
     assert.deepEqual(
       asSplit(back.tree).sizes.map((s) => Math.round(s * 100) / 100),

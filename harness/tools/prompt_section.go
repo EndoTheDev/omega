@@ -7,14 +7,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// promptSectionOrder places the tools list last among the contributed sections, after.
+// promptSectionOrder places the tools list last among the contributed sections,.
 const promptSectionOrder = 30
 
 // PromptSections renders the "## Tools" section. A tool with structured Actions still
 // renders the split: the domain line once, then each action labeled with its one-liner,
 // the one thing a schema enum cannot carry. A disabled entry never renders: the section
 // is the model's tool list, and advertising a tool the wire does not carry is a lie the
-// model acts on.
+// model acts.
 func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	var sb strings.Builder
 	for _, ext := range opts.Extensions {

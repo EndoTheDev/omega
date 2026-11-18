@@ -142,8 +142,7 @@ func ValidURL(u string) bool {
 	if (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" {
 		return false
 	}
-	// URL.Path with control characters is shell/terminal poison if it ever round-trips
-	// into a config write.
+	// URL.Path with control characters is shell/terminal poison if it ever round-trips.
 	for _, r := range u {
 		if r < 0x20 || r == 0x7f {
 			return false

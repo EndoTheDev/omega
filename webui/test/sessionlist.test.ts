@@ -1,4 +1,4 @@
-// omega webui: unit tests for the session list helpers (bucketing, relative age.
+// omega webui: unit tests for the session list helpers.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {

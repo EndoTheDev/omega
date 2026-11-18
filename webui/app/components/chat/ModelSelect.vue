@@ -6,7 +6,7 @@
     payload, "default" first, named instances sorted after), searchable across
     sections, a listing failure shown inline in its section (never a silent drop of the
     provider), and footer actions: refresh models (re-fetch every provider's catalog),
-    add custom model.., edit models..
+    add custom model., edit models.
   -->
   <div
     class="model-select"
@@ -232,8 +232,7 @@
     groups?: ModelProviderSection[];
     label?: string;
     /**
-     * the aux INHERIT row: pins a TOP row above the provider sections that emits the
-     * literal "default".
+     * the aux INHERIT row: pins a TOP row above the provider sections that emits.
      * Off by default, so the composer (which has no default to follow) renders exactly
      * as before.
      */
@@ -259,7 +258,7 @@
   const INHERIT_CHIP = "default (inherit)";
 
   const chipTitle = computed(() => props.label ?? "Model");
-  // the chip face: the stored value, except that an INHERITED knob reads as the.
+  // the chip face: the stored value, except that an INHERITED knob reads.
   const chipText = computed(() =>
     props.inheritRow && props.model === AUX_DEFAULT_VALUE
       ? INHERIT_CHIP
@@ -272,7 +271,7 @@
   const chipEl = ref<HTMLButtonElement | null>(null);
   const searchEl = ref<HTMLInputElement | null>(null);
 
-  // --- the custom models ("add custom model.." store) - localStorage.
+  // - the custom models ("add custom model." store) - localStorage.
   const CUSTOMS_KEY = "omega.model-picker.customs";
   const customs = ref<Record<string, string[]>>(loadCustoms());
 
@@ -318,7 +317,6 @@
     }));
   });
 
-  // collapsed provider sections (in-memory.
   const collapsed = ref(new Set<string>());
 
   const visibleGroups = computed(() => {
@@ -352,7 +350,7 @@
     collapsed.value = next;
   }
 
-  // --- the pick: the slot grammar. The flat floor also rides "default:" so a pick from
+  // - the pick: the slot grammar. The flat floor also rides "default:" so a pick from
   // the default section never re-routes a pinned session.
   function pick(g: ModelProviderSection, m: string) {
     // a DISABLED-with-reason row never stores anything.
@@ -376,21 +374,19 @@
     return props.qualify ? props.qualify(section, model) : null;
   }
 
-  // current-row highlight: the chip may carry the slot value OR the legacy bare name
-  // (pre-reshape sessions).
+  // current-row highlight: the chip may carry the slot value OR the legacy bare name.
   function isCurrent(g: ModelProviderSection, m: string): boolean {
     if (g.name === "default" && props.model === m) return true;
     return props.model === `${g.name}:${m}`;
   }
 
-  // -- the KEYBOARD LAW -------------------------------- The rows carried role="option"
-  // and nothing else. They are now a real listbox: exactly ONE row is in the tab order
-  // (roving tabindex), arrows walk the rows through the app's palette arithmetic
-  // (clampIndex - the same wrap the command palette rides), Enter/Space picks the
-  // focused row, Escape closes and hands focus back to the chip, and the ACTIVE row is
-  // highlighted so the visible cursor follows focus. Disabled-with-reason rows stay IN
-  // the walk: the reason is information an AT user must be able to read, Enter on one
-  // is simply a no-op.
+  // the KEYBOARD LAW -------------------------------- The rows carried. They are now a
+  // real listbox: exactly ONE row is in the tab order (roving tabindex), arrows walk
+  // the rows through the app's palette arithmetic (clampIndex - the same wrap the
+  // command palette rides), Enter/Space picks the focused row, Escape closes and hands
+  // focus back to the chip, and the ACTIVE row is highlighted so the visible cursor
+  // follows focus. Disabled-with-reason rows stay IN the walk: the reason is
+  // information an AT user must be able to read, Enter on one is simply a no-op.
   let pickerSeq = 0;
   const pickerId = `model-picker-${++pickerSeq}`;
   const listId = `${pickerId}-list`;
@@ -437,7 +433,6 @@
     );
   }
 
-  /** the option the search input's aria-activedescendant points at. */
   const activeDomId = computed(() => {
     const seat = flatRows.value[activeIndex.value];
     return seat ? optionId(seat.section, seat.model) : "";
@@ -587,7 +582,6 @@
     saveCustoms();
   }
 
-  // Where the pop opens.
   const flipDown = ref(false);
   const measured = ref(false);
   const popRoom = ref<Record<string, string>>({});
@@ -630,7 +624,6 @@
     nextTick(() => searchEl.value?.focus());
   }
 
-  /** the seat a fresh popup takes. */
   function seatOnCurrent() {
     const rows = flatRows.value;
     const seat = rows.find((r) =>
@@ -641,7 +634,6 @@
 
   function close(restoreFocus = true) {
     if (!open.value) return;
-    // the popup is about to unmount.
     const hadFocus = !!root.value?.contains(document.activeElement);
     open.value = false;
     query.value = "";

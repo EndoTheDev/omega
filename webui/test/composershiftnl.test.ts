@@ -11,8 +11,7 @@ const source = readFileSync(
   "utf8",
 );
 
-// brace-match a top-level `function <name>(..)` declaration out of the SFC's script
-// text.
+// brace-match a top-level `function <name>(.)` declaration out of the SFC's script.
 function extractFn(name: string): string {
   const at = source.indexOf(`function ${name}(`);
   assert.ok(at > -1, `AppComposer carries function ${name}`);
@@ -28,7 +27,7 @@ function extractFn(name: string): string {
   assert.fail(`unbalanced braces around ${name}`);
 }
 
-// -- the fake contenteditable -------------------------------------------- text node.
+// the fake contenteditable -------------------------------------------- text node.
 
 const TEXT = 3;
 class FakeElement {
@@ -76,8 +75,7 @@ function appendAll(el: FakeElement, ...kids: unknown[]): void {
 
 const tnode = (value: string) => ({ nodeType: TEXT, nodeValue: value });
 
-// evaluate the real draftTextOf + capTail against the fake DOM world (the
-// composer.test.ts shape.
+// evaluate the real draftTextOf + capTail against the fake DOM world.
 const draftTextOf = new Function(
   "Node",
   "Element",

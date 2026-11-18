@@ -1,7 +1,6 @@
 import { reactive } from "vue";
 import MarkdownIt from "markdown-it";
-// Syntax highlighting: highlight.js core + a curated language set, not the full bundle
-// or Shiki.
+// Syntax highlighting: highlight.js core + a curated language set, not the full.
 import hljs from "highlight.js/lib/core";
 import go from "highlight.js/lib/languages/go";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -113,8 +112,8 @@ export interface VariantBlock {
   active: number;
 }
 
-// -- the transcript component contract (shared by restore AND live) --- The chat
-// renderer speaks exactly these item shapes. One contract, two sources, no reload-side
+// the transcript component contract (shared by restore AND live) --- The chat renderer
+// speaks exactly these item shapes. One contract, two sources, no reload-side
 // reconstruction - the reconstruction loop this replaced was the origin of the
 // reload-order / thinking-merge / lost-duration bug class.
 export interface MessageItem {
@@ -287,7 +286,6 @@ export function renderTranscriptItems(
         break;
       case "tool_call": {
         const cid = it.tool_call?.id || "";
-        // a settled call has its result somewhere in the transcript (wire order.
         const pending = !!cid && !resultIds.has(cid);
         const t: ToolItem = {
           kind: "tool",
@@ -301,8 +299,7 @@ export function renderTranscriptItems(
             it.tool_call?.arguments ?
               JSON.stringify(it.tool_call.arguments, null, 2)
             : undefined,
-          // a RUNNING or PENDING call meters from its open wall clock when the wire
-          // carries one.
+          // a RUNNING or PENDING call meters from its open wall clock when the wire.
           elapsedMs:
             it.running || pending ?
               toolCallAnchorMs(it.started_at, it.elapsed_ms)
@@ -315,8 +312,7 @@ export function renderTranscriptItems(
           const v = verdictCardFromToolArgs(it.tool_call?.arguments);
           if (it.tool_call?.id) verdictById.set(it.tool_call.id, v);
           v.status = "pending"; // settled by the tool_result below
-          // the card is ANSWERABLE while its call has no result row, whatever the run
-          // did.
+          // the card is ANSWERABLE while its call has no result row, whatever the run.
           v.issuedAt = verdictIssuedAt(it.started_at);
           out.push(v);
           break;
@@ -341,7 +337,6 @@ export function renderTranscriptItems(
         t.status = it.is_error ? "error" : "done";
         t.gate = it.gate;
         t.finalMs = it.elapsed_ms;
-        // the response-return window rides the result beside the call duration.
         t.answerMs = it.answer_ms;
         t.elapsedMs = undefined;
         break;
@@ -394,7 +389,6 @@ function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void
   for (let i = from + 1; i < to; i++) {
     const it = items[i];
     if (it?.kind !== "message" || it.role !== "assistant") continue;
-    // every segment starts cleared.
     it.turnMs = undefined;
     answer = it;
     answerAt = i;
@@ -417,7 +411,7 @@ function stampMs(stamp: string | undefined): number | null {
   return Number.isNaN(ms) ? null : ms;
 }
 
-// transcriptHasPending: does this rendered transcript still await a wake run (async.
+// transcriptHasPending: does this rendered transcript still await a wake run.
 export function transcriptHasPending(items: readonly TranscriptItem[]): boolean {
   return items.some(awaitsWake);
 }
@@ -430,11 +424,10 @@ export function transcriptPendingCount(items: readonly TranscriptItem[]): number
   return n;
 }
 
-// -- the chat panel's wire vocabulary (chat-last 2a) -------------------- The. The
-// webui chat renderer consumes it - snapshot at load, deltas after - and maps the rows
-// onto the SAME component contract renderTranscriptItems serves for the
-// persisted-restore path. One component contract, two wire sources, zero per-frontend
-// streaming logic.
+// the chat panel's wire vocabulary (chat-last 2a) -------------------- The. The webui
+// chat renderer consumes it - snapshot at load, deltas after - and maps the rows onto
+// the SAME component contract renderTranscriptItems serves for the persisted-restore
+// path. One component contract, two wire sources, zero per-frontend streaming logic.
 
 // ChatBlockWire mirrors core.ChatBlock's json shape.
 export interface ChatBlockWire {
@@ -446,10 +439,10 @@ export interface ChatBlockWire {
   tool_call?: { id?: string; name?: string; arguments?: unknown };
   tool_call_id?: string;
   is_error?: boolean;
-  gate?: string; // the smart gate's decision record (card t_1b3e2a8b)
+  gate?: string; // the smart gate's decision record
   elapsed_ms?: number;
   started_at?: string;
-  answer_ms?: number; // response-return duration (card t_e27c8347)
+  answer_ms?: number; // response-return duration
   response_ms?: number;
   thinking_ms?: number;
 }
@@ -470,10 +463,9 @@ export interface ChatPayloadWire {
   rows?: ChatRowWire[];
 }
 
-// normalizeAttachments guards a wire attachments array: rows must carry a string kind +
-// name and a numeric size. Malformed rows drop, an all-malformed (or absent) array
-// degrades to undefined - a reference record is never half-built (a chip with no name
-// would render a blank).
+// normalizeAttachments guards a wire attachments array: rows must carry a string kind.
+// Malformed rows drop, an all-malformed (or absent) array degrades to undefined - a
+// reference record is never half-built (a chip with no name would render a blank).
 export function normalizeAttachments(raw: unknown): OmegaAttachment[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const out: OmegaAttachment[] = [];
@@ -504,7 +496,6 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
       const r = raw as Record<string, unknown>;
       if (typeof r.role !== "string" || !r.role) continue;
       if (typeof r.status !== "string" || !r.status) continue;
-      // the payload vocabulary is closed.
       if (r.role !== "user" && r.role !== "assistant" && r.role !== "tool") continue;
       if (r.status !== "streaming" && r.status !== "complete") continue;
       const blocks: ChatBlockWire[] = [];
@@ -558,8 +549,7 @@ export function chatPanelOf(panels: CanvasPanel[] | null | undefined): CanvasPan
   return null;
 }
 
-// chatPanelContent sums the assistant prose + thinking content a chat panel's rows
-// carry.
+// chatPanelContent sums the assistant prose + thinking content a chat panel's rows.
 export function chatPanelContent(payload: ChatPayloadWire): number {
   let total = 0;
   for (const row of payload.rows ?? []) {
@@ -601,7 +591,7 @@ export function chatPanelPendingCount(payload: ChatPayloadWire): number {
   return total;
 }
 
-// -- verdict cards v1 --
+// verdict cards v1
 
 // VERDICT_TOOL_NAMES is the WIRE vocabulary of the card surface. The flat pre-rename
 // name matches nothing on the wire, and a name list spelled at each call site is how
@@ -657,7 +647,7 @@ export function verdictCardFromToolArgs(args: unknown): VerdictItem {
   };
 }
 
-// verdictFromResultText parses the verdict tool result's JSON (harness/verdict.
+// verdictFromResultText parses the verdict tool result's JSON.
 // Non-JSON content (a refusal, an error string) means the card never issued: the card
 // is dead, no verdict.
 export function verdictFromResultText(text: string): {
@@ -686,7 +676,7 @@ export function verdictFromResultText(text: string): {
   }
 }
 
-// PendingVerdictCard is the /verdicts listing row (the bell count and the.
+// PendingVerdictCard is the /verdicts listing row.
 export interface PendingVerdictCard {
   id: string;
   session_id: string;
@@ -732,9 +722,9 @@ export async function postVerdict(
   }
 }
 
-// -- gate questions, answerable --- A pending gate escalation (the shell.run that.
-// These pure helpers are the two answer surfaces' shared vocabulary: which card is
-// which, what body each option posts, and how a losing race reads.
+// gate questions, answerable --- A pending gate escalation (the shell.run that. These
+// pure helpers are the two answer surfaces' shared vocabulary: which card is which,
+// what body each option posts, and how a losing race reads.
 
 // approveDenyOptions finds the approve/deny pair on a pending card's options. Null when
 // the card is not a gate question (the notification surface renders buttons only for
@@ -838,8 +828,7 @@ export function bindGateQuestions(
   return out;
 }
 
-// -- chat appearance --- 'chat' is the chronological transcript (the pre-stacked
-// appearance, default).
+// chat appearance --- 'chat' is the chronological transcript.
 
 export type Appearance = "chat" | "stacked";
 
@@ -887,7 +876,7 @@ export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
   return r.json();
 }
 
-// -- variants: switcher + fork navigation --- The server derives the branch tree.
+// variants: switcher + fork navigation --- The server derives the branch tree.
 
 // variantOf resolves ONE assistant bubble's branch point.
 export function variantOf(
@@ -940,7 +929,6 @@ export function variantAnchors(
       anchors.set(head, v);
       continue;
     }
-    // the segment this run replays.
     let start = -1;
     for (let i = items.length - 1; i >= 0; i--) {
       const it = items[i]!;
@@ -1035,7 +1023,7 @@ export interface StreamHandlers {
   onSession?: (sessionId: string) => void;
   /**
    * one canvas panel descriptor changed (arc 3b: the delta rides every live run stream)
-   * - the caller merges it into its canvas
+   * - the caller merges it into its canvas / /
    */
   onViewModelDelta?: (panel: CanvasPanel) => void;
 }
@@ -1061,13 +1049,11 @@ export function handlePayload(
   const p = payload as Record<string, unknown>;
   switch (p.type) {
     case "thinking_chunk":
-      // render frames (thinking/response/tool) no longer carry handlers.
       break;
     case "response_chunk":
       break;
     case "tool_call":
     case "tool_result":
-      // render frames: no transport consumer anymore (chat-last 2a).
       break;
     case "stream_end":
       if (p.prompt_eval_count != null || p.eval_count != null) {
@@ -1134,7 +1120,7 @@ export function runningIds(list: Pick<Session, "id" | "running">[]): Set<string>
   return ids;
 }
 
-// -- URL <-> session routing (hand-rolled History wiring) --
+// URL <-> session routing (hand-rolled History wiring)
 
 // parseSessionPath extracts the session id from a client route path.
 export function parseSessionPath(p: string): string | null {
@@ -1175,7 +1161,7 @@ export function settingsAddress(search: string): string {
 // re-exports the module's ownership.
 export const mainViewModules = new Set<string>(["kanban"]);
 
-// -- session list: pure bucketing / filtering / formatting helpers --
+// session list: pure bucketing / filtering / formatting helpers
 
 // relativeAge renders a compact age for the row meta ("35m", "2h", "3d").
 // Invalid timestamps render "" and the caller hides the label.
@@ -1239,7 +1225,6 @@ export function bucketSessions(
     archived: [],
   };
   for (const s of sessions) {
-    // the archived group owns the row.
     if (s.archived) {
       out.archived.push(s);
       continue;
@@ -1270,7 +1255,7 @@ export function rowMeta(s: Session): string {
   return parts.join(" - ");
 }
 
-// -- sidebar: persisted collapsed sections --
+// sidebar: persisted collapsed sections
 
 // parseCollapsedKeys reads a persisted collapsed-sections value. Malformed JSON and
 // non-string entries are ignored - a bad key restores everything expanded, it never
@@ -1303,7 +1288,7 @@ export function parseCollapsedLabels(raw: string | null): Set<string> {
   return new Set([...all].filter((v) => SIDEBAR_BUCKETS.includes(v)));
 }
 
-// -- sidebar: unified row status (dot / star x state color) --
+// sidebar: unified row status (dot / star x state color)
 
 export type RowStatusShape = "dot" | "star";
 export type RowStatusColor = "idle" | "streaming" | "unread";
@@ -1331,7 +1316,7 @@ export function sessionRowStatus(
   return { shape, color };
 }
 
-// -- inspector: file manager helpers --
+// inspector: file manager helpers
 
 export interface FileEntry {
   name: string;
@@ -1393,8 +1378,7 @@ export function bytesLabel(n?: number): string {
   return `${Math.round((n / 1024 ** 3) * 10) / 10} GiB`;
 }
 
-// cleanRelPath mirrors the server's path rules so the UI never sends a request the
-// backend rejects.
+// cleanRelPath mirrors the server's path rules so the UI never sends a request.
 export function cleanRelPath(p: string): string | null {
   if (p === "") return "";
   if (p.startsWith("/")) return null;
@@ -1410,7 +1394,7 @@ export function joinRelPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name;
 }
 
-// -- inspector file tree state --
+// inspector file tree state
 
 // FILETREE_STATE_KEY is the localStorage entry holding the set of expanded tree.
 export const FILETREE_STATE_KEY = "omega.filetree-expanded";
@@ -1455,7 +1439,7 @@ export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
-// -- files tab toolbar <-> file tree seam --
+// files tab toolbar <-> file tree seam
 
 // createTargetDir picks where the toolbar creates.
 export function createTargetDir(
@@ -1467,8 +1451,7 @@ export function createTargetDir(
   return cut >= 0 ? selected.path.slice(0, cut) : "";
 }
 
-// revealAncestors lists the directories that must expand to make a created node
-// visible.
+// revealAncestors lists the directories that must expand to make a created node.
 export function revealAncestors(path: string): string[] {
   const parts = path.split("/");
   const out: string[] = [];
@@ -1483,14 +1466,12 @@ export interface SelectedNode {
   isDir: boolean;
 }
 
-// fileTreeBus is the ONE seam between the FilesTab toolbar and the
-// FileTree's internal expansion store (the store lives inside the
-// component tree and the tab cannot reach it). FileTree's ROOT instance
-// watches the three fields; the tab mutates them:
-// refresh bump to re-fetch every expanded branch's listing
-// collapse bump to fold every branch
-// reveal set to a just-created rel path; ancestors expand
-// Counters never reset (watch-on-change semantics, like a nonce).
+// fileTreeBus is the ONE seam between the FilesTab toolbar and the FileTree's internal
+// expansion store (the store lives inside the component tree and the tab cannot reach
+// it). FileTree's ROOT instance watches the three fields; the tab mutates them: refresh
+// bump to re-fetch every expanded branch's listing collapse bump to fold every branch
+// reveal set to a just-created rel path; ancestors expand Counters never reset
+// (watch-on-change semantics, like a nonce).
 export const fileTreeBus = reactive({
   refresh: 0,
   collapse: 0,
@@ -1563,7 +1544,7 @@ export function fetchFilesRead(path: string, session?: string): Promise<FilesRea
   return filesQuery(`/files/read?${q.toString()}`);
 }
 
-// -- files tab toolbar: the tab's write half --
+// files tab toolbar: the tab's write half
 
 // filesPost sends one of the file surface's POST routes and unwraps the
 // same structured error envelope filesQuery does - a refused create
@@ -1600,7 +1581,7 @@ export function postFilesMkdir(path: string, session?: string): Promise<void> {
   return filesPost("/files/mkdir", session ? { path, session } : { path });
 }
 
-// -- insights: the webui's /insights parity --- The payload is the insights report.
+// insights: the webui's /insights parity --- The payload is the insights report.
 export interface InsightsToolRow {
   name: string;
   count: number;
@@ -1647,9 +1628,9 @@ export async function fetchInsights(days: number | null = null): Promise<Insight
   };
 }
 
-// -- canvas (view-model, arc 3c): the web half of the canvas contract --
+// canvas (view-model, arc 3c): the web half of the canvas contract
 
-// CanvasPanelAction is one action a panel may invoke through the action pipe (POST.
+// CanvasPanelAction is one action a panel may invoke through the action pipe.
 export interface CanvasPanelAction {
   id: string;
   label: string;
@@ -1712,7 +1693,7 @@ export async function fetchCanvas(): Promise<CanvasPanel[]> {
 }
 
 // postCanvasAction sends one action-pipe call (POST /ui/actions). Success resolves the
-// {"result":..} body; the panel updates through the deltas, never through this response
+// {"result":.} body; the panel updates through the deltas, never through this response
 // (the call may emit none of its own).
 export async function postCanvasAction(
   mod: string,
@@ -1737,7 +1718,7 @@ export async function postCanvasAction(
   return j.result;
 }
 
-// -- message hover timestamps --
+// message hover timestamps
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -1761,7 +1742,7 @@ export function formatMsgTime(iso: string, now: Date = new Date()): string {
   return `${t.getFullYear()} ${day} ${hm}`;
 }
 
-// -- thinking elapsed counter --
+// thinking elapsed counter
 
 export const ELAPSED_TICK_MS = 1000;
 
@@ -1771,7 +1752,6 @@ const pad2 = (n: number) => String(n).padStart(2, "0");
 export function formatElapsed(startedMs: number, nowMs: number): string {
   const delta = Math.max(0, nowMs - startedMs);
   const total = Math.floor(delta / 1000);
-  // sub-second spans are real measurements (server timing records milliseconds).
   if (total < 1) return `${Math.round(delta)}ms`;
   if (total < 60) return `${total}s`;
   const h = Math.floor(total / 3600);
@@ -1781,8 +1761,7 @@ export function formatElapsed(startedMs: number, nowMs: number): string {
   return `${m}m ${pad2(s)}s`;
 }
 
-// formatDurationMs renders a server-measured duration (restored sessions carry real
-// elapsed on the wire.
+// formatDurationMs renders a server-measured duration.
 export function formatDurationMs(ms: number): string {
   return formatElapsed(0, ms);
 }
@@ -1807,7 +1786,6 @@ export function createElapsedMeter(
   },
   initialMs = 0,
 ): ElapsedMeter {
-  // base is the consumed span the meter counts on from.
   let base = Math.max(0, initialMs);
   let startedAt: number | null = null;
   let running = false;
@@ -1835,7 +1813,7 @@ export function createElapsedMeter(
       onElapsed(formatElapsed(startedAt, now()));
     },
     reanchor(next: number) {
-      // REPLACE, never add: the offset is the call's elapsed-so-far, so applying a.
+      // REPLACE, never add: the offset is the call's elapsed-so-far, so applying.
       const ms = Math.max(0, next);
       if (!(ms > base)) return;
       base = ms;
@@ -1846,7 +1824,7 @@ export function createElapsedMeter(
   };
 }
 
-// -- transcript scroll position (jump-to-live pill) --
+// transcript scroll position (jump-to-live pill)
 
 export const SCROLL_NEAR_PX = 40;
 
@@ -1898,7 +1876,7 @@ export function scrollFlushTick(hidden: boolean): ScrollFlushTick {
   return hidden ? "timer" : "raf";
 }
 
-// -- markdown rendering (assistant bubbles) --
+// markdown rendering (assistant bubbles)
 
 // html:false stays - the sanitizer contract from above.
 function highlightFence(code: string, lang: string): string {
@@ -1932,10 +1910,9 @@ export function endsInOpenFence(src: string): boolean {
   return open;
 }
 
-// Standard markdown-it, no plugins, no custom rules. html:false is the
-// sanitizer contract: raw HTML in model output is escaped to text by the
-// lib's default path, never executed. Tables and fenced blocks are in
-// the default preset; an unclosed fence still renders as a code block.
+// Standard markdown-it, no plugins, no custom rules. html:false is the sanitizer
+// contract: raw HTML in model output is escaped to text by the lib's default path,
+// never executed.
 const markdown = new MarkdownIt({ html: false, highlight: highlightFence });
 // The streaming twin: identical grammar, no highlighter - used while the
 // source ends inside an unclosed fence so a mid-stream snapshot renders
@@ -1946,17 +1923,13 @@ export function renderMarkdown(src: string): string {
   return (endsInOpenFence(src) ? markdownPlain : markdown).render(src);
 }
 
-// Debounced render tick for streaming markdown. Chunks only move the
-// latest source snapshot; one timer renders once per tick (~150ms), so
-// partial markdown never re-parses per chunk or flash-resizes mid-block.
-// The final full render is the caller's direct renderMarkdown at stream
-// end - see ChatMessage.
+// Debounced render tick for streaming markdown. Chunks only move the latest source
+// snapshot; one timer renders once per tick (~150ms), so partial markdown never
+// re-parses per chunk or flash-resizes mid-block. The final full render is the caller's
+// direct renderMarkdown at stream end - see ChatMessage.
 export const RENDER_TICK_MS = 150;
 
-// Timers are injectable for tests: the debounce tests run against a
-// manual fake clock instead of node's mock.timers (node 26 test runner
-// deadlocks when a file mixes mock timers with multiple suites - flaky,
-// bug) and the component uses the real timer pair.
+// Timers are injectable for tests.
 export interface RenderTimers {
   set: (fn: () => void, ms: number) => unknown;
   clear: (handle: unknown) => void;
@@ -1971,8 +1944,6 @@ export function createRenderScheduler(
   render: (src: string) => void,
   intervalMs: number = RENDER_TICK_MS,
   timers: RenderTimers = {
-    // same wrap as createElapsedMeter - bare setTimeout is Illegal
-    // invocation in the browser (window method, wrong receiver)
     set: (fn, ms) => setTimeout(fn, ms),
     clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
   },
@@ -1998,12 +1969,7 @@ export function createRenderScheduler(
   };
 }
 
-// HealthInfo is the /health payload beyond the status string: the
-// server's build tag and uptime - the status bar's version + up seg -
-// plus the optional facts the health popover renders (card t_5e2f3095:
-// provider reachability, the store's health, the newest recorded error).
-// Every fact is optional: an older server sends none of them and the
-// popover degrades to "not reported" instead of inventing a value.
+// HealthInfo is the /health payload beyond the status string.
 export interface HealthInfo {
   version?: string;
   uptime_seconds?: number;
@@ -2022,15 +1988,13 @@ export async function fetchHealthInfo(): Promise<HealthInfo | null> {
     if (!r.ok) return null;
     return (await r.json()) as HealthInfo;
   } catch {
-    // unreachable server: the health dot shows offline, telemetry goes stale
     return null;
   }
 }
 
-// persistedTelemetry picks the status bar's durable values from a
-// session row: the row's token total (prompt + completion, exactly what
-// the sidebar's tok readout shows) and the last-run average rates.
-// A session with no row or no run yields zeros - no phantom telemetry.
+// persistedTelemetry picks the status bar's durable values from a session row: the
+// row's token total (prompt + completion, exactly what the sidebar's tok readout shows)
+// and the last-run average rates.
 export function persistedTelemetry(
   s: Session | undefined,
 ): { tokens: number; tps: number; cps: number } {
@@ -2047,25 +2011,16 @@ export async function fetchModels(): Promise<ModelsInfo> {
   return r.json();
 }
 
-// the list ALWAYS carries both archive sides (the archived sessions
-// render in their own bottom group, card t_e527b3e8) - one fetch
+// the list ALWAYS carries both archive sides - one fetch
 export async function fetchSessions(): Promise<Session[]> {
   const r = await fetch("/sessions?archived=include");
   if (!r.ok) throw new Error(`sessions: ${r.status}`);
   return r.json();
 }
 
-// --- extensions inventory: GET /extensions (card t_14f73742) ---
+// -- extensions inventory: GET /extensions --
 
-// OmegaExtension is one loaded module: the /extensions facts (name,
-// tool + command counts, seams) plus the module's own one-line
-// description (omitted when the module doesn't implement agent.Describer).
-// has-ui is NOT on the wire - the shell derives it from the composition
-// manifest (harness/<name>/ui/dockable.json) at build time.
-// tool_names / command_names (card t_210a0d19) carry the EXPANSION
-// detail - the verbatim tools the module provides and the slash
-// commands it registered. Optional on the type: a pre-210a0d19 host
-// serves rows without them, and the row model folds that to empty.
+// OmegaExtension is one loaded module.
 export interface OmegaExtension {
   name: string;
   description?: string;
@@ -2082,15 +2037,9 @@ export async function fetchExtensions(): Promise<OmegaExtension[]> {
   return r.json();
 }
 
-// --- settings pane: config knobs behind /settings ---
+// -- settings pane: config knobs behind /settings --
 
-// SettingKnob is one exposed config field. Type drives the control:
-// toggle, number, text, secret, select, textarea, bindlist (comma
-// separated address list rendered as one text input), model (the
-// typed model picker of card t_70c28128 - a BandSelect dropdown of
-// the provider's live models), providers (card t_7dcd4280 - the
-// named provider instances list editor). Live knobs apply without a
-// restart; the rest say so in their help text.
+// SettingKnob is one exposed config field.
 export interface SettingKnob {
   key: string;
   label: string;
@@ -2105,52 +2054,28 @@ export interface SettingKnob {
     | "model"
     | "providers";
   value: unknown;
-  // default is the knob's effective default (card t_d13c7264): the value
-  // it takes when config.yaml names no key. The settings pane's modified
-  // dot and reset-to-default compare against exactly this field (card
-  // t_c04c959e). JSON null is the server's "no default known" sentinel
-  // (provider.model_name - the config validator requires it, so no value
-  // can ever be "the default"); such a row renders neither affordance.
+  // default is the knob's effective default. The settings pane's modified dot and
+  // reset-to-default compare against exactly this field.
   default?: unknown;
-  // options drive select knobs: plain strings are value+label; the
-  // object form splits them (user themes label their names, value
-  // theme:<id>). Server knobs only ever send plain strings.
   options?: (string | { value: string; label: string })[];
-  // filter narrows a model knob's dropdown to the slot's capability:
-  // "decision" = System One decision family only, "vision" =
-  // vision-capable models only, undefined = the full available list.
   filter?: "decision" | "vision";
-  // slot marks the per-subsystem model knobs (card t_fc0b2f2d): the
-  // dropdown also lists the named provider instances' models as
-  // "instance:model" values the server resolves (prefix names the
-  // instance, the rest the model). Non-model knobs leave it empty.
   slot?: boolean;
-  // defaultOption marks an AUXILIARY model knob whose picker offers the
-  // "default" entry: the aux lane then follows the model the current
-  // chat runs (the composer's chip), resolved at call time. The choice
-  // persists as the literal word "default", never a frozen model name.
+  // defaultOption marks an AUXILIARY model knob whose picker offers the "default"
+  // entry. The choice persists as the literal word "default", never a frozen model
+  // name.
   defaultOption?: boolean;
   min?: number;
   max?: number;
   step?: number;
   help?: string;
   live?: boolean;
-  // subgroup is the settings NAV's nesting declaration (card t_af7e1150,
-  // ruling 2): the indented child this knob sits under inside its
-  // domain. The pane stamps it from ONE data table
-  // (components/settings/settingsNav.ts KNOB_SUBGROUPS) - the server
-  // never sends it, because the chat.* and dock.* knobs have no server
-  // schema row at all. Absent = the implicit "general" child.
+  // subgroup is the settings NAV's nesting declaration. The pane stamps it from ONE
+  // data table (components/settings/settingsNav.ts KNOB_SUBGROUPS) - the server never
+  // sends it, because the chat.* and dock.* knobs have no server schema row.
   subgroup?: string;
 }
 
-// ProviderInstanceRow is one providers-knob row (card t_7dcd4280,
-// reshaped t_1914a8c9): the exact shape the provider.instances knob
-// carries both ways. An instance is a NAMED ENDPOINT only - name,
-// type, host, api_key, no model column (models come from the
-// instance's catalog through the pickers). The api_key rides MASKED
-// on the wire ("****" = keep the server-side secret); name is the
-// instance id.
+// ProviderInstanceRow is one providers-knob row.
 export interface ProviderInstanceRow {
   name: string;
   type: string;
@@ -2164,35 +2089,25 @@ export interface SettingGroup {
   knobs: SettingKnob[];
 }
 
-// --- settings scopes: the per-agent surface (settings tier 3b) ---
+// -- settings scopes: the per-agent surface (settings tier 3b) --
 
-// SettingsScopeKnob is one knob inside an agent scope (wire shape of
-// core.SettingsScopeKnob, card t_22a5f70a). Key is the SAME dotted path
-// the main payload's knob carries where the two surfaces name the same
-// knob; value is the EFFECTIVE value (the agent's own when the layer
-// names the key, main's otherwise); overridden is STRUCTURAL - the
-// agent's config file names the key. That flag is the seam ruling's
-// "differs from main" for a secret, whose masked value cannot be
-// compared.
+// SettingsScopeKnob is one knob inside an agent scope. That flag is the seam rule's
+// "differs from main" for a secret, whose masked value cannot be compared.
 export interface SettingsScopeKnob {
   key: string;
   value: unknown;
   overridden: boolean;
 }
 
-// SettingsScopeGroup is one of the four overridable groups an agent tab
-// renders, in wire order: provider, system_prompt, description,
-// max_turns.
+// SettingsScopeGroup is one of the four overridable groups an agent tab renders, in
+// wire order.
 export interface SettingsScopeGroup {
   key: string;
   overridden: boolean;
   knobs: SettingsScopeKnob[];
 }
 
-// SettingsScope is one agent home in the settings payload. error rides
-// when the agent's layer file could not be read/parsed - the pane then
-// renders the scope read-only with the message (the write endpoint
-// refuses the same layer).
+// SettingsScope is one agent home in the settings payload.
 export interface SettingsScope {
   name: string;
   groups: SettingsScopeGroup[];
@@ -2201,8 +2116,6 @@ export interface SettingsScope {
 
 export interface SettingsPayload {
   groups: SettingGroup[];
-  // scopes is ALWAYS an array: an empty one is the R8 empty world (no
-  // agent dirs), where the pane renders no scope strip at all.
   scopes: SettingsScope[];
 }
 
@@ -2212,11 +2125,10 @@ export interface SettingsPayload {
 // no control to render, so it falls out like any other stale entry.
 const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers"];
 
-// normalizeSettingKnob sanitizes ONE knob object - the shape the groups
-// carry and the one-knob read (`GET /settings?key=`) answers verbatim.
-// Card t_0a9edc72: both readers run through this one function, so the
-// lazy read can never disagree with the group walk about a knob's
-// fields. Returns null for a payload with no renderable control.
+// normalizeSettingKnob sanitizes ONE knob object - the shape the groups carry and the
+// one-knob read (`GET /settings?key=`) answers verbatim.: both readers run through this
+// one function, so the lazy read can never disagree with the group walk about a knob's
+// fields.
 export function normalizeSettingKnob(raw: unknown): SettingKnob | null {
   if (!raw || typeof raw !== "object") return null;
   const kn = raw as Record<string, unknown>;
@@ -2228,9 +2140,7 @@ export function normalizeSettingKnob(raw: unknown): SettingKnob | null {
     label: kn.label,
     type: kn.type as SettingKnob["type"],
     value: kn.value,
-    // the default rides EVERY knob (card t_d13c7264); JSON null is
-    // the no-default sentinel and survives the normalization so the
-    // pane can tell it from default=false/""/0 (card t_c04c959e).
+    // the default rides EVERY knob.
     default: kn.default,
     options: Array.isArray(kn.options) ? (kn.options as string[]) : undefined,
     filter:
@@ -2244,8 +2154,6 @@ export function normalizeSettingKnob(raw: unknown): SettingKnob | null {
     step: typeof kn.step === "number" ? kn.step : undefined,
     help: typeof kn.help === "string" ? kn.help : undefined,
     live: kn.live === true,
-    // card t_af7e1150: the nav's nesting field when a host ever
-    // sends it (the pane's own table stamps the rest)
     subgroup: typeof kn.subgroup === "string" && kn.subgroup !== "" ? kn.subgroup : undefined,
   };
 }
@@ -2266,11 +2174,10 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
       groups.push({ key: gr.key, label: gr.label, knobs });
     }
   }
-  // --- scopes (settings tier 3b) ---
-  // Same tolerance as the groups above: a malformed scope entry drops
-  // whole, a malformed knob drops, and the list is ALWAYS an array (R8:
-  // the pane decides "no strip" from scopes.length === 0, never from a
-  // missing key).
+  // -- scopes (settings tier 3b) --- Same tolerance as the groups above: a malformed
+  // scope entry drops whole, a malformed knob drops, and the list is ALWAYS an array
+  // (R8: the pane decides "no strip" from scopes.length === 0, never from a missing
+  // key).
   const scopes: SettingsScope[] = [];
   const rawScopes = raw && typeof raw === "object" ? (raw as Record<string, unknown>).scopes : undefined;
   if (Array.isArray(rawScopes)) {
@@ -2303,8 +2210,7 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
   return { groups, scopes };
 }
 
-// fetchSettings loads the config-knob payload. Throws on non-2xx with
-// the server's error message (501 = host serves no settings seam).
+// fetchSettings loads the config-knob payload.
 export async function fetchSettings(): Promise<SettingsPayload> {
   const r = await fetch("/settings");
   if (!r.ok) {
@@ -2320,13 +2226,9 @@ export async function fetchSettings(): Promise<SettingsPayload> {
   return normalizeSettingsPayload(await r.json());
 }
 
-// fetchSettingKnob reads ONE knob through the server's own one-knob
-// door (`GET /settings?key=<dotted path>`, card t_013b4643). Card
-// t_0a9edc72: the launch reads a single value (server.default_workspace)
-// and used to pay for the whole registry - every group, every knob's
-// help text, every agent scope - on EVERY page load. The knob object
-// rides back exactly as it sits inside its group; a null answer means
-// the host named no such knob (an old host, a renamed key).
+// fetchSettingKnob reads ONE knob through the server's own one-knob door.. The knob
+// object rides back exactly as it sits inside its group; a null answer means the host
+// named no such knob (an old host, a renamed key).
 export async function fetchSettingKnob(key: string): Promise<SettingKnob | null> {
   const r = await fetch(`/settings?key=${encodeURIComponent(key)}`);
   if (!r.ok) throw await settingsFailure(r, "settings read");
@@ -2340,7 +2242,7 @@ export async function fetchSettingsScopes(): Promise<SettingsScope[]> {
   return normalizeSettingsPayload(await r.json()).scopes;
 }
 
-// saveSettings PUTs the changed knob values and returns the refreshed payload the.
+// saveSettings PUTs the changed knob values and returns the refreshed payload.
 export async function saveSettings(values: Record<string, unknown>): Promise<SettingsPayload> {
   const r = await fetch("/settings", {
     method: "PUT",
@@ -2422,7 +2324,7 @@ export function settingValueOf(payload: SettingsPayload, key: string): unknown {
   return undefined;
 }
 
-// -- modules: the live module toggle surface (v0.12 E2) --
+// - modules: the live module toggle surface (v0.12 E2) -
 
 // ModuleRow is one registry-introspected module.
 export interface ModuleRow {
@@ -2535,14 +2437,14 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
   return "";
 }
 
-// (card t_210a0d19: the settings MODULES group is gone and the module
+// 
 // surface lists every row with no search - the module row narrowing
-// helper left with its only consumer. Card t_81d0901b returns that
+// helper left with its only consumer.
 // surface to the settings pane as its MODULES section, still with no
 // search of its own: the pane's filter bar covers knobs, not module
 // rows, and a second filter is not a thing this shell carries.)
 
-// -- themes: color mode + theme, two knobs behind the picker split --
+// - themes: color mode + theme, two knobs behind the picker split -
 
 // ColorMode is the color-mode knob's value space.
 export type ColorMode = "auto" | "dark" | "light";
@@ -2550,8 +2452,7 @@ export type ColorMode = "auto" | "dark" | "light";
 // The theme knob's value space.
 export const DEFAULT_THEME_ID = "default";
 
-// localStorage keys: the color mode reuses the old key (it always held the mode half of
-// the pair).
+// localStorage keys: the color mode reuses the old key.
 export const COLOR_MODE_KEY = "omega.theme-mode";
 export const THEME_ID_KEY = "omega.theme-id";
 
@@ -2825,7 +2726,6 @@ export function scopeConfigDiff(
   overridden: Iterable<string>,
 ): { body: Record<string, unknown>; invalid?: string } {
   const own = new Set(overridden);
-  // a removal only means something for a key the agent owns.
   const unset = new Set(queuedUnset.filter((key) => own.has(key)));
   const changed: Record<string, unknown> = {};
   for (const key of Object.keys(draft)) {
@@ -2884,7 +2784,7 @@ export async function updateAgentConfig(
   throw new Error(msg);
 }
 
-// -- session search: one endpoint owns title AND content hits --
+// - session search: one endpoint owns title AND content hits -
 
 // SessionSearchHit is one /sessions/search row.
 export interface SessionSearchHit {
@@ -3054,7 +2954,7 @@ export async function branchSession(id: string): Promise<Session> {
   return (await r.json()) as Session;
 }
 
-// renameSession PUTs the label on the session row (the /label parity.
+// renameSession PUTs the label on the session row.
 export async function renameSession(id: string, label: string): Promise<void> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -3093,7 +2993,7 @@ export interface TranscriptItemLike {
   content?: string;
 }
 
-// lastCompleteUserIndex finds the transcript's last complete user message (kind.
+// lastCompleteUserIndex finds the transcript's last complete user message.
 export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -3139,13 +3039,11 @@ export function mediaTypeFromBase64(base64: string): string | null {
   }
 }
 
-// hasInterruptedMarker/withoutMarkers are gone with the interrupted transcript marker
-// (chat-last 2a).
+// hasInterruptedMarker/withoutMarkers are gone with the interrupted transcript marker.
 
-// createItemKeySource gives transcript items a stable key surviving the
-// identity-breaking transcript rebuilds. WeakMap: the mapping dies with the item, no
-// leak. This is per-source state, not a global counter - two transcripts never share
-// keys anyway.
+// createItemKeySource gives transcript items a stable key surviving the. WeakMap: the
+// mapping dies with the item, no leak. This is per-source state, not a global counter -
+// two transcripts never share keys anyway.
 export function createItemKeySource(): (item: object) => number {
   const keys = new WeakMap<object, number>();
   let seq = 0;
@@ -3159,7 +3057,7 @@ export function createItemKeySource(): (item: object) => number {
   };
 }
 
-// StreamInterruptedError: the SSE transport died mid-stream (reader or fetch failure.
+// StreamInterruptedError: the SSE transport died mid-stream.
 // The caller surfaces the death in the chat's statusLine above the composer (the panel
 // keeps its last paint); the composer's retry face is the resume affordance.
 export class StreamInterruptedError extends Error {
@@ -3206,8 +3104,7 @@ async function consumeSSE(resp: Response, handlers: StreamHandlers): Promise<voi
     while ((idx = buffer.indexOf("\n\n")) !== -1) {
       const frame = buffer.slice(0, idx);
       buffer = buffer.slice(idx + 2);
-      // Named control frames ride the SSE event line, not the payload's type field
-      // (`event.
+      // Named control frames ride the SSE event line, not the payload's type field.
       const evName = frame.split("\n").find((l) => l.startsWith("event: "));
       if (evName?.slice(7).trim() === "session") {
         const s = parseFrame(frame) as { id?: string } | null;
@@ -3316,7 +3213,7 @@ export async function runActive(sessionId: string): Promise<boolean> {
   }
 }
 
-// -- registry-browser: the disabled fold surface (v0.14.1) --- One yaml fold, three.
+// - registry-browser: the disabled fold surface (v0.14.1) --- One yaml fold, three.
 
 export type RegistryKind = "skills" | "tools" | "agents" | "insights";
 
@@ -3387,7 +3284,7 @@ export async function fetchRegistryDisabled(): Promise<DisabledLists> {
   return normalizeDisabledPayload(await r.json());
 }
 
-// toggleRegistryEntry PUTs one entry's new state and returns the fresh fold (one.
+// toggleRegistryEntry PUTs one entry's new state and returns the fresh fold.
 export async function toggleRegistryEntry(
   kind: RegistryKind,
   name: string,

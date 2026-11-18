@@ -1,16 +1,15 @@
 package mcp
 
-// cli.go: the mcp subcommand (card t_2a649d87) - `omega mcp
-// list|add|edit|delete`, the terminal face of the same entry CRUD the HTTP routes. The
-// capsule registers the name at mount (RegisterSubcommand, v0.12 phase D Q6: the module
-// owns its argv), exactly like crons and skills. Every write rides saveServerAndReload
-// / deleteServerAndReload - the SAME law POST /mcp/save and POST /mcp/delete ride
-// (validate, node splice, atomic write, bridge swap). The CLI adds no second writer:
-// `omega mcp add` and a wire save land byte-identically in mcp.yaml. Verb grammar is
-// the crons card's: the bare word lists, the name is the first positional of every
-// write verb (Go's flag package stops at the first non-flag argument, so a trailing
-// name would swallow the flags), edit applies only the flags actually passed, and a
-// leading-dash first argument is a usage error - never a guessed name.
+// cli.go: the mcp subcommand. The capsule registers the name at mount
+// (RegisterSubcommand, v0.12 phase D Q6: the module owns its argv), exactly like crons
+// and skills. Every write rides saveServerAndReload / deleteServerAndReload - the SAME
+// law POST /mcp/save and POST /mcp/delete ride (validate, node splice, atomic write,
+// bridge swap). The CLI adds no second writer: `omega mcp add` and a wire save land
+// byte-identically in mcp.yaml. Verb grammar is the crons card's: the bare word lists,
+// the name is the first positional of every write verb (Go's flag package stops at the
+// first non-flag argument, so a trailing name would swallow the flags), edit applies
+// only the flags actually passed, and a leading-dash first argument is a usage error -
+// never a guessed name.
 
 import (
 	"flag"
@@ -21,7 +20,7 @@ import (
 	"text/tabwriter"
 )
 
-// mcpSummary is the one-line entry the global `omega --help` module section shows for.
+// mcpSummary is the one-line entry the global `omega --help` module section shows.
 const mcpSummary = "mcp servers: list, add, edit, delete (see: omega mcp --help)"
 
 // mcpHelp is the module's own help: `omega mcp --help` prints it.
@@ -151,7 +150,7 @@ func parseMCPArgs(args []string) (*mcpFlags, []string, *flag.FlagSet, error) {
 	return f, fs.Args(), fs, nil
 }
 
-// serverName peels the one positional a write verb needs (the crons jobName law.
+// serverName peels the one positional a write verb needs.
 func serverName(verb string, args []string) (string, []string, error) {
 	if len(args) == 0 {
 		return "", nil, fmt.Errorf("usage: omega mcp %s <name> [flags] (omega mcp --help lists them)", verb)

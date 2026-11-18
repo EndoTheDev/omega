@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestPluginImplementsInterface verifies the Plugin type satisfies agent.Plugin at.
+// TestPluginImplementsInterface verifies the Plugin type satisfies agent.Plugin.
 func TestPluginImplementsInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
@@ -42,7 +42,7 @@ func TestOpenOpensAndSearches(t *testing.T) {
 	}
 }
 
-// TestSearchTool verifies the sessions.search tool returns formatted results with the.
+// TestSearchTool verifies the sessions.search tool returns formatted results.
 func TestSearchTool(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -68,7 +68,6 @@ func TestSearchTool(t *testing.T) {
 	if result == "" || result == "no results" {
 		t.Fatalf("expected search results, got %q", result)
 	}
-	// The tool formats results as "[label] snippet" — verify the label from the session.
 	if !strings.Contains(result, "my labeled session") {
 		t.Fatalf("expected label 'my labeled session' in result, got %q", result)
 	}

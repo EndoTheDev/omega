@@ -24,13 +24,11 @@ func TestCapsuleIdentityAgreesWithDir(t *testing.T) {
 		t.Fatalf("plugin Name() = %q, capsule dir = %q: the dock's module gate joins the registry row against the manifest id generated from this dir, so they must agree", got, name)
 	}
 
-	// the ui/ dir is what the build's scan turns into the dockable manifest entry.
 	if _, err := os.Stat(filepath.Join(capsuleDir, "ui")); err != nil {
 		t.Fatalf("capsule %q has no ui/ dir (the dockable manifest source): %v", name, err)
 	}
 
-	// the generated manifest (tracked, nuxt generate rewrites it) must carry this capsule
-	// under the same id.
+	// the generated manifest (tracked, nuxt generate rewrites it) must carry.
 	manifest := filepath.Join(capsuleDir, "..", "..", "webui", "app", "composables", "module-tabs.generated.ts")
 	body, err := os.ReadFile(manifest)
 	if err != nil {

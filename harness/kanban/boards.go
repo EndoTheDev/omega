@@ -20,7 +20,7 @@ import (
 // DefaultBoardName is the name the seeded first board carries on a fresh install.
 const DefaultBoardName = "main"
 
-// errNoBoards is the legal EMPTY registry (0.17.3 make-over.
+// errNoBoards is the legal EMPTY registry.
 var errNoBoards = errors.New("no boards - create one first")
 
 // boardNameRE governs registry names.
@@ -54,12 +54,11 @@ func registryStaleDSN(home, dsn string) bool {
 	return err == nil && !strings.HasPrefix(rel, "..")
 }
 
-// ensureBoardsTable creates the boards table + the one-current partial index, and seeds
-// the "main" row once. Zero boards is a legal state since 0.17.3: a home whose user
-// deleted every board must not have "main" resurrected under it at the next start, and
-// the seed is the only insert the registry performs by itself. The tasks rebuild in
-// migrate backfills board_id against main's id, so the fresh-database seed must still
-// land before any card row.
+// ensureBoardsTable creates the boards table + the one-current partial index, and. Zero
+// boards is a legal state since 0.17.3: a home whose user deleted every board must not
+// have "main" resurrected under it at the next start, and the seed is the only insert
+// the registry performs by itself. The tasks rebuild in migrate backfills board_id
+// against main's id, so the fresh-database seed must still land before any card row.
 func ensureBoardsTable(db *sql.DB) error {
 	var born int // 0 = the boards table did not exist before this call
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'boards'`).Scan(&born); err != nil {
@@ -195,7 +194,7 @@ func (s *Store) SetCurrentBoard(name string) error {
 
 // CreateBoardRow inserts the named board. A duplicate name errors. A board created into
 // an EMPTY registry claims the pointer: with zero boards there is no current row, and
-// the first board back is the one the views must open on.
+// the first board back is the one the views must open.
 func (s *Store) CreateBoardRow(name string) error {
 	if !ValidBoardName(name) {
 		return fmt.Errorf("illegal board name %q", name)
@@ -329,8 +328,6 @@ func (s *Store) migrateLegacyBoards(home string) error {
 			continue // a directory without kanban.db is not a board
 		}
 		if e.Name() == DefaultBoardName || !ValidBoardName(e.Name()) || isPinnedJourneyBoard(e.Name()) {
-			// pinned journey boards re-create fresh; illegal names and a stray main dir are not
-			// foldable.
 			skipped = append(skipped, e.Name())
 			continue
 		}
@@ -351,7 +348,7 @@ func (s *Store) migrateLegacyBoards(home string) error {
 		// half-land: a detach that runs on the wrong pooled connection, a crash, a partial
 		// RemoveAll): when the board row already exists, the fold landed wholesale inside the
 		// earlier tx - copy NOTHING (plain inserts would die on the unique ids and duplicate
-		// the events), just verify that what stands matches the source and carry on.
+		// the events), just verify that what stands matches the source and carry.
 		id := s.boardRowIDTx(tx, b.name)
 		if id == 0 {
 			res, err := tx.Exec(`INSERT INTO boards (name, created_at, position, is_current) VALUES (?, ?, ?, 0)`,
@@ -493,8 +490,7 @@ func MountRegistry(home string) (*Store, error) {
 	return MountRegistryDSN(home, datadir.DBPath(home, "kanban.db"))
 }
 
-// MountRegistryDSN is MountRegistry against an explicit dsn (custom db_path configs
-// ride their own database file.
+// MountRegistryDSN is MountRegistry against an explicit dsn.
 func MountRegistryDSN(home, dsn string) (*Store, error) {
 	s, err := Open(dsn)
 	if err != nil {

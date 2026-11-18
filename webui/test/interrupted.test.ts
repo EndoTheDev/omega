@@ -232,7 +232,7 @@ describe("last complete user message", () => {
   });
 });
 
-// keyed v-for identity: index keys reused bubble COMPONENTS across the transcript's.
+// keyed v-for identity: index keys reused bubble COMPONENTS across.
 // Identity keys fix both - tested from the key source's side, which is the whole of the
 // contract.
 describe("createItemKeySource", () => {

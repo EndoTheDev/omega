@@ -1,6 +1,6 @@
 package kanban
 
-// The CRUD-round tests: the Priority field (create/update, the refusal of a negative.
+// The CRUD-round tests: the Priority field.
 
 import (
 	"context"

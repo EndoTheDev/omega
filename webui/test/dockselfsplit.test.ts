@@ -99,7 +99,7 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
     assert.deepEqual(tabsOf(out, b.id), ["files"]);
   });
 
-  // -- the laws this card must NOT break -----------------------------------
+  // the laws this card must NOT break ---------------------------------
 
   it("EDGE SHELLS: a same-pane row zone refuses (a sidebar stacks - it never splits into columns); bottom GROWS and seats from shellLeaf", () => {
     const a = makePane("chat");
@@ -108,7 +108,6 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
     const root = makeSplit("row", [a, b]);
     assert.strictEqual(dockDropToZone(root, b.id, 0, b.id, "left"), root);
     assert.equal(expectRefusal(predictDockDrop(root, b.id, 0, b.id, "left")), "a sidebar stacks - it never splits into columns");
-    // the column zone grows the root.
     const grown = dockDropToZone(root, b.id, 0, b.id, "bottom");
     assert.notEqual(grown, root);
     const B = paneOf(grown, b.id);

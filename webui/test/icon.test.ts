@@ -38,10 +38,7 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
   ]) {
     assert.ok(set.has(expected), `the tab vocabulary carries "${expected}"`);
   }
-  // (deletability): the bell left the vocabulary with the chrome that carried it.
   assert.ok(!set.has("bell"), "the bell is not a vocabulary entry");
-  // (deletability): the modules cockpit tab retired into the settings tab, so the
-  // puzzle glyph left with it.
   assert.ok(!set.has("extensions"), "the puzzle left with the retired modules tab");
   assert.ok(set.has("brain"), "thinking block glyph exists");
   assert.equal(
@@ -52,7 +49,7 @@ test("the sidebar vocabulary covers the tab strip (one name one meaning)", () =>
 });
 
 test("lucide-vue-next is imported ONLY by the iconset composable", () => {
-  // grep the SPA source: the vocabulary composable is the ONLY import surface of the.
+  // grep the SPA source: the vocabulary composable is the ONLY import surface.
   const scan = [
     "app/app.vue",
     "app/composables/compose.ts",
@@ -134,17 +131,13 @@ test("the chat blocks wear their vocabulary glyphs", () => {
 
 test("sidebar tab strips are ICON-ONLY chips with accessible names", () => {
   const pane = read("app/components/DockPane.vue");
-  // the pinned edges (left/right shells) render the icon instead of text
   assert.match(pane, /iconTabs\s*=/, "the icon-tabs rule exists");
-  // canvas C2: the ZONE decides (a sidebar stack leaf takes the same strip),
-  // not a per-node marker read
+  // canvas C2: the ZONE decides (a sidebar stack leaf takes the same strip), not.
   assert.match(pane, /inSidebarZone/, "the sidebar zone drives the strip");
   assert.match(pane, /const pinned = computed\(\(\) => props\.node\.edge !== undefined \|\| inSidebarZone\.value\)/,
     "both sidebars - and their stack leaves - iconified");
-  // t_172f9009: the icon no longer rides the iconTabs gate - every pane
-  // renders it; the TITLE span is what sidebars drop
+  // the icon no longer rides the iconTabs gate.
   assert.match(pane, /v-if="tabIcon\(t\)"/, "the chip is the icon");
-  // the accessible name survives the iconification (title + aria-label)
   assert.match(pane, /:aria-label="iconTabs \? tabTitle\(t\) : undefined"/,
     "aria-label carries the tab name");
   assert.match(pane, /:title="tabTitle\(t\)"/, "the tooltip stays");
@@ -152,10 +145,8 @@ test("sidebar tab strips are ICON-ONLY chips with accessible names", () => {
 
 test("main/bottom tabs show the glyph leading the session name", () => {
   const pane = read("app/components/DockPane.vue");
-  // the title span stays gated to the non-sidebar panes
   assert.match(pane, /v-if="!iconTabs"\s*class="dock-tab-title"/s,
     "sidebars keep icon-only, main/bottom keep the label");
-  // icon precedes the title span in the template (glyph leads the name)
   const ic = pane.indexOf('class="dock-tab-ic"');
   const tx = pane.indexOf('class="dock-tab-title"');
   assert.ok(ic !== -1 && tx !== -1 && ic < tx,
@@ -165,12 +156,10 @@ test("main/bottom tabs show the glyph leading the session name", () => {
 test("sidebar icon chips are 32px centered (t_a3b28c37, tuned t_b53dc6e0)", () => {
   const pane = read("app/components/DockPane.vue");
   const css = read("app/assets/css/main.css");
-  // the chip shape rides the ICON-TABS gate only: main/bottom text tabs
-  // never take the fixed 32px shape
+  // the chip shape rides the ICON-TABS gate only: main/bottom text tabs never take.
   assert.match(pane, /'ic-only':\s*iconTabs/,
     "the ic-only class is gated on the iconTabs computed");
-  // the css companion: fixed width, symmetric (zero) padding, centered
-  // packing - the glyph sits optically centered in the chip
+  // the css companion: fixed width, symmetric (zero) padding, centered packing.
   const rule = css.match(/\.dock-pane\.pinned \.dock-tab\.ic-only\s*\{[^}]*\}/);
   assert.ok(rule, "the ic-only css companion exists");
   for (const needle of ["flex: none", "width: 32px", "padding: 0",
@@ -178,12 +167,10 @@ test("sidebar icon chips are 32px centered (t_a3b28c37, tuned t_b53dc6e0)", () =
     assert.match(rule[0], new RegExp(needle.replace(/[:()]/g, "\\$&")),
       `the chip rule carries "${needle}"`);
   }
-  // ordering: the ic-only block sits AFTER the pinned text-tab shape, so
-  // its 4-class specificity + cascade order wins in one place
+  // ordering: the ic-only block sits AFTER the pinned text-tab shape, so its 4-class.
   const pinned = css.indexOf(".dock-pane.pinned .dock-tab {");
   assert.ok(pinned !== -1 && css.indexOf(".dock-tab.ic-only") > pinned,
     "the ic-only rule follows the pinned text-tab rule");
-  // the text-tab shapes keep their contracts
   assert.match(css, /\.dock-tab\s*\{[^}]*min-width: 72px/,
     "the base tab keeps its 72px text-tab min-width");
   assert.match(css, /\.dock-pane\.pinned \.dock-tab\s*\{[^}]*padding: 0 4px 0 8px/,

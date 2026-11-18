@@ -11,8 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testCapsule builds a capsule over a fresh registry-backed store ("main" is the
-// pointer default.
+// testCapsule builds a capsule over a fresh registry-backed store.
 func testCapsule(t *testing.T) (*capsule, *string) {
 	t.Helper()
 	s := testStore(t)
@@ -192,8 +191,6 @@ func TestCapsuleSwitchAction(t *testing.T) {
 		t.Fatalf("missing board error = %v", err)
 	}
 
-	// the switch pushes both panels (task panel covers the board, switcher carries the
-	// moved marker).
 	if len(*pushed) != 2 {
 		t.Fatalf("pushed %d panels, want the switch's two", len(*pushed))
 	}
@@ -302,7 +299,7 @@ func TestToolRefreshPushes(t *testing.T) {
 		t.Fatalf("refreshed panel lost the created task: %s", raw)
 	}
 
-	// a failed batch op still refreshes (cheap catch-up: an atomic batch rolled itself.
+	// a failed batch op still refreshes.
 	before := len(*pushed)
 	out, err := p.tools.Tools()["kanban.batch"].Run(cctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "then break"},

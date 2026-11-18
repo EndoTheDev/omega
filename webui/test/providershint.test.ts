@@ -10,7 +10,7 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const field = read("app/components/settings/ProvidersField.vue");
 const settings = read("../cmd/omega/settings.go");
 
-// -- the editor states the flow before the first row --
+// the editor states the flow before the first row
 
 test("the editor opens with the visible row explainer", () => {
   assert.match(field, /class="provider-hint"/,
@@ -27,7 +27,7 @@ test("the editor opens with the visible row explainer", () => {
     "the explainer precedes the row list in template order");
 });
 
-// -- a fresh row shows what to type --
+// a fresh row shows what to type
 
 test("a blank row carries placeholders for name and host - and NO model column", () => {
   assert.match(field, /placeholder="my-ollama"/, "the name cell shows a sample id");
@@ -37,10 +37,9 @@ test("a blank row carries placeholders for name and host - and NO model column",
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
 });
 
-// -- the knob help and the editor copy agree --
+// the knob help and the editor copy agree
 
 test("the provider.instances knob help carries the same flow facts", () => {
-  // the window is generous on purpose.
   assert.match(settings,
     /Key: "provider\.instances"[\s\S]{0,600}Help: +?"every provider is a named instance: the name is the instance id/,
     "the server-side help keeps saying the name is the instance id");
@@ -49,7 +48,7 @@ test("the provider.instances knob help carries the same flow facts", () => {
     "the help names the primary row and that the list applies live");
 });
 
-// -- ONE section: every instance renders, the primary included -------
+// ONE section: every instance renders, the primary included -----
 
 test("the providers section renders every instance, the primary included", () => {
   // the old connection form and the instances list merged into ONE list.

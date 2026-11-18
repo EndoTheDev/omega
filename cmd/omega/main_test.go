@@ -17,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/trust"
 )
 
-// TestRunChdirError verifies a non-subcommand argument that is not a directory and.
+// TestRunChdirError verifies a non-subcommand argument that is not a directory.
 func TestRunChdirError(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	err := run([]string{"/nonexistent/path/xyz"})
@@ -66,8 +66,7 @@ func TestServeBanner(t *testing.T) {
 	}
 }
 
-// TestServeBinds: an unset bind list resolves to the loopback default the api capsule
-// binds with.
+// TestServeBinds: an unset bind list resolves to the loopback default the api capsule.
 func TestServeBinds(t *testing.T) {
 	cfg := DefaultConfig() // port 8099, no bind list
 	if got := serveBinds(cfg); !reflect.DeepEqual(got, []string{"127.0.0.1:8099"}) {
@@ -288,7 +287,6 @@ func TestConfigSectionTable(t *testing.T) {
 		t.Fatalf("buildPlugins returned error: %v", err)
 	}
 
-	// section name -> routing row.
 	tests := []struct{ plugin, section string }{
 		{"observability", "logging"},
 		{"agent-loop", ""},
@@ -340,19 +338,18 @@ func TestConfigSectionTable(t *testing.T) {
 			t.Errorf("plugin %q declares section %q but Config does not provide it", p.Name(), key)
 		}
 	}
-	// And the notifications declaration stays unrouted.
 	if _, ok := cfg.ConfigSection("notifications"); ok {
 		t.Errorf("Config provides a notifications section; the default host must not")
 	}
 }
 
-// TestBuildConfigs verifies the config router routes every Config sub-section into.
+// TestBuildConfigs verifies the config router routes every Config sub-section.
 func TestBuildConfigs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 
 	cfg := DefaultConfig()
-	// Customize the fields the router is expected to propagate so a wrong mapping (e.g..
+	// Customize the fields the router is expected to propagate so a wrong mapping.
 	cfg.Store.DBPath = "/tmp/store-test.db"
 	cfg.setDefaultInstance(ProviderInstance{
 		Name:   PrimaryProviderInstance,

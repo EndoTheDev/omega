@@ -38,7 +38,7 @@ type fileEntry struct {
 	ModTime   string `json:"mod_time"`
 }
 
-// validateRelPath checks a user-supplied relative path against the segment rules and.
+// validateRelPath checks a user-supplied relative path against the segment rules.
 // Containment never rests on this scan: every caller resolves the cleaned path under
 // the root via EvalSymlinks and verifies it with ensureUnderRoot.
 func validateRelPath(req string) (string, error) {
@@ -64,7 +64,7 @@ func validateRelPath(req string) (string, error) {
 
 // resolveUnderRoot joins a validated relative path against root and resolves it.
 // Containment is checked against the returned realRoot, never the raw root: the working
-// directory itself may sit behind a symlink (/tmp on macOS, /var/run/..), and comparing
+// directory itself may sit behind a symlink (/tmp on macOS, /var/run/.), and comparing
 // a realRoot-resolved path against the raw root would fail every request in such
 // environments. A missing leaf is not an error here - the resolved parent is returned
 // and the caller's disk operation reports not-found.
@@ -196,7 +196,7 @@ func (r *Routes) resolveFilesRoot(ctx context.Context, sessionID string) (root, 
 }
 
 // handleFilesBrowse serves GET /files/browse?path=<rel>&session=<id>, listing one. The
-// response carries root + source so the tab's header knows exactly what it sits on.
+// response carries root + source so the tab's header knows exactly what it sits.
 func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -514,8 +514,7 @@ func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 		fileError(w, http.StatusBadRequest, "parent directory: "+perr.Error())
 		return
 	}
-	// the write is atomic (v0.14.1 audit, the same tmp+rename class the config writes
-	// run).
+	// the write is atomic.
 	tmpFile, terr := os.CreateTemp(filepath.Dir(resolved), filepath.Base(resolved)+".omega-write-*")
 	if terr != nil {
 		fileError(w, http.StatusInternalServerError, "write file: "+terr.Error())

@@ -132,7 +132,7 @@ test("settings normalization: a model knob survives with its filter", () => {
   assert.equal(knobs[2].filter, undefined, "an unknown filter value never survives");
 });
 
-// -- component wiring pins: ModelField is BandSelect, and degrade --
+// component wiring pins: ModelField is BandSelect, and degrade
 const settingsTab = read(
   webuiApp,
   "components",
@@ -169,7 +169,7 @@ test("settings normalization: the per-subsystem slot flag survives exactly as a 
             slot: "yes",
             value: "",
           },
-          // plain model knobs keep slot undefined (the chat picker never lists.
+          // plain model knobs keep slot undefined.
           {
             key: "provider.model_name",
             label: "model name",
@@ -226,10 +226,9 @@ test("the degrade path: fetch failure or empty filtered list yields text + hint"
   assert.equal(typeof refreshModelCatalog, "function");
 });
 
-// -- the per-subsystem slots: the picker reads the GROUPED CATALOG whole --
+// the per-subsystem slots: the picker reads the GROUPED CATALOG whole
 
 test("the slot mode: ModelField hands the grouped catalog to the composer picker verbatim", () => {
-  // the component reads the grouped /models sections, not a prop.
   assert.doesNotMatch(modelField, /instances\?: ProviderInstanceRow\[\]/,
     "the instance-row prop is gone - slots read the grouped catalog");
   assert.match(modelField, /catalog\.value\.sections \?\? \[\]/);

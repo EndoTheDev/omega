@@ -81,7 +81,7 @@ func (h *RunHub) start(id string) (*activeRun, bool) {
 	return run, true
 }
 
-// stopSignal returns the session's user-stop latch (nil when the session never.
+// stopSignal returns the session's user-stop latch.
 func (h *RunHub) stopSignal(id string) *core.RunStop {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -146,7 +146,7 @@ func (h *RunHub) active(id string) bool {
 	return ok
 }
 
-// setTail stores the run's live transcript tail (the accumulator's snapshot after the.
+// setTail stores the run's live transcript tail.
 // Called from the run's own goroutine; the build happened OUTSIDE the lock
 // (liveTranscriptItems reads callStarts, which only that goroutine mutates).
 func (h *RunHub) setTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
@@ -158,7 +158,7 @@ func (h *RunHub) setTail(run *activeRun, items []transcriptItem, builtAt time.Ti
 	}
 }
 
-// setOpenTail stores the run's open-segment items (the chat panel's composition source.
+// setOpenTail stores the run's open-segment items.
 func (h *RunHub) setOpenTail(run *activeRun, items []transcriptItem, builtAt time.Time) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -291,8 +291,7 @@ func (h *RunHub) broadcastAll(f runFrame) {
 	}
 }
 
-// finish removes the run from the registry and closes every remaining subscriber
-// channel.
+// finish removes the run from the registry and closes every remaining subscriber.
 func (h *RunHub) finish(run *activeRun) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -311,7 +310,7 @@ func (h *RunHub) finish(run *activeRun) {
 // accumulated, and persists through completion whether or not any client is listening.
 func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) {
 	// Branch pin: BEFORE beginRun's first delta - the opening push must already compose.
-	// Plain sends pin nothing and compose exactly as before.
+	// Plain sends pin nothing and compose exactly.
 	s.runs.setBranch(run, req.branchParent, req.branchFloor)
 	// Chat panel (chat-last 1/3): NewServer always wires the capsule; no nil guard.
 	s.chat.beginRun(req.SessionID)
@@ -336,18 +335,14 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		if !req.wake {
 			s.wakes.reset(req.SessionID)
 		}
-		// detached runs carry the session id too.
 		ctx = agent.WithSessionID(ctx, req.SessionID)
-		// The user-stop latch: the run ctx carries it so every tool and every dispatched.
 		ctx = core.WithRunStop(ctx, s.runs.stopSignal(req.SessionID))
-		// Session workspace: prepareRun resolved req.workspace (the session's pin or the.
+		// Session workspace: prepareRun resolved req.workspace.
 		// Without this wrap the tools of every session-backed chat ran at the process cwd
 		// (the service lane: C:\Windows\System32) and the prompt context the trust resolver
 		// built was silently dropped.
 		ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
-		// Verdict cards v1: a webui /chat is an interactive turn.
 		ctx = core.WithRunOrigin(ctx, "interactive")
-		// The run's output tap: a tool that streams (the shell's capped buffer) feeds the.
 		ctx = core.WithRunOutputTap(ctx, s.chipTap(req.SessionID))
 		sink := s.turnSinkFor(req)
 		ctx = agent.WithTurnSink(ctx, sink)
@@ -368,10 +363,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		runner := s.runAgent(&req)
 		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
 			s.accumulateAssistant(&recs, &rec, event, req)
-			// Chat panel hook (chat-last 1/3).
 			s.chat.runEvent(req.SessionID, event)
 			meter.tick(event)
-			// Live-tail snapshot: the accumulator's state right after this event becomes the.
+			// Live-tail snapshot: the accumulator's state right after this event becomes.
 			// Built on this goroutine after accumulate; the hub only swaps the slice.
 			now := time.Now()
 			s.runs.setTail(run, liveTranscriptItems(recs, rec, now), now)
@@ -418,7 +412,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 	}()
 }
 
-// persistRun persists the run's records and turns a persistence failure into a.
+// persistRun persists the run's records and turns a persistence failure.
 func (s *Server) persistRun(ctx context.Context, run *activeRun, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) {
 	if err := s.persistAssistant(ctx, prov, req, recs, usage, last); err != nil {
 		s.emitRunFrame(run, runFrame{event: "error", data: []byte(err.Error())})
@@ -452,7 +446,7 @@ func (s *Server) handleSessionEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	// Ephemeral reattach: the run hub is the truth, no store needed (an eph run without.
+	// Ephemeral reattach: the run hub is the truth, no store needed.
 	if s.store == nil && !isEphemeralID(id) {
 		http.Error(w, "session store not configured", http.StatusNotImplemented)
 		return

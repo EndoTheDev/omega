@@ -41,7 +41,6 @@
         @mouseenter="active = i"
         @click="run(c)">
         <span class="command-title">{{ c.title }}</span>
-        <!-- the keybinding-hint column. -->
         <span
           v-if="c.hint"
           class="command-hint">{{ c.hint }}</span>
@@ -94,7 +93,6 @@
     props.open ? filterPaletteCommands(query.value, props.commands) : [],
   );
 
-  // open: reset the query, land the selection on the first row, autofocus.
   watch(
     () => props.open,
     (o) => {
@@ -146,7 +144,6 @@
     }
   }
 
-  // one run closes the palette first, then acts.
   function run(c: PaletteCommand) {
     emit("close");
     void c.run();
@@ -162,7 +159,7 @@
   // closed-then-reopened.: the live field is TELEPORTED into the bar, so it is not a
   // descendant of rootEl - it is the palette's own surface all the same, and a
   // pointerdown landing in it (a caret grab, a selection drag) must never close the
-  // palette it belongs to.
+  // palette it belongs.
   function onDocPointer(e: PointerEvent) {
     if (!props.open) return;
     const target = e.target as Element | null;

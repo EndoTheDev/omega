@@ -32,7 +32,7 @@ func DefaultWebTools() WebToolsConfig {
 	return WebToolsConfig{}
 }
 
-// webTools provides web search and fetch tools via the configured provider host's.
+// webTools provides web search and fetch tools via the configured provider.
 type webTools struct {
 	apiKey  string
 	baseURL string

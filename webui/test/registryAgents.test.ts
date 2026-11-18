@@ -20,7 +20,7 @@ import type { OmegaContinuousRow } from "../../harness/continuous/ui/continuousR
 // the AgentsPanel source is three levels up from test/ (the repo root)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// -- agent rows: the config summary is the expandable detail --
+// agent rows: the config summary is the expandable detail
 
 test("agentDetailLines renders the config summary honestly", () => {
   const a: OmegaAgent = {
@@ -67,7 +67,7 @@ test("agentDetailLines renders the config summary honestly", () => {
   );
 });
 
-// -- the soft toggle: the fold flags the row, the note says the consequence --
+// the soft toggle: the fold flags the row, the note says the consequence
 
 test("the agents fold merges by name; the disable note names roster+wake", () => {
   const fold = normalizeDisabledPayload({ agents: ["bots/patrol"] }).agents;
@@ -83,7 +83,7 @@ test("AgentsPanel renders the shared pattern and the SOFT toggle wire", () => {
   assert.ok(src.includes("/disabled/agents"), "the soft toggle PUTs the agents namespace");
 });
 
-// --: the locked default agent + details-not-sessions --
+// the locked default agent + details-not-sessions
 
 // the status vocabulary: on = green (any pulse), sleeping = dim.
 test("agentStatusFor: pulse is on, sleeping is dim, config-only is undefined", () => {
@@ -109,7 +109,6 @@ test("AgentsPanel gives the default agent no toggle (no disabled render, no writ
   assert.ok(list.includes("r.noToggle"), "RegistryList seats the no-toggle flag");
   assert.ok(list.includes("if (r.noToggle) return;"), "the write path refuses a no-toggle row by another door");
   assert.ok(list.includes('v-if="toggleable && !r.noToggle"'), "the pill never renders for it");
-  // the backend mirror: the handler refuses a curl too (the Go gate pins it.
   assert.ok(panel.includes("if (name === DefaultAgentName && !enabled) return;"), "the toggle handler refuses the default agent");
 });
 
@@ -122,8 +121,7 @@ test("AgentsPanel expansion: config edit wire, plus the agent's OWN sessions", (
   assert.ok(panel.includes(`fetch(\`/agents/\${`), "the edit writes through the agents API");
   assert.ok(panel.includes('"PUT"'), "the edit is a PUT");
   assert.ok(panel.includes("saveAgentEdit"), "the save affordance exists");
-  // the definition layer's field set (0.17.3): every knob rides the draft
-  // form; the retired secret knobs are GONE, not merely empty.
+  // the definition layer's field set (0.17.3).
   for (const field of ["provider instance", "model name", "max turns", "system prompt", "agent description"]) {
     assert.ok(panel.includes(`aria-label="${field}"`), `the ${field} affordance rides the draft form`);
   }
@@ -131,7 +129,6 @@ test("AgentsPanel expansion: config edit wire, plus the agent's OWN sessions", (
   assert.ok(!panel.includes('aria-label="provider host"'), "no host input survives the secret-free law");
   assert.ok(!panel.includes("agents-sessions"), "the old embedded session list stays dead");
   assert.ok(!panel.includes("new session as this agent"), "the new-session button stays dead");
-  // card t_10ac04f0: the per-agent sessions read is the inspection surface
   assert.ok(
     panel.includes("`/agents/${encodeURIComponent(name)}/sessions`"),
     "the expansion reads the agent's own sessions",
@@ -140,7 +137,6 @@ test("AgentsPanel expansion: config edit wire, plus the agent's OWN sessions", (
     !panel.includes('fetch("/sessions'),
     "the human's own session list is never fetched from this tab",
   );
-  // the detail facts lost the sessions line (ruling 3)
   const rows = readFileSync(join(root, "harness", "continuous", "ui", "agentsRows.ts"), "utf8");
   assert.ok(!rows.includes("`sessions: ${"), "the sessions count line died from the detail");
 });

@@ -67,7 +67,7 @@ const roster: OmegaAgent[] = [
   { name: "scout", dir: "/home/x/.omega/agents/scout", skill_count: 1, memory_size: 0, session_count: 0, continuous: true },
 ];
 
-// -- one door, the kind inside -----------------------------
+// one door, the kind inside ---------------------------
 
 test("the kinds are the three the ONE door offers, and only one needs the capsule", () => {
   assert.deepEqual([...AGENT_KINDS], ["scaffold", "continuous", "clone"]);
@@ -132,7 +132,7 @@ test("cloneSources offers every other home, main included, never the name being 
   assert.deepEqual(sources.map((p) => p.name), ["default"], "main is a legal source; the draft name is not");
 });
 
-// -- delete = delete the HOME ------------------------------
+// delete = delete the HOME ----------------------------
 
 test("the delete confirm names the session count the delete will take", () => {
   assert.equal(
@@ -151,7 +151,7 @@ test("the delete confirm names the session count the delete will take", () => {
   assert.equal(agentDeleteLabel("scout"), "delete scout's home - sessions included");
 });
 
-// -- the inheritance state machine -------------------------
+// the inheritance state machine -----------------------
 
 const scope = (overridden: Record<string, boolean>, values: Record<string, unknown> = {}): SettingsScope => ({
   name: "scout",
@@ -246,7 +246,7 @@ test("the skills allowlist is explicit - empty means none", () => {
   assert.deepEqual(skillOptions({}), []);
 });
 
-// -- the SFC's own half (source pins - the node suite has no DOM) ----
+// the SFC's own half (source pins - the node suite has no DOM) --
 
 test("the band carries exactly ONE create door and no @ duplicate", () => {
   const newButtons = (panelSrc.match(/class="agents-new band-tool"/g) ?? []).length;
@@ -272,10 +272,9 @@ test("the create form is the cron editor pattern - a title and a captioned grid"
   assert.ok(formAt > 0 && bodyAt > formAt, "band -> editor -> scrolling rows");
   assert.match(panelSrc, /class="agents-editor-error"/);
   assert.match(panelSrc, /class="agents-editor-actions"/);
-  // the spacing mirrors the cron editor's (module UI keeps its own copy, so the.
+  // the spacing mirrors the cron editor's.
   assert.match(panelSrc, /padding: 8px 12px;/, "the editor's seat, cron's");
   assert.match(panelSrc, /gap: 6px 10px;/, "the field grid's gutters, cron's");
-  // two columns while there is room, one below it (cron's narrow flip, reached by.
   assert.match(panelSrc, /grid-template-columns: repeat\(auto-fit, minmax\(170px, 1fr\)\)/);
   assert.match(panelSrc, /\.agents-editor-wide \{\s*grid-column: 1 \/ -1;/);
 });
@@ -294,7 +293,6 @@ test("the provider renders as a referenced instance picker from settings", () =>
   assert.match(panelSrc, /fetch\("\/settings"\)/, "read from the settings payload");
   assert.match(panelSrc, /k\.key === "provider\.instances"/, "the named instances knob");
   assert.match(panelSrc, /providerInstances\.value = rows/);
-  // the secret surface is gone, not hidden.
   assert.ok(!panelSrc.includes('aria-label="api key"'), "no api key input in the panel");
   assert.ok(!panelSrc.includes('type="password"'), "no secret input at all");
   assert.ok(!panelSrc.includes('aria-label="provider host"'), "no host field");

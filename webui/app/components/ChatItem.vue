@@ -41,7 +41,6 @@
     :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
-  <!-- a pending gate question bound to this running tool row. -->
   <GateCard
     v-if="item.kind === 'tool' && gateCard"
     :card="gateCard"

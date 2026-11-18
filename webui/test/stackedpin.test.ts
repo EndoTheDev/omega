@@ -224,10 +224,10 @@ describe("one scrollport, sticky pin: the shipped wiring", () => {
   });
 
   it("the pin's full-bleed inset matches the scrollport's side padding (card t_2739f125)", () => {
-    // the pair was authored against a 20px column and the transcript's side inset is
-    // 12px (the ONE composer law). The inset is DERIVED from the column, so the two
-    // rules must agree; the pin also carries no bottom rule (mid-stream the strip under
-    // the question is activity, not an artifact).
+    // the pair was authored against a 20px column and the transcript's side inset is.
+    // The inset is DERIVED from the column, so the two rules must agree; the pin also
+    // carries no bottom rule (mid-stream the strip under the question is activity, not
+    // an artifact).
     const c = css();
     const start = c.indexOf(".live-pin {");
     assert.ok(start !== -1, ".live-pin rule not found");

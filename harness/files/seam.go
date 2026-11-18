@@ -1,7 +1,7 @@
-// The consumer-side seam resolver shared by this capsule's consults (part 3, the seam
-// constitution). Absence is the floor (nil rides, the nil-safe degradation applies); a
-// wrong-shaped offer dies loud at mount. Each consumer package owns this file;
-// suppliers never see the type.
+// The consumer-side seam resolver shared by this capsule's consults.
+// Absence is the floor (nil rides, the nil-safe degradation applies); a wrong-shaped
+// offer dies loud at mount. Each consumer package owns this file; suppliers never see
+// the type.
 package files
 
 import (

@@ -30,7 +30,7 @@ function fixedTree(): DockNode {
   ]);
 }
 
-// -- gate: the never-empty invariant (last-pane close refused) -------------
+// gate: the never-empty invariant (last-pane close refused) -----------
 
 describe("gate: the never-empty invariant", () => {
   it("the last pane refuses removal", () => {
@@ -51,7 +51,7 @@ describe("gate: the never-empty invariant", () => {
   });
 });
 
-// -- gate: focus-existing-session routing -----------------------------------
+// gate: focus-existing-session routing ---------------------------------
 
 describe("gate: session routing (open/focus, never a duplicate)", () => {
   it("a tab already bound to the session exists ANYWHERE (tree walk)", () => {
@@ -62,10 +62,10 @@ describe("gate: session routing (open/focus, never a duplicate)", () => {
       sessionRef: "s1",
       key: "c1",
     });
-    // the opener's guard: firstChatTab(sessionId) finds it in its pane..
+    // the opener's guard: firstChatTab(sessionId) finds it in its pane.
     const found = firstChatTab(withTab, "s1");
     assert.ok(found);
-    // ..and findChatTab resolves the pane's binding for the focusing call
+    // .and findChatTab resolves the pane's binding for the focusing call
     assert.equal(findChatTab(withTab, "c1")!.paneId, pane.id);
   });
   it("the routing target is the FIRST MAIN pane (sidebars never host chat)", () => {
@@ -85,13 +85,12 @@ describe("gate: session routing (open/focus, never a duplicate)", () => {
   });
 });
 
-// -- gate: sidebar tabs unclosable ------------------------------------------
+// gate: sidebar tabs unclosable ----------------------------------------
 
 describe("gate: sidebar tabs unclosable", () => {
   it("tab chrome follows the TAB, not the pane (t_d6b657a7)", () => {
     const pane = src("app/components/DockPane.vue");
     assert.match(pane, /v-if="tabClosable\(t\)"/);
-    // ..and the shell marker no longer hides tab chrome.
     assert.doesNotMatch(src("app/assets/css/main.css"), /\.dock-pane\.pinned \.dock-tab-close/);
     assert.match(pane, /:draggable="true"/);
     assert.doesNotMatch(pane, /draggableTab/);
@@ -107,20 +106,20 @@ describe("gate: sidebar tabs unclosable", () => {
   });
 });
 
-// -- gate: hover-X on main panes only ----------------------------------------
+// gate: hover-X on main panes only --------------------------------------
 
 describe("gate: hover-X on main panes only", () => {
   it("the resting tab hides its X; hover (or keyboard focus) reveals it", () => {
     const css = src("app/assets/css/main.css");
     assert.match(css, /\.dock-tab-close\s*\{[\s\S]*?opacity: 0/);
-    // ..hover reveals it; the active state does NOT (hover only)
+    // .hover reveals it; the active state does NOT (hover only)
     assert.match(css, /\.dock-tab:hover \.dock-tab-close/);
     assert.doesNotMatch(css, /\.dock-tab\.active \.dock-tab-close/);
     assert.match(css, /\.dock-tab-close:focus-visible \{ opacity: 1/);
   });
 });
 
-// -- gate: the fixed-shape chrome --------------------------------------------
+// gate: the fixed-shape chrome ------------------------------------------
 
 describe("gate: fixed shape chrome", () => {
   it("MenuBar: the three edge toggles at every breakpoint, ONE icon set (t_aca53fee)", () => {
@@ -156,7 +155,6 @@ describe("gate: fixed shape chrome", () => {
     assert.match(appVue, /function openSettingsTab\(\)\s*\{[\s\S]{0,400}?findComponentTab\(dock\.tree\.value, "settings"\)/);
     assert.match(appVue, /dock\.openSingleton\(paneId, "settings"\)/);
     assert.match(appVue, /#pane-files/);
-    // the raw-tail logs pane retired.
     assert.doesNotMatch(appVue, /#pane-http_channel/);
     assert.doesNotMatch(appVue, /module="http_channel"/);
     assert.doesNotMatch(appVue, /#pane-inspector/);
@@ -170,13 +168,12 @@ describe("gate: fixed shape chrome", () => {
   });
 });
 
-// -- gate: narrow-viewport tab strip -----------------------
+// gate: narrow-viewport tab strip ---------------------
 
 describe("gate: narrow-viewport tab strip (card t_aca53fee)", () => {
   it("the strip scrolls instead of clipping the tail; the active tab stays reachable", () => {
     const css = src("app/assets/css/main.css");
     const pane = src("app/components/DockPane.vue");
-    // the strip: overflow-x instead of the hard clip.
     assert.match(css, /\.dock-tabs \{[\s\S]*?overflow-x: auto/, "the strip scrolls");
     // the hidden scrollbar keeps the 35px tab-bar height contract flat
     assert.match(css, /\.dock-tabs \{[\s\S]*?scrollbar-width: none/);
@@ -188,7 +185,7 @@ describe("gate: narrow-viewport tab strip (card t_aca53fee)", () => {
   });
 });
 
-// -- gate: pane tab min-widths ----------------------------
+// gate: pane tab min-widths --------------------------
 
 describe("gate: pane tabs carry a readable min-width", () => {
   it("no strip crushes a text tab below the 72px floor; the strip scrolls instead", () => {
@@ -236,7 +233,7 @@ describe("gate: pane tabs carry a readable min-width", () => {
   });
 });
 
-// helpers -----------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 function panesOf(t: DockNode): DockPane[] {
   const out: DockPane[] = [];

@@ -1,4 +1,4 @@
-// Package memory provides the persistent memory seam (core.MemoryProvider) backed by.
+// Package memory provides the persistent memory seam (core.MemoryProvider) backed.
 package memory
 
 import (
@@ -106,7 +106,7 @@ func (fm *FileMemory) Add(target, content string) (string, error) {
 	return fm.usage(target, entries), nil
 }
 
-// Replace finds the entry matching oldText (unique substring) and replaces it with.
+// Replace finds the entry matching oldText (unique substring) and replaces it.
 func (fm *FileMemory) Replace(target, oldText, content string) (string, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
@@ -211,7 +211,7 @@ func (fm *FileMemory) List(target string) ([]string, error) {
 	return fm.loadEntries(target), nil
 }
 
-// -- internals --
+// internals
 
 // load reads the file for the target and returns its raw content.
 func (fm *FileMemory) load(target string) string {
@@ -279,7 +279,6 @@ func (fm *FileMemory) entriesChars(entries []string) int {
 	for _, e := range entries {
 		total += len(e)
 	}
-	// Add delimiter overhead: (n-1) * len("§") + newlines between entries.
 	total += (len(entries) - 1) * 3
 	return total
 }
@@ -353,7 +352,7 @@ func (fm *FileMemory) formatSection(title, subtitle, snapshot string, limit int,
 	return fmt.Sprintf("%s\n%s\n%s\n%s", border, header, border, snapshot)
 }
 
-// -- memory tool --
+// memory tool
 
 // memoryToolProvider provides the memory tool.
 type memoryToolProvider struct {
@@ -428,7 +427,7 @@ func prop(typ, desc string) map[string]any {
 }
 
 // object assembles the tool's JSON object schema. required names the args THIS verb
-// cannot run without - its own list, never another verb's.
+// cannot run without - its own list, never another.
 func object(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -536,7 +535,6 @@ func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
 		usage, err := p.execOp(op)
 		if err != nil {
 			restore()
-			// After rollback the failing target holds its pre-batch contents.
 			entries, _ := p.mem.List(op.Target)
 			return marshalResult(memoryResult{
 				Success: false,

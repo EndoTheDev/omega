@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-// rawGet runs a GET request against the file surface's raw route and returns the.
+// rawGet runs a GET request against the file surface's raw route and returns.
 func rawGet(t *testing.T, path string) (*http.Response, []byte) {
 	t.Helper()
 	s := filesRouteMux(t)
@@ -287,7 +287,6 @@ func TestFilesRawMethodAndSessionRooting(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /files/raw = %d; want 405", rec.Code)
 	}
-	// an unknown session id falls through the root chain.
 	res, _ := rawGet(t, "/files/raw?path=shot.png&session=i-do-not-exist")
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("raw with unknown session = %d; want 200", res.StatusCode)

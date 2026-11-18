@@ -30,12 +30,12 @@ type Server struct {
 	httpSrv *http.Server
 	version string
 	startedAt time.Time
-	// themes serves GET /themes backed by the OMEGA_HOME/themes folder, watched with the.
+	// themes serves GET /themes backed by the OMEGA_HOME/themes folder, watched.
 	// Nil-safe: no home configured means an empty list and no watcher.
 	themes *themeRegistry
 	// healthMu guards healthProvider, the cached provider reachability verdict: the
 	// monitor goroutine writes it, every health read copies it. Nil until the first probe
-	// lands - the health body then carries no provider fact at all.
+	// lands - the health body then carries no provider fact.
 	healthMu       sync.Mutex
 	healthProvider *agentapi.HealthProvider
 	// logSeeded is test observability, nil in production. A test appends only after that
@@ -49,7 +49,6 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	s := &Server{Server: agentapi.NewServer(a, tools, store, settings, modules, registries), startedAt: time.Now(), themes: newThemeRegistry(resolveThemesDir())}
 	mux := s.Server.Mux()
 	mux.HandleFunc("/health", s.handleHealth)
-	// The push channel: one websocket per browser connection, every update a typed topic.
 	mux.HandleFunc("/ws", s.handleSocket)
 	mux.HandleFunc("/themes", s.handleThemes)
 	// v0.12 E2: the module toggle surface.
@@ -144,7 +143,6 @@ func (s *Server) Serve(ctx context.Context, addr string) error {
 	// the push channel's heartbeat: started here, after the listener is
 	// up (the goroutine fence - mount never starts background work).
 	go s.pushHealth(ctx)
-	// the logs topic's delta follower.
 	go s.followLogs(ctx)
 	// the provider reachability probe: one model-list round trip a minute, cached for the
 	// health body's provider fact - never on the 5s heartbeat frame.

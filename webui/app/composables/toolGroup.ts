@@ -12,7 +12,7 @@ export interface ToolRunGroup {
 // ChatEntry: one transcript render unit.
 export type ChatEntry = TranscriptItem | ToolRunGroup;
 
-// isToolRun: the template-side narrowing (an `in` check is the honest union.
+// isToolRun: the template-side narrowing.
 export function isToolRun(e: ChatEntry): e is ToolRunGroup {
   return (e as ToolRunGroup).toolgroup === true;
 }

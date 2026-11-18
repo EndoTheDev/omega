@@ -126,7 +126,7 @@ test("statuses: the exact hermes grammar, terminal set last", () => {
   ]);
 });
 
-// -- lane rails: the Hermes lane-collapse model.
+// lane rails: the Hermes lane-collapse model.
 
 test("lane rails: ANY lane folds, not just the two settled ones", () => {
   for (const status of BOARD_STATUSES) {
@@ -147,10 +147,10 @@ test("lane rails: ANY lane folds, not just the two settled ones", () => {
 });
 
 test("lane rails: a CLICK expands a collapsed lane - the empty lane too (0.17.3)", () => {
-  // an EMPTY lane still folds itself (reality: nothing to show)..
+  // an EMPTY lane still folds itself (reality: nothing to show).
   assert.equal(laneFolded("triage", 0, {}), true);
   assert.equal(laneFolded("blocked", 0, { blocked: "collapsed" }), true);
-  // ..but a CLICK outranks reality now: the rail opens, empty or not
+  // .but a CLICK outranks reality now: the rail opens, empty or not
   const opened = toggleLanePin("triage", 0, {});
   assert.equal(opened.triage, "open", "a click on an empty rail writes an open pin");
   assert.equal(laneFolded("triage", 0, opened), false, "an empty lane pinned open stays open");
@@ -161,7 +161,6 @@ test("lane rails: a CLICK expands a collapsed lane - the empty lane too (0.17.3)
   assert.equal(laneFolded("review", 1, { review: "open" }), false);
   assert.equal(laneFolded("review", 1, { review: "collapsed" }), true);
 
-  // the round trip that used to be vetoed.
   let lanes: LanePins = { review: "open" };
   assert.equal(laneFolded("review", 2, lanes), false);
   assert.equal(laneFolded("review", 0, lanes), false, "the pin survives the drain");
@@ -217,7 +216,7 @@ test("lane rails: the rail renders the dot, the name and the count", () => {
   assert.match(boardVue, /--lane-head-h: 24px;/, "one constant drives both");
   assert.match(boardVue, /class="lane-rail"[\s\S]{0,400}@click="toggleLane\(BOARD_STATUSES\[i\], col\.length\)"/, "the rail is the unfold control");
   assert.match(boardVue, /:aria-label="`unfold \$\{BOARD_STATUSES\[i\]\} lane`"/, "and names what it does");
-  // ..AND a drop target: the rail lives inside the same.board-col the drag machinery.
+  // .AND a drop target: the rail lives inside the same.board-col the drag machinery.
   assert.match(boardVue, /closest\("\.board-col"\)/, "drops resolve the lane element");
   const railAt = boardVue.indexOf('class="lane-rail"');
   const colAt = boardVue.indexOf(':data-status="BOARD_STATUSES[i]"');
@@ -234,7 +233,6 @@ test("lane rails: every lane carries the fold control and no settled branch surv
   assert.doesNotMatch(boardVue, /col-folded-note/, "the 'N folded' note died with the settled fold");
   assert.doesNotMatch(boardVue, /settled:/, "no settled class rides the lane");
   assert.match(boardVue, /:class="\{ folded: isLaneFolded\(BOARD_STATUSES\[i\], col\.length\) \}"/, "the lane's folded state is the one fold law");
-  // the fold law is wired, not re-implemented in the view.
   assert.doesNotMatch(boardVue, /reconcileLanePins/, "no reconcile takes the click's pin back");
   assert.doesNotMatch(logic, /export function reconcileLanePins/, "and the helper is gone, not orphaned");
   assert.match(boardVue, /lanePins\.value = toggleLanePin\(status, count, lanePins\.value\)/, "the click goes through the pure toggle");
@@ -269,7 +267,7 @@ test("lane rails: ~180ms width ease, and rails are off in the narrow stack", () 
   assert.match(boardVue, /\.board\.narrow \.board-scroll \{/, "the narrow layout is untouched");
 });
 
-// -- structural: the shell mounts the board through the composition
+// structural: the shell mounts the board through the composition
 
 test("board view ships module-owned and the shell mounts it", () => {
   const boardVue = join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue");
@@ -307,7 +305,7 @@ test("board view ships module-owned and the shell mounts it", () => {
     /mainViewModules = new Set<string>\(\["kanban"\]\)/,
   );
 });
-// -- board switcher: named boards, pointer boot, URL wiring
+// board switcher: named boards, pointer boot, URL wiring
 
 test("withBoard: appends the picker, keeps existing queries, passes empty through", () => {
   assert.equal(withBoard("/tasks", "alpha"), "/tasks?board=alpha");
@@ -336,15 +334,14 @@ test("board view wires the switcher through every board call", () => {
   // every task fetch goes through withBoard/tasksPath - no raw /task path left behind
   const rawTaskFetches = boardVue.match(/fetch\(`?\/tasks/g) ?? [];
   assert.equal(rawTaskFetches.length, 0, "all fetches must be withBoard-wrapped");
-  // the drawer (inspector) has no self-contained fetch: it receives props
   const drawer = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
   assert.doesNotMatch(drawer, /fetch\(/, "the inspector follows the switch via props");
 });
 
 test("board head keeps the fillet-tuck top spacing", () => {
-  // card t_308e6d9b: the head row is the shared TabBand now - the band
-  // carries the 14px lead-in that survives the 8px tab-strip tuck (the
-  // Files-band contract); the switcher rides the band's actions.
+  // the head row is the shared TabBand now - the band carries the 14px lead-in that
+  // survives the 8px tab-strip tuck (the Files-band contract); the switcher rides the
+  // band's actions.
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const band = readFileSync(join(uiRoot, "app", "components", "ui", "TabBand.vue"), "utf8");
   assert.match(boardVue, /<TabBand title="Kanban">/, "the kanban head is the universal band");
@@ -354,10 +351,7 @@ test("board head keeps the fillet-tuck top spacing", () => {
     "the tuck-consumed 8px spacer stays out");
 });
 
-// --- the board's own surface (card t_95c5527f; 0.17.3 make-over):
-// delete ALL boards (main included), rename in place, and the zero-board
-// empty state. The server keeps the card precondition; the view keeps the
-// armed confirm and the verbatim refusal line.
+// -- the board's own surface.
 
 test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", () => {
   assert.equal(DEFAULT_BOARD_NAME, "main");
@@ -368,7 +362,6 @@ test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", 
   assert.equal(boardDeletePath("my_2nd"), "/boards/my_2nd");
   // names are path-safe payloads: encoded, never raw
   assert.equal(boardDeletePath("a b"), "/boards/a%20b");
-  // the rename rides the board's own row
   assert.equal(boardRenamePath("alpha"), "/boards/alpha");
   assert.equal(boardRenamePath("a b"), "/boards/a%20b");
   assert.equal(BOARDS_PATH, "/boards");
@@ -376,8 +369,7 @@ test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", 
 
 test("board view carries the board surface: armed remove, rename seat, zero-board empty state", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  // card t_2b644603: the pair lives in the board dropdown now, so the pins
-  // name the MENU rows and the guard the click still runs.
+  // the pair lives in the board dropdown now, so the pins name the MENU rows.
   assert.match(boardVue, /confirm remove/, "the armed click relabels: inline confirm row");
   assert.doesNotMatch(boardVue, /window\.confirm/, "no native confirm - the panel confirms inline");
   assert.match(boardVue, /method: "DELETE"/, "the removal fires the DELETE route");
@@ -385,8 +377,7 @@ test("board view carries the board surface: armed remove, rename seat, zero-boar
   assert.match(boardVue, /if \(!canRemoveBoard\(boardName\.value\)\) return;/, "the remove row keys off the removable name");
   assert.match(boardVue, /board-notice/, "a visible notice reports the removal or refusal");
   assert.match(boardVue, /disarmRemove/, "board switches disarm an armed confirm");
-  // the selection falls to whatever SURVIVES - zero boards is legal and
-  // renders the empty state, so there is no hardcoded default fallback
+  // the selection falls to whatever SURVIVES.
   assert.match(boardVue, /boardName\.value = pickBootBoard\(boards\.value\)/, "the post-delete selection comes from the registry");
   assert.doesNotMatch(boardVue, /boardName\.value = DEFAULT_BOARD_NAME/, "no hardcoded default fallback");
   // rename: the menu row swaps the selector for an input, PATCHes the row
@@ -395,15 +386,14 @@ test("board view carries the board surface: armed remove, rename seat, zero-boar
   assert.match(boardVue, /boardRenamePath\(from\)/, "through the pure path helper");
   assert.match(boardVue, /@keydown\.enter\.prevent="submitRename"/, "Enter saves the rename");
   assert.match(boardVue, /@keydown\.esc\.prevent="cancelRename"/, "Esc keeps the old name");
-  // the zero-board empty state: a sentence and the one way back
   assert.match(boardVue, /v-if="registryKnown && boards\.length === 0"/, "the empty state renders only when the registry ANSWERED empty");
   assert.match(boardVue, /class="board-empty"/, "the empty state block exists");
   assert.match(boardVue, /@submit\.prevent="submitCreateBoard"/, "the empty state's create form");
   assert.match(boardVue, /fetch\(BOARDS_PATH, \{/, "the create POSTs /boards");
 });
 
-// the dropdown's VERB rows (card t_2b644603): the ladder is boards + the
-// two commands, and a pick classifies as a switch or a verb - never both.
+// the dropdown's VERB rows: the ladder is boards + the two commands, and a pick
+// classifies as a switch or a verb - never.
 
 test("boardMenuOptions + boardMenuPick: the verbs ride the board ladder", () => {
   const boards = [
@@ -424,14 +414,12 @@ test("boardMenuOptions + boardMenuPick: the verbs ride the board ladder", () => 
   assert.equal(armed[3]!.value, BOARD_MENU_REMOVE);
   assert.equal(armed[3]!.label, "confirm remove");
   assert.equal(armed[3]!.cls, "armed");
-  // classification: exact sentinels only - anything else is a board
   assert.deepEqual(boardMenuPick("alpha"), { kind: "board", name: "alpha" });
   assert.deepEqual(boardMenuPick(BOARD_MENU_RENAME), { kind: "rename" });
   assert.deepEqual(boardMenuPick(BOARD_MENU_REMOVE), { kind: "remove" });
   assert.deepEqual(boardMenuPick("!renamed"), { kind: "board", name: "!renamed" }, "a near-miss is a board name, never a verb");
   assert.deepEqual(boardMenuPick(""), { kind: "board", name: "" });
-  // the sentinels cannot collide with a board name: the server's name
-  // grammar starts every name with [a-z0-9]
+  // the sentinels cannot collide with a board name.
   for (const sentinel of [BOARD_MENU_RENAME, BOARD_MENU_REMOVE]) {
     assert.doesNotMatch(sentinel, /^[a-z0-9]/, "a verb sentinel is outside the board-name grammar");
   }
@@ -448,7 +436,7 @@ test("boardCount: the whole board at rest, the match tally while filtering", () 
   assert.equal(boardCount(0, 12, true), "0/12");
 });
 
-// --- the make-over's search seat (0.17.3): one input, two scopes ---------
+// -- the make-over's search seat (0.17.3): one input, two scopes --------
 
 test("filterTasks: case-insensitive over title, body, assignee and id", () => {
   const rows = [
@@ -482,22 +470,20 @@ test("board view carries the search seat: one input, a scope chip that rides the
   assert.match(boardVue, /aria-label="filter cards"/, "the seat is labelled");
   assert.match(boardVue, /@click="toggleScope"/, "the scope chip flips the scope");
   assert.match(boardVue, /scope === "all" \? "all boards" : "this board"/, "the chip says which scope is live");
-  // card t_2b644603: the scope UI is GATED on the query - an empty seat
-  // spends no band space on an all-boards question nobody asked
+  // the scope UI is GATED on the query.
   assert.match(boardVue, /v-if="filtering"[\s\S]{0,120}board-scope-chip/, "the scope chip renders only while a query runs");
   assert.match(boardVue, /const filtering = computed\(\(\) => query\.value\.trim\(\) !== ""\)/, "one predicate for the chip + the count");
   assert.match(boardVue, /watch\(query,/, "clearing the seat returns the read to this board");
   assert.match(boardVue, /const visibleTasks = computed\(\(\) => filterTasks\(tasks\.value, query\.value\)\)/, "the grid renders the filtered list");
   assert.match(boardVue, /const cols = computed\(\(\) => columns\(visibleTasks\.value\)\)/, "columns bucket the filtered list");
   assert.match(boardVue, /v-if="scope === 'all' && t\.board"/, "a mixed row shows which board it came from");
-  // a mixed list is read-only: no arrows, no drag (the cross-board-move ban)
   assert.match(boardVue, /v-if="scope !== 'all' && step\(BOARD_STATUSES\[i\], -1\)"/, "no move arrows in the mixed scope");
   assert.match(boardVue, /if \(scope\.value === "all"\) return;/, "no drag in the mixed scope");
   // every drawer call addresses the card's OWN board
   assert.match(boardVue, /const board = boardOf\(selected\.value, boardName\.value\)/, "the drawer reads/writes the card's board");
 });
 
-// --- the assignee combobox (0.17.3 make-over): the agents registry -------
+// -- the assignee combobox (0.17.3 make-over): the agents registry ------
 
 test("fetchAgentOptions: reads GET /agents, skips nameless rows, keeps the roster hints", async () => {
   const stub = (rows: unknown) =>
@@ -534,15 +520,13 @@ test("board view carries the assignee combobox: registry-fed list, typing stays 
   assert.match(boardVue, /role="combobox"/, "the assignee field is a combobox");
   assert.match(boardVue, /role="listbox"/, "with a real listbox");
   assert.match(boardVue, /@mousedown\.prevent="pickAssignee\(o\.value\)"/, "a row picks without stealing focus");
-  // typing stays legal: the input is BOUND to the free-text value, and a
-  // registry miss only empties the list (the field keeps what was typed)
+  // typing stays legal: the input is BOUND to the free-text value, and a registry.
   assert.match(boardVue, /v-model="createAssignee"/, "the field's value IS what the user typed");
   assert.match(boardVue, /typing a name still works/, "an empty registry says typing still works");
   assert.doesNotMatch(boardVue, /disabled="[^"]*assignee/, "the assignee field is never disabled by the source");
 });
 
-// --- the band's lead seat (0.17.3), re-settled to the family contract
-// (card t_2b644603): title + board chip + count | filter, and nothing else.
+// -- the band's lead seat (0.17.3), re-settled to the family contract.
 
 test("board band: title + chip + count | filter - the cron/agents family shape", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
@@ -554,14 +538,12 @@ test("board band: title + chip + count | filter - the cron/agents family shape",
   const bandEndAt = boardVue.indexOf("</TabBand>");
   const leadAt = boardVue.indexOf("<template #lead>");
   assert.ok(bandAt >= 0 && leadAt > bandAt && leadAt < bandEndAt, "the board fills the lead seat");
-  // the lead seat holds the switcher chip and the count, in that order
   const chipAt = boardVue.indexOf('<BandSelect', leadAt);
   const countAt = boardVue.indexOf('class="board-switch-count"', leadAt);
   assert.ok(chipAt > leadAt && chipAt < bandEndAt, "the board selector is inside the lead seat");
   assert.ok(countAt > chipAt, "the count follows the chip (name, then how many)");
 
-  // the actions slot: the filter seat and nothing else persistent - the
-  // destructive pair and the scope toggle are NOT band controls any more
+  // the actions slot: the filter seat and nothing else persistent.
   const actionsAt = boardVue.indexOf('class="board-search"');
   assert.ok(actionsAt > leadAt && actionsAt < bandEndAt, "the filter is the band's only action seat");
   for (const gone of [
@@ -575,24 +557,20 @@ test("board band: title + chip + count | filter - the cron/agents family shape",
       `no permanent "${gone}" control in the band (card t_2b644603)`,
     );
   }
-  // ... and the verbs really live in the dropdown, under the board rows
+  // ..
   assert.match(boardVue, /boardMenuOptions\(boards\.value, confirmingRemove\.value\)/, "the ladder carries the verbs + the armed state");
   assert.match(boardVue, /if \(want\.kind === "rename"\) \{[\s\S]{0,40}startRename\(\)/, "the rename row starts the inline rename");
   assert.match(boardVue, /if \(want\.kind === "remove"\) \{[\s\S]{0,40}removeBoardClick\(\)/, "the remove row runs the armed confirm");
-  // the count is a value, not inline markup: it has two forms
   assert.match(boardVue, /\{\{ countLabel \}\}/, "the lead count renders the computed label");
 });
 
 test("reorderAfter: slots a card after a sibling inside the same column", () => {
   const list = [task({ id: "t_a", title: "a" }), task({ id: "t_b", title: "b" }), task({ id: "t_c", title: "c" })];
-  // c comes after a: [a, c, b]
   const moved = reorderAfter(list, "t_c", "triage", "t_a");
   if (!moved) throw new Error("reorderAfter returned null");
   assert.deepEqual(moved.map((t) => t.title), ["a", "c", "b"]);
-  // c keeps its fields, its status rides
   assert.equal(moved[1].id, "t_c");
   assert.equal(moved[1].status, "triage");
-  // the input list is untouched (pure)
   assert.equal(list[0].title, "a");
   assert.equal(list.length, 3);
 });
@@ -603,7 +581,6 @@ test("reorderAfter: crossing a column stamps the new status at the drop slot", (
     task({ id: "t_b" }),
     task({ id: "t_r", status: "running" }),
   ];
-  // b drops into running after the card already there: [a, r(=b running), b-status...]
   const moved = reorderAfter(list, "t_b", "running", "t_r");
   if (!moved) throw new Error("reorderAfter returned null");
   const running = moved.filter((t) => t.status === "running");
@@ -632,13 +609,7 @@ test("board view drives drag reorder through the pointer + the server slot", () 
   assert.match(boardVue, /closest\("button, input"\)/, "the card's own buttons never start a drag");
 });
 
-// --- the mounted /boards fetch retry (nightlies 42268953671 and
-// 42260775149, cards t_7cdac186 / t_82e5d149): Board.vue gates the
-// switcher chip on `boards.length > 0`, and the fetch runs once per
-// mount, so a fetch that misses under suite load leaves no chip for the
-// whole page life. The retry is pure logic in boardLogic
-// (fetchBoardsRetry: 3 attempts, 300ms backoff) - the fetch is stubbed,
-// the sleep is injectable. The gate itself is not under test here.
+// -- the mounted /boards fetch retry.
 
 function boardsResponse(boards: unknown, status = 200): Response {
   return {
@@ -689,9 +660,9 @@ test("boards retry: 404 is not retried (single-board installs never heal)", asyn
   assert.equal(boards, null);
 });
 
-// --- round t_f81e845e: the CRUD trio (create/edit/delete/comment) + the
-// event trail, all board-native. Source pins (these are wiring contracts
-// the board must carry) + unit tests for the pure helpers.
+// -- round: the CRUD trio (create/edit/delete/comment) + the event trail, all. Source
+// pins (these are wiring contracts the board must carry) + unit tests for the pure
+// helpers.
 
 test("boardLogic: priority helpers", () => {
   assert.equal(hasPriorityChip(0), false, "normal priority renders no chip");
@@ -733,25 +704,19 @@ test("CRUD: the board builds cards from a full form, edits in the drawer, delete
   assert.match(drawerVue, /class="event-list"/);
 });
 
-// --- card delete (card t_5a638160): the wire tool kanban.delete (and its
-// REST face, DELETE /tasks/{id}) existed while the UI affordance was buried
-// inside the body editor - you had to click into the body to even see it.
-// The delete now rides the drawer's own danger zone, never the board canvas
-// (no stray click on the grid), the confirm NAMES the card (id + title), and
-// the board drops the row optimistically. There is NO undo: undoing a delete
-// would need card resurrection the tool layer does not have, so the confirm
-// is the safety - stated in the code so nobody adds a half undo later.
+// -- card delete: the wire tool kanban.delete (and its REST face, DELETE /tasks/{id}).
+// The delete now rides the drawer's own danger zone, never the board canvas (no stray
+// click on the grid), the confirm NAMES the card (id + title), and the board drops the
+// row optimistically.
 test("delete: drawer-level control, a confirm that names the card, optimistic removal, no undo", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   const drawerVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "board", "DetailDrawer.vue"), "utf8");
 
-  // the control: its own drawer row, outside the body editor, absent from the grid
   assert.match(drawerVue, /class="drawer-danger"/, "the delete rides the drawer's own danger zone");
   assert.match(drawerVue, /@click="armDelete"/, "the first click arms the confirm");
   assert.match(drawerVue, /@click="confirmDelete"/, "only the confirm emits the delete");
   assert.doesNotMatch(drawerVue, /drawer-discard/, "the delete no longer hides in the body-edit form");
   assert.doesNotMatch(boardVue, /class="[^"]*card-delete/, "no delete control on the card canvas");
-  // the confirm names id + title
   assert.match(
     drawerVue,
     /const deleteConfirmLabel = computed\(\s*\(\) => `delete \$\{props\.task\.id\} - \$\{props\.task\.title\}\?`/,
@@ -765,7 +730,6 @@ test("delete: drawer-level control, a confirm that names the card, optimistic re
     "exactly one delete emit, in the confirm handler",
   );
   assert.match(drawerVue, /function confirmDelete\(\) \{\s*disarmDelete\(\);\s*emit\("delete"\);/, "the confirm disarms, then emits");
-  // no undo, and the reason is in the code
   assert.match(drawerVue, /there is NO undo/, "the no-undo ruling is stated where the control lives");
   assert.match(drawerVue, /would need card resurrection/, "and names WHY undo cannot exist");
   assert.doesNotMatch(drawerVue, /undo-|showUndo|emit\("undo"\)/i, "no half-built undo affordance");
@@ -781,11 +745,7 @@ test("delete: drawer-level control, a confirm that names the card, optimistic re
   assert.match(deleteFn, /await fetchBoard\(\);\s*return;/, "a refused DELETE snaps the board back to the server's truth");
 });
 
-// --- the push shape (card t_b5784de3): the 5s poll is dead, the shell's
-// canvas delta event keeps the board live. The delta is a PULSE, not the
-// payload: the tasks panel carries the 20 newest rows of the tools'
-// session board (no body, no priority, no position), so the board re-reads
-// its own REST view on the event instead of rendering the panel.
+// -- the push shape: the 5s poll is dead, the shell's canvas delta event keeps.
 
 test("board renders from the mount fetch + the shell's canvas delta event, never a poll", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
@@ -797,7 +757,6 @@ test("board renders from the mount fetch + the shell's canvas delta event, never
   assert.match(boardVue, /if \(detail\.id === "tasks"\) \{\s*\n\s*scheduleBoardRefetch\(\);/, "a tasks delta queues the board's own REST read");
   assert.match(boardVue, /if \(detail\.id === "boards"\) void refreshRegistry\(\);/, "a boards delta re-reads the registry only");
   assert.match(boardVue, /fetchBoards\(\)\.then\(\(\) => fetchBoard\(\)\)/, "the mount fetch is still the initial render");
-  // the coalescer: a burst of deltas is one read, not N (round-2 nit)
   assert.match(boardVue, /const DELTA_COALESCE_MS = \d+/, "a delta burst coalesces into one read");
   assert.match(boardVue, /if \(deltaTimer !== null\) return;/, "an already-queued read absorbs the rest of the burst");
   assert.match(boardVue, /clearTimeout\(deltaTimer\)/, "a queued read leaves with the component");
@@ -806,12 +765,7 @@ test("board renders from the mount fetch + the shell's canvas delta event, never
   assert.match(boardVue, /if \(seq !== fetchSeq\) return/, "a late answer never overwrites a newer list");
 });
 
-// --- the reconnect reset (card t_b5784de3 round 2, vera's outage finding):
-// the socket replays nothing, so a delta that lands while THIS page's socket
-// is down is lost. Without a pulse the idle board would stay stale until some
-// later mutation fired a delta - the 5s poll used to heal that in <=5s. The
-// shell's catchUp re-announces the SAME canvas event with the reset id, and
-// the board re-reads its whole view on it.
+// -- the reconnect reset: the socket replays nothing, so a delta that lands.
 
 test("the board re-reads its whole view on the shell's reconnect reset pulse", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
@@ -842,16 +796,13 @@ test("the canvas store publishes the reconnect reset on the same event, and only
   };
   try {
     const store = createCanvasStore();
-    // the boot path: a snapshot refresh says nothing, so a page load
-    // never storms its consumers
+    // the boot path: a snapshot refresh says nothing, so a page load never storms.
     store.applySnapshot([{ id: "tasks", title: "Tasks", kind: "list", payload: { board: "main", total: 0, rows: [] }, actions: [] }]);
     assert.equal(seen.length, 0, "the snapshot (boot + catch-up) announces nothing");
-    // the reconnect path: the shell asks every consumer to re-read
     announceCanvasReset();
     assert.equal(seen.length, 1, "the reset pulse is exactly one announcement");
     assert.equal(seen[0].type, CANVAS_DELTA_EVENT, "the reset rides the ONE canvas event - no second channel");
     assert.equal((seen[0].detail as { id?: string }).id, CANVAS_RESET_ID, "the reset id rides as detail");
-    // and the two sides agree on the literal without importing each other
     const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
     assert.ok(
       boardVue.includes(`const CANVAS_RESET_ID = "${CANVAS_RESET_ID}"`),
@@ -865,25 +816,17 @@ test("the canvas store publishes the reconnect reset on the same event, and only
   }
 });
 
-// --- card polish + the running heartbeat chip (card t_65ea61a1) --------
-// Endo's ruling: "the running card dont have a heartbeat". The board
-// rendered a flat title, stray "@name" text and an age - nothing about
-// the work in flight. These pins hold the Hermes card grammar (2-line
-// clamps, an assignee chip, one meta row) and the chip's two clocks.
 
 test("card polish: the 2-line clamp is ONE constant the CSS renders", () => {
   assert.equal(CARD_CLAMP_LINES, 2, "the ruled clamp is two lines");
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
-  // both text surfaces wear the clamp class
   assert.match(boardVue, /class="card-title card-clamp">\{\{ t\.title \}\}/, "the title clamps");
   assert.match(boardVue, /class="card-preview card-clamp">\{\{ bodyPreview\(t\.body\) \}\}/, "the body teaser clamps");
-  // the class is the mechanism, fed by the constant (not a magic number)
   assert.match(boardVue, /\.card-clamp \{\s*\n\s*display: -webkit-box;/, "the clamp is a box clamp");
   assert.match(boardVue, /-webkit-box-orient: vertical;/, "vertical lines");
   assert.match(boardVue, /-webkit-line-clamp: var\(--card-clamp, 2\);/, "the line count reads the custom property");
   assert.match(boardVue, /line-clamp: var\(--card-clamp, 2\);/, "and the standard property agrees");
   assert.match(boardVue, /'--card-clamp': `\$\{CARD_CLAMP_LINES\}`/, "the constant feeds the property");
-  // the old free-growing preview (max-height) is gone with it
   assert.doesNotMatch(boardVue, /max-height: 2\.6em/, "the teaser clamps by line, not by an em guess");
 });
 
@@ -893,16 +836,13 @@ test("card polish: the assignee is a chip on one Hermes-style meta row", () => {
   assert.match(boardVue, /:title="`assignee: \$\{t\.assignee\}`"/, "the chip names what it is");
   assert.doesNotMatch(boardVue, /class="card-assignee"/, "the old bare text span is gone");
   assert.match(boardVue, /\.card-assignee-chip \{[\s\S]*?border-radius: var\(--r-chip\);/, "the chip wears the shell's chip radius");
-  // one meta row carries assignee + heartbeat + age + the move controls
   const metaAt = boardVue.indexOf('class="card-meta"');
   assert.ok(metaAt > 0, "the meta row exists");
   const meta = boardVue.slice(metaAt, boardVue.indexOf("</article>", metaAt));
   for (const face of ["card-assignee-chip", "card-heartbeat", "card-age", "card-moves"]) {
     assert.ok(meta.includes(face), `${face} rides the one meta row`);
   }
-  // ONE time telling: the running chip replaces the created-age (the row
-  // is 218px wide - both would clip the chip, and a running card's story
-  // is how long it has been working)
+  // ONE time telling: the running chip replaces the created-age
   assert.match(
     meta,
     /<span\s*\n\s*v-else\s*\n\s*class="card-age">\{\{ age\(t\.created_at\) \}\}/,
@@ -921,13 +861,10 @@ test("heartbeat chip: a running card counts its working minutes", () => {
   assert.equal(minuteLabel(0), "0m");
   assert.equal(minuteLabel(59_999), "0m", "minutes floor - a chip never rounds itself older");
   assert.equal(minuteLabel(125 * 60_000), "125m", "the count keeps growing (no d/h switch - it is a stopwatch)");
-  // a card that just started reads 0m, not a blank
   assert.equal(heartbeatChip(task({ status: "running", started_at: "2026-11-12T12:00:00Z" }), now)?.label, "working - 0m");
-  // only the running lane beats
   for (const status of ["triage", "todo", "scheduled", "ready", "blocked", "review", "done", "archived"]) {
     assert.equal(heartbeatChip(task({ status, started_at: "2026-11-12T11:00:00Z" }), now), null, `${status} has no chip`);
   }
-  // an unparseable start is not a duration to invent
   const noStart = heartbeatChip(task({ status: "running", started_at: "" }), now);
   assert.equal(noStart?.label, "working", "no start renders the bare working face");
   assert.equal(noStart?.runningMs, 0);
@@ -947,7 +884,6 @@ test("heartbeat chip: stale is an AGED beat, never mere silence", () => {
   // exactly at the threshold is still inside it - the flip is PAST the age
   const edge = new Date(now.getTime() - HEARTBEAT_STALE_MS).toISOString();
   assert.equal(heartbeatChip(running({ last_heartbeat_at: edge }), now)?.stale, false);
-  // one second past it: stale, and the chip says how long the quiet ran
   const late = new Date(now.getTime() - HEARTBEAT_STALE_MS - 1000).toISOString();
   const stale = heartbeatChip(running({ last_heartbeat_at: late }), now);
   assert.equal(stale?.stale, true);
@@ -956,7 +892,6 @@ test("heartbeat chip: stale is an AGED beat, never mere silence", () => {
 
   // NO heartbeat field at all is not staleness: silence is not evidence
   assert.equal(heartbeatChip(running({}), now)?.stale, false, "a wire with no heartbeat field never reads stale");
-  // and an unparseable stamp is not an aged one
   assert.equal(heartbeatChip(running({ last_heartbeat_at: "not a date" }), now)?.stale, false);
 });
 
@@ -975,13 +910,11 @@ test("heartbeat chip: the board ticks the chip on a clock, not a fetch", () => {
   const tickBody = boardVue.slice(tickAt, boardVue.indexOf("const heartbeats", tickAt));
   assert.ok(tickBody.length > 0, "the tick handler exists");
   assert.doesNotMatch(tickBody, /fetch/, "the chip clock never fetches");
-  // one chip map per render, keyed by card; the template reads it
   assert.match(boardVue, /const heartbeats = computed\(/, "the chips derive once per render");
   assert.match(boardVue, /const chip = heartbeatChip\(t, at\);/, "through the pure helper");
   assert.match(boardVue, /v-if="heartbeats\[t\.id\]"/, "a card wears a chip only when it has one");
   assert.match(boardVue, /class="card-heartbeat"[\s\S]{0,120}:class="\{ stale: heartbeats\[t\.id\]\.stale \}"/, "the stale state rides the chip class");
   assert.match(boardVue, /\{\{ heartbeats\[t\.id\]\.label \}\}/, "the chip renders the computed face");
-  // the stale face is visibly different: a flat dot, the blocked tone
   assert.match(boardVue, /\.card-heartbeat\.stale \{\s*\n\s*color: color-mix\(in srgb, #f87171 85%, currentcolor\);/, "stale takes the red tone");
   assert.match(boardVue, /\.card-heartbeat\.stale \.card-heartbeat-dot \{\s*\n\s*animation: none;/, "a dead beat stops pulsing");
 });

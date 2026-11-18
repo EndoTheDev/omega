@@ -26,7 +26,7 @@
 <script setup lang="ts">
   import { computed } from "vue";
 
-  // state (not modelValue: a switch, not a select.
+  // state.
   const props = withDefaults(
     defineProps<{
       state: boolean;

@@ -135,7 +135,6 @@ func TestApplyAgentLayerScopesWritablePaths(t *testing.T) {
 		t.Fatalf("apply layer: %v", err)
 	}
 	dir := filepath.ToSlash(agent.AgentDir(home, "scout"))
-	// Data isolation: the store dsn re-points under the agent's own data dir.
 	if cfg.Store.DBPath != filepath.ToSlash(filepath.Join(dir, "data", "omega.db")) {
 		t.Errorf("store db = %q, want the agent's own data dir", cfg.Store.DBPath)
 	}
@@ -194,7 +193,7 @@ func TestCmdAgentsCreateAndList(t *testing.T) {
 	if _, err := os.Stat(agent.AgentConfigPath(home, "scout")); err != nil {
 		t.Errorf("scaffold missing after create: %v", err)
 	}
-	// listing includes it (capture via os.Stdout swap is overkill for the gate.
+	// listing includes it.
 	if err := printAgents(home); err != nil {
 		t.Errorf("printAgents: %v", err)
 	}
@@ -361,7 +360,7 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 		t.Errorf("provider.instance = %+v, want the untouched work override", k)
 	}
 
-	// -- a provider sub-key reset falls back for THAT knob only ----
+	// a provider sub-key reset falls back for THAT knob only --
 	if err := agent.UpdateAgentConfigLayer(home, "alpha", agent.AgentConfigUpdates{
 		ModelName: testStrPtr("scout-model"),
 	}); err != nil {
@@ -412,8 +411,7 @@ func TestAgentConfigLayerTier3bRoundTrip(t *testing.T) {
 	}
 }
 
-// TestApplyAgentLayerDefinitionLaws pins the definition layer's runtime half at the one
-// place a wake reads it.
+// TestApplyAgentLayerDefinitionLaws pins the definition layer's runtime half.
 func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -441,7 +439,6 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	if err := ApplyAgentLayer(&cfg, home, "scout"); err != nil {
 		t.Fatalf("apply layer: %v", err)
 	}
-	// The instance resolves type/host/key out of settings.
 	if primary := primaryOf(cfg); primary.Type != "openai" || primary.Host != "http://work-host:9000" || primary.APIKey != "work-secret" {
 		t.Errorf("provider = %+v, want the resolved work instance", primary)
 	}
@@ -451,7 +448,6 @@ func TestApplyAgentLayerDefinitionLaws(t *testing.T) {
 	if cfg.agentName != "scout" || strings.Join(cfg.agentToggles, ",") != "kanban" {
 		t.Errorf("agent scope = %q toggles %v, want scout/[kanban]", cfg.agentName, cfg.agentToggles)
 	}
-	// The allowlist is the only skill the agent may load.
 	if strings.Join(cfg.agentSkillsAllow, ",") != "alpha" || !cfg.agentSkillsAllowSet {
 		t.Errorf("skills allowlist = %v (set %v), want [alpha]", cfg.agentSkillsAllow, cfg.agentSkillsAllowSet)
 	}

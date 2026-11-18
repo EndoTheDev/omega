@@ -95,7 +95,6 @@ func TestSPAFallback(t *testing.T) {
 		t.Fatalf("/_nuxt/missing.js status = %d, want 404", rec.Code)
 	}
 
-	// real assets keep winning.
 	req = httptest.NewRequest(http.MethodGet, "/index.html", nil)
 	rec = httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

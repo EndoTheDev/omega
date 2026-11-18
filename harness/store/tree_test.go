@@ -1,6 +1,6 @@
 package store
 
-// Tree store tests: AppendMessage materializes the tree pointer (explicit wins +.
+// Tree store tests: AppendMessage materializes the tree pointer.
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestAppendDerivesLeafParent: a plain send's appends chain off the active path's.
+// TestAppendDerivesLeafParent: a plain send's appends chain off the active.
 func TestAppendDerivesLeafParent(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -115,8 +115,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	if err := s.AppendMessage(ctx, "t3", core.NewVariantSelect(userID, core.MsgID(rows[1].ID))); err != nil {
 		t.Fatal(err)
 	}
-	// a CONTINUATION message from the selected branch chains off the selected leaf (the
-	// fork-send shape.
+	// a CONTINUATION message from the selected branch chains off the selected leaf.
 	rows, _ = s.loadRows(ctx, "t3")
 	if p := core.ParentIDOf(rows[2].Message); p != core.MsgID(rows[0].ID) {
 		t.Fatalf("retry head parent wrong: %q", p)

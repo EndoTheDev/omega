@@ -1,6 +1,6 @@
 <template>
   <!--
-    the notifications tab - the DURABLE feed/history side of the bell ruling.
+    the notifications tab - the DURABLE feed/history side of the bell.
     Same data (GET /notifications), same rendering voice, same row contract: a click
     marks the record read and hands the open intent to app.vue.
   -->
@@ -43,9 +43,6 @@
         <span class="notif-row-main">
           <span class="notif-row-title">{{ p.title }}</span>
           <span class="notif-row-meta">
-            <!--
-              the notification surface answers a gate question with approve/deny only.
-            -->
             <template v-if="resolvedVerdicts.has(p.id)">
               <span class="notif-verdict resolved">{{ resolvedVerdicts.get(p.id) }}</span>
             </template>
@@ -142,7 +139,7 @@
     return notificationAge(ts);
   }
 
-  // openVerdict routes a pending-card click to the card's chat session, reusing the.
+  // openVerdict routes a pending-card click to the card's chat session, reusing.
   function openVerdict(p: PendingVerdictCard) {
     emit("open", {
       kind: "chat",
@@ -151,11 +148,11 @@
     } as OmegaNotification);
   }
 
-  // -- gate questions, answerable: approve/deny on the notification surface --- the
-  // pair contract lives on the card's options; buttons render only when the pending
-  // card IS an approve/deny question. resolvedVerdicts: this surface's flip after a
-  // POST (win or a lost race) - the render collapses to the resolved state until the
-  // poll drops the settled card out of the pending list.
+  // gate questions, answerable: approve/deny on the notification surface --- the pair
+  // contract lives on the card's options; buttons render only when the pending card IS
+  // an approve/deny question. resolvedVerdicts: this surface's flip after a POST (win
+  // or a lost race) - the render collapses to the resolved state until the poll drops
+  // the settled card out of the pending list.
   function answerOptionsFor(p: PendingVerdictCard) {
     return approveDenyOptions(p.options);
   }
@@ -172,7 +169,6 @@
       });
       resolvedVerdicts.set(p.id, "resolved: " + kind);
     } catch (e) {
-      // a late click on an already-resolved question renders the resolved stamp, no.
       const msg = e instanceof Error ? e.message : String(e);
       if (isSettledRace(msg)) resolvedVerdicts.set(p.id, "resolved (another surface)");
     } finally {
@@ -190,7 +186,6 @@
     await markAllRead();
   }
 
-  // the clear-all button: the feed deletes (records, not flags).
   const clearingAll = ref(false);
   async function clearAllRecords(): Promise<void> {
     if (clearingAll.value) return;

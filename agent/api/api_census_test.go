@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// the census pin: production file -> its verdict (the chat/canvas/ settings face it.
+// the census pin: production file -> its verdict.
 var censusPin = map[string]string{
 	"chat_panel.go":         "chat - the composer panel + the /chat turn handling",
 	"runs.go":               "chat - the live run: the RunHub, detached runs, the SSE run frames + the store floor guards",

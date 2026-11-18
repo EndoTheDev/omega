@@ -31,7 +31,7 @@ func TestValidateRelPath(t *testing.T) {
 		"go.mod":            "go.mod",
 		"cmd/omega":         "cmd/omega",
 		"docs/a b.txt":      "docs/a b.txt",
-		".git":              ".git",              // hidden names are ordinary paths (t_ccd4a000)
+		".git":              ".git",              // hidden names are ordinary paths
 		"docs/.hidden":      "docs/.hidden",      // hidden nested name
 		".github/workflows": ".github/workflows", // hidden dir descends
 		"a/. b/c":           "a/. b/c",           // any non-traversal dot segment passes
@@ -498,8 +498,7 @@ func TestFilesDotNamesServe(t *testing.T) {
 	}
 }
 
-// TestFilesDotSymlinkEscape pins the containment law THROUGH the newly opened hidden
-// names.
+// TestFilesDotSymlinkEscape pins the containment law THROUGH the newly opened hidden.
 func TestFilesDotSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")

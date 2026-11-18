@@ -97,7 +97,6 @@
             class="pane"
             :open="inspectorOpen" />
         </template>
-        <!-- the content viewer tab - the file/skill a row click opened. -->
         <template #pane-viewer="{ tab }">
           <ViewerTab
             v-if="tab.viewer"
@@ -124,9 +123,6 @@
             class="pane"
             :focused-session="focusedSessionId" />
         </template>
-        <!--
-          the observability tab - the structured run-event stream (primary) over the.
-        -->
         <template #pane-observability>
           <component
             :is="observabilityTabView"
@@ -134,7 +130,6 @@
             class="pane"
             :session="focusedSessionId" />
         </template>
-        <!-- the general web browser tab. -->
         <template #pane-browser>
           <component
             :is="browserTabView"
@@ -195,7 +190,6 @@
             module="mcp"
             :open="isMobile ? inspectorOpen : false" />
         </template>
-        <!-- the kanban board joins the inspector. -->
         <template #pane-kanban>
           <InspectorPanel
             v-if="!isMobile"
@@ -204,15 +198,11 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
         <!-- the extensions/modules inventory tab is GONE. -->
-        <!-- insights was a main-area tab. -->
         <template #pane-insights>
           <InsightsTab
             v-if="!isMobile"
             class="pane" />
         </template>
-        <!--
-          the notifications tab - the durable finished-things feed rehomed from the.
-        -->
         <template #pane-notifications>
           <component
             :is="notificationsPanelView"
@@ -223,7 +213,6 @@
       </DockSplit>
     </div>
 
-    <!-- the mobile drawers. -->
     <MobileDrawer
       v-if="isMobile"
       side="left"
@@ -300,9 +289,6 @@
         @open-module="openModuleTab"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
-      <!--
-        insights' home is this shell, so the drawer needs its own branch before the.
-      -->
       <InsightsTab
         v-else-if="inspectorDrawerActiveId === 'insights'"
         class="pane" />
@@ -365,8 +351,7 @@
         class="pane"
         :session="focusedSessionId" />
       <!--
-        the terminal is a TAB capsule too, and it is the drawer's FIRST default
-        bottom-home tab.
+        the terminal is a TAB capsule too, and it is the drawer's FIRST default.
       -->
       <component
         :is="terminalTabView"
@@ -392,10 +377,6 @@
       :commands="paletteCommands"
       @close="paletteOpen = false" />
 
-    <!--
-      destructive confirm: delete walks the store cascade server-side, so there is no
-      undo.
-    -->
     <div
       v-if="deleteId"
       class="confirm-scrim"
@@ -457,14 +438,11 @@
 <script setup lang="ts">
   import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
   import { modulePanels } from "./composables/module-panels.generated";
-  // the tab capsules' views (terminal / browser / notifications) ride this generated
-  // manifest.
   import { moduleTabs } from "./composables/module-tabs.generated";
   // (the shell-ring shrink wave 1). app.vue binds the tab view explicitly: files' ui/
   // carries two.vue views, so the manifest's module lookup alone cannot pick the tab
   // body.
   import FilesTab from "../../harness/files/ui/FilesTab.vue";
-  // (the shell-ring shrink wave 2).
   import AppSidebar from "../../harness/store/ui/AppSidebar.vue";
   import InsightsTab from "../../harness/store/ui/InsightsTab.vue";
   import AgentsPanel from "../../harness/continuous/ui/AgentsPanel.vue";
@@ -519,7 +497,6 @@
     TOOL_DISPLAY_KEY,
     type ToolDisplay,
   } from "./composables/toolDisplay";
-  // the thinking block's display knob rides the same shared-ref shape as the tool.
   import {
     useThinkingDisplay,
     THINKING_DISPLAY_KEY,
@@ -547,9 +524,7 @@
     type DockNode,
     type DockTab,
   } from "./composables/dock";
-  // item 6: the bottom panel's width mode.
   import { useBottomWidthMode } from "./composables/bottomWidth";
-  // the mobile drawer renders the pinned-edge content (sessions / inspector tabs).
   import {
     INSPECTOR_TAB_COMPONENTS,
     PRIMARY_TAB_COMPONENTS,
@@ -568,7 +543,6 @@
     loadModules,
     modulesOff,
   } from "./composables/moduleState";
-  // the mobile drawer's pure tab derivation (decoupled from the dock tree.
   import {
     drawerTabs,
     DRAWER_RENDERABLE,
@@ -576,7 +550,6 @@
     routeShellToggle,
     type MobileShell,
   } from "./composables/mobileDrawer";
-  // the shared default-workspace value (module-scoped).
   import {
     DEFAULT_WORKSPACE_KNOB,
     defaultWorkspaceNow,
@@ -629,13 +602,11 @@
   // the MODULES category id + the palette's jump signal.
   import { MODULES_CATEGORY } from "./components/settings/settingsNav";
   import { jumpToSettingsSection } from "./composables/settingsJump";
-  // notification open intents route here from the bell.
   import type { OmegaNotification } from "./composables/notifications";
   import {
     resolveTaskBoard,
     selectBoardFor,
   } from "./composables/notifications";
-  // insights joins the main area (registry.
   import ViewerTab from "./components/ViewerTab.vue";
   import {
     DOCK_VIEWER_OPEN_KEY,
@@ -649,8 +620,8 @@
   } from "./composables/dockables";
   const healthy = ref(false);
 
-  // -- the tab capsules' views: static manifest lookups, not imports. A capsule whose
-  // ui/ view is gone (deleted capsule, the deletability proof) yields undefined - the
+  // the tab capsules' views: static manifest lookups, not imports. A capsule whose ui/
+  // view is gone (deleted capsule, the deletability proof) yields undefined - the
   // outlet template then hosts nothing, exactly like a panel capsule's InspectorPanel
   // body after a removal.
   const terminalTabView = moduleTabs.find((t) => t.module === "terminal")?.component;
@@ -661,10 +632,8 @@
   const notificationsPanelView = moduleTabs.find(
     (t) => t.module === "notifications",
   )?.component;
-  // /health durability payload: server build tag + uptime (the bar's version + up seg).
   const healthVersion = ref("");
   const upSeconds = ref(0);
-  // the health popover's three optional facts.
   const healthProviderReachable = ref<boolean | null>(null);
   const healthProviderCheckedAt = ref(0);
   const healthProviderDetail = ref("");
@@ -703,7 +672,6 @@
     if (m.context_window) contextSize.value = m.context_window;
     return m;
   }
-  // reasoning effort: one app-level selection shared by every chat tab.
   const selectedThinking = ref(
     localStorage.getItem("omega.thinking-level") ?? "default",
   );
@@ -720,39 +688,34 @@
   // breakpoint.
   const bottomDrawerOpen = ref(false);
   const showThinking = ref(true);
-  // chat appearance: 'chat' chronolog | 'stacked' blocks.
   const appearance = ref<Appearance>("chat");
-  // tool result display: auto | expanded | collapsed.
   const toolDisplay = useToolDisplay();
   watch(toolDisplay, (mode) => {
     localStorage.setItem(TOOL_DISPLAY_KEY, mode);
   });
-  // thinking display: auto | expanded | collapsed.
   const thinkingDisplay = useThinkingDisplay();
   watch(thinkingDisplay, (mode) => {
     localStorage.setItem(THINKING_DISPLAY_KEY, mode);
   });
-  // the knob flip re-renders instantly.
   watch(appearance, (a) => {
     localStorage.setItem(APPEARANCE_KEY, a);
   });
   const contextSize = ref(0);
 
-  // -- dock store: the layout tree is the single source of layout truth.
   const moduleOwnedIds = compositionModuleIds(modulePanels, moduleTabs);
   function currentModuleGate(): ModuleGate {
     return { owned: moduleOwnedIds, off: modulesOff.value };
   }
   hydrateModuleState(window.localStorage);
   const rawDock = createDock(window.localStorage);
-  // the gate applies to the loaded tree BEFORE the first render, then again on every.
+  // the gate applies to the loaded tree BEFORE the first render, then again.
   rawDock.setModuleGate(currentModuleGate());
   watch(
     () => modulesOff.value,
     () => rawDock.setModuleGate(currentModuleGate()),
   );
 
-  // -- back/forward history: entries are (paneId, tabId) pairs pushed on tab activation
+  // back/forward history: entries are (paneId, tabId) pairs pushed on tab activation
   // AND pane focus; consecutive duplicates suppress.
   const nav = createNavHistory((e) => {
     const i = locateEntry(rawDock.tree.value, e);
@@ -763,14 +726,13 @@
     return true;
   });
 
-  // THE one record path: the pane's NOW-active tab (a navTabId identity, not an index.
+  // THE one record path: the pane's NOW-active tab.
   function recordNav(paneId: string) {
     const pane = findPane(rawDock.tree.value, paneId);
     const tab = pane?.tabs[pane.active];
     if (pane && tab) nav.push({ paneId, tabId: navTabId(tab) });
   }
 
-  // locate a tab by predicate.
   function findNavEntryBy(tree: DockNode, pred: (t: DockTab) => boolean): NavEntry | null {
     if (tree.kind === "pane") {
       const i = tree.tabs.findIndex(pred);
@@ -813,12 +775,12 @@
     },
   };
   provide(DOCK_API_KEY, dock);
-  // a repaired layout surfaces ONCE at boot - one toast for the whole receipt, never
+  // a repaired layout surfaces ONCE at boot - one toast for the whole record, never
   // one per repair, never a silent default-tree fallback. The record rides the local
   // emit funnel (canvas.ts emitLocalToast, the same subscriber set + fingerprint dedupe
-  // as the canvas feed); read stays true, so the receipt never counts unread in the
+  // as the canvas feed); read stays true, so the record never counts unread in the
   // bell. onMounted puts the emit after the NotificationCenter subscription (children
-  // mount first) - the boot itself never waits on this.
+  // mount first) - the boot itself never waits.
   onMounted(() => {
     const repairs = dock.bootRepairs;
     if (repairs.length === 0) return;
@@ -839,8 +801,7 @@
     loadModules().catch(() => {
     });
   });
-  // a reveal refused for lack of room is a no-op in the dock store (the toggle stays
-  // closed, zero churn).
+  // a reveal refused for lack of room is a no-op in the dock store.
   watch(
     () => dock.revealRefused.value,
     (comp) => {
@@ -859,7 +820,6 @@
   );
   // the sidebars are FIXED panes: no open/close state exists on desktop.
 
-  // -- item 6: the bottom panel's width modes --- aligned (the default).
   const bottomWidthMode = useBottomWidthMode();
   function clearBottomInsets(area: HTMLElement) {
     area.style.removeProperty("--bottom-inset-left");
@@ -867,7 +827,6 @@
     area.style.removeProperty("--bottom-sidebars-overhang");
   }
   function applyBottomWidth() {
-    // the bottom shell hides (toggle/drag-close).
     const bottom = document.querySelector<HTMLElement>(".dock-pane.edge-bottom");
     const area = bottom?.parentElement ??
       document.querySelector<HTMLElement>(".pane-area > .dock-root");
@@ -894,7 +853,6 @@
     const insetR = Math.max(0, Math.round(areaBox.right - right));
     area.style.setProperty("--bottom-inset-left", insetL + "px");
     area.style.setProperty("--bottom-inset-right", insetR + "px");
-    // the sidebars keep their full height in aligned mode.
     const bandH = Math.max(0, Math.round(bottom.offsetHeight));
     area.style.setProperty(
       "--bottom-sidebars-overhang",
@@ -918,7 +876,6 @@
     applyBottomWidth();
     applyNarrowSqueeze();
   }
-  // the pane-area resize observer (the give-way belt).
   let areaObserver: ResizeObserver | null = null;
 
   // the give-way also runs after any STRUCTURAL tree change. Idempotent: once the tree
@@ -931,10 +888,10 @@
   // arc 3c: the canvas - one store per page (panels are global state, settled Q10a).
   const canvas = createCanvasStore();
 
-  // -- the webui shell commands --- runCommand is the palette's local executor: "/"
-  // never reaches the agent. The function is hoisted above createChatHost only because
-  // it closes over `host` (retry); invocations happen after both exist, so the TDZ
-  // never bites.
+  // the webui shell commands --- runCommand is the palette's local executor: "/" never
+  // reaches the agent. The function is hoisted above createChatHost only because it
+  // closes over `host` (retry); invocations happen after both exist, so the TDZ never
+  // bites.
   async function runCommand(stateKey: string, text: string): Promise<boolean> {
     const fields = text.split(/\s+/);
     const name = fields[0] ?? "";
@@ -1025,9 +982,8 @@
         return true;
       }
       case "/new": {
-        // /new never forks a conversation the MACHINERY owns (an agent's canonical
-        // chat). The human's own conversations fork exactly as they always did: a fresh
-        // tab.
+        // /new never forks a conversation the MACHINERY owns (an agent's canonical. The
+        // human's own conversations fork exactly as they always did: a fresh tab.
         const id = focusedSessionId.value;
         if (id) {
           try {
@@ -1072,8 +1028,7 @@
     }
   }
 
-  // -- the chat host: every chat tab gets its own stream state keyed by the tab's
-  // instance key.
+  // the chat host: every chat tab gets its own stream state keyed.
   const host = createChatHost({
     defaultWorkspace: defaultWorkspaceNow,
     setTabSessionRef: (key, sessionId) => dock.setSessionRef(key, sessionId),
@@ -1089,8 +1044,8 @@
     runCommand: (key, text) => runCommand(key, text),
   });
 
-  // -- main-view: chat vs the module-owned board (kanban). ponytail: board renders in
-  // ONE pane (the active chat pane); the dockable-contract card gives board its own
+  // main-view: chat vs the module-owned board (kanban). ponytail: board renders in ONE
+  // pane (the active chat pane); the dockable-contract card gives board its own
   // component slot later.
   const mainView = ref<"chat" | "board">("chat");
   const boardComponent = computed(
@@ -1098,7 +1053,7 @@
   );
   const boardHostPane = ref<string>("");
 
-  // -- the settings path ------- The address bar names the settings tab while it is up.
+  // the settings path ------- The address bar names the settings tab while it is up.
   // Settings is still a CLOSABLE main tab, so the claim is a FOCUS claim, never a
   // pinned view: every chat focus hands the path back and the chat derivation below
   // resumes.
@@ -1155,8 +1110,6 @@
     switch (rec.kind) {
       case "task": {
         if (!findEdgePane(dock.tree.value, "inspector")) {
-          // the inspector is hidden (toggle / drag-close / the narrow give-way pruned
-          // it).
           dock.toggleEdge("inspector", "after");
         }
         const pane = findEdgePane(dock.tree.value, "inspector");
@@ -1187,12 +1140,9 @@
   }
   provide(CHAT_HOST_KEY, host);
 
-  // -- composer auto-focus: the signal every chat tab listens on.
   const composerFocus = createComposerFocusSignal();
   provide(COMPOSER_FOCUS_KEY, composerFocus);
 
-  // chat tab titles read the session labels; the sidebar highlight follows the FOCUSED
-  // tab.
   provide(DOCK_TAB_TITLE_KEY, (tab) => {
     if (tab.component === "chat") {
       // ephemeral tabs: the draft marker or a bound `eph-` id never matches a session
@@ -1220,11 +1170,10 @@
   // share one state across every keyless tab in the page
   provide(DOCK_CHAT_OPEN_KEY, (paneId, sessionId) => openChatTab(sessionId, paneId));
 
-  // the viewer opener - the same provide shape the chat opener rides (FilesTab injects.
+  // the viewer opener - the same provide shape the chat opener rides.
   provide(DOCK_VIEWER_OPEN_KEY, (v) => dock.openViewer(v));
 
-  // module-owned openers (the skills tab's RegistryList row click) hand the open over a
-  // WINDOW EVENT.
+  // module-owned openers (the skills tab's RegistryList row click) hand the open.
   function onViewerOpenEvent(e: Event) {
     const v = (e as CustomEvent).detail;
     if (validViewerRef(v)) {
@@ -1248,7 +1197,7 @@
     window.removeEventListener(CHAT_SESSION_OPEN_EVENT, onChatSessionOpenEvent),
   );
 
-  // -- focus + URL --- The URL owns ONLY the focused chat session: focusing a chat tab
+  // focus + URL --- The URL owns ONLY the focused chat session: focusing a chat tab
   // replaceStates /chat/<id> (unsaved = /); focus moving to a non-chat tab or pane
   // leaves the URL at the last focused chat session; layout and tab state NEVER enter
   // the URL. No pushState - the app never grows the history stack, so popstate only
@@ -1267,11 +1216,9 @@
   const draftConversationFocused = computed(() =>
     isDraftChatKey(dock.tree.value, focusedKey.value),
   );
-  // one provider for the fact, read by every door (a main pane's '+' through the.
+  // one provider for the fact, read by every door.
   provide(DOCK_DRAFT_FOCUS_KEY, draftConversationFocused);
 
-  // the focused session is broadcast to module-owned panels (the Agents tab's active
-  // row).
   function announceFocusedSession(id: string | null | undefined): void {
     window.dispatchEvent(
       new CustomEvent(FOCUSED_SESSION_EVENT, { detail: id ?? "" }),
@@ -1295,11 +1242,8 @@
     ),
   );
 
-  // the focused-session seam.
   provide(FOCUSED_SESSION_KEY, focusedSessionId);
 
-  // status bar telemetry reads the focused chat's state (zeros until a session carries
-  // numbers.
   const chatPanelPayload = computed(() => {
     const panel = chatPanelOf(canvas.panels);
     return panel ? normalizeChatPayload(panel.payload) : null;
@@ -1317,16 +1261,15 @@
   const anyBusyNow = host.anyBusyNow;
   const busyAll = host.busyAll;
 
-  // -- the status bar's two zones ----------------------- LEFT = work context. The
-  // workdir selector moved here from the composer (the chip died with it) and renders
-  // the SAME value the chip did: the never-blank law lives in
-  // composables/defaultWorkspace.ts.
+  // the status bar's two zones ----------------------- LEFT = work context. The workdir
+  // selector moved here from the composer (the chip died with it) and renders the SAME
+  // value the chip did: the never-blank law lives in composables/defaultWorkspace.ts.
   const focusedChatTab = computed(() =>
     focusedKey.value ? dock.findChatTab(focusedKey.value) : null,
   );
   const barWorkdir = computed(() => {
     const loc = focusedChatTab.value;
-    // no chat tab focused: the configured default IS the work context (a new session.
+    // no chat tab focused: the configured default IS the work context.
     if (!loc) return defaultWorkspaceNow();
     const st = host.states.get(loc.tab.key ?? "");
     return effectiveWorkdir(
@@ -1356,7 +1299,6 @@
     return transcriptPendingCount(focusedChatState.value.restored);
   });
 
-  // the pending segment's click.
   function focusPendingCalls() {
     const loc = focusedChatTab.value;
     if (!loc) return;
@@ -1380,7 +1322,6 @@
       // a settings CHIP click is the tab's own claim on the address bar.
       if (tab?.component === "settings") claimSettingsPath();
     }
-    // no chat focus in this gesture.
     const keep = focusedKey.value && dock.findChatTab(focusedKey.value) ? focusedKey.value : null;
     if (!keep) focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
     // this branch too resolves a CHAT focus, so it is chat's claim on the URL: closing
@@ -1400,10 +1341,8 @@
     }
   }
 
-  // clicks carry the pane focus.
   const lastPaneId = ref<string | null>(null);
   function onDocClick(e: MouseEvent) {
-    // the palette's field is not a pane gesture.
     if (
       e.target instanceof Element &&
       e.target.closest(".command-palette, #nav-palette-slot")
@@ -1414,7 +1353,6 @@
       null;
     const paneId = el?.getAttribute("data-pane-id") ?? null;
     if (paneId) lastPaneId.value = paneId;
-    // a pane focus records too.
     if (paneId) recordNav(paneId);
     refocusFrom(paneId);
   }
@@ -1504,12 +1442,10 @@
 
   // popstate re-targets to the URL's session.
   async function onPop() {
-    // /settings/ lands the settings tab.
     if (isSettingsPath(window.location.pathname)) {
       landSettingsRoute();
       return;
     }
-    // /board re-enters the kanban view without touching chat focus.
     if (/^\/board\/?$/.test(window.location.pathname)) {
       resolveBoardRoute();
       return;
@@ -1533,7 +1469,6 @@
       }
       return;
     }
-    // home: an existing chat tab takes the focus.
     const first = dock.firstChatTab();
     if (first?.tab.key) {
       dock.focus(first.paneId, first.index);
@@ -1564,10 +1499,10 @@
     if (!isSettingsPath(window.location.pathname)) return;
     history.replaceState({}, "", urlPath.value);
   });
-  // structural changes never steal focus, but a gone focus re-resolves (closeTab's.
+  // structural changes never steal focus, but a gone focus re-resolves.
   watch(dock.tree, () => refocusFrom(null));
 
-  // -- composer auto-focus --- focus-on-select. A transition to null never requests;
+  // composer auto-focus --- focus-on-select. A transition to null never requests;
   // moving to board/settings never changes focusedKey, so those views never steal.
   watch(focusedKey, (key) => {
     // the settings landing keeps the boot chat focus out of the way: the path names
@@ -1590,7 +1525,6 @@
     if (key) composerFocus.request(key);
   }
 
-  // per-session stream busy set.
   function markRead(id: string) {
     sessions.value = sessions.value.map((s) =>
       s.id === id ? { ...s, unread: false } : s,
@@ -1602,15 +1536,13 @@
     try {
       const list = await fetchSessions();
       sessions.value = list;
-      // server-reported live runs feed the host.
       host.noteServerActive(list.filter((s) => s.running).map((s) => s.id));
     } catch {
     }
   }
 
-  // -- the push channel's shell half ------------------- socket is the page's ONE.
+  // the push channel's shell half ------------------- socket is the page's ONE.
   let socket: SocketClient | null = null;
-  // the health popover reads the push channel's state ("socket open" vs reconnecting).
   const socketStatus = ref<SocketStatus>("idle");
 
   // hintNotifications pulls the finished-things + pending-verdict truth on an event
@@ -1644,7 +1576,6 @@
     const row = sessions.value.find((s) => s.id === session);
     if (row) row.running = active;
     if (!row || !active) hintSessions();
-    // a run edge may issue or settle a verdict card while nothing streams (the.
     hintNotifications();
   }
 
@@ -1668,7 +1599,7 @@
     announceCanvasReset();
   }
 
-  // -- the session's remembered context --- chatSession resolves a tab's binding to.
+  // the session's remembered context --- chatSession resolves a tab's binding.
   function chatSession(tab: { sessionRef?: string | null }): Session | null {
     if (!tab.sessionRef || tab.sessionRef === EPHEMERAL_DRAFT_REF) return null;
     return sessions.value.find((s) => s.id === tab.sessionRef) ?? null;
@@ -1699,7 +1630,6 @@
   // tree flip would be invisible (the bottom toggle's dead click). Returning to desktop
   // finds the layout exactly as the user left it.
   const sidebarDocked = computed(() => findEdgePane(dock.tree.value, "sidebar") !== null);
-  // the right shell lives while its marker exists - even empty (free content.
   const inspectorDocked = computed(() => findEdgePane(dock.tree.value, "inspector") !== null);
   const bottomDocked = computed(() => findEdgePane(dock.tree.value, "bottom") !== null);
 
@@ -1744,7 +1674,6 @@
     PRIMARY_TAB_COMPONENTS.filter((id) => !moduleGated(id, currentModuleGate())),
   );
   const sidebarDrawerTabs = computed(() => drawerTabsFor("sidebar", sidebarFloor.value));
-  // the inspector drawer's registry floor skips a gated module's chip.
   const inspectorFloor = computed(() =>
     INSPECTOR_TAB_COMPONENTS.filter((id) => !moduleGated(id, currentModuleGate())),
   );
@@ -1762,7 +1691,6 @@
     clampDrawerTab(inspectorDrawerTabs.value, mobileInspectorTab.value)?.id,
   );
 
-  // the bottom drawer's tab set.
   const mobileBottomTab = ref(0);
   const bottomFloor = computed(() =>
     defaultHostTabs("bottom").filter(
@@ -1829,7 +1757,7 @@
     applyShellToggle("inspector");
   }
 
-  // --: the command palette (Ctrl+K, the cluster button, one overlay) - a plain command
+  // the command palette (Ctrl+K, the cluster button, one overlay) - a plain command
   // array over the shell's own flows; the registry never owns app state
   // (PaletteCommandDeps is the one seam).
   const paletteOpen = ref(false);
@@ -1839,9 +1767,7 @@
     paletteOpen.value = !paletteOpen.value;
   }
 
-  // open (or focus) any dockable from the palette.
   function paletteOpenDockable(id: DockComponentName) {
-    // the palette is a door of its own.
     if (id === "settings") claimSettingsPath();
     const area = DOCKABLES.find((d) => d.id === id)?.area ?? "main";
     // canvas C1: the view's HOME decides the reveal and the seat - through ONE adapter
@@ -1872,7 +1798,6 @@
   // active-editor-group read, the same focus memory "close current tab" uses - and
   // falls back to the first main pane (minted when the tree holds none).
   function openSettingsTab() {
-    // the tab names the address bar from here on.
     claimSettingsPath();
     const found = findComponentTab(dock.tree.value, "settings");
     if (found) {
@@ -1884,7 +1809,6 @@
     dock.openSingleton(paneId, "settings");
   }
 
-  // "Switch to recent session".
   function openRecentSessionTab() {
     const rec = sessions.value
       .filter((s) => !s.archived)
@@ -1903,7 +1827,6 @@
     dock.focus(pane.id, i >= 0 ? i : pane.active);
   }
 
-  // "Close current tab" - the last-focused pane's active tab, when it is closable.
   function paletteCloseCurrent() {
     const paneId = lastPaneId.value ??
       dock.activeChatTab()?.paneId ??
@@ -1942,11 +1865,9 @@
     }),
   );
 
-  // the cluster + keys share the nav's back/forward (one path).
   const canBack = nav.canBack;
   const canForward = nav.canForward;
 
-  // Alt+Left / Alt+Right walk the history; Ctrl+K opens the palette.
   function onNavKeys(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key === "k" && !e.altKey && !e.shiftKey) {
       e.preventDefault();
@@ -1992,7 +1913,7 @@
     }
   }
 
-  // branchSession flow: POST creates the child (parent_id set, history inherited.
+  // branchSession flow: POST creates the child.
   async function branchChatSession(id: string) {
     let child: Session | null = null;
     try {
@@ -2005,7 +1926,6 @@
     openChatTab(child.id);
   }
 
-  // rename flow (the /label parity).
   async function renameChatSession(id: string, label: string) {
     const updateList = (list: Session[]) =>
       list.map((s) => (s.id === id ? { ...s, label } : s));
@@ -2019,7 +1939,6 @@
     }
   }
 
-  // delete flow: the sidebar only signals intent.
   const deleteId = ref<string | null>(null);
   const deleteLabel = ref("");
   function askDelete(id: string) {
@@ -2056,13 +1975,11 @@
     }
   }
 
-  // -- theme: color mode + theme, two knobs, both persisted --- Color mode.
   const colorMode = ref<ColorMode>("auto");
   const themeId = ref<string>(DEFAULT_THEME_ID);
   let systemPrefersDark = true;
   let mediaQuery: MediaQueryList | null = null;
   const userThemes = ref<UserTheme[]>([]);
-  // the list starts empty and loads async.
   let userThemesLoaded = false;
 
   function applyTheme() {
@@ -2080,7 +1997,6 @@
         themeId.value = DEFAULT_THEME_ID;
         localStorage.setItem(THEME_ID_KEY, DEFAULT_THEME_ID);
       }
-      // still loading: keep the pick, the built-in palette applies until the.
     }
     clearThemeTokens(document.documentElement.style);
     const dark =
@@ -2102,8 +2018,6 @@
 
   watch(colorMode, applyTheme);
   watch(themeId, applyTheme);
-  // a user theme edited (or deleted) on disk re-applies live the moment the refreshed
-  // list lands.
   watch(
     userThemes,
     () => {
@@ -2127,10 +2041,8 @@
     } catch {
       userThemes.value = [];
     } finally {
-      // the first fetch settled: the vanished-file fallback may fire.
       userThemesLoaded = true;
     }
-    // a file id the folder no longer serves clean falls back to the built-in.
     const resolved = resolveThemeId(themeId.value, userThemes.value);
     if (resolved !== themeId.value) {
       themeId.value = resolved;
@@ -2139,8 +2051,6 @@
     applyTheme();
   }
 
-  // -- tab-title spinner: a global read over the per-session busy map --- Any live
-  // stream.
   const TITLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let spinnerTimer: ReturnType<typeof setInterval> | null = null;
   let savedTitle: string | null = null;
@@ -2163,9 +2073,7 @@
   });
 
   onMounted(async () => {
-    // clicks carry pane focus (the tab bars, the empty panes, the composers.
     document.addEventListener("click", onDocClick);
-    // type-to-capture: window-level keydown (any printable key jumps into the focused.
     window.addEventListener("keydown", onKeyCapture);
     window.addEventListener("keydown", onNavKeys);
     // the give-way belt: the resize event alone misses layout changes that never.
@@ -2175,7 +2083,6 @@
       areaObserver = new ResizeObserver(() => applyNarrowSqueeze());
       areaObserver.observe(areaEl);
     }
-    // the width pass re-measures on viewport changes too (the insets are px.
     window.addEventListener("resize", onWinResize);
     void nextTick(onWinResize); // the boot pass (the watch needs a change)
 
@@ -2186,8 +2093,6 @@
       closeOverlays(); // crossing the breakpoint resets overlay state
     });
 
-    // restore the persisted knobs; the old merged select's value migrates once
-    // (restoreThemeKnobs).
     const restored = restoreThemeKnobs(
       localStorage.getItem(THEME_ID_KEY),
       localStorage.getItem(COLOR_MODE_KEY),
@@ -2198,7 +2103,6 @@
     localStorage.setItem(THEME_ID_KEY, restored.theme);
     void loadUserThemes();
 
-    // restore the chat appearance (chat | stacked).
     appearance.value = parseAppearance(localStorage.getItem(APPEARANCE_KEY));
 
     mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -2212,7 +2116,7 @@
     // history wiring: popstate re-targets via the URL's session id
     window.addEventListener("popstate", onPop);
 
-    // -- the push channel: ONE websocket per page load carries every live fact the.
+    // the push channel: ONE websocket per page load carries every live fact.
     socket = createSocketClient({
       health: (s) => {
         healthy.value = (s.status ?? "ok") === "ok";
@@ -2230,8 +2134,6 @@
       chips: (_session, frame) => ingestChipFrame(frame),
       chat: (session, event, payload) => {
         host.noteSocketChat(session, event, payload);
-        // the verdict gap: issuance and the answer ride the chat topic's structural
-        // frames.
         if (
           event === "tool_call" ||
           event === "tool_result" ||
@@ -2243,13 +2145,11 @@
       },
       open: ({ reconnect }) => {
         if (!reconnect) return;
-        // nothing replayed server-side.
         void catchUp();
       },
     });
     socket.connect();
     watch(socket.status, (v) => (socketStatus.value = v), { immediate: true });
-    // boot liveness: the dot + the sidebar render before the first pushed frame (up.
     const h = await fetchHealthInfo();
     healthy.value = h !== null;
     if (h) {
@@ -2265,7 +2165,6 @@
     // - issued is not settled, which is exactly the distinction that produced three
     // nightly reds of 111-socket-push.
     const bootReads: Promise<unknown>[] = [
-      // the notifications store's boot pair (/notifications, /verdicts).
       notificationFeedSettled(),
       // the models fetch does NOT block boot.
       refreshModels()

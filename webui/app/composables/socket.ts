@@ -154,7 +154,7 @@ export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): vo
       return;
     }
     case "canvas": {
-      // the payload is the SSE frame verbatim: {type: "view_model_delta", panel: {..}}.
+      // the payload is the SSE frame verbatim: {type: "view_model_delta", panel: {.}}.
       const data = env.data as Record<string, unknown> | undefined;
       const event =
         env.event ||
@@ -237,7 +237,7 @@ export function createSocketClient(
       }
       // Hand recovery to the ladder NOW. The browser's close EVENT is not a promise: on
       // a half-open wire it can be deferred until the network returns (measured: the
-      // entire dark window under `ab set offline`) or never arrive at all.
+      // entire dark window under `ab set offline`) or never arrive.
       if (ws === socket) dropConnection();
     }, delayMs ?? budget());
   }
@@ -303,7 +303,6 @@ export function createSocketClient(
       if (env) dispatchFrame(env, handlers);
     };
     socket.onclose = () => {
-      // a socket we already dropped is not news.
       if (ws !== socket) return;
       dropConnection();
     };

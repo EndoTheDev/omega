@@ -9,7 +9,7 @@ import { scanModuleUIs } from "../app/composables/compose.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-// -- scanModuleUIs: a directory is the registration --
+// scanModuleUIs: a directory is the registration
 
 test("scanModuleUIs finds module ui dirs with their components", () => {
   const scratch = makeScratch();
@@ -79,7 +79,7 @@ test("scanModuleUIs tolerates a missing or unreadable modules root", () => {
   assert.deepEqual(scanModuleUIs("/definitely/not/here/o/omega"), []);
 });
 
-// -- ui/dockable.json: the module's dockable declaration --
+// ui/dockable.json: the module's dockable declaration
 
 test("scanModuleUIs reads a valid dockable.json alongside the components", () => {
   const scratch = makeScratch();
@@ -135,7 +135,7 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
   }
 });
 
-// -- the canary wiring (structural).
+// the canary wiring (structural).
 
 test("the canary component lives in the tools module, not the shell", () => {
   const src = readFileSync(`${root}/../harness/tools/ui/ToolsList.vue`, "utf8");
@@ -165,7 +165,6 @@ test("the inspector's module tab hosts only the active panel's module", () => {
   );
   assert.ok(panelVue.includes("module-panels.generated"), "imports the generated list");
   assert.ok(panelVue.includes('class="module-panels"'), "has the mount section");
-  // the tab bar lives in the dock tabbar.
   assert.ok(panelVue.includes('v-if="panel"'), "renders the resolved panel only");
   // the module tab ids ARE the composition's module names (no alias map)
   assert.ok(panelVue.includes("module === props.module"));

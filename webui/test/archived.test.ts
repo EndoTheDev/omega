@@ -28,7 +28,7 @@ describe("bucketSessions: the archived group", () => {
   it("always lands last, after the newest time bucket", () => {
     const b = bucketSessions(
       [
-        // archived but the FRESHEST timestamp in the list - age never lifts it out of.
+        // archived but the FRESHEST timestamp in the list - age never lifts it out.
         sess({ id: "arch", archived: true, updated_at: `${TODAY}T13:00:00` }),
         sess({ id: "today", updated_at: `${TODAY}T09:00:00` }),
         sess({ id: "old", updated_at: "2026-10-01T10:00:00" }),
@@ -92,7 +92,7 @@ describe("bucketSessions: the archived group", () => {
   });
 });
 
-// -- wiring: the footer toggle died with the group --
+// wiring: the footer toggle died with the group
 describe("archived group wiring (sources)", () => {
   it("the sidebar holds no archived footer toggle and no showArchived prop", () => {
     const sidebar = src("../harness/store/ui/AppSidebar.vue");

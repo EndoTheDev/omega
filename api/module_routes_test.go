@@ -89,8 +89,6 @@ func TestModuleLiteralRescuedFromBaseWildcard(t *testing.T) {
 		t.Fatalf("search seat = %d body=%q, want the capsule 200 []", rec.Code, rec.Body.String())
 	}
 
-	// the detail wildcard keeps unclaimed paths - a real session id still reaches
-	// /sessions/{id} (501 here.
 	rec = httptest2.NewRecorder()
 	h.ServeHTTP(rec, httptest2.NewRequest(http.MethodGet, "/sessions/jrn-1", nil))
 	if rec.Code != http.StatusNotImplemented && rec.Code != http.StatusNotFound {
@@ -106,7 +104,6 @@ func TestModuleLiteralRescuedFromBaseWildcard(t *testing.T) {
 		t.Fatalf("method miss served the capsule literal: %d", rec.Code)
 	}
 
-	// live toggle off: the rescue lane dies with the routes.
 	if err := s.rewireSeams(&core.Context{}); err != nil {
 		t.Fatalf("rewire empty: %v", err)
 	}

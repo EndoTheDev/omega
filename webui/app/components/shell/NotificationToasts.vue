@@ -41,7 +41,6 @@
   }>();
 
   async function open(t: NotificationToast) {
-    // the approval toast: its click opens the notifications tab, where the pending.
     if (t.kind === "verdict") {
       emit("open", openToastVerdict(t));
       return;
@@ -53,14 +52,12 @@
     return t.kind === "verdict" ? t.card.title : t.record.title;
   }
 
-  // meta is the row's second line.
   function meta(t: NotificationToast): string {
     return t.kind === "verdict"
       ? "approval requested"
       : `${t.record.verdict} · ${notificationAge(t.record.created_at)}`;
   }
 
-  // glyph is the source chip (the old bell row's vocabulary).
   function glyph(t: NotificationToast): string {
     if (t.kind === "verdict") return "?";
     switch (t.record.kind) {
@@ -72,7 +69,6 @@
   }
 
   onMounted(() => {
-    // the feed's first mount usually lands here (the menubar is shell chrome.
     startNotificationFeed();
   });
   onUnmounted(() => {

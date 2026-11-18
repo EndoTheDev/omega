@@ -14,7 +14,6 @@ func TestCommandMissIsStructurallyRecognisable(t *testing.T) {
 	if !errors.Is(err, ErrCommandMiss) {
 		t.Fatalf("CommandMiss does not carry ErrCommandMiss: %v", err)
 	}
-	// the phrase is the one every surface has printed since the chain existed.
 	if err.Error() != "no handler for /export" {
 		t.Fatalf("text = %q, want the historical phrase", err.Error())
 	}

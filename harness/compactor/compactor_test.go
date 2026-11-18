@@ -160,8 +160,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 		}
 	}
 
-	// The no-fill-percentage rule: the prompt must never disclose how full the context
-	// window is.
+	// The no-fill-percentage rule: the prompt must never disclose how full the context.
 	if strings.ContainsRune(header, '%') {
 		t.Errorf("doctrine prompt discloses a percentage\nheader:\n%s", header)
 	}

@@ -204,7 +204,7 @@ func TestUpdateRejectsUndeclaredPanelId(t *testing.T) {
 	}
 }
 
-// TestDispatchHappyPath: the dispatch hands the call to the handler verbatim and its.
+// TestDispatchHappyPath: the dispatch hands the call to the handler verbatim.
 func TestDispatchHappyPath(t *testing.T) {
 	var got core.ActionCall
 	c, err := mountedCtx(t, []core.PanelProvider{&panelProviderStub{
@@ -334,8 +334,7 @@ func TestSinkInstallationAndRoute(t *testing.T) {
 	}
 }
 
-// TestSinksStayInTheirNamespace: each sink's closure is bound to its own module
-// namespace.
+// TestSinksStayInTheirNamespace: each sink's closure is bound to its own module.
 func TestSinksStayInTheirNamespace(t *testing.T) {
 	mk := func(name string) *sinkProviderStub {
 		return &sinkProviderStub{panelProviderStub: &panelProviderStub{name: name, panels: []core.Panel{
@@ -407,7 +406,7 @@ func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 		t.Fatalf("kanban dispatch after disable = %v, want ErrUnknownModule", err)
 	}
 
-	// .. and the scoped remount appends a fresh provider: it registers again, files stays
+	// . and the scoped remount appends a fresh provider: it registers again, files stays
 	// exactly where it was.
 	onCtx := &core.Context{PanelProviders: twoProviders()}
 	if err := c.Resync(onCtx); err != nil {
@@ -481,8 +480,6 @@ func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
 	chat := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "http_channel", panels: []core.Panel{
 		panel("chat", "chat", act("stop", "http_channel"), act("retry", "http_channel")),
 	}}}
-	// the real boot order: the channel's Start registers the capsule and the canvas builds
-	// over the providers (wire.
 	c, err := mountedCtx(t, []core.PanelProvider{kb, chat}, nil)
 	if err != nil {
 		t.Fatalf("NewCanvas: %v", err)
@@ -498,7 +495,6 @@ func TestResyncKeepsLateRegistrantsThroughChurn(t *testing.T) {
 		t.Fatalf("Resync (kanban enable): %v", err)
 	}
 
-	// the late registrant survived the churn whole.
 	chat.mu.Lock()
 	update := chat.update
 	chat.mu.Unlock()

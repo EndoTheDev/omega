@@ -46,7 +46,7 @@ const QUIET_CONSUMERS: Array<[string, string[]]> = [
   ["insights", ["harness", "store", "ui", "InsightsTab.vue"]],
 ];
 
-// -- the opt-in: quiet by default, sessions on request -----------------
+// the opt-in: quiet by default, sessions on request ---------------
 
 test("the sessions feel is a consumer opt-in with the quiet list as its default", () => {
   assert.match(
@@ -92,7 +92,7 @@ test("every feel rule is gated on the consumer class - the quiet list is untouch
   }
 });
 
-// -- the vocabulary itself (the sessions sidebar's row law) ------------
+// the vocabulary itself (the sessions sidebar's row law) ----------
 
 test("the hover raise speaks the sessions row law", () => {
   assert.match(listSrc, /border-radius: var\(--r-chip\)/, "the chip radius");
@@ -181,7 +181,7 @@ test("the active row is the open one: raised surface, accent name", () => {
   );
 });
 
-// -- the expander: the sessions chevron, per consumer -----------------
+// the expander: the sessions chevron, per consumer ---------------
 
 test("the expander glyph is per consumer: text at home, the lucide chevron on request", () => {
   assert.match(listSrc, /expander\?: "text" \| "chevron"/, "a typed glyph choice");
@@ -208,7 +208,7 @@ test("the expander glyph is per consumer: text at home, the lucide chevron on re
   );
 });
 
-// -- the default agent has no toggle at all ---------------------------
+// the default agent has no toggle at all -------------------------
 
 test("the default agent renders NO toggle - the main badge is the reason", () => {
   assert.match(
@@ -248,7 +248,7 @@ test("the default agent renders NO toggle - the main badge is the reason", () =>
   );
 });
 
-// -- the shell -> panel focus seam ------------------------------------
+// the shell -> panel focus seam ----------------------------------
 
 test("the focused-session event spells the same in the shell and the panel", () => {
   assert.equal(FOCUSED_SESSION_EVENT, "omega:focused-session");
@@ -283,7 +283,7 @@ test("the focused-session event spells the same in the shell and the panel", () 
 });
 
 test("the seam has a PULL: a panel that mounts late asks for the id", () => {
-  // The dock renders only the ACTIVE tab's pane slot (DockPane's v-if), so.
+  // The dock renders only the ACTIVE tab's pane slot (DockPane's v-if),.
   assert.equal(FOCUSED_SESSION_QUERY_EVENT, "omega:query-focused-session");
   assert.match(chatSrc, /FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session"/);
   assert.match(

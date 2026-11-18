@@ -15,7 +15,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// -- parseThinkingDisplay: the localStorage round-trip --
+// parseThinkingDisplay: the localStorage round-trip
 
 test("parseThinkingDisplay accepts the two non-default modes", () => {
   assert.equal(parseThinkingDisplay("expanded"), "expanded");
@@ -32,7 +32,7 @@ test("parseThinkingDisplay falls back to auto on missing/tampered values", () =>
   assert.equal(parseThinkingDisplay({ auto: true }), "auto");
 });
 
-// -- thinkingWantOpen: the pure open mapping --
+// thinkingWantOpen: the pure open mapping
 
 test("only expanded forces the block open; auto/collapsed stay shut", () => {
   assert.equal(thinkingWantOpen("expanded"), true);
@@ -44,7 +44,7 @@ test("the shared mode key persists under omega.thinking-display", () => {
   assert.equal(THINKING_DISPLAY_KEY, "omega.thinking-display");
 });
 
-// -- structural wiring: the card's must-haves in the components --
+// structural wiring: the card's must-haves in the components
 
 test("ThinkingBlock pins a manual toggle and skips pinned recompute", () => {
   const t = src("components/chat/ThinkingBlock.vue");
@@ -52,7 +52,6 @@ test("ThinkingBlock pins a manual toggle and skips pinned recompute", () => {
   assert.match(t, /<details\s+ref="el"/);
   // the element stays UNCONTROLLED: the streaming-driven:open binding is gone
   assert.doesNotMatch(t, /:open="streaming"/);
-  // the pin: a summary click records the post-toggle state and auto recompute (mount.
   assert.match(t, /@click="onSummaryClick"/);
   assert.match(t, /pinned\.value = !el\.value\.open/);
   assert.match(t, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);

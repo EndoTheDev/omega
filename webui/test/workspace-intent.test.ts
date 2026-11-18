@@ -105,7 +105,6 @@ describe("the chat host: draft intent state", () => {
     assert.equal(body.workspace, "/tmp/proj", "the intent rode the create");
     assert.equal(st.workspaceIntent, "", "the send consumed the intent");
 
-    // a follow-up send is bound today.
     calls.length = 0;
     await host.submit("w1", "again");
     const body2 = calls[0]?.[2] as Record<string, unknown>;
@@ -125,7 +124,7 @@ describe("the chat host: draft intent state", () => {
   });
 });
 
-// the seed half: a fresh UNBOUND, non-ephemeral state initializes its intent from the.
+// the seed half: a fresh UNBOUND, non-ephemeral state initializes its intent.
 describe("the default workspace seed", () => {
   it("a fresh unbound draft is born with the configured default", () => {
     const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
@@ -147,7 +146,6 @@ describe("the default workspace seed", () => {
     const calls = recordFetch(run);
     const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
     const st = host.ensureState("w1");
-    // the composer's clear affordance.
     st.workspaceIntent = "";
     await host.submit("w1", "hello");
     const body = calls[0]?.[2] as Record<string, unknown>;
@@ -195,14 +193,14 @@ describe("the default workspace seed", () => {
     assert.equal(bound.workspaceIntent, "", "");
     assert.equal(eph.workspaceIntent, "", "");
     assert.equal(picked.workspaceIntent, "/tmp/picked", "a picked value stands");
-    // idempotent: a second boot-shaped call cannot reseed a consumed value (a send.
+    // idempotent: a second boot-shaped call cannot reseed a consumed value.
     draft.workspaceIntent = "";
     host.seedDefaultWorkspace("/home/endo");
     assert.equal(draft.workspaceIntent, "/home/endo", "still seeds blanks");
   });
 });
 
-// the shared-signal half: defaultWorkspace.ts is the ONE module-scoped value the.
+// the shared-signal half: defaultWorkspace.ts is the ONE module-scoped value.
 describe("the default-workspace signal", () => {
   it("normalize trims strings and refuses everything else", () => {
     assert.equal(normalizeDefaultWorkspace("/home/endo"), "/home/endo");

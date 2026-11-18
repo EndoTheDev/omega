@@ -129,7 +129,6 @@ func TestPinnedSkillsUnknownNameIsAFireError(t *testing.T) {
 		turned = true
 		return "x", nil
 	}
-	// The skills face is mounted, the name just is not there.
 	r.skills = fakeSkills{files: map[string]string{}}
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
 	if turned {
@@ -163,7 +162,6 @@ func TestSchemaSkillsValidation(t *testing.T) {
 			t.Errorf("accepted %q", bad)
 		}
 	}
-	// Empty entries trim away rather than reject.
 	cfg, err = ParseConfig([]byte("jobs:\n  - name: tr\n    schedule: \"0 8 * * *\"\n    prompt: p\n    skills:\n      - \"\"\n      -  padded \n"))
 	if err != nil {
 		t.Fatalf("ParseConfig: %v", err)
@@ -190,8 +188,7 @@ func TestAgentHomeRejectsSkills(t *testing.T) {
 }
 
 func TestJobsListingCarriesThePrompt(t *testing.T) {
-	// review fix: the editor drafts the WHOLE job from the listing row, so the row must
-	// carry the authored prompt.
+	// review fix: the editor drafts the WHOLE job from the listing row, so the row must.
 	r := newTestRunner(t, t.TempDir(),
 		Job{Name: "ed", Schedule: "0 12 * * *", Prompt: "the authored message"})
 	if got := r.Jobs()[0].Prompt; got != "the authored message" {
@@ -220,7 +217,6 @@ func TestEditorSaveRoundTripsSkills(t *testing.T) {
 	if got := fresh.jobsSnapshot()[0].Skills; len(got) != 2 {
 		t.Fatalf("reloaded skills = %v, want the persisted list", got)
 	}
-	// A later edit without skills clears the list.
 	jobs, err = r.SaveJob(Job{Name: "fresh", Schedule: "0 9 * * *", Prompt: "p", Enabled: boolPtr()})
 	if err != nil {
 		t.Fatalf("SaveJob #2: %v", err)

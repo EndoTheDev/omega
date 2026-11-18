@@ -19,7 +19,6 @@ func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
 	if len(agentDSNs) == 0 {
 		return nil
 	}
-	// The pre-count runs on its own short-lived handle, closed before any move.
 	mainDB, err := sql.Open("sqlite", mainDSN+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return fmt.Errorf("agent rows migration: open main store: %w", err)
@@ -131,7 +130,7 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 
 // RetagAgentSessions rewrites the agent tag of every session row in ONE store. A
 // missing destination store is a no-op: a source that never ran has nothing to re-tag,
-// and the clone must not create a database it has no rows for.
+// and the clone must not create a database it has no rows.
 func RetagAgentSessions(dsn, to string, from ...string) error {
 	if _, err := os.Stat(dsn); err != nil {
 		if os.IsNotExist(err) {

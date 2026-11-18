@@ -1,4 +1,4 @@
-// Package store provides the session persistence seam (agent.StoreProvider) via the.
+// Package store provides the session persistence seam (agent.StoreProvider).
 package store
 
 import (
@@ -63,7 +63,7 @@ type hygieneToolProvider struct {
 	providerFn func() agent.Provider
 }
 
-// provider resolves the live provider seam at call time (nil-safe, mirroring the.
+// provider resolves the live provider seam at call time.
 func (p *hygieneToolProvider) provider() agent.Provider {
 	if p.providerFn == nil {
 		return nil
@@ -134,7 +134,7 @@ func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]an
 	}
 }
 
-// hygiene returns the store's live hygiene config snapshot: the tool never holds a.
+// hygiene returns the store's live hygiene config snapshot: the tool never holds.
 func (p *hygieneToolProvider) hygiene() HygieneConfig {
 	return p.store.HygieneConfig()
 }

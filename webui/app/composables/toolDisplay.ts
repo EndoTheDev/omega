@@ -12,7 +12,7 @@ export type ToolDisplay = "expanded" | "collapsed" | "auto";
 export const TOOL_DISPLAY_KEY = "omega.tool-display";
 export const DEFAULT_TOOL_DISPLAY: ToolDisplay = "auto";
 
-// Anything but the exact non-default strings (missing key, older build, tampered.
+// Anything but the exact non-default strings.
 export function parseToolDisplay(v: unknown): ToolDisplay {
   return v === "expanded" || v === "collapsed" ? v : "auto";
 }

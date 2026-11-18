@@ -68,7 +68,7 @@ const (
 	ChatStatusComplete  = "complete"
 )
 
-// Roles of a chat row: the user bubble, an assistant bubble (its blocks split.
+// Roles of a chat row: the user bubble, an assistant bubble.
 const (
 	ChatRoleUser      = "user"
 	ChatRoleAssistant = "assistant"
@@ -129,7 +129,6 @@ type ChatPayload struct {
 
 // buildPlugins never mounts, so its panels are simply absent from the snapshot.
 type PanelProvider interface {
-	// Panels returns the panel descriptors this module mounts.
 	Panels() []Panel
 	// HandleAction executes one action call routed to this module.
 	HandleAction(call ActionCall) (any, error)

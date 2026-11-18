@@ -5,7 +5,7 @@
 // (core.ExpandAtMentions) - the picker here only helps TYPE the tokens; it never reads
 // or expands files.
 
-// -- palette model --
+// palette model
 
 export interface PaletteItem {
   name: string;
@@ -19,11 +19,9 @@ export interface PaletteItem {
 
 // The one set the ChatTab + host use to route a "/" draft.
 
-// The webui's shell set: /exit is deliberately absent (nothing to quit), with.
+// The webui's shell set: /exit is deliberately absent (nothing to quit),.
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
-  // rename law: /modules is the name, /extensions keeps its palette row as the alias -
-  // no muscle-memory break..
   { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
   { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
   { name: "/fork", description: "aim the next send to continue from the newest response", kind: "shell" },
@@ -59,7 +57,7 @@ export function paletteCommands(
 // The one set the ChatTab + host use to route a "/" draft.
 export const SHELL_COMMAND_NAMES = new Set(WEBUI_SHELL_COMMANDS.map((c) => c.name));
 
-// filterCommands: a case-insensitive substring over the name AND the description (a.
+// filterCommands: a case-insensitive substring over the name AND the description.
 export function filterCommands(query: string, items: PaletteItem[]): PaletteItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
@@ -68,9 +66,9 @@ export function filterCommands(query: string, items: PaletteItem[]): PaletteItem
   );
 }
 
-// -- the @ mention token --
+// the @ mention token
 
-// MentionQuery at a caret: active when a token like "@..".
+// MentionQuery at a caret: active when a token like "@.".
 export interface MentionQuery {
   active: boolean;
   token: string;
@@ -117,12 +115,12 @@ export function replaceMentionToken(
   };
 }
 
-// -- the / slash token --
+// the / slash token
 
 // SlashQuery at a caret: active when the caret sits inside a token that starts with "/"
 // and runs back to a word boundary (whitespace, an open paren, or the text start) - the
 // draft's leading word is just the boundary-free case, so a leading slash behaves
-// exactly as before.
+// exactly.
 export interface SlashQuery {
   active: boolean;
   token: string;
@@ -167,7 +165,7 @@ export function clampIndex(active: number, delta: number, len: number): number {
   return (active + delta + len) % len;
 }
 
-// -- the wire (production shapes; fetch happens at the components) --
+// the wire (production shapes; fetch happens at the components)
 
 export interface PaletteExtensionCommand {
   name: string;

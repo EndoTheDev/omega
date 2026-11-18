@@ -50,7 +50,7 @@
   // the app's ONE keyboard arithmetic (the command palette's wrap).
   import { clampIndex } from "../../composables/commandRegistry";
 
-  // The pop opens DOWN by default (a band/drawer head sits at the top of its pane.
+  // The pop opens DOWN by default.
   const props = withDefaults(
     defineProps<{
       options: { value: V; label: string; cls?: string }[];
@@ -69,12 +69,11 @@
   const root = ref<HTMLElement | null>(null);
   const chipEl = ref<HTMLButtonElement | null>(null);
 
-  // the chip face: the current option's label.
   const current = computed(
     () => props.options.find((o) => o.value === props.modelValue)?.label ?? String(props.modelValue),
   );
 
-  // -- the KEYBOARD LAW -------- Exactly ONE row is in the tab order (roving tabindex),
+  // the KEYBOARD LAW -------- Exactly ONE row is in the tab order (roving tabindex),
   // arrows walk the rows through clampIndex (the palette's wrap - never a second
   // modulo), Home/End jump, Enter/Space picks the focused row, Escape closes and hands
   // focus back to the chip, Tab leaves the popup without stealing the move.
@@ -179,7 +178,6 @@
 
   function close(restoreFocus = true) {
     if (!open.value) return;
-    // the popup is about to unmount.
     const hadFocus = !!root.value?.contains(document.activeElement);
     open.value = false;
     active.value = 0;

@@ -1,7 +1,7 @@
 // omega webui: the workdir never-blank law at its NEW home. The regression this pins: a
 // bound session with an EMPTY row workspace pin has its tool runs rooted at the
 // server's default_workspace (the Go side), so the segment must show that default - not
-// a blank that hides the folder the commands run in.
+// a blank that hides the folder the commands run.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";

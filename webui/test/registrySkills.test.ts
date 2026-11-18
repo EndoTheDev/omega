@@ -21,7 +21,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(root, "webui", ...p), "utf8");
 
-// -- normalizeDisabledPayload: a junk fold never kills the tab --
+// normalizeDisabledPayload: a junk fold never kills the tab
 
 test("disabled fold normalizer: lists pass through, junk collapses to []", () => {
   assert.deepEqual(
@@ -38,7 +38,7 @@ test("disabled fold normalizer: lists pass through, junk collapses to []", () =>
   }
 });
 
-// -- withDisabledFlags: the fold merges by name, fold-only names are ignored --
+// withDisabledFlags: the fold merges by name, fold-only names are ignored
 
 test("skill rows merge the fold: disabled states land, inputs untouched", () => {
   const rows = withDisabledFlags(
@@ -50,18 +50,17 @@ test("skill rows merge the fold: disabled states land, inputs untouched", () => 
   );
   assert.equal(rows[0].disabled, false);
   assert.equal(rows[1].disabled, true);
-  // the fold entry no row names is ignored (the server refuses unknown-name disables.
   assert.equal(withDisabledFlags(rows, ["dj-music", "ghost"])[0].disabled, false);
 });
 
-// -- registryNote: the skills consequence names the prompt build --
+// registryNote: the skills consequence names the prompt build
 
 test("arming a skill disable names the prompt-build consequence; enable is silent", () => {
   assert.equal(registryNote("skills", false), "excluded from the session prompt build");
   assert.equal(registryNote("skills", true), "");
 });
 
-// -- the tab renders the shared pattern and writes the shared wire --
+// the tab renders the shared pattern and writes the shared wire
 
 test("SkillsList consumes the shared component and the fold wire", () => {
   // module UI source lives at the repo root, webui/test is three levels under it
@@ -90,7 +89,7 @@ test("SkillsList builds rows as a computed (arity trap: a plain function rows() 
   assert.ok(src.includes(':rows="visibleRows"'), "the shared component gets the rows binding (the band filter's survivors - card t_529628d5)");
 });
 
-// -- filterRegistryRows: the shared narrowing contract --
+// filterRegistryRows: the shared narrowing contract
 
 test("the row filter narrows by name or description", () => {
   const rows: RegistryRow[] = [
@@ -108,7 +107,7 @@ test("the row filter narrows by name or description", () => {
   assert.equal(filterRegistryRows(rows, "  ").length, 2);
 });
 
-// -- the refresh button -------------------------------- The behavior half runs at.
+// the refresh button -------------------------------- The behavior half runs.
 
 // the fetch-log probe (the mcp.test.ts recipe): a stubbed fetch logs every call the
 // helper makes, so the refresh click's chain is probed, never grepped.
@@ -178,7 +177,7 @@ test("refreshSkills: the refresh click refetches; a post-mount skill shows and t
   }
 });
 
-// a missed /skills read throws so the panel's existing error line shows it and the.
+// a missed /skills read throws so the panel's existing error line shows it.
 test("refreshSkills: a refused /skills throws for the error line, the list stands", async () => {
   const saved = globalThis.fetch;
   globalThis.fetch = (async (url: RequestInfo | URL) =>
@@ -190,7 +189,7 @@ test("refreshSkills: a refused /skills throws for the error line, the list stand
   }
 });
 
-// the /disabled miss rules the fold lives by.
+// the /disabled miss rules the fold lives.
 test("refreshSkills: a missed /disabled read never guesses the fold", async () => {
   const cases: Array<{
     name: string;

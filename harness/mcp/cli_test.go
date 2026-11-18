@@ -44,7 +44,7 @@ func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 
 func mcpConfigPath(home string) string { return filepath.Join(home, "config", "mcp.yaml") }
 
-// TestMCPCLIRoundTrip drives add -> list -> edit -> delete through the handler the.
+// TestMCPCLIRoundTrip drives add -> list -> edit -> delete through the handler.
 func TestMCPCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliSeedMCP)
 	cmd := cmdMCP(p)
@@ -110,7 +110,7 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMCPCLIAddBootstraps: add on a home with no mcp.yaml creates the file (the first.
+// TestMCPCLIAddBootstraps: add on a home with no mcp.yaml creates the file.
 func TestMCPCLIAddBootstraps(t *testing.T) {
 	p, home := newCLIPlugin(t, "")
 	cmd := cmdMCP(p)
@@ -147,7 +147,7 @@ func TestMCPCLIRefusals(t *testing.T) {
 	}
 }
 
-// TestMCPCLIHelp prints the module's own help and registers the verb summary the.
+// TestMCPCLIHelp prints the module's own help and registers the verb summary.
 func TestMCPCLIHelp(t *testing.T) {
 	p, _ := newCLIPlugin(t, "")
 	if err := cmdMCP(p)([]string{"--help"}); err != nil {

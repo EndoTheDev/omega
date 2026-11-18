@@ -1,4 +1,4 @@
-// Terminal module tests: the store laws (claim reattach, the cap, the orphan prune.
+// Terminal module tests: the store laws.
 package terminal
 
 import (
@@ -21,7 +21,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeProc is the pipe-backed process: Read/Write are real pipes (the blocking.
+// fakeProc is the pipe-backed process: Read/Write are real pipes.
 type fakeProc struct {
 	read    *os.File
 	write   *os.File
@@ -62,7 +62,7 @@ func (f *fakeProc) enter() bool {
 	return true
 }
 
-// leave settles one op; the last op out after a close request owns the read handle's.
+// leave settles one op; the last op out after a close request owns the read.
 func (f *fakeProc) leave() {
 	f.mu.Lock()
 	f.inFlight--
@@ -175,7 +175,7 @@ func newTestStore(t *testing.T, now func() time.Time) (*Store, func() []*fakePro
 	return st, procs
 }
 
-// mountTerminal mounts the plugin through the real registration path and returns the.
+// mountTerminal mounts the plugin through the real registration path and returns.
 func mountTerminal(t *testing.T, st *Store) *http.ServeMux {
 	t.Helper()
 	plug := NewPluginWithStore(st)
@@ -225,7 +225,7 @@ func sseFrames(body string) []string {
 	return out
 }
 
-// sseWithCancel streams with a deadline-backed context and records the SSE frames the.
+// sseWithCancel streams with a deadline-backed context and records the SSE frames.
 func sseWithCancel(t *testing.T, mux *http.ServeMux, id string, d time.Duration) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -236,7 +236,7 @@ func sseWithCancel(t *testing.T, mux *http.ServeMux, id string, d time.Duration)
 	return sseFrames(w.Body.String())
 }
 
-// -- the store laws -----------------------------------------------------
+// the store laws ---------------------------------------------------
 
 func TestClaimReattachOneShellPerPane(t *testing.T) {
 	st, procs := newTestStore(t, nil)
@@ -452,7 +452,7 @@ func TestKillHandshakeOwnsTheClose(t *testing.T) {
 	}
 }
 
-// -- the route surface through the real mux -----------------------------
+// the route surface through the real mux ---------------------------
 
 func TestRoutesClaimStreamInputKill(t *testing.T) {
 	st, _ := newTestStore(t, nil)
@@ -475,7 +475,6 @@ func TestRoutesClaimStreamInputKill(t *testing.T) {
 		t.Fatalf("input body: %s", n)
 	}
 
-	// record output nobody watches, then exit.
 	sess.record([]byte("hello\n"))
 	st.Get(id).proc.(*fakeProc).exit(7)
 	waitExited(t, sess)
@@ -536,7 +535,6 @@ func TestStreamReplaysTailAfterDetach(t *testing.T) {
 	sub, _, _ := sess.subscribe()
 	sess.unsubscribe(sub)
 	sess.record([]byte("written while detached"))
-	// a claim with the session attached by nobody.
 	id2, claimed := claimSession(t, mux)
 	if !claimed || id2 != id {
 		t.Fatalf("reattach claim: id=%s claimed=%v (want %s true)", id2, claimed, id)
@@ -711,7 +709,7 @@ func TestRealPTYShellEcho(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
-	// Hermetic shell pin: the spawn reads $SHELL first (the VS Code preference law stands.
+	// Hermetic shell pin: the spawn reads $SHELL first.
 	// An interactive zsh here prints updates and waits before any prompt bytes - the
 	// literal needle never arrives.
 	t.Setenv("SHELL", "/bin/sh")
@@ -767,7 +765,7 @@ func TestDrainUntilDeadlineOnMissingNeedle(t *testing.T) {
 	}
 }
 
-// -- the bounded terminal runtime (the scrollback caps) ------------------
+// the bounded terminal runtime (the scrollback caps) ----------------
 
 // countProc is a fake wrapping a WRITE COUNTER.
 type countProc struct {
@@ -834,8 +832,7 @@ func TestScrollbackLineCap(t *testing.T) {
 	}
 }
 
-// TestScrollbackWhicheverFirst: a few long lines hit the BYTE cap before the line cap
-// can move.
+// TestScrollbackWhicheverFirst: a few long lines hit the BYTE cap before the line cap.
 func TestScrollbackWhicheverFirst(t *testing.T) {
 	s, _ := newBareSession()
 	line := bytes.Repeat([]byte{'x'}, 1024*1024)

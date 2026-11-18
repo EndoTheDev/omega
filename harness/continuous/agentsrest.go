@@ -1,33 +1,17 @@
 package continuous
 
-// agentsrest.go: the roster-management REST face (the shell-ring
-// shrink wave 2, ADR Workshop/omega-shell-ring-shrink.md - the agents
-// tab is the continuous capsule's face, "multi-agent IS the continuous
-// capsule's design"). Moved whole from agent/api/server_agents.go:
-//
-// GET /agents profile inventory (the roster list)
-// POST /agents scaffold a new agent directory (or a clone)
-// GET /agents/{name} one agent's detail
-// PUT /agents/{name} the roster's edit affordance
-// DELETE /agents/{name} delete the HOME, sessions included
-// GET /agents/{name}/sessions sessions bound to this agent
-// POST /agents/{name}/sessions create a session AS this agent
-//
-// THE FLOOR VERDICT (the task's classification rule): no handler here
-// serves the chat floor - the chat page never fetches agent profiles
-// (the only /agents consumer in the webui is the roster panel), and
-// the canonical-chat cross-home reads (GET /continuous/{name}/chat)
-// were born on this capsule's own route list. So ALL of the old file
-// moved; nothing stayed base. The chat floor the proof checks is a
-// single agent running and chatting - which touches none of these
-// routes.
-//
-// The home is the ROOT home the plugin already resolved (NewPluginWithHome
-// / datadir fallback) - the roster reads agents/ relative to it, the
-// same surface the old env-scan answered. The store resolves per
-// request (the store seam's live re-wire law): the session counts and
-// the agent-session reads die with a disabled store, the profile
-// reads never needed one.
+// agentsrest.go: the roster-management REST face.
+// Moved whole from agent/api/server_agents.go: GET /agents profile inventory (the
+// roster list) POST /agents scaffold a new agent directory (or a clone) GET
+// /agents/{name} one agent's detail PUT /agents/{name} the roster's edit affordance
+// DELETE /agents/{name} delete the HOME, sessions included GET /agents/{name}/sessions
+// sessions bound to this agent POST /agents/{name}/sessions create a session AS this
+// agent THE FLOOR VERDICT (the task's classification rule): no handler here serves the
+// chat floor - the chat page never fetches agent profiles (the only /agents consumer in
+// the webui is the roster panel), and the canonical-chat cross-home reads (GET
+// /continuous/{name}/chat) were born on this capsule's own route list. The store
+// resolves per request (the store seam's live re-wire law): the session counts and the
+// agent-session reads die with a disabled store, the profile reads never needed one.
 
 import (
 	"context"
@@ -141,7 +125,7 @@ func (ar *agentRoutes) httpError(w http.ResponseWriter, code int, format string,
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
 }
 
-// registrationRows returns the pattern/handler rows the mount registers - exactly the.
+// registrationRows returns the pattern/handler rows the mount registers - exactly.
 func (ar *agentRoutes) registrationRows() []struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
@@ -176,7 +160,7 @@ type agentFacts struct {
 	reportAt  string
 }
 
-// fillAgentSessions writes session counts and last activity into profiles from the.
+// fillAgentSessions writes session counts and last activity into profiles.
 func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.Profile) map[string]agentFacts {
 	if ar.mountedStore() == nil {
 		return nil
@@ -193,7 +177,7 @@ func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.P
 				profiles[i].LastActivity = sess.UpdatedAt
 			}
 		}
-		// The canonical chat, NOT the newest row: the click's target must not move when a.
+		// The canonical chat, NOT the newest row: the click's target must not move when.
 		cur, ok := CurrentCanonicalSession(sessions, profiles[i].Name)
 		if !ok {
 			continue // never minted, or retired: the click mints anew
@@ -237,7 +221,7 @@ func rosterRows(profiles []agent.Profile, facts map[string]agentFacts) []agentRo
 	return rows
 }
 
-// handleAgents serves GET /agents (the inventory) and POST /agents (create an agent.
+// handleAgents serves GET /agents (the inventory) and POST /agents.
 // POST carries TWO doors, one wire: a bare create scaffolds an empty always-off home; a
 // create with inherit_from MATERIALIZES a clone of that source (the CLONE law - a full
 // copy at birth, never a live link). Clone-then-delete is the rename path, so there is
@@ -289,7 +273,7 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 // registered), so it is a server fault, never the caller's conflict.
 var errCloneStoreTag = errors.New("re-tag cloned sessions")
 
-// retagAgentSessions is the clone's last SQLite step, swappable in tests (a real.
+// retagAgentSessions is the clone's last SQLite step, swappable in tests.
 var retagAgentSessions = store.RetagAgentSessions
 
 // wireStoreSnapshot installs the SQLite-backed store copier the CLONE law needs.
@@ -445,8 +429,8 @@ func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request)
 	ar.writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "sessions": sessions})
 }
 
-// sessionCount is the delete receipt's number. A store that will not open answers 0 -
-// the delete still happens, the receipt just cannot count.
+// sessionCount is the delete record's number. A store that will not open answers 0 -
+// the delete still happens, the record just cannot count.
 func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
 	rows, err := ar.readAgentSessions(ctx, name)
 	if err != nil {
@@ -490,7 +474,6 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 		ar.httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
-	// The 501 lane: no store capsule mounted at all.
 	if ar.mountedStore() == nil {
 		ar.httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
 		return

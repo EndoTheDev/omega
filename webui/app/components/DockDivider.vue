@@ -11,7 +11,6 @@
 </template>
 
 <script setup lang="ts">
-  // Dumb resize handle between a split's children.
   import { ref } from "vue";
 
   const props = defineProps<{

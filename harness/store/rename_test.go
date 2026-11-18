@@ -13,7 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// renameFixture writes one store with "canonical" (one user + one assistant message.
+// renameFixture writes one store with "canonical".
 func renameFixture(t *testing.T) string {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "omega.db")
@@ -129,7 +129,7 @@ func TestRenameSessionNoOps(t *testing.T) {
 	if err := RenameSession(dsn, "ghost", "scout-canonical"); err != nil {
 		t.Fatalf("RenameSession(absent id) = %v, want nil", err)
 	}
-	// An occupied target is never merged into.
+	// An occupied target is never merged.
 	st, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)

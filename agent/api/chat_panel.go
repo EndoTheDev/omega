@@ -73,8 +73,7 @@ func (c *ChatCapsule) registerAt(ctx *core.Context) {
 	ctx.PanelProviders = append(ctx.PanelProviders, c)
 }
 
-// PinServer publishes the served server for readers that pull the pin (the wire
-// publishes last.
+// PinServer publishes the served server for readers that pull the pin.
 func (c *ChatCapsule) PinServer(s *Server) { c.srv.Store(s) }
 
 // SetPanelUpdate installs the canvas closure (core.PanelUpdateSink).
@@ -239,13 +238,13 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	return composeItems(persisted, freshenRunningCalls(open, time.Since(builtAt)))
 }
 
-// composeItems merges the persisted items and the open-record items into one
-// wire-ordered item stream. Reused tool call ids across a re-run (some providers mint
-// colliding ids) can hide the re-run's rows until their content diverges - a v1
-// cosmetics race, the persisted truth is never wrong.
+// composeItems merges the persisted items and the open-record items into one. Reused
+// tool call ids across a re-run (some providers mint colliding ids) can hide the
+// re-run's rows until their content diverges - a v1 cosmetics race, the persisted truth
+// is never wrong.
 func composeItems(persisted, open []transcriptItem) []transcriptItem {
 	seen := map[string]int{}
-	// copied: the caller's slices stay untouched (adoption below writes into the.
+	// copied: the caller's slices stay untouched.
 	out := make([]transcriptItem, len(persisted), len(persisted)+len(open))
 	copy(out, persisted)
 	for i, it := range out {
@@ -314,8 +313,7 @@ func (c *ChatCapsule) beginRun(session string) {
 	}
 	c.mu.Unlock()
 	if live {
-		// A previous run's batcher should be gone (endRun cleaned up or the 409 law would
-		// have refused the slot).
+		// A previous run's batcher should be gone.
 	} else if c.batch > 0 {
 		go c.batchLoop(watch, session)
 	}
@@ -343,7 +341,7 @@ func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	}
 }
 
-// tick is one cadence: rebuild and push when the session has a pending token batch or.
+// tick is one cadence: rebuild and push when the session has a pending token batch.
 // paintMu is held across the decision and the push, so a tick can never land a
 // running=true panel after endRun's exit flush.
 func (c *ChatCapsule) tick(session string) {
@@ -361,8 +359,7 @@ func (c *ChatCapsule) watching(session string) bool {
 	return c.focusID == session && c.watch[session] != nil
 }
 
-// hasRunningCall reports whether the session's live run carries a tool call its results
-// have not answered yet.
+// hasRunningCall reports whether the session's live run carries a tool call.
 func (c *ChatCapsule) hasRunningCall(session string) bool {
 	srv := c.srv.Load()
 	if srv == nil {
@@ -427,8 +424,7 @@ func (c *ChatCapsule) dirtied(session string) {
 	c.mu.Unlock()
 }
 
-// flushNowUnlocked composes and pushes immediately ("now" refers to the caller's
-// decision.
+// flushNowUnlocked composes and pushes immediately.
 func (c *ChatCapsule) flushNowUnlocked(session string) {
 	c.mu.Lock()
 	c.dirty[session] = false
@@ -436,8 +432,7 @@ func (c *ChatCapsule) flushNowUnlocked(session string) {
 	c.push(c.buildPanel(session, true))
 }
 
-// endRun is the run-exit hook (called after the run's persistence epilogue, while the
-// hub still holds the slot).
+// endRun is the run-exit hook.
 func (c *ChatCapsule) endRun(session string) {
 	if c.srv.Load() == nil || session == "" {
 		return
@@ -520,7 +515,6 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images, Attachments: it.Attachments}}
 		case "message":
 			row.Role = core.ChatRoleAssistant
-			// the segment's duration rides the block.
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ResponseMs: it.ResponseMs}}
 		case "thinking":
 			row.Role = core.ChatRoleAssistant

@@ -26,12 +26,11 @@ func waitForCond(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestUserStopKillsDispatchedCallAndDropsItsResult is the card's pinned sequence at the
-// loop. The stop must terminate the call (the shell-process stand-in observes ctx.Done)
-// and its settled result must never reach the wake - zero wake launches, ledger dry.
+// TestUserStopKillsDispatchedCallAndDropsItsResult is the card's pinned sequence.
+// The stop must terminate the call (the shell-process stand-in observes ctx.Done) and
+// its settled result must never reach the wake - zero wake launches, ledger dry.
 func TestUserStopKillsDispatchedCallAndDropsItsResult(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
-		// Run 1: one yield-class call.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "long", Name: "long", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -79,8 +78,7 @@ func TestUserStopKillsDispatchedCallAndDropsItsResult(t *testing.T) {
 	}
 }
 
-// TestUserStopKillsConvertedCallAndDropsItsResult is the same promise on the ESCALATION
-// lane.
+// TestUserStopKillsConvertedCallAndDropsItsResult is the same promise.
 func TestUserStopKillsConvertedCallAndDropsItsResult(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",

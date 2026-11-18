@@ -52,7 +52,7 @@ func (s *Server) runAgent(req *chatRequest) *agent.Agent {
 
 // baseProvider is the provider the run pins against - the owning agent
 // home's provider, so the picker's model/instance choices resolve in
-// that home's config, never the daemon's.
+// that home's config, never.
 func (s *Server) baseProvider(req *chatRequest) agent.Provider {
 	if ag := s.runAgent(req); ag != nil {
 		return ag.Provider()

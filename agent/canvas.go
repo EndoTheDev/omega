@@ -34,8 +34,8 @@ type ActionTally struct {
 	Refused  int
 }
 
-// ActionTallies returns the accept counters of every action id that crossed this
-// canvas. Copy under the canvas lock: the live map never escapes.
+// ActionTallies returns the accept counters of every action id that crossed this. Copy
+// under the canvas lock: the live map never escapes.
 func (c *Canvas) ActionTallies() map[string]ActionTally {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -123,7 +123,6 @@ func (c *Canvas) register(p core.PanelProvider) (string, error) {
 		}
 	}
 	if module == "" {
-		// An actionless provider has no capsule name to route to.
 		return "", nil
 	}
 	if _, mounted := c.handlers[module]; mounted {
@@ -253,7 +252,7 @@ func (c *Canvas) removeOrder(module string) {
 	}
 }
 
-// moduleNameOf derives the capsule name a PanelProvider's actions all agree on.
+// moduleNameOf derives the capsule name a PanelProvider's actions all agree.
 func moduleNameOf(p core.PanelProvider) string {
 	module := ""
 	for _, panel := range p.Panels() {

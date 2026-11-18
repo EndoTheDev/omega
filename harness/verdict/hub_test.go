@@ -90,7 +90,7 @@ type askResult struct {
 	err error
 }
 
-// waitForPending polls until at least `n` cards are pending for the session ("".
+// waitForPending polls until at least `n` cards are pending for the session.
 func waitForPending(t *testing.T, h *Hub, session string, n int) []core.QuestionPrompt {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -116,7 +116,7 @@ func drain(t *testing.T, ch <-chan askResult) askResult {
 	}
 }
 
-// drainWithTimeout waits up to `d` for an Ask result (used by the expiry tests where.
+// drainWithTimeout waits up to `d` for an Ask result.
 func drainWithTimeout(t *testing.T, ch <-chan askResult, d time.Duration) askResult {
 	t.Helper()
 	select {

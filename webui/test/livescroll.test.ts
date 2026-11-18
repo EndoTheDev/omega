@@ -20,7 +20,7 @@ const css = () =>
 const chatTab = () =>
   readFileSync(join(root, "app", "components", "ChatTab.vue"), "utf8");
 
-// pull a top-level CSS rule body: selector..
+// pull a top-level CSS rule body: selector.
 const rule = (src: string, selector: string): string | null => {
   const i = src.indexOf(selector);
   if (i === -1) return null;
@@ -52,8 +52,7 @@ describe("live-run scroll chain: the body is contained, not clipped (t_64878551)
   });
 
   it("the scrollport's shrink chain runs wrap -> .messages (the live body is gone)", () => {
-    // retired the run-only body; the chain that must hold is the one every stacked run
-    // uses.
+    // retired the run-only body; the chain that must hold is the one every stacked.
     const wrap = rule(css(), ".messages-wrap {");
     assert.ok(wrap, ".messages-wrap rule not found");
     assert.match(wrap, /min-height:\s*0/, "the wrap must shrink below content");
@@ -112,7 +111,6 @@ describe("content-change follow (t_bef3f45e)", () => {
       /pinned\.value = resumesFollow\(/,
       "onScroll must derive the follow state from resumesFollow",
     );
-    // the guard fuel: the scroller height at the last scroll event.
     const writers = src.match(/lastScrollHeight\s*=/g) ?? [];
     assert.equal(
       writers.length,
@@ -170,8 +168,7 @@ describe("content-change follow (t_bef3f45e)", () => {
 describe("the transcript has one scroll writer (t_31c64042)", () => {
   it("skips a write the scrollport already satisfies", () => {
     const src = chatTab();
-    // the clamp target - not the raw scrollHeight - is what decides whether there is
-    // anything to write at all.
+    // the clamp target - not the raw scrollHeight.
     assert.match(
       src,
       /const target = Math\.max\(el\.scrollHeight - el\.clientHeight, 0\)/,

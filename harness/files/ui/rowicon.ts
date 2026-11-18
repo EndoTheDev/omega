@@ -58,7 +58,7 @@ export function glyphIcon(kind: GlyphKind): string {
   return KIND_ICONS[kind] ?? KIND_ICONS.generic;
 }
 
-// folder name: filled when open (the lucide FolderOpen/Folder pair makes the state.
+// folder name: filled when open.
 export function folderIcon(open: boolean): string {
   return open ? "folder-open" : "folder";
 }

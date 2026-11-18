@@ -8,7 +8,7 @@ import (
 	"strings"
 )
 
-// ProjectRoot returns the nearest directory (walking up from dir) that contains an.
+// ProjectRoot returns the nearest directory (walking up from dir) that contains.
 func ProjectRoot(dir string) string {
 	visited := map[string]bool{}
 	for {

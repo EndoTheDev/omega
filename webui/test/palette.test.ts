@@ -100,7 +100,7 @@ describe("mention token parsing", () => {
   });
 });
 
-// --: the slash token is caret-based, mid-sentence included --
+// the slash token is caret-based, mid-sentence included
 
 describe("slash token parsing (t_d1a2951d)", () => {
   it("activates on a /token at the caret, anywhere in the draft", () => {
@@ -213,7 +213,7 @@ describe("production-boundary wiring (test law: the served shape)", () => {
   });
 });
 
-// --: the shell command palette (Ctrl+K) --------------
+// the shell command palette (Ctrl+K) ------------
 
 function fakeDeps(rec: string[]): PaletteCommandDeps {
   const tag = (s: string) => () => rec.push(s);
@@ -342,8 +342,7 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(/@click="run\(c\)"/.test(overlay), "row clicks still run the command");
   });
 
-  // the shell's trigger is the one outside surface the overlay must not close on
-  // pointerdown.
+  // the shell's trigger is the one outside surface the overlay must not close.
   it("the nav-cluster trigger toggles instead of flickering", () => {
     const cluster = readFileSync(
       join(here, "../app/components/nav/NavCluster.vue"),
@@ -409,10 +408,10 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
   });
 });
 
-// --: the TAKEOVER ------------------------------------- HIS reconfirmation: the
-// palette was never meant to hang its own input box above the bar - the top bar's time
-// field IS the input, in place. The field element is TELEPORTED into the cluster's seat
-// (one element, one focus path - never a second copy), the panel below is the results
+// the TAKEOVER ------------------------------------- HIS reconfirmation: the palette
+// was never meant to hang its own input box above the bar - the top bar's time field IS
+// the input, in place. The field element is TELEPORTED into the cluster's seat (one
+// element, one focus path - never a second copy), the panel below is the results
 // dropdown alone, and the bar's other chrome (arrows + the Ctrl+K toggle) hides by
 // VISIBILITY so the seat cannot slide while the field is up.
 describe("the palette takeover (t_cc6d0920)", () => {
@@ -455,8 +454,6 @@ describe("the palette takeover (t_cc6d0920)", () => {
       "a pointerdown in the teleported field never closes the palette",
     );
     assert.match(overlay, /inPlace: boolean/, "the seat bit is a declared prop");
-    // a live breakpoint cross re-mounts the field in the other seat (the Teleport flips
-    // `disabled`).
     assert.match(
       overlay,
       /watch\(\s*\(\) => props\.inPlace,[\s\S]{0,160}inputEl\.value\?\.focus\(\)/,
@@ -513,8 +510,6 @@ describe("the palette takeover (t_cc6d0920)", () => {
       app.includes('.closest(".command-palette, #nav-palette-slot")'),
       "a click in the palette's own surfaces is not a pane gesture",
     );
-    // the clock keeps ticking while it is hidden (the timer is the component's, not the
-    // button's).
     assert.match(
       cluster,
       /onMounted\(armClock\)/,

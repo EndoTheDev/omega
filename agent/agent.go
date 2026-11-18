@@ -31,7 +31,7 @@ type Agent struct {
 	promptAppend   []string
 	promptContext  string
 	promptBuilder  PromptBuilder
-	nudge          TurnNudger // learning-loop reminder seam (t_9972dfd0; nil = off)
+	nudge          TurnNudger // learning-loop reminder seam
 	extensionInfos []core.ExtensionInfo
 	captioner      core.Captioner
 	userInput      chan string
@@ -74,8 +74,7 @@ func (a *Agent) sessionEventObservers() []core.SessionEventObserver {
 	return a.sessionObserverSource()
 }
 
-// SetSessionEventObserverSource wires the Context's session-attributed spine
-// subscriptions.
+// SetSessionEventObserverSource wires the Context's session-attributed spine.
 func (a *Agent) SetSessionEventObserverSource(src func() []core.SessionEventObserver) {
 	a.sessionObserverSource = src
 }
@@ -107,7 +106,7 @@ func (a *Agent) SetMaxTurns(n int) {
 	a.maxTurns = n
 }
 
-// SetCWD sets the working directory passed to extension-built prompts via.
+// SetCWD sets the working directory passed to extension-built prompts.
 func (a *Agent) SetCWD(dir string) {
 	a.cwd = dir
 }
@@ -152,8 +151,7 @@ func (a *Agent) SetToolProviders(tps []core.ToolProvider) {
 	a.toolProviders = tps
 }
 
-// RefreshToolProviders re-reads the tool set from the mounted Context the agent was
-// built from (NewFromContext).
+// RefreshToolProviders re-reads the tool set from the mounted Context the agent was.
 func (a *Agent) RefreshToolProviders(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -242,8 +240,7 @@ func (a *Agent) SetApprovals(ap ApprovalProvider) {
 	a.approvals = ap
 }
 
-// RefreshApprovals re-reads the approval seam from the mounted Context the agent was
-// built from (NewFromContext).
+// RefreshApprovals re-reads the approval seam from the mounted Context the agent was.
 func (a *Agent) RefreshApprovals(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -274,7 +271,7 @@ func (a *Agent) RefreshDisabledTools(ctx *Context) {
 	}
 }
 
-// disabledToolList flattens the disable set for LoopOptions (sorted, nil when none.
+// disabledToolList flattens the disable set for LoopOptions.
 func disabledToolList(set map[string]bool) []string {
 	if len(set) == 0 {
 		return nil
@@ -298,7 +295,7 @@ func (a *Agent) SetTurnNudger(n TurnNudger) {
 	a.nudge = n
 }
 
-// ExtensionInfos returns the metadata about loaded extensions (name, description.
+// ExtensionInfos returns the metadata about loaded extensions.
 func (a *Agent) ExtensionInfos() []core.ExtensionInfo {
 	a.tpMu.RLock()
 	defer a.tpMu.RUnlock()
@@ -312,7 +309,7 @@ func (a *Agent) SetExtensionInfos(infos []core.ExtensionInfo) {
 	a.extensionInfos = infos
 }
 
-// RefreshExtensionInfos re-reads the extension metadata from the mounted Context the.
+// RefreshExtensionInfos re-reads the extension metadata from the mounted Context.
 func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -364,7 +361,7 @@ func (a *Agent) SetLogger(l LoggerProvider) {
 	a.logger = l
 }
 
-// AgentOptions carries the host-level settings NewFromContext cannot get from the.
+// AgentOptions carries the host-level settings NewFromContext cannot get.
 type AgentOptions struct {
 	MaxTurns      int
 	MaxToolOutput int
@@ -462,12 +459,12 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			ctx = WithSessionID(ctx, st.sessionID)
 		}
 	}
-	// The event spine: a snapshot of the registered observers forwards every event to.
+	// The event spine: a snapshot of the registered observers forwards every event.
 	// Inline, never buffered: a slow observer slows the run (the contract says cheap), but
 	// an event can NEVER be delivered to the host before the observers saw it. The
 	// session-attributed subscribers ride the same forward goroutine: the run's session id
 	// is already settled above (the attribution default), so this is the one place a
-	// consumer can learn WHICH conversation an event belongs to.
+	// consumer can learn WHICH conversation an event belongs.
 	obs := a.eventObservers()
 	sessObs := a.sessionEventObservers()
 	if len(obs) > 0 || len(sessObs) > 0 {
@@ -504,7 +501,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		if runTools == nil {
 			runTools = a.tools
 		}
-		// Per-run scope override: a session rooted in a workspace folder serves its CWD and.
+		// Per-run scope override: a session rooted in a workspace folder serves its CWD.
 		runCWD, runPromptContext := a.cwd, a.promptContext
 		if dir := core.RunWorkspace(ctx); dir != "" {
 			runCWD = dir

@@ -13,10 +13,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestChatPanelRegistersThroughTheStartSeam: the plugin's Mount only CREATES the
-// capsule. One chat panel per live frontend: a serve-less process never reaches Start,
-// so its canvas carries no dead http chat panel; here the channel-start handoff
-// registers it with the canvas seam, and the pipe routes to the capsule's handler.
+// TestChatPanelRegistersThroughTheStartSeam: the plugin's Mount only CREATES the. One
+// chat panel per live frontend: a serve-less process never reaches Start, so its canvas
+// carries no dead http chat panel; here the channel-start handoff registers it with the
+// canvas seam, and the pipe routes to the capsule's handler.
 func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	plugin := NewPlugin()
@@ -39,12 +39,11 @@ func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	if len(snapshot) != 1 || snapshot[0].Kind != core.PanelKindChat {
 		t.Fatalf("snapshot = %+v", snapshot)
 	}
-	// The action pipe routes: an unknown session is the capsule's error, verbatim.
 	_, stopErr := canvas.Dispatch(core.ActionCall{Module: agentapi.ChatModuleNamespace, Action: agentapi.ChatActionStop, Args: json.RawMessage(`{"session":"ghost"}`)})
 	if stopErr == nil || !strings.Contains(stopErr.Error(), "session not active") {
 		t.Fatalf("stop dispatch = %v", stopErr)
 	}
-	// A retry against a session with no user message is the replay guard's answer, and a.
+	// A retry against a session with no user message is the replay guard's answer,.
 	if err := st.CreateSession(context.Background(), "s-empty", "", "Empty"); err != nil {
 		t.Fatalf("create: %v", err)
 	}

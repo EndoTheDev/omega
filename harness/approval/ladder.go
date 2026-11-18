@@ -69,8 +69,7 @@ func Ladder(a Answers) Outcome {
 		return Outcome{VerdictEscalate, "low_confidence",
 			fmt.Sprintf("model APPROVE but confidence %.2f / blast_radius %.2f outside the safe band (<0.55 or >=1.6)", a.Confidence, a.BlastRadius)}
 	}
-	// Keep-model-verdict branch, under the Q2 cap: the model's own DENY never blocks an
-	// execution.
+	// Keep-model-verdict branch, under the Q2 cap: the model's own DENY never blocks.
 	switch a.Verdict {
 	case VerdictApprove:
 		return Outcome{VerdictApprove, "model_verdict",
@@ -82,7 +81,6 @@ func Ladder(a Answers) Outcome {
 		return Outcome{VerdictEscalate, "model_deny_capped",
 			"the model denied; a model DENY never executes a block on its own - escalating to the human"}
 	default:
-		// unreachable through validation, defensive.
 		return Outcome{VerdictEscalate, "malformed",
 			fmt.Sprintf("unknown model verdict %q", a.Verdict)}
 	}

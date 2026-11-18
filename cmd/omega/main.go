@@ -54,7 +54,6 @@ func main() {
 		exeDir = filepath.Dir(exe)
 	}
 	printRepoHomeHint(home, exeDir)
-	// first-run bootstrap: write the example configs into the home so any install.
 	bootstrapHome(home)
 	if err := run(os.Args[1:]); err != nil {
 		fmt.Fprintln(os.Stderr, "omega:", err)
@@ -132,8 +131,8 @@ Update flags:
 func run(args []string) error {
 	home := omegaHome()
 	os.Setenv("OMEGA_HOME", home)
-	// Agent-home migration: the retired agents/default profile's persona files move UP to
-	// the home root. Exactly once, before anything reads them.
+	// Agent-home migration: the retired agents/default profile's persona files move UP.
+	// Exactly once, before anything reads them.
 	if err := agent.MigrateAgentHomes(home); err != nil {
 		return err
 	}
@@ -206,7 +205,6 @@ func run(args []string) error {
 		// The chat subcommand is a legacy alias for the CLI loop.
 		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	default:
-		// An existing directory stays the project path.
 		if info, serr := os.Stat(sub); serr == nil && info.IsDir() {
 			if err := os.Chdir(sub); err != nil {
 				return fmt.Errorf("chdir %s: %w", sub, err)
@@ -224,7 +222,7 @@ func run(args []string) error {
 	}
 }
 
-// isRootSubcommand reports whether sub is a built-in switch case in run (the root's.
+// isRootSubcommand reports whether sub is a built-in switch case in run.
 // The list must stay in sync with run's switch: a built-in keeps the root's flag
 // short-circuit on its trailing argv, while a module subcommand owns the whole tail
 // (Q6). `tools` is a built-in that is deliberately ABSENT here: it carries a module
@@ -246,7 +244,6 @@ func printHelp(args []string) {
 	fmt.Print(helpText)
 	subs := []agent.Subcommand{}
 	if reg, pctx, err := mountRegistry(configForCLI(args)); err == nil {
-		// The mount is borrowed for the listing only.
 		defer agent.DismountAll(reg, pctx)
 		subs = reg.Subcommands()
 	}
@@ -284,8 +281,7 @@ func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
 	pctx := &agent.Context{
 		CWD:     cwd(),
 		Configs: agent.RouteConfigs(plugins, cfg),
-		// The disabled.tools fold rides the borrowed mount exactly as it rides the serve boot
-		// (newAgent).
+		// The disabled.tools fold rides the borrowed mount exactly as it rides the serve.
 		DisabledTools: cfg.Disabled.Tools,
 	}
 	reg, err := agent.MountAllAPI(plugins, pctx, nil, cfg.Disabled.Modules)
@@ -392,7 +388,7 @@ func parseAppendPrompts(args []string) []string {
 	return prompts
 }
 
-// stripAppendPrompts removes --append-system-prompt and its values from args, so the.
+// stripAppendPrompts removes --append-system-prompt and its values from args,.
 func stripAppendPrompts(args []string) []string {
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -451,7 +447,7 @@ func requireConfig(configPath string) error {
 	return nil
 }
 
-// resolveHomePaths fills in home-relative defaults for DBPath and Skills.Dir when the.
+// resolveHomePaths fills in home-relative defaults for DBPath and Skills.Dir when.
 // Returns an error if the home directory cannot be created.
 func resolveHomePaths(cfg *Config) error {
 	home := omegaHome()
@@ -466,7 +462,6 @@ func resolveHomePaths(cfg *Config) error {
 		cfg.Skills.Dir = home + "/skills"
 	}
 	if cfg.Memory.File == "memory.md" {
-		// main's persona files live at the home root (agents/default is retired and its.
 		cfg.Memory.File = home + "/memory.md"
 	}
 	if cfg.Memory.UserProfileFile == "user.md" {
@@ -491,7 +486,6 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		mcpPlugin = mcp.NewPlugin(nil)
 	}
 	return []agent.Plugin{
-		// The observability capsule.
 		observability.NewPlugin(),
 		loop.NewPlugin(),
 		&provider.Plugin{},
@@ -505,13 +499,10 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		notifications.NewPlugin(),
 		prompt.NewPlugin(),
 		tools.NewPlugin(),
-		// (the shell-ring shrink wave 1).
 		files.NewPlugin(),
 		// The shell capsule: ONE registration for both faces of the shell domain.
 		terminal.NewPlugin(cwd(), cfg.Server.DefaultWorkspace),
-		// The process registry does not exist as its own module any more.
 		verdict.NewPlugin(),
-		// the smart approval gate - risky shell commands reach the decision model +.
 		approval.NewPlugin(),
 		mcpPlugin,
 		delegate.NewPlugin(),
@@ -519,7 +510,7 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 		trust.NewPlugin(),
 		cron.NewPlugin(),
 		kanbanModule.NewPlugin(),
-		// The browser capsule: the tab's last-URL memory, the only server surface the.
+		// The browser capsule: the tab's last-URL memory, the only server surface.
 		browserModule.NewPlugin(),
 		// The continuous capsule: agent homes, the wake subprocess, the canonical chats. The
 		// home passes through the host - exe-dir resolution is cmd/omega business, the
@@ -704,7 +695,7 @@ func serveBanner(version string, channels int, binds []string, configPath, dataD
 		version, channels, strings.Join(binds, ", "), configPath, dataDir, model)
 }
 
-// cmdServe loads config, wires the agent, and starts all mounted channels (HTTP.
+// cmdServe loads config, wires the agent, and starts all mounted channels.
 func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
 	cfgPath := resolveConfigPath(configPath)
 	cfg, err := LoadConfig(cfgPath)
@@ -727,7 +718,6 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	ctx, stop := signalContext()
 	defer stop()
 
-	// Start all mounted channels.
 	if len(pctx.Channels) == 0 {
 		return fmt.Errorf("no channels configured — mount a channel extension (e.g. http_channel)")
 	}
@@ -775,7 +765,6 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		watchWorkspace = newCfg.Server.DefaultWorkspace
 		registries.Sync(newCfg.Disabled) // hand edits follow the toggle path
 	})
-	// The serving agent's boot bake.
 	if setAgentConfig != nil {
 		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
 	}
@@ -861,8 +850,8 @@ func parseRunSession(args []string) (string, []string, error) {
 	return sessionID, clean, nil
 }
 
-// cmdRun loads config and runs the agent once with the given prompt, printing the.
-// Without --session the run persists nothing, exactly as before.
+// cmdRun loads config and runs the agent once with the given prompt, printing.
+// Without --session the run persists nothing, exactly.
 func cmdRun(configPath string, args []string, trust trustFlags) error {
 	sessionID, args, err := parseRunSession(args)
 	if err != nil {
@@ -926,14 +915,13 @@ func cmdRun(configPath string, args []string, trust trustFlags) error {
 		userMsg = core.NewUser(prompt)
 	}
 	messages := []core.Message{userMsg}
-	// -session <id>: persist the run into the existing session (the wake contract). The
+	// session <id>: persist the run into the existing session (the wake contract). The
 	// session must exist - a typo'd id must fail loud, not fork a new one.
 	if sessionID != "" {
 		if _, err := store.GetSession(context.Background(), sessionID); err != nil {
 			return fmt.Errorf("run: --session %s: %w", sessionID, err)
 		}
 		ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(store, sessionID, ""))
-		// The wake report shape: inside a wake child the closing message is.
 		ctx = agent.WithTurnSink(ctx, continuous.WrapWakeSink(agent.RunTurnSink(ctx)))
 		ctx = agent.WithPersistInput(ctx, []core.Message{userMsg})
 	}

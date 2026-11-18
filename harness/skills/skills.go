@@ -15,7 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// SkillsProvider implements core.SkillsProvider by scanning a directory for.
+// SkillsProvider implements core.SkillsProvider by scanning a directory.
 type SkillsProvider struct {
 	Dir       string
 	SharedDir string
@@ -26,7 +26,6 @@ type SkillsProvider struct {
 	Allow    []string
 	AllowSet bool
 
-	// Curator plumbing.
 	providerFn   func() agent.Provider
 	curatorModel string
 
@@ -47,7 +46,7 @@ func (sp *SkillsProvider) curatorSlot() string {
 	return sp.curatorModel
 }
 
-// SetDisabled swaps the disable list live (the host's toggle seam and hot config.
+// SetDisabled swaps the disable list live.
 func (sp *SkillsProvider) SetDisabled(names []string) {
 	sp.disableMu.Lock()
 	defer sp.disableMu.Unlock()
@@ -84,7 +83,7 @@ func (sp *SkillsProvider) scanDirs(dir string) []string {
 	return dirs
 }
 
-// LoadSkills scans the configured directories (shared first, then dir) for.
+// LoadSkills scans the configured directories (shared first, then dir).
 func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 	if dir == "" {
 		dir = sp.Dir
@@ -194,7 +193,7 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-// skillsVerbs is the skills verb set, the one list the batch-shaped consumers (the.
+// skillsVerbs is the skills verb set, the one list the batch-shaped consumers.
 var skillsVerbs = []string{"read", "write", "update", "curate"}
 
 // prop assembles one typed schema property.
@@ -362,8 +361,7 @@ func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return "", err
 	}
-	// The persisted lesson resets the nudge counter (ObserveToolRun) and ages the record;
-	// "write" here is a patch.
+	// The persisted lesson resets the nudge counter (ObserveToolRun) and ages the record.
 	TouchUsage(filepath.Dir(filepath.Dir(skillFile)), name, "write", "")
 	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
 }
@@ -408,7 +406,7 @@ func (sp *SkillsProvider) allowed(name string) bool {
 	return false
 }
 
-// allowList renders the allowlist for a refusal message ("none" when the agent.
+// allowList renders the allowlist for a refusal message.
 func (sp *SkillsProvider) allowList() string {
 	if len(sp.Allow) == 0 {
 		return "none"
@@ -628,7 +626,6 @@ func (sp *SkillsProvider) WarnLegacyShape(logger agent.LoggerProvider) []string 
 	for _, dir := range sp.scanDirs(sp.Dir) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			// Best-effort boot diagnostic.
 			continue
 		}
 		for _, entry := range entries {

@@ -18,7 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// captureLoop records the LoopOptions a run was built with (the values the agent home.
+// captureLoop records the LoopOptions a run was built with.
 type captureLoop struct {
 	seen *agent.LoopOptions
 }
@@ -152,7 +152,6 @@ func TestAgentOwnedSessionReadsAndRunsOnItsHome(t *testing.T) {
 	if len(coldMsgs) != 3 {
 		t.Fatalf("cold scout history has %d messages, want 3 (probe one, hi, answer)", len(coldMsgs))
 	}
-	// ..
 	daemonDB, err := store.Open(datadir.DBPath(home, "omega.db"))
 	if err != nil {
 		t.Fatalf("reopen daemon store: %v", err)
@@ -253,8 +252,7 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 	}
 }
 
-// postChatAndWait sends one turn and waits for the run to finish persisting (the run
-// detaches from the request.
+// postChatAndWait sends one turn and waits for the run to finish persisting.
 func postChatAndWait(t *testing.T, srv *Server, ts *httptest.Server, sessionID string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{

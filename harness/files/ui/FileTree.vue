@@ -86,11 +86,9 @@
 
   const emit = defineEmits<{
     open: [path: string];
-    // every row click, files and folders alike.
     select: [sel: { path: string; isDir: boolean }];
   }>();
 
-  // State lives in the filetree store.
   let store = inject<FileTreeStore | undefined>("omega-filetree", undefined);
   if (!store) {
     store = createFileTreeStore({

@@ -1,7 +1,7 @@
 // omega webui: - the MODULES surface is CONFIGURATION.
 //
 // This file SUPERSEDES the pin that lived here (module toggles
-// OUT of settings, into the extensions cockpit tab): the ruling of
+// OUT of settings, into the extensions cockpit tab): the rule of
 // reverses the placement, so the toggles are back in the settings
 // tab as its own MODULES section and the secondary-pane tab is GONE. The
 // pins below hold the new law:
@@ -42,7 +42,7 @@ const section = read("app/components/settings/ModulesSection.vue");
 const rowModel = read("app/components/shell/extensionsRows.ts");
 const app = read("app/app.vue");
 
-// -- 1.
+// 1.
 
 test("settingsNav carries the MODULES section (card t_81d0901b)", () => {
   assert.equal(MODULES_CATEGORY, "modules");
@@ -79,7 +79,7 @@ test("the MODULES entry is a jump target, never a knob block in the document", (
   assert.deepEqual(sections.map((s) => s.id), ["provider"], "the knob document is intact");
 });
 
-// -- 2.
+// 2.
 
 test("the settings pane renders the MODULES section and mounts the moved surface", () => {
   assert.match(settingsTab, /import ModulesSection from "\.\/ModulesSection\.vue"/);
@@ -118,7 +118,7 @@ test("a knob filter never pretends a module row is a hit", () => {
   );
 });
 
-// -- 3.
+// 3.
 
 test("the rows still merge the registry introspection (GET /modules)", () => {
   // the live state rides the SHARED store (one boot fetch + every toggle response),
@@ -165,7 +165,7 @@ test("expansion reveals the module's tools, commands and panels", () => {
   assert.match(section, /none \(disabled\)/, "an unmounted module says so instead of a bare none");
 });
 
-// -- 4.
+// 4.
 
 test("the always-on rows carry a chip, never a disabled switch", () => {
   // the refusal is the Go seam's (api/server_modules.go "module <name> is always on").
@@ -184,7 +184,7 @@ test("the always-on rows carry a chip, never a disabled switch", () => {
   );
 });
 
-// -- 5.
+// 5.
 
 test("module rows carry no settings-native row semantics", () => {
   // NO modified dot, NO per-row reset, NO scaffold-set override flags.
@@ -196,7 +196,7 @@ test("module rows carry no settings-native row semantics", () => {
   assert.match(section, /class="extension-row reg-row"/, "the shared registry row is the row law");
 });
 
-// -- 6.
+// 6.
 
 test("the /modules command opens settings and jumps to the MODULES section", () => {
   assert.match(
@@ -222,7 +222,7 @@ test("the /modules command opens settings and jumps to the MODULES section", () 
   );
 });
 
-// -- 7.
+// 7.
 
 test("the secondary-pane modules tab is gone from the shell", () => {
   assert.ok(

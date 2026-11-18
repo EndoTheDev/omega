@@ -121,7 +121,7 @@ func TestVerifyChecksumBothShapes(t *testing.T) {
 	realHash := hex.EncodeToString(h[:])
 	assetName := "linux_arm64"
 
-	// Byte-for-byte the shape release-checksums.sh emits (asset pair.
+	// Byte-for-byte the shape release-checksums.sh emits.
 	body := fmt.Sprintf(""+
 		"e412488a0f72e241b2cd06a66f44ba21b67a05ce541db5092eac4afa69e9a6a9  omega-v0.15.2-darwin_arm64.tar.gz\n"+
 		"e412488a0f72e241b2cd06a66f44ba21b67a05ce541db5092eac4afa69e9a6a9  darwin_arm64\n"+

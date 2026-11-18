@@ -35,7 +35,7 @@ type setupProvider struct {
 	Manual bool   // a missing model list still lets the user type a model name
 }
 
-// setupProviders is the menu order ollama/openai/anthropic, matching the card's.
+// setupProviders is the menu order ollama/openai/anthropic, matching.
 var setupProviders = []setupProvider{
 	{Type: "ollama", Label: "ollama (local, default http://localhost:11434)", Host: "http://localhost:11434", NoKey: true, Manual: false},
 	{Type: "openai", Label: "openai (api.openai.com)", Host: "https://api.openai.com/v1", Manual: true},
@@ -77,8 +77,6 @@ func (s *setupSession) Run() error {
 	host := s.ask("base url", pick.Host)
 	key := ""
 	if !pick.NoKey {
-		// The key echoes as it is pasted (no terminal raw mode here - the loop law owns this
-		// process).
 		key = strings.TrimSpace(s.ask(fmt.Sprintf("api key for %s", pick.Type), ""))
 		if key == "" {
 			return fmt.Errorf("an api key is required for %s (get one at the provider's console)", pick.Type)

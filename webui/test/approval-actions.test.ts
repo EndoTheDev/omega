@@ -62,7 +62,7 @@ function runningShell(id: string, command: string): ToolItem {
   };
 }
 
-// -- the pair contract --
+// the pair contract
 
 test("approveDenyOptions finds the approve/deny pair, case-insensitive, 1-based", () => {
   const ix = approveDenyOptions(gateCardRow("c1", "s1").options);
@@ -78,7 +78,7 @@ test("approveDenyOptions: null when the card is not a gate question", () => {
   assert.equal(approveDenyOptions([]), null);
 });
 
-// -- the answer bodies --
+// the answer bodies
 
 test("gateAnswerBody: approve runs the command, deny skips it", () => {
   const card = gateCardRow();
@@ -110,7 +110,7 @@ test("gateAnswerBody: the pair contract reads the card's own options", () => {
   assert.deepEqual(gateAnswerBody(card, "approve"), { card_id: "c1", option_index: 1 });
 });
 
-// -- the race --
+// the race
 
 test("isSettledRace: the settled vocabulary collapses, other failures do not", () => {
   for (const why of [
@@ -143,7 +143,7 @@ test("postVerdict carries the follow-up message to the same endpoint", async () 
   }
 });
 
-// -- the chat binding --
+// the chat binding
 
 test("bindGateQuestions: no session or no cards binds nothing", () => {
   const items: TranscriptItem[] = [runningShell("tc1", "rm -rf build")];
@@ -194,7 +194,6 @@ test("bindGateQuestions: a pending verdict-tool card owns the pause, nothing bin
 });
 
 test("bindGateQuestions: the byte-truncated title still matches its command", () => {
-  // the backend truncates the card title to 120 bytes with a..
   const command = "docker run --rm -v /data:/data alpine:latest sh -c 'apk add --no-cache rsync && rsync -a /data/ /backup/'";
   const shell = runningShell("tc1", command);
   const bound = bindGateQuestions([shell], [gateCardRow("c1", "s1", command.slice(0, 117) + "\u2026")], "s1");
@@ -223,7 +222,7 @@ test("toolCallCommand reads the command argument, junk-safe", () => {
   assert.equal(toolCallCommand({ kind: "tool", name: "shell.run", status: "running" }), "");
 });
 
-// -- source pins (components are not importable in node) --
+// source pins (components are not importable in node)
 
 test("GateCard renders the three options and every resolution path", () => {
   const vue = read("app/components/chat/GateCard.vue");

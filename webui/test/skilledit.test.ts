@@ -65,7 +65,7 @@ function draft(over: Partial<SkillDraft> = {}): SkillDraft {
   return { ...emptyDraft(), name: "probe", description: "probe skill", content: "# probe\n\nbody\n", ...over };
 }
 
-// -- the wire contract --
+// the wire contract
 
 test("saveSkill POSTs the draft and the response is the fresh listing", async () => {
   const calls = recordFetch((call) => {
@@ -85,7 +85,7 @@ test("saveSkill POSTs the draft and the response is the fresh listing", async ()
     assert.equal(body.name, "probe");
     assert.equal(body.description, "probe skill");
     assert.equal(body.content, "# probe\n\nbody\n");
-    // one call on the wire: the save ANSWER IS the listing (the one response carries.
+    // one call on the wire: the save ANSWER IS the listing.
     assert.deepEqual(calls.map((c) => c.url), ["/skills/save"]);
   } finally {
     restoreFetch();
@@ -146,14 +146,14 @@ test("fetchSkillDraft prefills from GET /skills/content", async () => {
     assert.equal(d.name, "probe");
     assert.equal(d.description, "probe skill");
     assert.equal(d.content, "# body\n");
-    // the name rides the query, URI-escaped (a traversal name never reaches the file.
+    // the name rides the query, URI-escaped.
     assert.deepEqual(calls.map((c) => c.url), ["/skills/content?name=probe"]);
   } finally {
     restoreFetch();
   }
 });
 
-// -- the mirrored validation law --
+// the mirrored validation law
 
 test("validateDraft mirrors the Go provider law", () => {
   assert.equal(validateDraft(draft()), "");

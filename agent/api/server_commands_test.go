@@ -23,7 +23,7 @@ import (
 // listingSkills serves the serving surface's own face (part 3).
 type listingSkills struct{}
 
-// errNotFound: the skill provider's plain not-found phrasing (the skills capsule.
+// errNotFound: the skill provider's plain not-found phrasing.
 type errNotFound struct{}
 
 func (*errNotFound) Error() string { return `skill %q not found. Available: none` }
@@ -200,7 +200,7 @@ func realChainServer(t *testing.T) *Server {
 	return s
 }
 
-// mountRealChain mounts the real capsule chain into a fresh temp home (nothing writes.
+// mountRealChain mounts the real capsule chain into a fresh temp home.
 func mountRealChain(t *testing.T) *core.Context {
 	t.Helper()
 	t.Setenv("OMEGA_HOME", t.TempDir())
@@ -220,9 +220,9 @@ func mountRealChain(t *testing.T) *core.Context {
 	return ctx
 }
 
-// TestCommandDispatchReachesTheOwningCapsule is the wire boundary of the chain-on-miss
-// law. /logs is the argument-less case (its answer may be the capsule's own refusal on
-// a home with no log file) - it still may never carry the cron text.
+// TestCommandDispatchReachesTheOwningCapsule is the wire boundary of the. /logs is the
+// argument-less case (its answer may be the capsule's own refusal on a home with no log
+// file) - it still may never carry the cron text.
 func TestCommandDispatchReachesTheOwningCapsule(t *testing.T) {
 	s := realChainCapsules(t)
 
@@ -261,10 +261,9 @@ func TestCommandDispatchReachesTheOwningCapsule(t *testing.T) {
 	}
 }
 
-// --- the dispatch contract -----------------------
+// - the dispatch contract ---------------------
 
-// TestCommandDispatchDistinguishesMissFromRefusal is the wire boundary of the miss
-// sentinel.
+// TestCommandDispatchDistinguishesMissFromRefusal is the wire boundary of the miss.
 func TestCommandDispatchDistinguishesMissFromRefusal(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
@@ -333,7 +332,7 @@ func TestCommandDispatchBindsTheInvokingSession(t *testing.T) {
 	}
 }
 
-// TestCommandDispatchSessionCommandsActOnTheTab drives the five session commands the.
+// TestCommandDispatchSessionCommandsActOnTheTab drives the five session commands.
 func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 	s := realChainServer(t)
 
@@ -387,7 +386,7 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 		t.Fatalf("/export without a session: %d %q, want the owner's refusal", code, raw)
 	}
 
-	// the session-free commands answer exactly as before.
+	// the session-free commands answer exactly.
 	for _, name := range []string{"/sessions", "/tree", "/search"} {
 		code, _, got := dispatch(t, body(name, "", ""))
 		if strings.Contains(got, "no handler for") {

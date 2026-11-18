@@ -55,7 +55,6 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	// Selecting the already-active variant writes nothing.
 	if view.ActiveHeads[branch] == child {
 		s.writeVariants(w, http.StatusOK, view)
 		return
@@ -69,7 +68,6 @@ func (s *Server) handleSessionVariants(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "get session: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// The select changed the panel's active path.
 	if c := s.chat; c != nil && c.srv.Load() != nil {
 		if focusID, running := c.focus(); focusID == id {
 			c.push(c.buildPanel(id, running))

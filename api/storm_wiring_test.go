@@ -97,7 +97,6 @@ func TestToggleStormLeavesEngineRingPushing(t *testing.T) {
 	}
 	assertChatRoutes(t, canvas, "after disable")
 
-	// re-enable (the storm's verdict/kanban enable step).
 	if err := reg.Mount(ctx, stormPlugin, core.StartDeps{}); err != nil {
 		t.Fatalf("remount earlymod: %v", err)
 	}

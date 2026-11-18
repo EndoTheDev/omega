@@ -36,7 +36,7 @@ func providerInstanceNames(cfg *Config) string {
 	return strings.Join(names, ", ")
 }
 
-// containsString is the small membership test the layer reads use (the sets are tiny.
+// containsString is the small membership test the layer reads use.
 func containsString(list []string, want string) bool {
 	for _, v := range list {
 		if v == want {
@@ -46,7 +46,7 @@ func containsString(list []string, want string) bool {
 	return false
 }
 
-// applyModelEnvOverride re-asserts the OMEGA_MODEL env table entry on a config that.
+// applyModelEnvOverride re-asserts the OMEGA_MODEL env table entry on a config.
 // applyEnv runs inside LoadConfig, BEFORE the layer, so a layer defining provider.model
 // silently clobbered an explicit override (wake children combine both: OMEGA_AGENT for
 // the layer, OMEGA_MODEL for the fire's model - the wake contract says the env table
@@ -82,7 +82,7 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 		return err
 	}
 	if name == agent.DefaultAgentName {
-		return nil // main = the home root itself (ruling 1)
+		return nil // main = the home root itself (rule 1)
 	}
 	data, err := os.ReadFile(agent.AgentConfigPath(home, name))
 	if err != nil {
@@ -94,7 +94,6 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return fmt.Errorf("parse agent config %s: %w", name, err)
 	}
-	// The definition layer.
 	lay, err := agent.ReadAgentConfigLayer(home, name)
 	if err != nil {
 		return err
@@ -134,7 +133,6 @@ func ApplyAgentLayer(cfg *Config, home, name string) error {
 		allow = append(allow, skill)
 	}
 	cfg.agentSkillsAllow, cfg.agentSkillsAllowSet = allow, true
-	// Agent-scoped paths.
 	var pathKnobs struct {
 		Skills  SkillsConfig  `yaml:"skills"`
 		Memory  MemoryConfig  `yaml:"memory"`
@@ -196,9 +194,6 @@ func migrateAgentStores(home string) error {
 }
 
 // cmdAgents is the `omega agents` CLI: inventory and scaffold.
-//
-// omega agents table of registered agents
-// omega agents create <name> [description..] scaffold one
 func cmdAgents(args []string) error {
 	home := omegaHome()
 	if err := agent.MigrateAgentHomes(home); err != nil {
@@ -231,7 +226,7 @@ func cmdAgents(args []string) error {
 	}
 }
 
-// printAgents renders the CLI table (same data as the webui /agents list.
+// printAgents renders the CLI table.
 func printAgents(home string) error {
 	profiles := agent.LoadProfiles(home)
 	fmt.Printf("%-14s %-28s %-22s %6s %6s  %s\n", "AGENT", "DESCRIPTION", "MODEL", "SKILLS", "MEMORY", "DIR")

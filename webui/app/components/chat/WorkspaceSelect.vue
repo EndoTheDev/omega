@@ -105,7 +105,6 @@
     return p.split("/").filter(Boolean).pop() ?? p;
   });
 
-  // the chip's tooltip (script keeps the literal strings.
   const btnTitle = computed(() =>
     props.disabled
       ? props.workspace
@@ -122,7 +121,6 @@
     if (props.disabled) return;
     open.value = !open.value;
     if (open.value) {
-      // the picker opens where the folder is rooted now.
       go(props.workspace || "/");
     }
   }
@@ -169,8 +167,7 @@
     position: relative;
   }
   /*
-   * the chip borrows the global.model-chip treatment (full contrast, chevron, hover,
-   * the narrow squeeze).
+   * the chip borrows the global.model-chip treatment.
    */
   .ws-unset {
     opacity: 0.55;

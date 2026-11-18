@@ -66,7 +66,6 @@ describe("formatElapsed", () => {
 });
 
 describe("createElapsedMeter (injectable timers)", () => {
-  // manual fake clock for the meter tests.
   function fakeClock() {
     const pending: { fn: () => void; due: number; handle: symbol }[] = [];
     let now = 0;
@@ -186,7 +185,7 @@ describe("pillVisible", () => {
     assert.equal(pillVisible(0, 200, 200), false);
   });
 });
-// formatDurationMs: server-measured durations (restored sessions carry real elapsed.
+// formatDurationMs: server-measured durations.
 describe("formatDurationMs", () => {
   it("renders seconds, minutes, hours like the live meter", () => {
     assert.equal(formatDurationMs(0), "0ms");
@@ -196,7 +195,7 @@ describe("formatDurationMs", () => {
   });
 });
 
-// sub-second spans render milliseconds, not a floored "0s" (in-app comment 4.
+// sub-second spans render milliseconds, not a floored "0s".
 describe("formatElapsed sub-second", () => {
   it("shows milliseconds under one second", () => {
     assert.equal(formatElapsed(0, 208), "208ms");

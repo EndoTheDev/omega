@@ -107,8 +107,7 @@ func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]core
 	return out, nil
 }
 
-// resolveParent computes the parent pointer a conversation message carries into its
-// row.
+// resolveParent computes the parent pointer a conversation message carries.
 func (s *Store) resolveParent(ctx context.Context, sessionID string, msg core.Message) (string, error) {
 	view, err := s.GetActiveView(ctx, sessionID)
 	if err != nil {
@@ -132,7 +131,7 @@ func (s *Store) resolveParent(ctx context.Context, sessionID string, msg core.Me
 	return core.MsgID(view.Path[len(view.Path)-1].ID), nil
 }
 
-// parentMsgError reports an explicit pointer the session's rows don't carry (dangling.
+// parentMsgError reports an explicit pointer the session's rows don't carry.
 type parentMsgError struct{ parent, session string }
 
 func (e *parentMsgError) Error() string {

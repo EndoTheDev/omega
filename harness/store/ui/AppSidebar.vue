@@ -4,7 +4,7 @@
     class="sessions"
     :class="{ open: open, stacked: stacked }">
     <!--
-      the head row is the UNIVERSAL band (the shared TabBand)..
+      the head row is the UNIVERSAL band (the shared TabBand).
       The band, the button row and the list sit ABOVE the.session-list scrollport -
       scrolling the list never moves them.
     -->
@@ -16,7 +16,7 @@
           placeholder="Search sessions" />
       </div>
     </TabBand>
-    <!-- the new-session control's OWN row - below the band.. -->
+    <!-- the new-session control's OWN row - below the band. -->
     <div class="new-row">
       <div
         class="new-btn"
@@ -115,14 +115,9 @@
                   :size="12" /></span>
             </button>
             <span class="session-title">{{ s.label || s.id }}</span>
-            <!-- branch badge: parented sessions carry the subtle ↳ mark. -->
             <span
               v-if="badge(s)"
               class="session-branch">↳ branch</span>
-            <!--
-              inline rename: the pencil edit swaps the title for an input; commit on
-              Enter/blur, cancel on Esc.
-            -->
             <input
               v-if="renamingId === s.id"
               class="session-rename"
@@ -136,7 +131,6 @@
             <span
               v-if="renamingId !== s.id && meta(s)"
               class="session-meta">{{ meta(s) }}</span>
-            <!-- hover action cluster: branch (fork) + rename (pencil) + export. -->
             <span
               class="row-actions"
               @mouseenter="hoveredId = s.id">
@@ -226,7 +220,6 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
   import Icon from "~/components/ui/Icon.vue";
-  // the copy-id row action.
   import { copyText } from "~/composables/clipboard";
   import { emitLocalToast } from "~/composables/canvas";
   import {
@@ -254,7 +247,6 @@
     draftFocused?: boolean;
   }>();
 
-  // --: the in-band search's narrow stack --- The sidebar drags down to its 128px wall.
   const BAND_STACK_PX = 190;
   const asideEl = ref<HTMLElement | null>(null);
   const stacked = ref(false);
@@ -286,24 +278,16 @@
     defineEmits<{
     (e: "open", id: string): void;
     (e: "new"): void;
-    // new-ephemeral: the dropdown's no-persist entry.
     (e: "new-ephemeral"): void;
     (e: "pin", id: string, pinned: boolean): void;
-    // archive/unarchive: the row moves to (or out of) the archived group at the list
-    // bottom instantly.
     (e: "archive", id: string, archived: boolean): void;
-    // branch forks the session.
     (e: "branch", id: string): void;
-    // rename commits the inline draft.
     (e: "rename", id: string, label: string): void;
-    // export renders nothing here.
     (e: "remove", id: string): void;
   }>();
 
   const query = ref("");
-  // the new-chat dropdown's open bit + click-outside close (document listener bound.
   const newMenuOpen = ref(false);
-  // the type picker is data..
   interface NewMenuEntry {
     label: string;
     title: string;
@@ -311,7 +295,7 @@
     /**
      * the new-conversation DIM (never the native `disabled` - that kills the mouse
      * events and with them the title that explains the state, exactly why the last-tab
-     * close X uses aria-disabled instead)
+     * close X uses aria-disabled instead) / /
      */
     dimmed?: boolean;
     run?: () => void;
@@ -347,7 +331,6 @@
     else document.removeEventListener("click", onDocClick);
   });
   onBeforeUnmount(() => document.removeEventListener("click", onDocClick));
-  // ids and rank order returned by the backend's unified session search (null = no.
   const hitIds = ref<string[] | null>(null);
   const filtered = computed(() => withSearchHits(props.sessions, hitIds.value));
   const buckets = computed<SessionBuckets>(() => bucketSessions(filtered.value));
@@ -382,7 +365,6 @@
   });
   onUnmounted(() => searchScheduler.cancel());
 
-  // -- collapsible sections --- collapsed holds the labels of sections whose rows are.
   const COLLAPSED_KEY = "omega.sidebar-collapsed";
   const collapsed = ref<Set<string>>(new Set());
 
@@ -401,7 +383,6 @@
   }
   restoreCollapsed();
 
-  // non-empty sections in render order; empty groups render no header.
   const visibleSections = computed(() => {
     const b = buckets.value;
     const sections: {
@@ -472,7 +453,7 @@
     });
   }
 
-  // -- inline rename --- renamingId holds the row whose title is an input right now.
+  // inline rename --- renamingId holds the row whose title is an input right now.
   // Escape cancels; both paths clear the editing state first so the blur never double
   // commits.
   const renamingId = ref<string | null>(null);
@@ -495,7 +476,7 @@
 -->
 <style scoped>
 /*
- * the head row is the shared TabBand - the band's own geometry replaces.sessions-head..
+ * the head row is the shared TabBand - the band's own geometry replaces.sessions-head.
  */
 /* the band row carries the title ALONE. */
 .new-row {
@@ -520,7 +501,7 @@
   width: 100%;
 }
 /*
- * the split wrapper keeps the shared.new-btn chip (border, radius, dim text, accent.
+ * the split wrapper keeps the shared.new-btn chip.
  */
 .new-btn {
   display: flex;
@@ -559,10 +540,7 @@
   outline: 1px solid var(--accent);
   outline-offset: -1px;
 }
-/*
- * the picker's arrow: closed (down) when the menu is shut, rotated open (up) while the
- * type choice shows.
- */
+/* the picker's arrow: closed (down) when the menu is shut, rotated open (up) while. */
 .new-caret-chevron {
   transition: transform 0.12s ease;
 }

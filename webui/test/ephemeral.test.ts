@@ -147,7 +147,6 @@ describe("chat host: the ephemeral contract", () => {
   });
 
   it("load() reattaches an eph id from the registry transcript (reload)", async () => {
-    // restore = the transcript endpoint, served from server memory.
     recordFetch(() =>
       ({
         ok: true,

@@ -82,7 +82,7 @@ type Profile struct {
 	Continuous bool `json:"continuous"`
 }
 
-// agentConfig is the subset of an agent's config/config.yaml this package parses for.
+// agentConfig is the subset of an agent's config/config.yaml this package parses.
 type agentConfig struct {
 	Description string `yaml:"description"`
 	Provider    struct {
@@ -345,7 +345,7 @@ func dirExists(path string) bool {
 	return err == nil && fi.IsDir()
 }
 
-// mainSkillNames lists main's OWN skills (home/skills, minus the shared root every.
+// mainSkillNames lists main's OWN skills.
 func mainSkillNames(home string) []string {
 	root := filepath.Join(home, "skills")
 	entries, err := os.ReadDir(root)
@@ -506,7 +506,6 @@ func materializeClone(home, src, dst, description string) error {
 	if err := cloneConfigDir(home, src, dst); err != nil {
 		return err
 	}
-	// Skills: the source's own tree (for main, home/skills minus the shared root every.
 	if src == DefaultAgentName {
 		for _, skill := range mainSkillNames(home) {
 			if err := copyTree(filepath.Join(home, "skills", skill), filepath.Join(dstDir, "skills", skill)); err != nil {
@@ -537,7 +536,6 @@ func materializeClone(home, src, dst, description string) error {
 	if err := cloneStores(srcDir, dstDir); err != nil {
 		return err
 	}
-	// A description on the create request replaces the source's, in the copied layer or.
 	if description != "" && src != DefaultAgentName {
 		if err := UpdateAgentConfigLayer(home, dst, AgentConfigUpdates{Description: &description}); err != nil {
 			return fmt.Errorf("clone description: %w", err)
@@ -617,8 +615,6 @@ func cloneCronLegality(path string) error {
 		if job.Deliver != "" && job.Deliver != "none" {
 			return fmt.Errorf("clone main: job %q delivers to %q, a main-home feature the cron loader refuses in an agent home - strip deliver: from that job (or clone a secondary agent), the schedules are not being silently dropped", job.Name, job.Deliver)
 		}
-		// The loader normalizes the list before it judges it (entries trim, empties drop), so
-		// `skills.
 		if pinsSkills(job.Skills) {
 			return fmt.Errorf("clone main: job %q pins skills, a main-home feature the cron loader refuses in an agent home (a wake's fire prompt follows the agent's own skills) - strip skills: from that job (or clone a secondary agent), the schedules are not being silently dropped", job.Name)
 		}
@@ -780,8 +776,7 @@ func loadProfile(home, name string) Profile {
 	return p
 }
 
-// VisibleSkillDirs is AgentSkillDirs plus main's own skill root when the agent inherits
-// skills.
+// VisibleSkillDirs is AgentSkillDirs plus main's own skill root when the agent.
 func VisibleSkillDirs(home, name string, inheritMain bool) []string {
 	dirs := AgentSkillDirs(home, name)
 	if inheritMain && name != DefaultAgentName {

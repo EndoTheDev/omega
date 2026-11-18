@@ -23,7 +23,7 @@ import (
 // make; a wedged agent store must never wedge the roster route.
 const storeTimeout = 5 * time.Second
 
-// canonicalChatWriter is the store surface that creates a canonical chat HIDDEN from.
+// canonicalChatWriter is the store surface that creates a canonical chat HIDDEN.
 type canonicalChatWriter interface {
 	CreateCanonicalChat(ctx context.Context, id, agentName string) error
 }
@@ -55,7 +55,7 @@ type Machine struct {
 	storeFn func() agent.StoreProvider
 }
 
-// SetDisabledAgents swaps the soft-disable list live (the host's registry-toggle seam.
+// SetDisabledAgents swaps the soft-disable list live.
 func (m *Machine) SetDisabledAgents(names []string) {
 	m.disabledMu.Lock()
 	defer m.disabledMu.Unlock()
@@ -125,8 +125,7 @@ func (m *Machine) sessionRows(name string) ([]core.Session, error) {
 	return ast.ListAgentSessions(ctx, name)
 }
 
-// CurrentCanonicalSession picks agentName's live canonical chat out of a home's session
-// rows.
+// CurrentCanonicalSession picks agentName's live canonical chat out.
 func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Session, bool) {
 	var best core.Session
 	found := false
@@ -134,8 +133,7 @@ func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Se
 		if sess.Archived || !IsCanonicalSessionID(agentName, sess.ID) {
 			continue
 		}
-		// newest by created_at, then by generation NUMBER (the later mint wins a same-second
-		// tie.
+		// newest by created_at, then by generation NUMBER.
 		if !found || sess.CreatedAt > best.CreatedAt ||
 			(sess.CreatedAt == best.CreatedAt &&
 				canonicalGeneration(agentName, sess.ID) > canonicalGeneration(agentName, best.ID)) {
@@ -343,7 +341,6 @@ func (m *Machine) canonicalPreview(agentDir, agentName string) (preview, reportA
 	defer st.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	// The id the home's chat actually carries.
 	sessions, err := agentSessions(ctx, st, agentName)
 	if err != nil {
 		return "", "", false
@@ -453,8 +450,7 @@ func nextWakeFor(cronsPath string) string {
 	return next
 }
 
-// parseSchedule mirrors the cron module's parser shape (cron.Minute | Hour | Dom |
-// Month | Dow).
+// parseSchedule mirrors the cron module's parser shape.
 func parseSchedule(expr string) *schedule {
 	return &schedule{parser: cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow), expr: expr}
 }

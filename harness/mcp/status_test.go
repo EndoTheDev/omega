@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountPlugin mounts the plugin the api way and returns the live Context (the.
+// mountPlugin mounts the plugin the api way and returns the live Context.
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -20,7 +20,7 @@ func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	return ctx
 }
 
-// serveStatusRoute finds the module's GET /mcp/servers route on the context and.
+// serveStatusRoute finds the module's GET /mcp/servers route on the context.
 func serveStatusRoute(t *testing.T, ctx *core.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {

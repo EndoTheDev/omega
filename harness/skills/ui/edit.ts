@@ -31,8 +31,7 @@ export function emptyDraft(): SkillDraft {
   return { name: "", description: "", content: "" };
 }
 
-// skillNameLaw is the mirrored folder-name law (validSkillName in
-// harness/skills/skills.go).
+// skillNameLaw is the mirrored folder-name law.
 export function skillNameLaw(name: string): string {
   const n = name.trim();
   if (n === "") return "name is required";
@@ -55,7 +54,7 @@ export function validateDraft(d: SkillDraft): string {
   return "";
 }
 
-// saveSkill POSTs the draft to /skills/save (upsert.
+// saveSkill POSTs the draft to /skills/save.
 export async function saveSkill(d: SkillDraft): Promise<SkillInfo[]> {
   const res = await fetch("/skills/save", {
     method: "POST",

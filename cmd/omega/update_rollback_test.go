@@ -113,7 +113,7 @@ func TestRollbackSwapRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRollbackToRoundTrip: the full rollback path — swap, health check against the.
+// TestRollbackToRoundTrip: the full rollback path — swap, health check against.
 func TestRollbackToRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "omega")

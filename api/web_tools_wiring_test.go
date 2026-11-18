@@ -10,9 +10,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestChannelMountCarriesWebTools verifies the channel mount registers the web tool
-// pair from the config. Natural names, shell tier: the channel plugin is not
-// Toggleable, so the pair is never disable-list material.
+// TestChannelMountCarriesWebTools verifies the channel mount registers the web tool.
+// Natural names, shell tier: the channel plugin is not Toggleable, so the pair is never
+// disable-list material.
 func TestChannelMountCarriesWebTools(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{

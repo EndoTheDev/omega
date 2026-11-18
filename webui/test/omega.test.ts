@@ -1,4 +1,4 @@
-// omega webui: unit tests for the SSE parser + payload dispatch (the pure half of the.
+// omega webui: unit tests for the SSE parser + payload dispatch.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -175,7 +175,6 @@ describe("attachment references on the render wire (card t_8a569163)", () => {
     );
   });
 
-  // the panel payload's duration fields survive the normalizer.
   it("normalizeChatPayload keeps the block durations", () => {
     const payload = normalizeChatPayload({
       rows: [
@@ -265,7 +264,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(settled.status, "done");
     assert.equal(settled.result, "1..30");
     assert.equal(settled.elapsedMs, undefined, "the meter spends when the call closes");
-    // the response-return window rides the result block beside the call duration.
     assert.equal(settled.answerMs, 1200, "the result's answer_ms lands on the row");
   });
 
@@ -303,7 +301,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(think.finalMs, undefined);
     const answer = live[1] as { kind: string; streaming?: boolean; elapsedMs?: number; finalMs?: number };
     assert.equal(answer.elapsedMs, 2400, "the answer meter counts on the same way");
-    // the run lands: the same items now carry the measured spans, and the streaming.
     const done = t.apply({
       session: "s3",
       rows: [
@@ -432,7 +429,7 @@ describe("thinkingLevelWire", () => {
   });
 });
 
-// the reattach merge's restored running tool counts on from the server's.
+// the reattach merge's restored running tool counts.
 describe("createElapsedMeter initialMs (restored running call offset)", () => {
   function fakeMeter(offset: number) {
     const labels: string[] = [];
@@ -457,7 +454,6 @@ describe("createElapsedMeter initialMs (restored running call offset)", () => {
   }
 
   it("starts the label at the consumed span and ticks on from it", () => {
-    // wall clock at 0, call started 7s ago.
     const t = fakeMeter(7000);
     t.meter.start();
     assert.deepEqual(t.labels, ["7s"], "first emit is the consumed span");

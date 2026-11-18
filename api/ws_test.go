@@ -53,11 +53,9 @@ func TestSocketPushesTypedFrames(t *testing.T) {
 	defer ts.Close()
 
 	conn := dialSocket(t, ts)
-	// the frame only lands if the connection attached before it was published.
 	if err := conn.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"chat"}}); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	// the subscribe message is processed by the read loop.
 	s.Sockets().PublishEvent(agentapi.TopicChat, "sess-1", "response_chunk", []byte(`{"type":"response_chunk","content":"hi"}`))
 
 	msg := readFrame(t, conn)
@@ -75,8 +73,7 @@ func TestSocketPushesTypedFrames(t *testing.T) {
 	}
 }
 
-// TestSocketHealthAndChipTopics: the other two hooks reach a live connection over the
-// real wire.
+// TestSocketHealthAndChipTopics: the other two hooks reach a live connection.
 func TestSocketHealthAndChipTopics(t *testing.T) {
 	s := newTestServer()
 	s.version = "v0.14.1-test"
@@ -129,7 +126,7 @@ func TestSocketReconnect(t *testing.T) {
 	}
 }
 
-// waitSubscribers polls the hub until it holds count connections (the attach/detach.
+// waitSubscribers polls the hub until it holds count connections.
 func waitSubscribers(t *testing.T, s *Server, count int) bool {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -221,7 +218,7 @@ func TestSocketLogsTopicGated(t *testing.T) {
 		t.Fatalf("delta = %v, want the two appended lines verbatim", delta.Lines)
 	}
 
-	// the quiet connection saw none of it (a read error is the ONLY correct outcome.
+	// the quiet connection saw none of it.
 	_ = quiet.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 	if _, raw, err := quiet.ReadMessage(); err == nil {
 		t.Fatalf("a health-only connection received a logs frame: %s", raw)

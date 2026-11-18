@@ -25,8 +25,8 @@ func retryableStatus(code int) bool {
 	return code == http.StatusTooManyRequests || code >= 500
 }
 
-// backoff returns the wait for a given attempt: 1s, 2s, 4s,.. plus a small random
-// jitter so concurrent callers don't stampede in lockstep.
+// backoff returns the wait for a given attempt: 1s, 2s, 4s,. plus a small random jitter
+// so concurrent callers don't stampede in lockstep.
 func backoff(attempt int) time.Duration {
 	base := time.Duration(1<<attempt) * time.Second
 	if base > 30*time.Second {
@@ -55,13 +55,12 @@ func loadBackoff(attempt int) time.Duration {
 	return base + jitter
 }
 
-// Backoff returns the exponential backoff wait for retry attempt n, identical to the.
+// Backoff returns the exponential backoff wait for retry attempt n, identical.
 func Backoff(attempt int) time.Duration {
 	return backoff(attempt)
 }
 
-// LoadBackoff returns the backoff wait for a cold-load ("load" verdict) stream retry
-// attempt n.
+// LoadBackoff returns the backoff wait for a cold-load ("load" verdict) stream retry.
 func LoadBackoff(attempt int) time.Duration {
 	return loadBackoff(attempt)
 }

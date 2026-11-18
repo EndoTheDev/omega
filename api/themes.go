@@ -206,7 +206,7 @@ func (r *themeRegistry) reload() {
 	}
 }
 
-// snapshot returns the current set (safe copy of the slice header.
+// snapshot returns the current set.
 func (r *themeRegistry) snapshot() []Theme {
 	if r == nil {
 		return []Theme{}
@@ -256,7 +256,7 @@ func (r *themeRegistry) Stop() {
 }
 
 // handleThemes serves GET /themes. Broken themes ride along flagged with Error; the
-// picker shows only the good ones and the server never falls over.
+// picker shows only the good ones and the server never falls.
 func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

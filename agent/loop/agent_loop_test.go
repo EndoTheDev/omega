@@ -365,8 +365,7 @@ func TestToolSchemasDeterministicJSON(t *testing.T) {
 	}
 }
 
-// recordingProvider wraps a Provider and records the tools argument of every Stream
-// call.
+// recordingProvider wraps a Provider and records the tools argument of every Stream.
 type recordingProvider struct {
 	agent.Provider
 	toolsJSON [][]byte

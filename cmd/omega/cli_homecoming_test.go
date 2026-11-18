@@ -86,7 +86,6 @@ func TestModuleCLIDispatch(t *testing.T) {
 	}
 	t.Log("PROOF help: omega kanban --help printed the module's own help")
 
-	// the module owns the unknown subcommands of its own name too (Q6).
 	if _, err := dispatchSubcommand(reg, "kanban", []string{"bogus"}); err == nil {
 		t.Fatal("unknown kanban subcommand accepted")
 	}
@@ -115,7 +114,6 @@ func TestModuleCLISubcommandVanishes(t *testing.T) {
 	}
 	t.Log("PROOF vanish: kanban absent from the registry, dispatch falls through")
 
-	// the help listing is the same introspection: a removed module's line is gone.
 	out, _ := captureStdout(t, func() error {
 		printModuleSubcommands(reg.Subcommands(), os.Stdout)
 		return nil

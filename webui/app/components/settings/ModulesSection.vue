@@ -39,7 +39,6 @@
               v-else
               class="extension-name reg-row-name"
               :title="row.description">{{ row.name }}</span>
-            <!-- the row law's subtitle line. -->
             <span class="reg-row-sub">
               <span
                 v-if="row.description"
@@ -135,7 +134,6 @@
       class="extensions-status extensions-error">
       {{ toggleError }}
     </p>
-    <!-- Q12: rejections visible as events. -->
     <p
       v-for="r in moduleRefusals"
       :key="r.at + r.module"
@@ -188,11 +186,9 @@
   const error = ref("");
   const toggleError = ref<string | null>(null);
   const busy = ref<string | null>(null);
-  // false when the host serves no toggle seam (501).
   const seamAvailable = ref(true);
   const stateNote = ref("");
 
-  // the shell's build-time composition facts, reshaped for the row model.
   const panelRefs = computed<PanelRef[]>(() =>
     modulePanels.map((p) => ({
       module: p.module,
@@ -210,7 +206,6 @@
     { immediate: true },
   );
 
-  // -- expansion: ephemeral list state (no persistence law.
   const expanded = ref<Set<string>>(new Set());
   const isExpanded = (name: string) => expanded.value.has(name);
   function toggleExpand(name: string) {
@@ -220,7 +215,7 @@
     expanded.value = next;
   }
 
-  // -- the one-click toggle ------------------------ One activation commits; busy names
+  // the one-click toggle ------------------------ One activation commits; busy names
   // the in-flight row so a second click cannot overlap the write.
 
   // toggleNote speaks the registry introspection's dialect (ModuleRow).
@@ -250,7 +245,6 @@
     toggleable: boolean;
     dependents: string[];
   }): string => {
-    // resting state: name the dependents while the module runs (the Q3 facts stay.
     if (row.toggleable && row.dependents.length > 0) {
       return `dependents: ${row.dependents.join(", ")}`;
     }
@@ -269,11 +263,9 @@
     busy.value = row.name;
     toggleError.value = null;
     try {
-      // the store applies the refreshed introspection itself.
       await commitModuleToggle(row.name, checked);
     } catch (err) {
       toggleError.value = err instanceof Error ? err.message : String(err);
-      // Refresh anyway: the refusal ledger is the visible event (Q12) even when the.
       try {
         await loadModules();
       } catch {
@@ -284,7 +276,6 @@
   }
 
   async function load() {
-    // the inventory first (the section's spine), then the introspection.
     loading.value = true;
     error.value = "";
     try {
@@ -299,7 +290,6 @@
       seamAvailable.value = true;
       stateNote.value = "";
     } catch (e) {
-      // a warm store (the boot read landed) still serves the rows.
       seamAvailable.value = modulesKnown.value;
       stateNote.value = e instanceof Error && e.message.includes("501")
         ? "module state unavailable - no toggle seam"
@@ -316,7 +306,6 @@
 </script>
 
 <style scoped>
-  /* the section body. */
   .settings-modules {
     padding: 2px 0 4px;
   }
@@ -373,7 +362,7 @@
   }
   .extension-shell { font-family: var(--mono); }
   /*
-   * the always-on CHIP - the visible mirror of the seam's refusal (agent-loop.
+   * the always-on CHIP - the visible mirror of the seam's refusal.
    * A chip, never a disabled switch.
    */
   .module-alwayson {
@@ -386,7 +375,6 @@
     color: var(--text-dim);
     white-space: nowrap;
   }
-  /* the subtitle specifics: the counts speak the section's mono meta voice. */
   .extension-meta {
     font-family: var(--mono);
     font-size: 10.5px;
@@ -428,7 +416,6 @@
   }
   .extensions-error { color: var(--err); }
 
-  /* narrow: the section follows the settings pane's own measurement. */
   .settings-modules.narrow .extensions-summary {
     overflow-wrap: anywhere;
   }

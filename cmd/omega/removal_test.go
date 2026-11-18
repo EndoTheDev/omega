@@ -55,7 +55,7 @@ func proofResolve(t *testing.T, ctx *core.Context, key string) {
 //     canvas carries no notifications panel, no toast exists, and no
 //     emitter wiring is left to fire.
 //
-// The output lines are the pastable proof the card asks for.
+// The output lines are the pastable proof the card asks.
 func TestNotificationsRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -92,7 +92,6 @@ func TestNotificationsRemovalProof(t *testing.T) {
 			}
 		}
 		if p.ID == "toast" {
-			// the toast panel exists from registration on.
 			foundToast = true
 		}
 	}
@@ -145,7 +144,6 @@ func TestNotificationsRemovalProof(t *testing.T) {
 	for _, p := range plugins {
 		switch p.Name() {
 		case "notifications", "kanban", "cron", "delegate":
-			// the capsule and its dependent emitters.
 			continue
 		}
 		removed = append(removed, p)
@@ -202,7 +200,7 @@ func payloadJSON(v any) string {
 //
 // The module nouns live in the capsule now (phase F): the board types
 // are package kanban, core carries zero of them - the binary-purity
-// nm check (scripts/nm-purity.sh) is the machine law on top of this.
+// nm check (scripts/nm-purity.sh) is the machine law on top.
 func TestKanbanRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -259,7 +257,6 @@ func TestKanbanRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: the capsule owns its REST routes through RegisterRoute, the canvas carries the task panel + the board switcher, module-qualified")
 
-	// the task tool mutates: its panel refresh pushes through the registration.
 	var deltas []core.Panel
 	live, err := agent.NewCanvas(ctx, func(ev core.Event) {
 		if d, ok := ev.(core.ViewModelDelta); ok {
@@ -294,7 +291,6 @@ func TestKanbanRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF tool wiring: task create pushed the task panel through the live canvas")
 
-	// the action pipe completes the task.
 	if _, err := live.Dispatch(core.ActionCall{Module: "kanban", Action: "kanban.complete_task", Args: json.RawMessage(`{"id": "` + id + `"}`)}); err != nil {
 		t.Fatalf("dispatch kanban.complete_task: %v", err)
 	}
@@ -362,13 +358,12 @@ func TestKanbanRemovalProof(t *testing.T) {
 			t.Fatalf("REMOVED MOUNT: command %q survived the removal", cmd.Name)
 		}
 	}
-	// the module nouns live in the capsule (phase F).
 	_ = kanban.KanbanTask{}
 	_ = kanban.KanbanProvider(nil)
 	t.Log("PROOF removed: no kanban route registered (the patterns left the ledger and the module mux), canvas carries no kanban panel, no task tools, no /board commands; module nouns live in package kanban, core carries zero")
 }
 
-// pluginTool finds one registered tool by name across the mounted ToolProviders and.
+// pluginTool finds one registered tool by name across the mounted ToolProviders.
 func pluginTool(ctx *core.Context, name string) (func(context.Context, map[string]any) (string, error), error) {
 	for _, tp := range ctx.ToolProviders {
 		if tool, ok := tp.Tools()[name]; ok && tool.AliasOf == "" && tool.Run != nil {
@@ -410,7 +405,6 @@ func TestCronRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// declared data, recipe step 1.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "cron" {
@@ -438,8 +432,6 @@ func TestCronRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: seam mounted, canvas carries the jobs panel, module-qualified")
 
-	// the action pipe: the refresh arm answers the live listing and pushes the panel
-	// through the live canvas.
 	var deltas []core.Panel
 	live, err := agent.NewCanvas(ctx, func(ev core.Event) {
 		if d, ok := ev.(core.ViewModelDelta); ok {
@@ -501,7 +493,6 @@ func TestCronRemovalProof(t *testing.T) {
 			}
 		}
 	}
-	// capsule-owned types moved with the capsule (part 3).
 	_ = struct{}{}
 	t.Log("PROOF removed: seam nil (GET /cron/jobs falls through to its seam-nil guard, the settled empty-set answer), canvas carries no cron panel, the action pipe answers ErrUnknownModule, /cron unregistered, no cron-shaped tools; core carries no cron vocabulary - the capsule took its nouns whole (part 3)")
 }
@@ -553,8 +544,6 @@ func TestMemoryRemovalProof(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	cfg := DefaultConfig()
-	// the store files default to home-root-relative names that resolve against the process
-	// CWD in a test.
 	cfg.Memory.File = filepath.Join(home, "memory.md")
 	cfg.Memory.UserProfileFile = filepath.Join(home, "user.md")
 
@@ -562,7 +551,6 @@ func TestMemoryRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "memory" {
@@ -609,7 +597,6 @@ func TestMemoryRemovalProof(t *testing.T) {
 	if runErr != nil || !strings.Contains(res, `"success":true`) {
 		t.Fatalf("FULL MOUNT: memory tool user add failed (res=%s err=%v)", res, runErr)
 	}
-	// and the remove verb rides the same store (the dotted wire's third tool).
 	res, runErr = memRemove(context.Background(), map[string]any{
 		"target": "user", "old_text": "proof user row",
 	})
@@ -617,7 +604,6 @@ func TestMemoryRemovalProof(t *testing.T) {
 		t.Fatalf("FULL MOUNT: memory tool user remove failed (res=%s err=%v)", res, runErr)
 	}
 
-	// the prompt-section face: the same store renders as the snapshot block through the.
 	mem, _ := ctx.Services().Resolve("memory").(core.PromptSectioner)
 	secs := mem.PromptSections(core.PromptBuildOptions{})
 	if len(secs) != 1 {
@@ -628,7 +614,6 @@ func TestMemoryRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF prompt face: the snapshot block carries the entry verbatim")
 
-	// the action pipe: memory ships no panel and no actions.
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -733,7 +718,6 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// declared data, recipe step 1.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "delegate" {
@@ -749,7 +733,6 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: the capsule mounted; it ships no re-entry seam (the injected-user path retired with the phase-2 migration)")
 
-	// the tool face: the registry carries the two namespaced tools.
 	var delegateTool core.Tool
 	foundTool, foundStatusTool := false, false
 	for _, tp := range ctx.ToolProviders {
@@ -793,8 +776,6 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if runErr != nil {
 		t.Fatalf("FULL MOUNT: delegate task spawn failed (res=%s err=%v)", res, runErr)
 	}
-	// the echo child's stdout is its argv (echo echoes the flag vector too); the pin is
-	// that the child's output.
 	if !strings.Contains(res, "arc 6 proof") {
 		t.Fatalf("FULL MOUNT: tool result lost the child output: %.80q", res)
 	}
@@ -821,7 +802,6 @@ func TestDelegateRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF spawn: the echo child's answer returned as the tool result; one chat finished-things record emitted through the notifications edge")
 
-	// the action pipe: delegate ships no panel and no actions.
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -854,7 +834,6 @@ func TestDelegateRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	// the re-entry seam retired.
 	for _, tp := range ctx2.ToolProviders {
 		for name := range tp.Tools() {
 			if strings.Contains(name, "delegate") {
@@ -985,7 +964,6 @@ for line in sys.stdin:
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "mcp" {
@@ -1000,7 +978,6 @@ for line in sys.stdin:
 		t.Fatalf("mount all: %v", err)
 	}
 
-	// the tool face: the registry carries the server-qualified tool the bridge.
 	echoTool, err := pluginTool(ctx, "proof.echo")
 	if err != nil {
 		fatalTools := ""
@@ -1017,7 +994,6 @@ for line in sys.stdin:
 	}
 	t.Logf("PROOF mount=full: bridge mounted as an additive tool provider, proof.echo answered the call (%s)", strings.TrimSpace(res))
 
-	// the action pipe: mcp ships no panel and no actions.
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -1056,8 +1032,6 @@ for line in sys.stdin:
 	if err != nil {
 		t.Fatalf("mount removed set: %v", err)
 	}
-	// the tool registry: no proof.* tool, and nothing answered the env that still points
-	// at the fake server.
 	for _, tp := range ctx2.ToolProviders {
 		for name := range tp.Tools() {
 			if strings.HasPrefix(name, "proof.") || strings.Contains(name, "mcp") {
@@ -1087,12 +1061,10 @@ for line in sys.stdin:
 	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "mcp", Action: "list_servers"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
-	// the neighbors keep mounting.
 	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
-	// the additive tools seam remains - shared vocabulary, not mcp residue (layers never
-	// import modules.
+	// the additive tools seam remains - shared vocabulary, not mcp residue.
 	_ = core.Tool{}
 	_ = core.ToolProvider(nil)
 	t.Log("PROOF removed: no mcp-shaped tools (MCP_SERVERS still set, nothing outside the module reads it), no /mcp command, no mcp panel or actions, the action pipe answers ErrUnknownModule, the other modules mount unchanged; the bridge persists no state (tools are discovered live, mcp.yaml is user config) - data is not code holds vacuously; the additive tools seam (core.Tool / core.ToolProvider / ctx.ToolProviders) remains - shared vocabulary, documented as intentional")
@@ -1138,7 +1110,6 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data: verdict requires store and logging.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "verdicts" && p.Name() != "approval" {
@@ -1222,7 +1193,6 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF command face: /verdict registered by the same Mount that owns the tool and the hub")
 
-	// the action pipe: verdict ships no panel and no actions.
 	canvas, err := agent.NewCanvas(ctx, nil)
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
@@ -1242,7 +1212,7 @@ func TestVerdictRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF action-pipe: no panel, no actions - the pipe answers ErrUnknownModule on the full mount (module ships no canvas surface by design)")
 
-	// -- mount 2: the capsule removed --- approval goes with it: it Requires verdicts - a
+	// mount 2: the capsule removed --- approval goes with it: it Requires verdicts - a
 	// dependent cannot mount in a world without its source; its own removal proof
 	// (TestApprovalRemovalProof) covers that world's shape
 	var removed []agent.Plugin
@@ -1306,11 +1276,9 @@ func TestVerdictRemovalProof(t *testing.T) {
 	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "verdict", Action: "list_cards"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
-	// the neighbors keep mounting.
 	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
-	// capsule-owned types moved with the capsule (part 3).
 	_ = core.QuestionPrompt{}
 	_ = core.QuestionAnswer{}
 	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core carries no verdict seam type - the wire shapes stay, the hub nouns live in the capsule (part 3)")
@@ -1355,7 +1323,6 @@ func TestTrustRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data: nothing requires trust.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if req == "trust" {
@@ -1406,7 +1373,6 @@ func TestTrustRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF gate faces: untrusted skip, approve + persist + load, trusted status, --no-approve wins - all answered through the seam")
 
-	// trust ships no registry faces by design.
 	for _, tp := range ctx.ToolProviders {
 		for name := range tp.Tools() {
 			if strings.Contains(name, "trust") {
@@ -1490,7 +1456,6 @@ func TestTrustRemovalProof(t *testing.T) {
 	if _, err := noCanvas.Dispatch(core.ActionCall{Module: "trust", Action: "trust"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("REMOVED MOUNT: dispatch answered %v, want ErrUnknownModule", err)
 	}
-	// the neighbors keep mounting.
 	if ctx2.Services().Resolve("notifications") == nil {
 		t.Fatal("REMOVED MOUNT: notifications seam lost - the removal must not take a module it does not own")
 	}
@@ -1503,16 +1468,14 @@ func TestTrustRemovalProof(t *testing.T) {
 	if !kRoutes {
 		t.Fatal("REMOVED MOUNT: kanban routes lost - the removal must not take a module it does not own")
 	}
-	// data is not code: the persisted trust store (and its entries) stays on disk after.
+	// data is not code: the persisted trust store (and its entries) stays on disk.
 	if _, err := os.Stat(filepath.Join(os.Getenv("OMEGA_HOME"), "config", "trust.yaml")); err != nil {
 		t.Fatalf("REMOVED MOUNT: the trust store vanished from disk (data is not code): %v", err)
 	}
-	// capsule-owned types moved with the capsule (part 3).
 	t.Log("PROOF removed: seam nil, the host entry paths answer empty through their nil-guard (serve + run stay alive), no trust tool, no /trust command, no canvas panel or trust-qualified action, the action pipe answers ErrUnknownModule; trust.yaml and its entries stay on disk (data is not code); core carries no trust vocabulary (part 3)")
 }
 
-// terminalMuxOf builds the module mux from a mount's ledger (the production capsule mux
-// shape.
+// terminalMuxOf builds the module mux from a mount's ledger.
 func terminalMuxOf(ctx *core.Context) *http.ServeMux {
 	mux := http.NewServeMux()
 	for _, rt := range ctx.ModuleRoutes {
@@ -1613,7 +1576,7 @@ func TestTerminalRemovalProof(t *testing.T) {
 	}
 	t.Log("PROOF mount=full: the six /terminal routes and the four shell.* tools registered from the one capsule")
 
-	// the live face against a REAL pty shell (skipped when this box cannot open one.
+	// the live face against a REAL pty shell.
 	if _, err := os.Stat("/dev/ptmx"); err == nil {
 		mux := terminalMuxOf(ctx)
 		w := httptest.NewRecorder()
@@ -1719,7 +1682,6 @@ func TestApprovalRemovalProof(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPlugins: %v", err)
 	}
-	// recipe step 1, declared data.
 	for _, p := range plugins {
 		for _, req := range p.Requires() {
 			if p.Name() != "approval" && req == "approvals" {
@@ -1769,8 +1731,6 @@ func TestApprovalRemovalProof(t *testing.T) {
 		}
 	}
 	if _, err := os.Stat(filepath.Join(home, "approval-decisions.jsonl")); err == nil {
-		// a fresh home's audit file only ever exists if something wrote without a gate
-		// mounted.
 		t.Fatal("OFF MOUNT: an audit row exists without a gate")
 	}
 	t.Log("PROOF mount=off: seam nil, no prompt section, zero audit writes - the gate is absent, not idle")

@@ -32,7 +32,7 @@ import { setMcpServerEnabled } from "../../harness/mcp/ui/toggle.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
-// -- the registry entry (the dock contract) ----------------------------
+// the registry entry (the dock contract) --------------------------
 
 test("mcp is a registered inspector component: singleton, pinned right, unclosable", () => {
   assert.ok((DOCK_COMPONENTS as readonly string[]).includes("mcp"), "the union carries it");
@@ -43,7 +43,6 @@ test("mcp is a registered inspector component: singleton, pinned right, unclosab
   assert.equal(d.closable, false, "unclosable like every inspector view");
   assert.ok(ICONS[d.icon], "the icon is an iconset name (the membership law)");
   assert.ok(MENU_DOCKABLES.includes("mcp"), "the '+' menu offers the tab");
-  // notifications joined the inspector after mcp.
   assert.ok(
     INSPECTOR_TAB_COMPONENTS.includes("mcp"),
     "the inspector inventory carries it (joined at t_c7136c50; notifications joined after, t_180db2cb)",
@@ -53,7 +52,7 @@ test("mcp is a registered inspector component: singleton, pinned right, unclosab
   assert.equal(n, 1, "single registry entry owns the icon name");
 });
 
-// -- the pure row model (serverRows.ts) --------------------------------
+// the pure row model (serverRows.ts) ------------------------------
 
 test("serverRows maps the wire: config order kept, non-array bodies stay empty", () => {
   assert.deepEqual(serverRows({}), [], "no body");
@@ -83,7 +82,7 @@ test("the empty state is named in the helpers' voice (never composed ad hoc in t
   assert.ok(MCP_EMPTY_HINT.includes("MCP_SERVERS"), "the hint names the env var");
 });
 
-// -- the panel source wiring (the composition-test convention) ---------
+// the panel source wiring (the composition-test convention) -------
 
 test("McpServers consumes the module route and the shared row model", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
@@ -93,7 +92,6 @@ test("McpServers consumes the module route and the shared row model", () => {
   assert.ok(src.includes("MCP_EMPTY_TEXT"), "the empty state text rides the constant");
   assert.ok(src.includes("MCP_EMPTY_HINT"), "the empty state hint rides the constant");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
-  // the one write path is the refresh button's reload, and it rides the helper.
   assert.ok(src.includes("reloadMcpServers"), "the refresh rides the reload helper");
   assert.ok(src.includes("setMcpServerEnabled"), "the per-row toggle rides the toggle helper (card t_83f37525)");
   const reloadTs = read(root, "harness", "mcp", "ui", "reload.ts");
@@ -104,7 +102,7 @@ test("McpServers consumes the module route and the shared row model", () => {
   assert.ok(src.includes(".mcp-list.narrow {"), "its narrow rules ship in its own stylesheet");
 });
 
-// -- the reload behavior ------------------------------- The behavior half runs at.
+// the reload behavior ------------------------------- The behavior half runs.
 
 let savedFetch: typeof globalThis.fetch;
 
@@ -183,7 +181,7 @@ test("the dockable declaration matches the registry voice", () => {
   assert.equal(decl.icon, "mcp");
 });
 
-// -- the per-server toggle model ----------------------
+// the per-server toggle model --------------------
 
 test("serverEnabled: the absent flag reads as on (old wires keep rendering)", () => {
   assert.equal(serverEnabled({ name: "x" }), true, "an undefined enabled flag is an enabled server");
@@ -214,8 +212,7 @@ test("statusDot: --ok rides a live connection, --err a recorded failure, dim oth
   assert.equal(s({ connected: true, error: "e" }), "err", "a recorded failure outranks the mount state");
 });
 
-// -- the toggle behavior -------------------------------- The fetch-log recipe (the
-// reload behavior tests above).
+// the toggle behavior -------------------------------- The fetch-log recipe.
 
 test("setMcpServerEnabled: consume the POST body - no follow-up GET (v0.14.1 review lens)", async () => {
   const calls: { url: string; method: string; body?: string }[] = [];
@@ -261,11 +258,11 @@ test("setMcpServerEnabled: a refused write throws and never re-fetches", async (
   }
 });
 
-// -- the visual rebuild --------------------------------- The composition-test
-// convention: the node suite never compiles the SFC, it pins the decisions. The
-// clipping bug was the old list rendering tool names as fixed-width (22px) columns that
-// wrapped mid- word with per-line clipping; the new shape is wrapped chips that ellipse
-// per chip and NEVER clip vertically.
+// the visual rebuild --------------------------------- The composition-test convention:
+// the node suite never compiles the SFC, it pins the decisions. The clipping bug was
+// the old list rendering tool names as fixed-width (22px) columns that wrapped mid-
+// word with per-line clipping; the new shape is wrapped chips that ellipse per chip and
+// NEVER clip vertically.
 
 test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
@@ -274,7 +271,6 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
   assert.match(src, /\.mcp-tool\s*\{[^}]*text-overflow:\s*ellipsis/, "each chip ellipses its own text instead of overflowing");
   assert.match(src, /\.mcp-tool\s*\{[^}]*max-width:\s*100%/, "a chip never exceeds its row (the pane-edge law)");
   assert.match(src, /\.mcp-tools\s*\{[^}]*flex-wrap:\s*wrap/, "the tool container wraps to new lines - no horizontal crush");
-  // the row main no longer wraps its cluster.
   assert.match(src, /class="mcp-row-main reg-row-head"/, "the row head rides the shared reg-row-head anatomy");
   const anatomy = read(root, "webui", "app", "assets", "css", "registry-row.css");
   assert.match(anatomy, /\.reg-row-name\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the name - nothing clips vertically");

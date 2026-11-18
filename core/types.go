@@ -61,7 +61,7 @@ type CmdAction struct {
 	List  []string // list values (model names)
 }
 
-// ToolInfo is a tool name and description pair, for display in the system prompt and.
+// ToolInfo is a tool name and description pair, for display in the system prompt.
 // The flag is stamped where the fold is known (StampDisabledTools), never stored on the
 // mount inventory - a live toggle changes it without a remount.
 type ToolInfo struct {
@@ -71,7 +71,7 @@ type ToolInfo struct {
 	Disabled    bool
 }
 
-// StampDisabledTools returns infos with every ToolInfo's Disabled flag set from the.
+// StampDisabledTools returns infos with every ToolInfo's Disabled flag set.
 // The input is never mutated: callers hold the mount inventory across live toggles, so
 // the fold rides a copy stamped per read.
 func StampDisabledTools(infos []ExtensionInfo, disabled []string) []ExtensionInfo {
@@ -120,7 +120,7 @@ type PromptBuildOptions struct {
 	Append         []string // extra prompts from --append-system-prompt, may be nil
 }
 
-// PromptSection is one titled block of system prompt content, contributed by the.
+// PromptSection is one titled block of system prompt content, contributed.
 // Sections render between Project Context and Environment, sorted by Order (stable
 // sort; equal orders keep plugin mount order).
 type PromptSection struct {

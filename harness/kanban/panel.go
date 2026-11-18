@@ -114,7 +114,7 @@ func (c *capsule) Panels() []core.Panel {
 	return []core.Panel{c.taskPanel(), c.boardsPanel()}
 }
 
-// displayBoard names the board a board-less view-model line refers to.
+// displayBoard names the board a board-less view-model line refers.
 func displayBoard(board string) string {
 	if board == "" {
 		return DefaultBoardName
@@ -127,7 +127,6 @@ func (c *capsule) taskPanel() core.Panel {
 	board := c.activeBoard()
 	tasks, err := c.store.ListTasks(context.Background(), board, "")
 	if err != nil {
-		// A dead store serves an empty panel.
 		return core.Panel{ID: listPanelID, Title: "Tasks", Kind: "list"}
 	}
 	rows := make([]taskRow, 0, len(tasks))

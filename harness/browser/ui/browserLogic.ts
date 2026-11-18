@@ -9,8 +9,7 @@
 // the slow path. No proxy exists in v1: the probe reads headers, never content.
 
 /**
- * the fallback timer: a load this late is a refused/failed embed (the probe-less slow
- * path only.
+ * the fallback timer: a load this late is a refused/failed embed.
  */
 export const FALLBACK_AFTER_MS = 4000;
 

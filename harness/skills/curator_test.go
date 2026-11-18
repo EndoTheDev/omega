@@ -396,7 +396,7 @@ func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	}
 }
 
-// TestCuratorModelOverride: the configured model wins for the consult (WithModel.
+// TestCuratorModelOverride: the configured model wins for the consult.
 func TestCuratorModelOverride(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -456,8 +456,8 @@ func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------------------- The
-// curator goes live.
+// ------------------------------------------------------------------------ The curator
+// goes live.
 
 // spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {
@@ -560,7 +560,7 @@ func TestLegacyCuratorStateMigratesIntoDotCurator(t *testing.T) {
 		t.Fatalf("backup payload must move byte-exact: %q / %v", kept, err)
 	}
 
-	// A second touch is idempotent, and a live new-path ledger is never clobbered by a.
+	// A second touch is idempotent, and a live new-path ledger is never clobbered.
 	if _, err := sp.AppendLedger("curator", LedgerRemove, "newer", "second writer", nil, nil); err != nil {
 		t.Fatalf("AppendLedger: %v", err)
 	}

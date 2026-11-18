@@ -6,7 +6,7 @@ import { onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 /** narrow below this rendered width */
 export const NARROW_MAX_PX = 360;
 
-// the pure width comparison, unit-directly (the class binding is a source-pinned.
+// the pure width comparison, unit-directly.
 export function isNarrowWidth(px: number): boolean {
   return px > 0 && px < NARROW_MAX_PX;
 }
@@ -30,7 +30,6 @@ export function useNarrow(el: Ref<HTMLElement | null>): Ref<boolean> {
     stop();
     if (typeof ResizeObserver === "undefined") return; // ancient host: class stays off
     observed = node;
-    // the class flip changes the observed panel's own layout.
     observer = new ResizeObserver((entries) => {
       const pending = entries
         .map((e) => [e.target as HTMLElement, Math.round(e.contentRect.width)] as const)

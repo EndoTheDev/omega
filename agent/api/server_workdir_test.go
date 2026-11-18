@@ -1,23 +1,6 @@
 package api
 
-// The server hand-off pin: the live lane saw
-// shell.run answer the service cwd (C:\Windows\System32) while the
-// workspace chip showed the configured default_workspace. The knob
-// wiring exists (SetDefaultWorkspace -> prepareRun fallback ->
-// WithRunWorkspace); these tests pin the whole chain with the REAL
-// loop and the REAL shell tool, so a broken hand-off between the
-// server's resolved req.workspace and the tool's ctx is red here
-// instead of silent live:
-//
-// no-store run: the default_workspace knob roots the tools
-//
-// stored session with no pinned workspace: same fallback
-// stored session with a pinned workspace: the pin wins
-//
-//
-// The probe is `pwd` on unix and bare `cd` on windows (pwd.exe on the
-// inherited PATH answers with a translated path, not the workspace
-// the same shape TestShellRoot documents in harness/terminal).
+// The server hand-off pin: the live lane saw shell.run answer the service cwd.
 
 import (
 	"bytes"
@@ -37,7 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
-// newShellServer builds a server with the real loop and the real shell tool over a.
+// newShellServer builds a server with the real loop and the real shell tool.
 func newShellServer(t *testing.T) (*Server, *agent.FakeProvider, string) {
 	t.Helper()
 	probe := "pwd"

@@ -177,7 +177,7 @@ func TestDeleteJobRemovesEntryUnknownIsLoud(t *testing.T) {
 	}
 }
 
-// -- the inheritance chain --
+// the inheritance chain
 
 // A wake that inherits the main agent is a job that would persist and never fire: the
 // main agent is the daemon and never wakes as a subprocess (runner.go's "main never
@@ -301,7 +301,7 @@ func TestSaveJobBootstrapsFreshHome(t *testing.T) {
 	}
 }
 
-// -- the wire lanes --
+// the wire lanes
 
 func TestHandleSaveAndDeleteWire(t *testing.T) {
 	r, _ := newSaveTestRunner(t, saveTestCrons)

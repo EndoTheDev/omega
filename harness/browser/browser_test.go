@@ -108,7 +108,7 @@ func TestValidURL(t *testing.T) {
 	}
 }
 
-// mountPlugin mounts the plugin the api way and returns the live Context (the.
+// mountPlugin mounts the plugin the api way and returns the live Context.
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -192,7 +192,7 @@ func TestRouteRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStoreClear resets the resume point: memory and file both.
+// TestStoreClear resets the resume point: memory and file.
 func TestStoreClear(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "browser.json")
 	s, _ := OpenStore(path)
@@ -243,7 +243,7 @@ func TestFrameableHeaders(t *testing.T) {
 	}
 }
 
-// TestProbeRoute: the frameability probe answers a deny upstream with.
+// TestProbeRoute: the frameability probe answers a deny upstream.
 func TestProbeRoute(t *testing.T) {
 	deny := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Frame-Options", "DENY")

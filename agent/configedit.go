@@ -68,7 +68,7 @@ var ErrAgentHomeLocked = errors.New("the main agent's home is the daemon's home 
 // a server fault, and deleting an absent home is not "already done".
 var ErrAgentNotExist = errors.New("unknown agent")
 
-// AgentConfigScaffoldError marks a caller's-mistake field (an unknown provider.
+// AgentConfigScaffoldError marks a caller's-mistake field.
 type AgentConfigScaffoldError struct{ Message string }
 
 func (e *AgentConfigScaffoldError) Error() string { return e.Message }
@@ -78,9 +78,9 @@ func (e *AgentConfigScaffoldError) Error() string { return e.Message }
 // mirrored here and a cmd/omega test pins the two strings equal.
 const MaskedSecretPlaceholder = "****"
 
-// DefaultProviderInstance is the reserved instance id that names the host's own
-// provider. It mirrors the reserved name the host config refuses as a NAMED instance
-// (cmd/omega Config.Validate), so one word cannot mean two endpoints.
+// DefaultProviderInstance is the reserved instance id that names the host's own. It
+// mirrors the reserved name the host config refuses as a NAMED instance (cmd/omega
+// Config.Validate), so one word cannot mean two endpoints.
 const DefaultProviderInstance = "default"
 
 // AlwaysOnAgentModules is the always-on tier, under the names the mount machinery. None
@@ -184,7 +184,7 @@ func (h HostDefinition) HostEnabledModule(name string) bool {
 	return !slices.Contains(h.DisabledModules, name)
 }
 
-// HostEnabledSkill reports whether the host has a skill switched on.
+// HostEnabledSkill reports whether the host has a skill switched.
 func (h HostDefinition) HostEnabledSkill(name string) bool {
 	return !slices.Contains(h.DisabledSkills, name)
 }
@@ -330,7 +330,7 @@ func (l AgentConfigLayer) SecretFree() bool { return len(l.LegacySecrets) == 0 }
 // presence: nil = the key is absent, a pointer to "" = the file explicitly set the knob
 // empty. MaxTurns is decoded loosely on purpose: a hand-quoted "42" must not make the
 // whole layer unreadable - the write path exists to correct exactly that node. It is a
-// NAMED type, never an inline `var raw struct {.. A named type's symbol is its name, so
+// NAMED type, never an inline `var raw struct {. A named type's symbol is its name, so
 // the tags never reach the binary.
 type agentLayerFile struct {
 	Description  *string                  `yaml:"description"`
@@ -454,7 +454,7 @@ func normalizeNames(in []string) []string {
 // settings truth the request must respect; visible is the skill registry the agent can
 // see (own + shared + main's own when inherit.skills is on).
 func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []string) error {
-	// The secret-free law: a secret written into an agent file is a law violation, not a.
+	// The secret-free law: a secret written into an agent file is a law violation, not.
 	// Name the endpoint that actually owns it so the caller has a next step.
 	for _, retired := range []struct {
 		key   string
@@ -609,7 +609,6 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 		upsertBool(block, "user", u.Inherit.User)
 		upsertBool(block, "memory", u.Inherit.Memory)
 	}
-	// The reset verb, applied after the upserts.
 	for _, key := range u.Unset {
 		unsetLayerKey(mapping, key)
 	}
@@ -621,7 +620,6 @@ func UpdateAgentConfigLayer(home, name string, u AgentConfigUpdates) error {
 	if err := WriteFileAtomic(path, out, 0o644); err != nil {
 		return err
 	}
-	// Materialize whatever the file now enables.
 	final, err := ReadAgentConfigLayer(home, name)
 	if err != nil {
 		return err
@@ -644,7 +642,7 @@ func DeleteAgentHome(home, name string) error {
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent: %v", err)}
 	}
 	dir := AgentDir(home, name)
-	// Containment: the target must be a DIRECT child of <home>/agents/, named exactly by.
+	// Containment: the target must be a DIRECT child of <home>/agents/, named exactly.
 	root := filepath.Join(home, "agents")
 	if filepath.Dir(dir) != root || filepath.Base(dir) != name {
 		return &AgentConfigScaffoldError{Message: fmt.Sprintf("delete agent %q: refusing a target outside %s", name, root)}
@@ -659,7 +657,7 @@ func DeleteAgentHome(home, name string) error {
 	return nil
 }
 
-// rootMapping resolves the working yamlnode mapping under a parsed document (or the.
+// rootMapping resolves the working yamlnode mapping under a parsed document.
 func rootMapping(root *yaml.Node) *yaml.Node {
 	switch root.Kind {
 	case 0, yaml.DocumentNode:
@@ -684,7 +682,7 @@ func docOf(m *yaml.Node) *yaml.Node {
 
 func mappingNode() *yaml.Node { return &yaml.Node{Kind: yaml.MappingNode} }
 
-// upsertScalar sets (or appends) a scalar string value under key, mutating the.
+// upsertScalar sets (or appends) a scalar string value under key, mutating.
 func upsertScalar(m *yaml.Node, key, value string) { upsertTagged(m, key, "!!str", value) }
 
 // upsertBool sets (or appends) a BOOL value under key.
@@ -712,7 +710,6 @@ func upsertSequence(m *yaml.Node, key string, values []string) {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		if k := m.Content[i]; k.Kind == yaml.ScalarNode && k.Value == key {
 			v := m.Content[i+1]
-			// The node keeps its identity (and its comments).
 			v.Kind, v.Tag, v.Value = yaml.SequenceNode, "!!seq", ""
 			v.Content, v.Style = replacement.Content, replacement.Style
 			return
@@ -748,7 +745,7 @@ func upsertTagged(m *yaml.Node, key, tag, value string) {
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value})
 }
 
-// findScalar returns the value node stored under key (nil when the key is absent or.
+// findScalar returns the value node stored under key.
 func findScalar(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]
@@ -799,7 +796,7 @@ func unsetLayerKey(mapping *yaml.Node, key string) {
 	}
 }
 
-// ensureMapping returns the mapping under key, creating it (plain inline style, no.
+// ensureMapping returns the mapping under key, creating it.
 func ensureMapping(m *yaml.Node, key string) *yaml.Node {
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		k, v := m.Content[i], m.Content[i+1]

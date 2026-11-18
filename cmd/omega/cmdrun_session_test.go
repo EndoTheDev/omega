@@ -2,7 +2,7 @@ package main
 
 // cmdrun_session_test.go: the wake persistence flag. The spawn contract is `omega run
 // --session <id>` - the parser is the whole host-visible surface; the provider-bound
-// persistence path rides the cron-proven TurnSink machinery.
+// persistence path rides the cron-verified TurnSink machinery.
 
 import "testing"
 

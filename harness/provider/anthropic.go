@@ -83,7 +83,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingTool)
 	finishReason := "stop"
-	// Usage arrives on message_start (input side) and message_delta (output side, and on.
+	// Usage arrives on message_start (input side) and message_delta.
 	var promptTokens, completionTokens, cachedTokens *int
 
 	for {
@@ -208,10 +208,10 @@ type anthropicUsage struct {
 	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
 }
 
-// -- Anthropic message conversion --
+// Anthropic message conversion
 
-// userImageBlocks lifts a user message's images key (the object shape core.User
-// marshals. Messages without images yield nil.
+// userImageBlocks lifts a user message's images key.
+// Messages without images yield nil.
 func userImageBlocks(msg map[string]any) []any {
 	imgs, ok := msg["images"].([]any)
 	if !ok || len(imgs) == 0 {
@@ -317,7 +317,7 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 	return system, result
 }
 
-// -- shared helpers --
+// shared helpers
 
 // sendEvent sends an event on the channel, respecting context cancellation.
 // Non-blocking: if the context is cancelled, the event is dropped.

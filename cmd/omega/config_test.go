@@ -80,7 +80,7 @@ store:
 	}
 }
 
-// TestFirstSaveWritesInstancesShape: a pre-merge config.yaml loads (flat trio plus.
+// TestFirstSaveWritesInstancesShape: a pre-merge config.yaml loads.
 func TestFirstSaveWritesInstancesShape(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
@@ -263,7 +263,6 @@ providers:
     api_key: sk-test
     host: https://api.openai.example
 `, ""},
-		// every provider is a row now, the primary included.
 		{"merged list without the primary", `
   instances:
     - name: backup

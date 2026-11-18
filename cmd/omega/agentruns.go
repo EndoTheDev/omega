@@ -86,7 +86,6 @@ func (c *agentRuns) close() error {
 				first = fmt.Errorf("close agent %s log: %w", name, err)
 			}
 		}
-		// The store fallback is host-owned as well.
 		if run.ctx != nil && run.ctx.Services().Owner("store") == "host" {
 			if c, ok := run.ctx.Services().Resolve("store").(interface{ Close() error }); ok {
 				if err := c.Close(); err != nil && first == nil {

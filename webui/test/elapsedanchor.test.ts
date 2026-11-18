@@ -17,10 +17,9 @@ const message = src("components/chat/ChatMessage.vue");
 const thinking = src("components/chat/ThinkingBlock.vue");
 const toolLine = src("components/chat/ToolCallLine.vue");
 
-// -- link 1: ChatItem hands every metered row its anchor --
+// link 1: ChatItem hands every metered row its anchor
 
 test("ChatItem binds :elapsed-ms on all three metered rows", () => {
-  // one binding per child component: answer, thinking, tool call.
   const bindings = chatItem.match(/:elapsed-ms="item\.elapsedMs"/g) ?? [];
   assert.equal(bindings.length, 3, "answer, thinking and tool rows each carry the anchor");
   for (const child of ["<ChatMessage", "<ThinkingBlock", "<ToolCallLine"]) {
@@ -33,7 +32,7 @@ test("ChatItem binds :elapsed-ms on all three metered rows", () => {
   }
 });
 
-// -- link 2 + 3: the components declare the prop and pass it --
+// link 2 + 3: the components declare the prop and pass it
 
 for (const [name, source] of [
   ["ChatMessage", message],
@@ -61,8 +60,7 @@ test("ToolGroup hands its rows the anchor too", () => {
   assert.match(block, /:final-ms="item\.finalMs"/, "a grouped settled call keeps its span");
 });
 
-// The meter's own contract: an omitted/undefined offset must never produce NaN
-// arithmetic (the `startedAt = now.
+// The meter's own contract: an omitted/undefined offset must never produce NaN.
 test("useElapsed documents the initialMs contract", () => {
   const meter = src("composables/useElapsed.ts");
   assert.match(meter, /initialMs: \(\) => number = \(\) => 0/, "a missing getter falls back to zero");

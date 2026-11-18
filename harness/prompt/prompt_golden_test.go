@@ -56,8 +56,6 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 		memory.NewPlugin(),
 		skills.NewPlugin(),
 		tools.NewPlugin(),
-		// the tool capsules ride their own plugins now (the registry lists ext rows by
-		// owner).
 		files.NewPlugin(),
 		terminal.NewShellPlugin(),
 		NewPlugin(),
@@ -116,7 +114,7 @@ func minimalOpts(ctx *core.Context) core.PromptBuildOptions {
 	}
 }
 
-// compareGolden renders a scenario and checks it against its golden file under.
+// compareGolden renders a scenario and checks it against its golden file.
 func compareGolden(t *testing.T, name string, prompt string) {
 	t.Helper()
 	scrubbed := scrubEnv(prompt)
@@ -185,8 +183,7 @@ func TestPromptGoldenMinimal(t *testing.T) {
 	compareGolden(t, "golden_prompt_minimal", prompt)
 }
 
-// TestPromptGoldenEmptyStores pins the prompt when skills and memory are mounted but
-// hold nothing.
+// TestPromptGoldenEmptyStores pins the prompt when skills and memory are mounted.
 func TestPromptGoldenEmptyStores(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "skills") // exists, but empty
@@ -210,7 +207,6 @@ func TestPromptGoldenEmptyStores(t *testing.T) {
 	if strings.Contains(prompt, "## Available Skills") {
 		t.Error("prompt has Available Skills section with empty skills dir")
 	}
-	// the Tools section renders the sub-verb delta only, so the wired set (no tool.
 	if strings.Contains(prompt, "## Tools") {
 		t.Error("prompt carries a Tools section although no wired tool declares Actions")
 	}

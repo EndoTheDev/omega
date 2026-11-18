@@ -15,7 +15,7 @@ const row = (over: Partial<ModuleRow>): ModuleRow => ({
   ...over,
 });
 
-// -- normalizeModulesPayload: a malformed response never kills the panel --
+// normalizeModulesPayload: a malformed response never kills the panel
 
 test("normalize keeps well-formed modules and refusals", () => {
   const out = normalizeModulesPayload({
@@ -47,7 +47,7 @@ test("normalize tolerates junk root payloads", () => {
   }
 });
 
-// -- toggleNote: the consequence carries Q3 and the tier law --
+// toggleNote: the consequence carries Q3 and the tier law
 
 test("disable with dependents names what goes down", () => {
   const m = row({ dependents: ["cron", "delegate"] });

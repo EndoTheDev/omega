@@ -49,7 +49,6 @@ func TestRunShellKillsChildOnUserStop(t *testing.T) {
 		return id != ""
 	})
 
-	// The human presses stop: the latch latches first, then the run ctx is cancelled.
 	stop.Stop()
 	cancel(core.ErrUserStopped)
 

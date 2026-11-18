@@ -195,8 +195,7 @@ func TestAccumulateAssistantSegments(t *testing.T) {
 	}
 }
 
-// TestAccumulateAssistantNoSegmentWithoutResults: thinking and plain responses
-// accumulate into a single record.
+// TestAccumulateAssistantNoSegmentWithoutResults: thinking and plain responses.
 func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	var recs []assistantRecord
@@ -216,7 +215,7 @@ func TestAccumulateAssistantNoSegmentWithoutResults(t *testing.T) {
 	}
 }
 
-// runMeter math: the last-run block is completion tokens and chunk count over the.
+// runMeter math: the last-run block is completion tokens and chunk count.
 func TestRunMeterStats(t *testing.T) {
 	m := &runMeter{started: time.Unix(1000, 0), lastChunk: time.Unix(1002, 0), chunks: 12}
 	got := m.stats(streamUsage{prompt: 5, completion: 60})

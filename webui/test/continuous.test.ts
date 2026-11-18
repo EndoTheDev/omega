@@ -115,17 +115,13 @@ describe("the merge: one Agents tab (card t_c7222095, deletability law)", () => 
   it("a rostered agent's wake strip keeps the wake/sleep + unread behavior", () => {
     assert.match(agentsPanel, /wake sent - the report lands in the canonical chat/, "ruling 8 wake voice");
     assert.match(agentsPanel, /sleep sent/, "sleep feedback");
-    // the unread state rides the status vocabulary.
     assert.match(src("../harness/continuous/ui/agentsRows.ts"), /label !== "sleeping"/, "the on/dim split is the vocabulary");
-    // the chat fetch in the merge marks the canonical session read (the roster's.
     assert.match(agentsPanel, /\/chat`\)/, "the expand fetches the canonical chat (mark-read parity)");
   });
 
   it("a host without the module keeps the tab honest: no badge, no continuous kind", () => {
     assert.match(agentsPanel, /continuousAvailable/, "the availability gate exists");
-    // ruling 1 (0.17.3): the ONE create door is a scaffold door first -
-    // the "+" always renders, and the CONTINUOUS KIND is what the missing
-    // module disables (it is the only kind that needs the capsule).
+    // (0.17.3): the ONE create door is a scaffold door first.
     assert.match(agentsPanel, /kindNeedsContinuous\(k\) && !continuousAvailable/, "the continuous kind disables without the module");
     assert.match(src("../harness/continuous/ui/agentsRows.ts"), /return kind === "continuous"/, "one predicate, one kind");
     assert.match(agentsPanel, /return c \? rowStatus\(c\) : ""/, "a config-only agent renders no badge");

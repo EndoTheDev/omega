@@ -67,7 +67,6 @@ func TestHomeForExe(t *testing.T) {
 		{"local bin", "", "/home/u/.local/bin/omega", "/home/u/.omega"},
 		// system PATH install -> ~/.omega
 		{"usr local bin", "", "/usr/local/bin/omega", "/home/u/.omega"},
-		// repo build output: a bin/ subfolder of a checkout keeps home beside the binary.
 		{"repo build", "", "/home/u/dev/omega/bin/omega", "/home/u/dev/omega/bin"},
 		{"no exe", "", "", "/home/u/.omega"},
 	}
@@ -82,7 +81,6 @@ func TestBootstrapHome(t *testing.T) {
 	home := t.TempDir()
 
 	bootstrapHome(home)
-	// The three infrastructure example templates now land in <home>/config/.
 	for _, name := range []string{
 		"config.yaml.example", "mcp.yaml.example", "crons.yaml.example",
 	} {
@@ -90,7 +88,6 @@ func TestBootstrapHome(t *testing.T) {
 			t.Fatalf("bootstrap did not write config/%s: %v", name, err)
 		}
 	}
-	// Nothing is seeded for the memory store.
 	for _, name := range []string{"memory.md", "user.md"} {
 		if _, err := os.Stat(filepath.Join(home, name)); !os.IsNotExist(err) {
 			t.Fatalf("bootstrap seeded %s, want none (agent creates it on first use)", name)
@@ -166,8 +163,7 @@ func TestBootstrapHomeConfigSubdir(t *testing.T) {
 	}
 }
 
-// TestBootstrapHomeMigratesTrust fires the trust.yaml migration through the real boot
-// path.
+// TestBootstrapHomeMigratesTrust fires the trust.yaml migration through the real boot.
 func TestBootstrapHomeMigratesTrust(t *testing.T) {
 	home := t.TempDir()
 	content := []byte("trusted: [{path: /legacy, level: exact}]\n")

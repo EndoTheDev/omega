@@ -38,7 +38,7 @@ func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, age
 	return err
 }
 
-// ListAgentSessions returns the sessions bound to the given agent, ordered by.
+// ListAgentSessions returns the sessions bound to the given agent, ordered.
 func (s *Store) ListAgentSessions(ctx context.Context, agentName string) ([]core.Session, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+sessionColumns+` FROM sessions WHERE agent = ? ORDER BY created_at`, agentName)

@@ -70,7 +70,7 @@ func WithCaptionProvider(ctx context.Context, provider Provider) context.Context
 	return context.WithValue(ctx, captionProviderKey{}, provider)
 }
 
-// CaptionProvider returns the run provider WithCaptionProvider recorded (nil for a.
+// CaptionProvider returns the run provider WithCaptionProvider recorded.
 func CaptionProvider(ctx context.Context) Provider {
 	provider, _ := ctx.Value(captionProviderKey{}).(Provider)
 	return provider
@@ -105,7 +105,6 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 		}
 		return messages, nil
 	}
-	// The default-sentinel aux lane resolves its provider per call.
 	ctx = WithCaptionProvider(ctx, provider)
 	out := make([]core.Message, len(messages))
 	copy(out, messages)
@@ -139,7 +138,7 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 // store extension as a separate narrow interface, so StoreProvider consumers never need
 // to know captions exist.
 type CaptionStore interface {
-	// GetImageCaption returns the persisted caption for the image id (sha256 of the.
+	// GetImageCaption returns the persisted caption for the image id.
 	GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error)
 	// SaveImageCaption persists one caption. Failure is logged and ignored by the
 	// captioner - an unpersisted caption only costs a later re-caption, never the turn.

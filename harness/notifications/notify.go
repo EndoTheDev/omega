@@ -45,7 +45,6 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// An in-memory database lives per connection.
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
@@ -57,7 +56,7 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// dsnParams widens a bare file dsn with the WAL + busy_timeout parameters (the same.
+// dsnParams widens a bare file dsn with the WAL + busy_timeout parameters.
 func dsnParams(dsn string) string {
 	if !strings.Contains(dsn, "?") {
 		return dsn + "?_journal_mode=WAL&_busy_timeout=5000"
@@ -124,7 +123,6 @@ VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, n.CreatedAt)
 	if err != nil {
 		return core.Notice{}, err
 	}
-	// Prune beyond retention: keep the retention-row-newest set.
 	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id < (
 SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); err != nil {
 		return core.Notice{}, fmt.Errorf("prune: %w", err)

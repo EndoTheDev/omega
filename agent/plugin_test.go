@@ -72,7 +72,7 @@ func TestMountAllOrdering(t *testing.T) {
 		}
 	}
 
-	// compactor requires provider — must mount after.
+	// compactor requires provider — must mount.
 	plugins := []Plugin{
 		mk("compactor", []string{"compactor"}, []string{"provider"}),
 		mk("provider", []string{"provider"}, nil),
@@ -189,7 +189,6 @@ func TestAlwaysOffDisabled(t *testing.T) {
 		testPlugin{name: "cron", requires: []string{"notifications"}, mount: noop, toggleable: true},
 	}
 
-	// Nothing enabled: every toggleable capsule is off, the locked pair stays (it is not.
 	off, err := AlwaysOffDisabled(plugins, nil)
 	if err != nil {
 		t.Fatalf("empty enabled set: %v", err)
@@ -314,7 +313,7 @@ func TestMountAllCircularDep(t *testing.T) {
 	}
 }
 
-// TestMountAllPopulatesInfos verifies that MountAll fills in.
+// TestMountAllPopulatesInfos verifies that MountAll fills.
 func TestMountAllPopulatesInfos(t *testing.T) {
 	p1 := testPlugin{
 		name:     "tools-ext",
@@ -379,7 +378,7 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 	}
 }
 
-// keyPlugin is a testPlugin that also declares a config section (the Describer.
+// keyPlugin is a testPlugin that also declares a config section.
 type keyPlugin struct {
 	testPlugin
 	desc string

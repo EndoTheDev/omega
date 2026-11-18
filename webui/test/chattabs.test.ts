@@ -26,7 +26,7 @@ import {
 } from "../app/composables/chat.ts";
 import { SessionBusyError } from "../app/composables/omega.ts";
 
-// -- helpers --------------------------------------------------------------
+// helpers ------------------------------------------------------------
 
 // default-shaped tree: sidebar(240) | chat
 function split(children: DockNode[]): DockNode {
@@ -44,7 +44,7 @@ function paneAt(tree: DockNode, i: number): DockPaneNode {
   return (tree as { children: DockNode[] }).children[i] as DockPaneNode;
 }
 
-// -- dock ops: chat tab keys -----------------------------------------------
+// dock ops: chat tab keys ---------------------------------------------
 
 describe("chat tab instance keys", () => {
   it("assignChatKeys keys every chat tab; sidebar/inspector stay unkeyed", () => {
@@ -179,7 +179,7 @@ describe("firstDraftChatTab", () => {
   });
 });
 
-// -- the chat host ---------------------------------------------------------
+// the chat host -------------------------------------------------------
 
 function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
   return {
@@ -204,7 +204,6 @@ describe("chat host: per-tab states", () => {
     const a = host.states.get("c1")!;
     const b = host.states.get("c2")!;
     assert.notEqual(a, b);
-    // the fallback transcript is per state.
     a.restored.push({ kind: "message", role: "user", content: "tab a only" });
     assert.equal(b.restored.length, 0);
   });
@@ -279,7 +278,6 @@ describe("chat host: the 409 and the busy affordance", () => {
       host.ensureState("c1", "s1");
       await host.submit("c1", "hello", "glm-5.3");
       const st = host.states.get("c1")!;
-      // the transcript belongs to the canvas panel.
       assert.equal(st.restored.length, 0);
       assert.match(st.statusLine, /busy/);
       assert.equal(host.composerBusy("c1"), false);

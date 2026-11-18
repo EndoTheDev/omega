@@ -122,7 +122,6 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     assert.ok(store.isFailed(".git"));
     assert.ok(!store.isOpen(".git"));
 
-    // the user retries by clicking the folder row.
     refuse = false;
     const callsBefore = calls.length;
     store.toggle(".git");
@@ -142,8 +141,7 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
     const store = createFileTreeStore({ browse, seed: [".git", "agents"] });
     await tick();
     assert.ok(store.isFailed(".git"));
-    // the failure collapsed the branch, so the refresh's reload covers the OPEN set
-    // only.
+    // the failure collapsed the branch, so the refresh's reload covers the OPEN set.
     failGit = false;
     fileTreeBus.refresh++;
     await tick();
@@ -157,7 +155,6 @@ describe("filetree store - failure keying (t_ccd4a000)", () => {
   });
 
   it("the default failure hint is ONE fixed-phrase toast - no backend vocabulary", async () => {
-    // shift the funnel's module-level dedupe fingerprint first.
     emitLocalToast({ sentinel: `filetree-test-${Date.now()}` });
     const panels: unknown[] = [];
     const release = onToastPanel((p) => panels.push(p));

@@ -32,7 +32,6 @@ func TestCanonicalIDsAreUniquePerHome(t *testing.T) {
 			t.Fatalf("%s took the bare id - the daemon's own store holds that one", name)
 		}
 	}
-	// The default agent's chat keeps the bare id.
 	if got := CanonicalSessionIDFor(agent.DefaultAgentName); got != CanonicalSessionID {
 		t.Errorf("default agent id = %q, want the bare %q", got, CanonicalSessionID)
 	}
@@ -67,7 +66,6 @@ func TestMigrateCanonicalIDsRenamesLegacyChats(t *testing.T) {
 	legacyCanonicalHome(t, home, "cora")
 	m := NewMachine(home, Default())
 
-	// The roster reads the id the home carries.
 	preview, _, _ := m.canonicalPreview(agent.AgentDir(home, "cora"), "cora")
 	if preview != "" {
 		t.Fatalf("pre-migration preview reads the bare id (%q) - the fixture is not legacy", preview)
@@ -206,8 +204,7 @@ func TestMigrateCanonicalVisibilityRepairsListedCanonicals(t *testing.T) {
 
 func TestMigrateCanonicalIDsSkipsHomesWithoutStores(t *testing.T) {
 	home := testHome(t)
-	// A scaffolded home that never ran, a malformed dir, and a home already carrying the
-	// qualified id.
+	// A scaffolded home that never ran, a malformed dir, and a home already carrying.
 	if err := agent.ScaffoldAgent(home, "quiet", ""); err != nil {
 		t.Fatalf("scaffold: %v", err)
 	}

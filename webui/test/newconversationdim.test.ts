@@ -24,7 +24,7 @@ const APP = resolve(HERE, "..", "app");
 const REPO = resolve(HERE, "..", "..");
 const read = (rel: string) => readFileSync(join(APP, rel), "utf8");
 
-// -- the pure predicate ------------------------------------------------
+// the pure predicate ----------------------------------------------
 
 /** a tree with two chat tabs in one pane: index 0 the draft, 1 bound */
 function tree(): DockNode {
@@ -65,7 +65,7 @@ test("a non-chat tab under the focus never dims", () => {
   assert.equal(isDraftChatKey(makeSplit("row", [pane]), "k-set"), false);
 });
 
-// -- the palette's command shape --------------------------------------
+// the palette's command shape ------------------------------------
 
 function commands(draftFocused?: boolean) {
   const seen: string[] = [];
@@ -108,7 +108,7 @@ test("running the dimmed command still focuses the draft (honest no-op)", async 
   assert.deepEqual(seen, ["chat"], "the action is untouched - the row only says what it will do");
 });
 
-// -- the doors' source pins -------------------------------------------
+// the doors' source pins -----------------------------------------
 
 test("app.vue owns the fact once and provides it", () => {
   const app = read("app.vue");
@@ -165,7 +165,6 @@ test("the palette row carries the dim as an accessible state", () => {
 test("the dim value is ONE global class (card law: no second copy)", () => {
   const css = read("assets/css/main.css");
   assert.match(css, /\.door-dimmed \{\n  opacity: 0\.4;\n  cursor: default;\n\}/, "the one dim value");
-  // the last-tab close X keeps its own (hover-strip) treatment.
   assert.match(css, /\.dock-tab-close\.locked,[\s\S]{0,120}opacity: 0\.3;/);
 });
 

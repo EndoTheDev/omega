@@ -4,7 +4,7 @@
 // 1. chevrons die - no expand/collapse triangle, no.chev left in
 //                          the tree's sources, the dead main.css rule gone
 // 2. the icon carries - the row glyph maps through rowicon.ts
-// folderIcon(isOpen(..)), the row exposes
+// folderIcon(isOpen(.)), the row exposes
 //                          aria-expanded + tabindex, Enter/Space activate
 // 3. hover indent guides - a:before hairline overlay per nesting
 // level, opacity-revealed by:hover only (no
@@ -21,7 +21,7 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const tree = read("../harness/files/ui/FileTree.vue");
 const css = read("app/assets/css/main.css");
 
-// -- chevrons die --
+// chevrons die
 
 test("the file tree carries no chevron vocabulary anywhere", () => {
   assert.doesNotMatch(
@@ -41,7 +41,7 @@ test("the file tree carries no chevron vocabulary anywhere", () => {
   );
 });
 
-// -- the folder icon carries the state --
+// the folder icon carries the state
 
 test("the row glyph binds the open-state folder mapping, not a fixed icon", () => {
   assert.match(
@@ -54,7 +54,6 @@ test("the row glyph binds the open-state folder mapping, not a fixed icon", () =
     /if \(entry\.is_dir\) return folderIcon\(isOpen\(entryPath\(entry\)\)\)/,
     "folders map through folderIcon(isOpen(...)) - the ICON is the state",
   );
-  // and the mapping itself stays pinned (open/closed distinct).
 });
 
 test("the row carries the a11y affordance the chevron replaced", () => {
@@ -92,7 +91,7 @@ test("the row carries the a11y affordance the chevron replaced", () => {
   );
 });
 
-// -- hover indent guides --
+// hover indent guides
 
 test("indent guides are overlay hairlines revealed by :hover only", () => {
   assert.match(
@@ -133,9 +132,8 @@ test("indent guides are overlay hairlines revealed by :hover only", () => {
   );
 });
 
-// -- the indent law as of: row height 26 -> 24, base 10 -> 8, step 10 -> 4, level pad.
-// His numbers outrank the old pins - this test carries the NEW contract, at full
-// strength.
+// the indent law as of: row height 26 -> 24, base 10 -> 8, step 10 -> 4, level pad. His
+// numbers outrank the old pins - this test carries the NEW contract, at full strength.
 
 test("the density/indent law pins the tuned step, base and rhythm", () => {
   // the 4px step and the +8 base remain the indent math on BOTH sides
@@ -167,7 +165,7 @@ test("the density/indent law pins the tuned step, base and rhythm", () => {
     /\.files-tree \.files-tree \{\n  padding-left: 4px;\n\}/,
     "only a nested level ul pads 4px left - the per-level indent",
   );
-  // the root rule must not be the nesting rule (no shorthand smuggling the 4px onto.
+  // the root rule must not be the nesting rule.
   assert.doesNotMatch(
     css,
     /\.files-tree \{\n  list-style: none;\n  margin: 0;\n  padding: 0 4px;\n\}/,

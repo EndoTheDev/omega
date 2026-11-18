@@ -1,4 +1,4 @@
-// The canvas transport (arc 3b): http_channel translates the canvas contract to the.
+// The canvas transport (arc 3b): http_channel translates the canvas contract.
 package api
 
 import (
@@ -26,7 +26,6 @@ func (s *Server) CanvasEmit(event core.Event) {
 		return
 	}
 	s.runs.broadcastAll(runFrame{event: eventType, data: data})
-	// The push channel's canvas topic.
 	s.sockets.PublishEvent(TopicCanvas, "", eventType, data)
 }
 

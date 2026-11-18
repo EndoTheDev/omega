@@ -54,7 +54,7 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if !strings.Contains(string(crons), "17 * * * *") {
 		t.Errorf("schedule not seeded:\n%s", crons)
 	}
-	// The canonical chat exists in the agent's OWN store, bound to the agent, under the.
+	// The canonical chat exists in the agent's OWN store, bound to the agent,.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		t.Fatalf("agent store: %v", err)
@@ -98,7 +98,7 @@ func TestCreateHomeTwiceIsAnError(t *testing.T) {
 
 func TestRosterSkipsMainAndShowsWakes(t *testing.T) {
 	home := testHome(t)
-	// Pre-migration residue: agents/default dies in the move and must never come back as.
+	// Pre-migration residue: agents/default dies in the move and must never come back.
 	if err := os.MkdirAll(filepath.Join(home, "agents", "default"), 0o755); err != nil {
 		t.Fatal(err)
 	}

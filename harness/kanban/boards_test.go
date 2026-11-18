@@ -3,7 +3,7 @@ package kanban
 // The board registry + store isolation tests: a card on board A never appears on board
 // B (queries by board_id, never files), the current-board flag picks what "" means,
 // deletes refuse anything that would dangle, and the legacy per-board-directory layout
-// folds in under verified counts - once, with the old layout deleted after.
+// folds in under verified counts - once, with the old layout deleted.
 
 import (
 	"context"
@@ -23,7 +23,7 @@ func tempHome(t *testing.T) string {
 	return t.TempDir()
 }
 
-// openRegistryStore opens the home's single kanban database exactly the way the.
+// openRegistryStore opens the home's single kanban database exactly the way.
 func openRegistryStore(t *testing.T, home string) *Store {
 	t.Helper()
 	s, err := MountRegistry(home)
@@ -150,7 +150,6 @@ func TestDeleteGuards(t *testing.T) {
 		t.Fatalf("delete of a board holding a live card: %v", err)
 	}
 
-	// the archive lane is the last stop.
 	if _, err := s.UpdateTask(ctx, "alpha", held.ID, KanbanPatch{Status: StatusArchived}); err != nil {
 		t.Fatal(err)
 	}
@@ -416,9 +415,9 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 	}
 }
 
-// -- the legacy layout migration ----------------------------------------
+// the legacy layout migration --------------------------------------
 
-// seedLegacy is a real legacy sqlite board db (old schema, no boards table, no.
+// seedLegacy is a real legacy sqlite board db.
 func seedLegacy(t *testing.T, dsn string, prefix string) {
 	t.Helper()
 	db, err := sql.Open("sqlite", dsn)
@@ -514,7 +513,6 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	if err != nil || len(events) != 2 {
 		t.Fatalf("legacy events = %+v err %v", events, err)
 	}
-	// old dirs gone - migrated board, pointer file, all of it.
 	if _, serr := os.Stat(boards); !os.IsNotExist(serr) {
 		t.Fatalf("legacy boards dir survives migration: %v", serr)
 	}
@@ -524,7 +522,6 @@ func TestMigrateLegacyBoardLayout(t *testing.T) {
 	if _, serr := os.Stat(filepath.Join(home, "data", "boards-junk", "j78-a", "kanban.db")); serr != nil {
 		t.Fatalf("pinned journey board not archived with its data: %v", serr)
 	}
-	// the old main db file (now the single db) keeps the full shape.
 	if _, err := s.GetTask(ctx, "legacy-crew", "t_nope"); err != ErrNotFound {
 		t.Fatalf("bogus id answered: %v", err)
 	}
@@ -613,7 +610,7 @@ func TestMigrateReRunAfterCommittedFoldIsNoOp(t *testing.T) {
 	}
 	s.Close()
 
-	// the poisoned state: the layout delete never happened (crash, detach on the wrong.
+	// the poisoned state: the layout delete never happened.
 	reseedLegacyBoardDir(t, boards, "legacy-crew", "crew")
 	if err := os.WriteFile(filepath.Join(boards, "current"), []byte("legacy-crew\n"), 0644); err != nil {
 		t.Fatal(err)

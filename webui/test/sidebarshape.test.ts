@@ -156,7 +156,7 @@ describe("resetSidebarShape (the one-time migration, pure)", () => {
     const bottomGrown = growRoot(col, bottom.id, "row", "before");
     assert.ok(bottomGrown, "the bottom shell grows a side-by-side pair - legal there");
     const grownBottomTree = bottomGrown.tree;
-    // ..and a grown SIDEBAR beside it
+    // .and a grown SIDEBAR beside it
     const leftId = findPane(grownBottomTree, "n2")!.id;
     const withGrownSidebar = growRoot(grownBottomTree, leftId, "column", "after");
     assert.ok(withGrownSidebar);

@@ -1,20 +1,9 @@
-// omega webui: - the fixed lanes' absorb law.
-//
-// A divider with a FIXED pane on one side controls that pane and the
-// ADJACENT neighbor absorbs 1:1. The old body wrote only the fixed pane's
-// px and let the flex reflow spread the delta over every flexible child:
-// the pane the divider touches tracked the pointer at its SHARE of the flex
-// space (Endo: a small terminal pane beside the chat shrank at a
-// fraction of the drag - "the terminal shrinks SLOW", right divider only,
-// because the left divider is the both-flexible lane and already 1:1),
-// and a pane the user never touched moved too (the wall law).
-//
-// These tests drive the loop DockSplit.vue drives (frozen startPx, the
-// grafted split as the next event's input) and render the result through
-// the cellStyleFor law, pinning:
-// every leg of a terminal pane's two dividers tracks the pointer 1:1,
-// the panes the gesture did not touch hold their measured px,
-// the sizes sum survives (the record's px shares re-derive it).
+// omega webui: - the fixed lanes' absorb law. The old body wrote only the fixed pane's
+// px and let the flex reflow spread the delta over every flexible child: the pane the
+// divider touches tracked the pointer at its SHARE of the flex space (Endo: a small
+// terminal pane beside the chat shrank at a fraction of the drag - "the terminal
+// shrinks SLOW", right divider only, because the left divider is the both-flexible lane
+// and already 1:1), and a pane the user never touched moved too (the wall law).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -33,7 +22,7 @@ interface Child {
 }
 
 /**
- * a split whose fractions are the children's own px (the render reads only the RATIO.
+ * a split whose fractions are the children's own px.
  */
 function tree(direction: "row" | "column", spec: Child[]): DockSplit {
   const children = spec.map((c) => makePane(c.comp, c.fixed ?? null, c.edge));

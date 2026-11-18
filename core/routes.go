@@ -3,10 +3,9 @@ package core
 
 import "net/http"
 
-// ModuleRoute is one module-registered REST route. The capsule registers it through the
-// ExtensionAPI (RegisterRoute); nothing module-shaped rides on it - the pattern is an
-// http.ServeMux pattern and the handler an opaque http func, so the shell can serve the
-// surface while never importing the module that declared it.
+// ModuleRoute is one module-registered REST route: the capsule registers it through
+// RegisterRoute, and nothing module-shaped rides on it, so the shell serves the surface
+// without importing the module that declared it.
 type ModuleRoute struct {
 	Module string
 	Pattern string

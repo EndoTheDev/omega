@@ -156,7 +156,6 @@ func TestUIActionsRoutesToCapsuleHandler(t *testing.T) {
 	if call == nil || call.Module != "probe" || call.Action != "shuffle" {
 		t.Fatalf("routed call = %+v, want probe/shuffle", call)
 	}
-	// Args ride verbatim - the capsule's handler owns their shape, the pipe only carries.
 	if string(call.Args) != `{"direction":"left"}` {
 		t.Fatalf("args = %s, want {\"direction\":\"left\"}", call.Args)
 	}
@@ -394,7 +393,6 @@ func TestViewModelDeltaRidesChatStream(t *testing.T) {
 		}
 	}
 
-	// Release the gate: the run unwinds through its normal path and the stream's own.
 	close(release)
 	for _, event := range []string{"stream_end", "assistant_message", "turn_end", "agent_end"} {
 		expectFrame(t, origin, event)

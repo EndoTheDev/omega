@@ -1,5 +1,4 @@
-// The workspace picker/finder face's self-check: pin the wire contract directly against
-// the capsule's Routes.
+// The workspace picker/finder face's self-check: pin the wire contract directly.
 
 package files
 
@@ -87,7 +86,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 			t.Errorf("root row %q is not absolute - the browse click would be refused", d.Path)
 		}
 	}
-	// The click-through wire shape.
 	for _, d := range listing.Dirs {
 		req := httptest2.NewRequest(http.MethodGet, "/workspaces/browse?path="+mustQueryWorkspace(d.Path), nil)
 		rec := httptest2.NewRecorder()
@@ -147,7 +145,7 @@ func TestWorkspaceBrowse(t *testing.T) {
 	}
 }
 
-// TestWorkspaceFilesListing: /workspaces/files lists first-level entries of a.
+// TestWorkspaceFilesListing: /workspaces/files lists first-level entries.
 func TestWorkspaceFilesListing(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 	dir := t.TempDir()

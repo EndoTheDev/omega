@@ -60,9 +60,9 @@ describe("composerFace: the morphing button's two faces", () => {
 });
 
 describe("retry rides the action pipe", () => {
-  // chat.ts's retry POSTs /ui/actions {module:"http_channel", action:"retry",
-  // args:{session}}. A fetch stub proves the wire shape without a canvas store: the
-  // module qualification is the chat panel's contract.
+  // chat.ts's retry POSTs /ui/actions {module:"http_channel", action:"retry". A fetch
+  // stub proves the wire shape without a canvas store: the module qualification is the
+  // chat panel's contract.
   const saved = globalThis.fetch;
   afterEach(() => {
     globalThis.fetch = saved;
@@ -147,7 +147,6 @@ describe("the retry affordance lives in the message action row", () => {
     const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
     assert.ok(retryAt > actionsAt, "the chip lives inside the action row");
     assert.ok(retryAt > copyAt, "the chip sits beside fork/copy");
-    // the row is assistant-only and hidden while streaming.
     const otherAt = chatMessage.indexOf('class="msg-retry"', retryAt + 1);
     assert.equal(otherAt, -1, "one chip site, inside the row");
   });
@@ -166,10 +165,10 @@ describe("the retry affordance lives in the message action row", () => {
 
 describe("composer structure: one button, + in the input row", () => {
   it("the toolbar carries exactly ONE button - the morphing slot", () => {
-    // the toolbar section lives between '<div class="toolbar">' and the template's
-    // closing tag. adds the fullscreen + seat: the row keeps it EXACTLY once in the two
-    // exclusive states - the morphing slot is still the only unconditional button and
-    // compact renders one +, in the input row, as before.
+    // the toolbar section lives between '<div class="toolbar">'.
+    // adds the fullscreen + seat: the row keeps it EXACTLY once in the two exclusive
+    // states - the morphing slot is still the only unconditional button and compact
+    // renders one +, in the input row,.
     const m = composer.match(/<div\s+class="toolbar"/);
     assert.ok(m, "composer has a toolbar");
     const start = composer.indexOf(m[0]);
@@ -214,7 +213,7 @@ describe("composer structure: one button, + in the input row", () => {
 });
 
 describe("the squeeze: the ladder owns it, no label ever dies mid-word", () => {
-  // retired the squeeze: the narrow viewport no longer shrinks the model chip into an.
+  // retired the squeeze: the narrow viewport no longer shrinks the model chip.
   // The composer's OWN width picks a rung instead (composables/composerladder.ts): full
   // label -> chevron only -> stacked rows, measured, never truncated.
   it("the narrow media block no longer shrinks or ellipsizes the chip", () => {

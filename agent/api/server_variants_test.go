@@ -1,6 +1,6 @@
 package api
 
-// Variant-surface tests: retry creates the sibling + the variants block (no doubles.
+// Variant-surface tests: retry creates the sibling + the variants block.
 
 import (
 	"context"
@@ -41,7 +41,7 @@ func itemContents(items []any) []string {
 	return out
 }
 
-// idOf finds the transcript id of the first item with the given kind (empty content =.
+// idOf finds the transcript id of the first item with the given kind.
 func idOf(items []any, kind, content string) string {
 	for _, raw := range items {
 		m, _ := raw.(map[string]any)
@@ -172,7 +172,7 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 		t.Fatalf("user item carries no id: %+v", items)
 	}
 
-	// PIN: the sink goes in BEFORE the select so the capture sees only the select's.
+	// PIN: the sink goes in BEFORE the select so the capture sees only.
 	var selPainted []core.Panel
 	s.chat.SetPanelUpdate(func(p core.Panel) error {
 		selPainted = append(selPainted, p)
@@ -231,8 +231,7 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	}
 }
 
-// TestPartialBecomesVariant: a cancelled run's partial stays its own selectable
-// sibling.
+// TestPartialBecomesVariant: a cancelled run's partial stays its own selectable.
 func TestPartialBecomesVariant(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr3")
@@ -274,8 +273,7 @@ func TestPartialBecomesVariant(t *testing.T) {
 	}
 }
 
-// TestForkContinuesFromHistoricalMessage: fork at an assistant response chains the
-// fork's message onto it.
+// TestForkContinuesFromHistoricalMessage: fork at an assistant response chains.
 func TestForkContinuesFromHistoricalMessage(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr4")
@@ -304,8 +302,7 @@ func TestForkContinuesFromHistoricalMessage(t *testing.T) {
 	}
 }
 
-// TestForkOfUserTurnCreatesVariant: forking a user turn regenerates (retry pinned
-// there).
+// TestForkOfUserTurnCreatesVariant: forking a user turn regenerates.
 func TestForkOfUserTurnCreatesVariant(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr5")
@@ -335,7 +332,7 @@ func TestForkOfUserTurnCreatesVariant(t *testing.T) {
 	}
 }
 
-// TestVariantsGuards: 501 without a store, 404 unknown session, 400 on.
+// TestVariantsGuards: 501 without a store, 404 unknown session, 400.
 func TestVariantsGuards(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
@@ -373,7 +370,6 @@ func TestVariantsGuards(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Fatalf("out-of-range select = %d, want 400", code)
 	}
-	// index select on a single-run branch.
 	code, _ = postJSON(t, ts.URL+"/sessions/vg1/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 0}`, userID))
 	if code != http.StatusOK {

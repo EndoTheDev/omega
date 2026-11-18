@@ -11,20 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// verdictHandler serves the /verdict extension command:
-//
-// /verdict list every pending card (oldest first), numbered
-// /verdict N pick one to answer: prints the card and its options
-// /verdict N 2 answer card N with option number 2
-// /verdict N 1,3 answer a multi card with options 1 and 3
-// /verdict N y y/n shortcuts map to the first two options
-// /verdict N skip record a skip
-// /verdict N <text> free text
-//
-// A foreign name is a chain MISS: the command seam's wrapper falls
-// through to the next module only on an error, so this handler answers
-// /verdict alone
-// swallowed every command registered earlier in the chain).
+// verdictHandler serves the /verdict extension command.
 func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/verdict" {
@@ -98,7 +85,6 @@ func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionA
 		}
 		return core.QuestionAnswer{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	}
-	// a multi card takes a comma-separated pick list ("1,3").
 	if card.Multi {
 		if ixs, err := parseOptionIndexes(tok); err == nil {
 			labels := make([]string, 0, len(ixs))

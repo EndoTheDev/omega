@@ -5,7 +5,7 @@
 // seam call lines in terminal.go; the racing memory the detector actually paired lived
 // in the test fake's announce/wait WaitGroup (terminal_ test.go names it). The real
 // door's direct master.Close against a parked master.Read is fdmu-protected on a
-// pollable /dev/ptmx and stays -race green - proven by probe at this card's base - so a
+// pollable /dev/ptmx and stays -race green - verified by probe at this card's base - so a
 // real bypass cannot be made -race-observable. What this file pins instead is the
 // handshake's behavioral contract on the real door, which is the reason it exists: on a
 // master the runtime could not put in the poller (a blocking fd), the close under a
@@ -20,8 +20,7 @@ import (
 	"time"
 )
 
-// TestKillHandshakeOnRealPty: Kill with a reader parked on the master must leave the
-// door semantics standing.
+// TestKillHandshakeOnRealPty: Kill with a reader parked on the master must leave.
 func TestKillHandshakeOnRealPty(t *testing.T) {
 	if _, err := os.Stat("/dev/ptmx"); err != nil {
 		t.Skipf("no /dev/ptmx on this box: %v", err)
@@ -77,8 +76,7 @@ func TestKillHandshakeOnRealPty(t *testing.T) {
 	}
 }
 
-// TestIdleKillClosesMasterDirectly: with nothing parked on the master the handshake's
-// close is immediate.
+// TestIdleKillClosesMasterDirectly: with nothing parked on the master.
 func TestIdleKillClosesMasterDirectly(t *testing.T) {
 	if _, err := os.Stat("/dev/ptmx"); err != nil {
 		t.Skipf("no /dev/ptmx on this box: %v", err)

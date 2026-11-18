@@ -8,7 +8,6 @@
     ref="el"
     class="toolgroup">
     <summary @click="onSummaryClick">
-      <!-- the group's wrench carries the run's aggregate status. -->
       <Icon
         name="tools"
         class="tool-ic"
@@ -63,14 +62,13 @@
   }>();
 
   const anyError = computed(() => props.items.some((it) => it.status === "error"));
-  // anyActive: any child in the LIVE set, asked through the one shared predicate
-  // (composables/toolStatus.ts).
+  // anyActive: any child in the LIVE set, asked through the one shared predicate.
   const anyActive = computed(() => props.items.some((it) => isLive(it.status)));
   const state = computed(() =>
     anyError.value ? "error" : anyActive.value ? "" : "done",
   );
 
-  // -- auto open/close (the row/block state machine,
+  // auto open/close (the row/block state machine,
   //     shape): the shared mode decides what the group does on its own;
   //     a manual summary click PINS the group for the session and mode
   //     flips + status transitions recompute around it, never over it.

@@ -1,38 +1,8 @@
 package store
 
-// routes.go: the session-MANAGEMENT REST face (the shell-ring shrink
-// wave 2, the three-layer sessions law - ADR Workshop/omega-shell-ring-shrink.md).
-//
-// GET /sessions the sessions list (browse)
-// GET /sessions/search?q= the unified FTS search (the search seat)
-// POST /sessions/{id}/branch fork a session (the /branch parity)
-// GET /sessions/{id}/export the JSONL export (the /export parity)
-// GET /insights the cross-session analytics view
-//
-// The chat floor stays in the base set (agent/api/server.go): POST
-// /sessions (session id creation), /sessions/{id} (detail, the
-// remembered send context, the ephemeral close) and the live-run reads
-// (events/stop/transcript/variants). The split point (the ADR): an
-// endpoint the chat page calls live = base; an endpoint the sessions
-// list/inspector calls = management = this capsule. The list/search/
-// branch/export/insights endpoints exist only to serve the sessions
-// surface and the insights panel - they mount and die with this
-// capsule, and the capsule's own Open'd store answers them.
-//
-// INSIGHTS DISCLOSURE (the ADR's open call): insights rides THIS
-// capsule, not an own harness/insights module. It is a pure view over
-// store data (ComputeInsights on the same *Store the list reads)
-// an insights capsule would carry no seam of its own, mirror the same
-// store requirement, and split one deletion proof (sessions+insights
-// leave together, "removing store removes sessions+insights") into two
-// coupled strands. One capsule, one strand, one deletability proof.
-//
-// The list's running flag resolves the "chat-runs" service per request
-// through this capsule's OWN local ChatRunsReader face (the
-// consumer-owned-face law, the seam constitution; the live run hub
-// is offered by the serving channel). Missing offer = never-running:
-// the honest empty state on a boot with no serving channel, never a
-// fault.
+// routes.go: the session-MANAGEMENT REST face.
+// Missing offer = never-running: the honest empty state on a boot with no serving
+// channel, never a fault.
 
 import (
 	"encoding/json"
@@ -47,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Routes is the capsule's management REST face, built on the store instance the.
+// Routes is the capsule's management REST face, built on the store instance.
 type Routes struct {
 	store *Store
 	ctx   *core.Context
@@ -161,7 +131,6 @@ func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 		if sess.Model != "" {
 			payload.Model = sess.Model
 		}
-		// computed at read time from the row itself.
 		payload.Unread = agent.SessionUnread(sess)
 		payload.Running = rt.running(sess.ID)
 		out = append(out, payload)
@@ -186,11 +155,9 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := rt.store.SearchSessions(r.Context(), q)
 	if err != nil {
-		// The only input-dependent failure mode of this read-only query is the query itself.
 		rt.httpError(w, http.StatusBadRequest, "search: %v", err)
 		return
 	}
-	// Archived filter: default excludes hits whose session is archived (the sidebar's.
 	if r.URL.Query().Get("archived") != "include" {
 		sessions, err := rt.store.ListSessions(r.Context())
 		if err != nil {
@@ -212,7 +179,7 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, out)
 }
 
-// slicesCut drops the elements the keep-predicate rejects (the base set's name was.
+// slicesCut drops the elements the keep-predicate rejects.
 func slicesCut[T any](s []T, drop func(T) bool) []T {
 	out := make([]T, 0, len(s))
 	for _, v := range s {
@@ -235,8 +202,7 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 		rt.httpError(w, http.StatusNotFound, "session not found: %v", err)
 		return
 	}
-	// New child id - the same fallback the POST /sessions flow uses (crypto/rand never
-	// fails on supported platforms.
+	// New child id - the same fallback the POST /sessions flow uses.
 	childID, err := agent.NewSessionID()
 	if err != nil {
 		childID = fmt.Sprintf("sess-%d", time.Now().UnixNano())
@@ -261,8 +227,7 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusCreated, sess)
 }
 
-// exportLine is one JSONL line of GET /sessions/{id}/export - the exact shape the
-// /export command writes{"role".
+// exportLine is one JSONL line of GET /sessions/{id}/export.
 type exportLine struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
@@ -293,8 +258,6 @@ func (rt *Routes) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.jsonl"`, sess.ID))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
-		// headers only - the download probe (the webui anchor, curl -I) reads
-		// Content-Disposition without the body.
 		return
 	}
 	for _, msg := range messages {
@@ -356,7 +319,7 @@ func insightsPayloadOf(in *core.Insights) insightsPayload {
 		ToolCalls:      in.ToolCalls,
 		TotalTokens:    in.TotalTokens,
 		AvgSessionMsgs: in.AvgSessionMsgs,
-		// arrays stay arrays on the wire: a nil Go slice marshals as null, and the webui's.
+		// arrays stay arrays on the wire: a nil Go slice marshals as null,.
 		Tools:       []insightsRow{},
 		NotableMsgs: insightsNotableRow{Value: in.NotableMsgs.Value, Detail: in.NotableMsgs.Detail},
 		DBSizeBytes:  in.DBSizeBytes,
@@ -389,8 +352,7 @@ func (rt *Routes) handleInsights(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, insightsPayloadOf(in))
 }
 
-// DefaultSupplyPath is the substrate-class default supply's database path for this
-// home.
+// DefaultSupplyPath is the substrate-class default supply's database path.
 func DefaultSupplyPath() string {
 	home, err := datadir.AgentHome()
 	if err != nil || home == "" {

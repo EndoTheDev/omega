@@ -21,7 +21,7 @@ import (
 // the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// stubExeScript writes an executable child script that records its argv, cwd, and the.
+// stubExeScript writes an executable child script that records its argv, cwd,.
 // Windows gets a.bat (CreateProcess cannot run a shebang script), posix keeps the sh
 // stub.
 func stubExeScript(t *testing.T, outPath string) func() (string, error) {
@@ -30,7 +30,6 @@ func stubExeScript(t *testing.T, outPath string) func() (string, error) {
 		if stubExePath == "" {
 			t.Fatal("wake stub exe missing (TestMain build failed?)")
 		}
-		// The stub reads its out path from the env.
 		t.Setenv("WAKE_STUB_OUT", outPath)
 		return func() (string, error) { return stubExePath, nil }
 	}
@@ -69,8 +68,7 @@ func waitFile(t *testing.T, outPath string, pred func(string) bool) string {
 	return ""
 }
 
-// testAgent scaffolds scout into home (the machine never runs CreateHome in spawn
-// tests.
+// testAgent scaffolds scout into home.
 func testAgent(t *testing.T, home string) agent.Profile {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, "scout", "test agent"); err != nil {
@@ -93,7 +91,7 @@ func TestWakeSpawnContract(t *testing.T) {
 		t.Fatalf("Wake: %v", err)
 	}
 	data := waitFile(t, out, func(d string) bool { return strings.Contains(d, "ARGV:run") })
-	// Args: the run is bound to the canonical chat (the M5 contract), under the agent's.
+	// Args: the run is bound to the canonical chat (the M5 contract),.
 	if !strings.Contains(data, "--session "+CanonicalSessionIDFor("scout")) {
 		t.Errorf("child not bound to the agent's canonical chat:\n%s", data)
 	}
@@ -109,7 +107,6 @@ func TestWakeSpawnContract(t *testing.T) {
 	if !strings.Contains(data, "PWD:"+p.Dir+"\n") {
 		t.Errorf("child cwd = agent home expected:\n%s", data)
 	}
-	// The child exits, the live entry clears.
 	wakeSleep(t, m, "scout")
 }
 
@@ -143,8 +140,7 @@ func TestWakeMainNeverSpawns(t *testing.T) {
 	}
 }
 
-// TestWakeModelOverrideRidesEnv: a cron job's per-fire model rides OMEGA_MODEL on the
-// child's env.
+// TestWakeModelOverrideRidesEnv: a cron job's per-fire model rides OMEGA_MODEL.
 func TestWakeModelOverrideRidesEnv(t *testing.T) {
 	home := testHome(t)
 	testAgent(t, home)
@@ -166,7 +162,6 @@ func TestWakeModelOverrideRidesEnv(t *testing.T) {
 	if strings.Contains(data, "OMEGA_MODEL=") {
 		t.Errorf("empty model must inherit, env carries an override:\n%s", data)
 	}
-	// Both wakes end before the temp dirs are cleaned (windows holds an open file.
 	wakeSleep(t, m, "scout")
 	wakeSleep(t, m2, "scout")
 }
@@ -184,7 +179,7 @@ func TestTickObserverDispatchesAndSkips(t *testing.T) {
 	if m.LiveWake("scout") {
 		t.Fatal("foreign tick woke an agent")
 	}
-	// Malformed payloads are skipped, never invented (loud consumers validate.
+	// Malformed payloads are skipped, never invented.
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: json.RawMessage(`not-json`)})
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: nil})
 	obs(core.TickEvent{Module: "cron", Kind: "wake", Payload: json.RawMessage(`{}`)})

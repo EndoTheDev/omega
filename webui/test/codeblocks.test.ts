@@ -35,8 +35,7 @@ describe("the codeblock copy button (card t_a92450ea)", () => {
   const src = readFileSync(new URL("../app/composables/codeblocks.ts", import.meta.url), "utf8");
 
   it("rides the ONE copy path and pins the copied affordance to its verdict", () => {
-    // the call and the import must be the same name - the pin came from a live catch
-    // on.
+    // the call and the import must be the same name.
     assert.match(src, /import \{ copyText \} from "\.\/clipboard\.ts"/);
     assert.match(src, /copyText\(code\?\.textContent \?\? ""\)/);
     assert.doesNotMatch(src, /copyTextToClipboard/);

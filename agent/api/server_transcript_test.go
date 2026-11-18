@@ -32,7 +32,6 @@ func transcriptFixture() []core.StoredMessage {
 
 func TestTranscriptItemsWireOrder(t *testing.T) {
 	msgs := transcriptFixture()
-	// attach realistic timing: segment A thinking+response spans, the result's elapsed.
 	aa, ok := msgs[1].Message.(core.Assistant)
 	if !ok {
 		t.Fatalf("msgs[1] not assistant")
@@ -100,7 +99,7 @@ func TestTranscriptItemsWireOrder(t *testing.T) {
 }
 
 func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
-	// thinking after tool results must land with the NEXT segment, not merged onto the.
+	// thinking after tool results must land with the NEXT segment, not merged onto.
 	thinkingB := "now I can answer"
 	a1 := core.NewAssistant("")
 	a1.ToolCalls = []core.ToolCall{{ID: "tc9", Name: "go_test"}}
@@ -125,8 +124,6 @@ func TestTranscriptItemsMultiTurnThinkingSplit(t *testing.T) {
 	if items[3].Content != thinkingB {
 		t.Fatalf("thinking merged wrong: %q", items[3].Content)
 	}
-	// the empty segment-A assistant record (no content, no thinking) produced nothing of
-	// its own.
 	if items[1].ToolCall == nil || items[1].ToolCall.ID != "tc9" {
 		t.Fatalf("tool_call lost: %+v", items[1])
 	}
@@ -224,7 +221,6 @@ func TestTranscriptItemsAnswerWindow(t *testing.T) {
 			t.Fatalf("the answered call's result lost its window: %+v", it)
 		}
 	}
-	// d) the run ended at the result (yield, error).
 	msgs = []core.StoredMessage{
 		{Message: core.NewToolResult("out", "tc1", false), CreatedAt: "t0"},
 		{Message: core.NewUser("next turn"), CreatedAt: "t1"},
@@ -327,7 +323,7 @@ func TestSessionTranscriptHandlerGates(t *testing.T) {
 	if err := st2.CreateSession(context.Background(), "s1", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	// empty history -> items renders as [] not null (the client's render loop must never.
+	// empty history -> items renders as [] not null.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/s1/transcript", nil)
 	rec = httptest.NewRecorder()
 	s2.Handler().ServeHTTP(rec, req)
@@ -471,7 +467,6 @@ func TestLiveTranscriptItemsCarryStreamingElapsed(t *testing.T) {
 		t.Fatalf("a live answer must not ship a final span: %+v", items[1])
 	}
 
-	// the answer ended and its tool is running.
 	items = liveTranscriptItems(nil, assistantRecord{
 		content:    "answered, now calling",
 		respDur:    1500 * time.Millisecond,
@@ -514,7 +509,6 @@ func TestSegmentFinishedBoundarySettlesTheTextRows(t *testing.T) {
 		t.Fatal("a tool call after text must finish the segment")
 	}
 
-	// the wire shape both surfaces read, durations deterministic (the accumulator's ms.
 	settled := liveTranscriptItems(nil, assistantRecord{
 		thinking:   "considering",
 		content:    "calling the checker",
@@ -582,7 +576,7 @@ func TestPhaseElapsedSpansTheBoundary(t *testing.T) {
 	}
 }
 
-// TestLiveTranscriptItemsEmptyOpenRecord: a bare open record (no chunks, no calls.
+// TestLiveTranscriptItemsEmptyOpenRecord: a bare open record.
 func TestLiveTranscriptItemsEmptyOpenRecord(t *testing.T) {
 	items := liveTranscriptItems(nil, assistantRecord{}, time.Now())
 	if items != nil {
@@ -694,7 +688,7 @@ func TestSessionTranscriptStreamsTheAnswerElapsed(t *testing.T) {
 	}
 }
 
-// TestFreshenRunningCallsAgesOnlyTheCall: a snapshot's running tool line counts on by.
+// TestFreshenRunningCallsAgesOnlyTheCall: a snapshot's running tool line counts.
 // A frozen thinking/answer span keeps the measurement the server stopped at (a tool
 // call closes the phase's window - its wall clock bills to nobody), and the stored
 // snapshot is never mutated in place.
@@ -758,10 +752,10 @@ func TestBuildTranscriptItemsStampsTheUnansweredCall(t *testing.T) {
 	}
 }
 
-// TestSessionTranscriptAgesTheRunningCall: the reattach tail is a SNAPSHOT, rebuilt per
-// event. A reload mid-call therefore reads a tail frozen at the call-open anchor (~0)
-// and must be served the anchor aged by the snapshot's age, or the restored meter
-// restarts at 0:00.
+// TestSessionTranscriptAgesTheRunningCall: the reattach tail is a SNAPSHOT, rebuilt. A
+// reload mid-call therefore reads a tail frozen at the call-open anchor (~0) and must
+// be served the anchor aged by the snapshot's age, or the restored meter restarts at
+// 0:00.
 func TestSessionTranscriptAgesTheRunningCall(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -883,7 +877,7 @@ func TestTranscriptItemsUserImages(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------------------- The smart
+// ------------------------------------------------------------------------ The smart
 // gate's decision record.
 
 func TestTranscriptItemsCarryGateStamp(t *testing.T) {

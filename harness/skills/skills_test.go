@@ -264,7 +264,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	}
 }
 
-// -- Coverage tests for uncovered branches --
+// Coverage tests for uncovered branches
 
 // TestRunReadDirNotConfigured covers the sp.Dir == "" branch of runRead.
 func TestRunReadDirNotConfigured(t *testing.T) {
@@ -279,7 +279,7 @@ func TestRunReadDirNotConfigured(t *testing.T) {
 	}
 }
 
-// TestRunReadSkillNotFound covers the os.IsNotExist path of runRead, including the.
+// TestRunReadSkillNotFound covers the os.IsNotExist path of runRead, including.
 func TestRunReadSkillNotFound(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
@@ -310,7 +310,7 @@ func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	}
 }
 
-// TestRunReadNonNotExistError covers the non-NotExist error path from loadSkill in.
+// TestRunReadNonNotExistError covers the non-NotExist error path from loadSkill.
 func TestRunReadNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -345,7 +345,7 @@ func TestRunReadNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestScanSkillsNonNotExistError covers the non-NotExist error on os.ReadDir in.
+// TestScanSkillsNonNotExistError covers the non-NotExist error on os.ReadDir.
 func TestScanSkillsNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -371,7 +371,7 @@ func TestScanSkillsNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestScanSkillsLoadSkillNonNotExistError covers the non-NotExist error from.
+// TestScanSkillsLoadSkillNonNotExistError covers the non-NotExist error.
 func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -505,7 +505,7 @@ func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
 	var _ core.PromptSectioner = (*SkillsProvider)(nil)
 }
 
-// -- inspector snapshot --
+// inspector snapshot
 
 func TestListSkillsSortedAndLive(t *testing.T) {
 	dir := t.TempDir()
@@ -537,15 +537,14 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 	}
 }
 
-// Compile-time proof that the provider satisfies the std-typed faces the consumers
-// assert (part 3.
+// Compile-time proof that the provider satisfies the std-typed faces the consumers.
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
 	var _ interface {
 		SkillsEntries() (index map[string]string, contents map[string]string, err error)
 	} = (*SkillsProvider)(nil)
 }
 
-// -- the write + update actions --
+// the write + update actions
 
 func TestToolsWriteCreatesSkill(t *testing.T) {
 	dir := t.TempDir()
@@ -668,8 +667,7 @@ func TestToolsUpdateFailurePaths(t *testing.T) {
 	if err := update(map[string]any{"old_text": "is", "new_text": "IS"}); err == nil || !strings.Contains(err.Error(), "must be unique") {
 		t.Fatalf("ambiguous old_text: %v", err)
 	}
-	// the frontmatter guard: a replace that eats the opening fence dies ("-" + newline +
-	// "name:" is unique.
+	// the frontmatter guard: a replace that eats the opening fence dies.
 	raw0, _ := os.ReadFile(filepath.Join(dir, "test-skill", "SKILL.md"))
 	if err := update(map[string]any{"old_text": "-\nname", "new_text": "-gone"}); err == nil || !strings.Contains(err.Error(), "break the frontmatter") {
 		t.Fatalf("frontmatter guard: %v", err)
@@ -764,8 +762,7 @@ func TestDottedWirePin(t *testing.T) {
 	}
 }
 
-// stubProvides satisfies the logging Requires edge in the mount set without registering
-// anything.
+// stubProvides satisfies the logging Requires edge in the mount set without.
 type stubProvides struct {
 	plugin agent.Plugin
 	seam   string

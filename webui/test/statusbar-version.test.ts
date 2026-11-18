@@ -9,7 +9,7 @@ import { shortVersion } from "../app/composables/omega.ts";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
-// -- the formatter: tag + 7-char hash, display only --
+// the formatter: tag + 7-char hash, display only
 
 test("tagged pseudo version shortens to tag + short hash", () => {
   assert.equal(
@@ -35,7 +35,7 @@ test("unparsable strings pass through unchanged (never hide a build)", () => {
   assert.equal(shortVersion(""), "");
 });
 
-// -- the presentation: short in the bar, full in the tooltip --
+// the presentation: short in the bar, full in the tooltip
 
 const bar = src("app/components/shell/StatusBar.vue");
 
@@ -45,14 +45,12 @@ test("the bar renders the shortened string, never the raw one", () => {
 });
 
 test("the tooltip keeps the FULL version string", () => {
-  // the tooltip sheds "and uptime" with the segment's uptime half (the popover owns
-  // that number now).
   const m = bar.match(/:title="`server build - \$\{version\}`"/);
   assert.ok(m, "title binding still carries the raw version");
   assert.doesNotMatch(bar, /server build and uptime/, "the tooltip promises only the build");
 });
 
-// -- the pane corner seam: strip = the card's top half --
+// the pane corner seam: strip = the card's top half
 
 const css = src("app/assets/css/main.css");
 
@@ -73,7 +71,7 @@ test("mobile untucks the card (the strip is display:none there)", () => {
   assert.match(media, /\.dock-pane > \.dock-content, \.dock-pane > \.dock-empty \{ margin-top: 0; \}/);
 });
 
-// -- the truncate treatment.
+// the truncate treatment.
 
 test("a nightly tag passes through whole (why the truncate exists)", () => {
   // shortVersion only rewrites the pseudo-version shape.

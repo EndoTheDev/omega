@@ -62,7 +62,7 @@ func (f *fakeSettings) Save(values map[string]any) (*core.SettingsSchema, error)
 	return f.Schema()
 }
 
-// Raw replays the document the fake was seeded with.
+// Raw replays the document the fake was seeded.
 func (f *fakeSettings) Raw() (string, error) {
 	if f.rawErr != nil {
 		return "", f.rawErr
@@ -70,7 +70,7 @@ func (f *fakeSettings) Raw() (string, error) {
 	return f.rawText, nil
 }
 
-// SaveRaw records the submitted document and refreshes the schema, the way the host's.
+// SaveRaw records the submitted document and refreshes the schema, the way.
 func (f *fakeSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	if f.rawSaveErr != nil {
 		return nil, f.rawSaveErr
@@ -346,7 +346,7 @@ func TestSettingsMethodsRestricted(t *testing.T) {
 	}
 }
 
-// -- the whole-document door ----------------------
+// the whole-document door --------------------
 
 // TestSettingsRawGET pins the export read.
 func TestSettingsRawGET(t *testing.T) {
@@ -530,8 +530,7 @@ func TestSettingsResetRestricted(t *testing.T) {
 	}
 }
 
-// TestSettingsRawAndResetNilSeam: a host with no settings seam answers 501 on the new
-// doors too.
+// TestSettingsRawAndResetNilSeam: a host with no settings seam answers 501 on the new.
 func TestSettingsRawAndResetNilSeam(t *testing.T) {
 	cases := []struct {
 		method string

@@ -236,9 +236,9 @@ describe("renderTranscriptItems", () => {
   });
 });
 
-// -- the meter's LATE anchor: the consumed span arrives after mount ---. The
-// acceptance: a fake clock, initialMs 0, 30s pushed through the getter -> the label
-// jumps once, and a repeated or stale arrival never double-counts.
+// the meter's LATE anchor: the consumed span arrives after mount ---. The acceptance: a
+// fake clock, initialMs 0, 30s pushed through the getter -> the label jumps once, and a
+// repeated or stale arrival never double-counts.
 describe("useElapsed late anchor (the consumed span arrives after mount)", () => {
   // manual fake clock, the omega.test.ts shape: one stored tick callback
   function fakeMeter() {
@@ -277,7 +277,6 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.deepEqual(t.labels, ["0ms"], "a row that mounted before its span starts at zero");
     t.advance(1000);
     assert.equal(t.last(), "1s");
-    // the span arrives: the call had already burned 30s before this row knew anything.
     consumed = 30_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "30s", "the label jumps to the real elapsed");
@@ -302,7 +301,6 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     consumed = 30_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "30s", "30s consumed is 30s, never 10s + 30s");
-    // a later paint of the same live call hands a bigger elapsed-so-far.
     consumed = 31_000;
     syncConsumedSpan(t.meter, anchor);
     assert.equal(t.last(), "31s", "a growing paint re-anchors without stacking");
@@ -318,7 +316,6 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.deepEqual(t.labels, [], "a settled meter emits nothing");
     t.meter.start();
     assert.equal(t.last(), "30s", "the first start counts on from the arrived span");
-    // a row that already froze keeps its frozen label.
     t.meter.stop();
     const frozen = t.last();
     consumed = 45_000;
@@ -326,7 +323,6 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.equal(t.last(), frozen, "a stopped meter never re-emits a late span");
   });
 
-  // The cases above drive the reconciler directly.
   it("useElapsed watches the anchor getter and hands it to the meter", () => {
     const here = dirname(fileURLToPath(import.meta.url));
     const source = readFileSync(join(here, "..", "app", "composables", "useElapsed.ts"), "utf8");
@@ -336,7 +332,7 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
   });
 });
 
-// -- the verdict countdown anchor ------------------- The card's acceptance is a live.
+// the verdict countdown anchor ------------------- The card's acceptance is a live.
 describe("verdict countdown anchor", () => {
   const VERDICT_TIMEOUT_S = 300;
 
@@ -396,7 +392,6 @@ describe("verdict countdown anchor", () => {
 
   it("no server stamp: the call id's first sight holds across panes", () => {
     const row = verdictCallRow("v-remount-sight");
-    // The two panes are four minutes apart.
     const realNow = Date.now;
     const first = (() => {
       Date.now = () => realNow() - 4 * 60_000;

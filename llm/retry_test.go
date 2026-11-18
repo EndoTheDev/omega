@@ -119,7 +119,6 @@ func TestLoadBackoff(t *testing.T) {
 		})
 	}
 
-	// the full default window: 3 retries wait at least 65s in total.
 	var total time.Duration
 	for attempt := 0; attempt < 3; attempt++ {
 		total += loadBackoff(attempt)

@@ -41,7 +41,7 @@ func ephemeralChatBody(t *testing.T, sessionID string, content string, extra map
 	return raw
 }
 
-// ephemeralChat runs one ephemeral /chat send and resolves the session id (the.
+// ephemeralChat runs one ephemeral /chat send and resolves the session id.
 func ephemeralChat(t *testing.T, s *Server, sessionID string, content string, extra map[string]any) (string, []sseFrame) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(ephemeralChatBody(t, sessionID, content, extra)))
@@ -214,7 +214,7 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ephID, _ := ephemeralChat(t, s, "", "ephemeral hello", nil)
 
-	// search (FTS5) + export invisibility rode the store capsule out with wave 2 (the.
+	// search (FTS5) + export invisibility rode the store capsule out with wave 2.
 
 	req := httptest.NewRequest(http.MethodPatch, "/sessions/"+ephID, bytes.NewReader([]byte(`{"read":true}`)))
 	rec := httptest.NewRecorder()

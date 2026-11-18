@@ -29,7 +29,6 @@ func spawnProcess(workdir string) (process, error) {
 		closeHandles(inR, inW, outR, outW)
 		return nil, fmt.Errorf("CreatePseudoConsole: %w", err)
 	}
-	// conhost holds its inherited copies.
 	closeHandles(inR, outW)
 
 	proc, err := attachShell(hPC, inW, outR, workdir)
@@ -94,7 +93,7 @@ func attachShell(hPC, inW, outR windows.Handle, workdir string) (*conptyProcess,
 	siex := &windows.StartupInfoEx{}
 	siex.Cb = uint32(unsafe.Sizeof(*siex))
 	siex.ProcThreadAttributeList = attrs.List()
-	// STARTF_USESTDHANDLES with zero std handles: the child must open CONIN$/CONOUT$ on.
+	// STARTF_USESTDHANDLES with zero std handles: the child must open CONIN$/CONOUT$.
 	// Without the flag the shell attaches to the pty (the conhost handshake flows) but
 	// every byte it writes lands on OMEGA'S console and the pane stays alive-but-silent -
 	// the second bug that burned the first run, pinned by TestConPTYShellEcho.
@@ -210,7 +209,7 @@ func (p *conptyProcess) Close() error {
 	return nil
 }
 
-// start runs the watcher: wait for exit, record the code, hang the console up, then.
+// start runs the watcher: wait for exit, record the code, hang the console up,.
 // The close-before-fence order is the hangup contract - a read parked on the output
 // pipe is released by the console teardown, not by the fence. The session's watchLoop
 // owns the exit broadcast, so the code must be stored BEFORE the fence closes.

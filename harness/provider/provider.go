@@ -151,7 +151,7 @@ func (p *Provider) initDefaults() {
 	p.baseURL = strings.TrimRight(p.baseURL, "/")
 }
 
-// Stream sends a completion request to the provider and streams events on the.
+// Stream sends a completion request to the provider and streams events.
 func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	s := p.snapshot()
 	events := make(chan core.ProviderStreamEvent, 64)
@@ -248,7 +248,7 @@ func (p *Provider) ModelInfo() (llm.ModelInfo, error) {
 	return llm.ModelInfo{ContextWindow: ctx}, nil
 }
 
-// -- message/tool serialization --
+// message/tool serialization
 
 // messagesToJSON serializes core.Message values to maps with a role field added based.
 func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
@@ -267,8 +267,6 @@ func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 		case core.ToolResult:
 			m["role"] = "tool"
 		case core.YieldResult:
-			// The settled result of a yield-class call re-enters the conversation as its call's
-			// answer.
 			m["role"] = "tool"
 		}
 		// The OpenAI wire format requires each tool_calls entry to be.
@@ -342,7 +340,7 @@ func imagesToOllamaWire(messages []map[string]any) {
 	}
 }
 
-// toolSchemasToJSON converts ToolSchema values to the generic map format expected by.
+// toolSchemasToJSON converts ToolSchema values to the generic map format expected.
 func toolSchemasToJSON(tools []llm.ToolSchema) []map[string]any {
 	toolJSON := make([]map[string]any, len(tools))
 	for i, t := range tools {
@@ -355,7 +353,7 @@ func toolSchemasToJSON(tools []llm.ToolSchema) []map[string]any {
 	return toolJSON
 }
 
-// -- Ollama --
+// Ollama
 
 func sendEvent(ctx context.Context, events chan<- core.ProviderStreamEvent, event core.ProviderStreamEvent) {
 	select {
@@ -387,7 +385,7 @@ func flushToolCalls[T any](ctx context.Context, events chan<- core.ProviderStrea
 	}
 }
 
-// buildListModelsRequest constructs the HTTP request for listing models based on the.
+// buildListModelsRequest constructs the HTTP request for listing models based.
 func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 	switch p.typ {
 	case "ollama":
@@ -421,7 +419,7 @@ func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 
 // listModelEntries fetches the model list and parses it into entries with capability.
 func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
-	// The mock serves its model list directly - no request, no network, exactly the.
+	// The mock serves its model list directly - no request, no network, exactly.
 	if p.typ == "mock" {
 		return mockModelEntries(p.modelName), nil
 	}
@@ -439,7 +437,6 @@ func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
 		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	// All three providers return a list of model objects with a name/id field.
 	var result struct {
 		Models []struct {
 			Name         string   `json:"name"`
@@ -547,4 +544,4 @@ func (p *Provider) modelInfo() (int, error) {
 	}
 }
 
-// -- thinking level mappers --
+// thinking level mappers

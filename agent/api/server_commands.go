@@ -80,7 +80,6 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 	handler := s.seams.commandHandler
 	s.seams.mu.RUnlock()
 
-	// Extension command first: the module that registered it executes it (chain-on-miss.
 	for _, c := range cmds {
 		if c.Name != req.Name {
 			continue

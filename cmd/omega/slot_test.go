@@ -11,7 +11,7 @@ import (
 
 // The per-subsystem model slots.
 
-// slotConfig builds a config carrying the primary provider (the row named "default".
+// slotConfig builds a config carrying the primary provider.
 func slotConfig(slot string) Config {
 	cfg := DefaultConfig()
 	cfg.Provider.ModelName = "main-model"

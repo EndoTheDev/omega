@@ -37,7 +37,6 @@ describe("composer chip model seed (t_8eb149fa)", () => {
       /props\.session\?\.model \|\| props\.model/,
       "the chip seed must fall through to the app default",
     );
-    // ..
     assert.match(src, /\(\) => props\.model/, "the follow-watch");
   });
 

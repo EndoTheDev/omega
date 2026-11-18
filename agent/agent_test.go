@@ -271,7 +271,6 @@ type sessionRecordingAgent struct {
 // so every run-attributed record - the approval gate's evidence ledger first - names
 // the session.
 func TestRunWithProviderAttributesTheSinkSession(t *testing.T) {
-	// A fresh provider per subcase.
 	newProvider := func() *FakeProvider {
 		return NewFakeProviderScripts("fake",
 			[]core.ProviderStreamEvent{
@@ -344,8 +343,7 @@ func TestRunMaxTurnsCap(t *testing.T) {
 	}
 }
 
-// TestSetMaxTurnsGoesLive: the loop re-reads the cap per Run, so a live SetMaxTurns
-// flip applies at the next run.
+// TestSetMaxTurnsGoesLive: the loop re-reads the cap per Run, so a live SetMaxTurns.
 func TestSetMaxTurnsGoesLive(t *testing.T) {
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
@@ -398,7 +396,6 @@ func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 	agent := newTestAgent(provider, nil, 0)
 	collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 
-	// With no extensions loaded, no system prompt is prepended.
 	if len(provider.LastMessages) != 1 {
 		t.Fatalf("messages = %d, want 1 (user only, no system prompt)", len(provider.LastMessages))
 	}
@@ -663,7 +660,7 @@ func compactionConfig() *CompactionConfig {
 	}
 }
 
-// bigHistory returns 20 user messages of 20 chars each.
+// bigHistory returns 20 user messages of 20 chars.
 func bigHistory() []core.Message {
 	history := make([]core.Message, 0, 20)
 	for i := 0; i < 20; i++ {

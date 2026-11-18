@@ -11,14 +11,10 @@ import type { PaneZone } from "./panes.ts";
 // (nuxt.config.ts) generates the import manifest (module-tabs.generated.ts); app.vue's
 // outlets bind the component from that manifest, never a hardcoded import.
 export const TAB_MODULES = [
-  // the integrated terminal - VS Code-style, no restrictions (no confirm-gate, no
-  // opt-in.
+  // the integrated terminal - VS Code-style, no restrictions.
   "terminal",
-  // the general web browser pane.
   "browser",
-  // the notifications tab - the durable feed/history in the inspector.
   "notifications",
-  // (the observability arc's face half).
   "observability",
 ] as const;
 export const DOCK_COMPONENTS = [
@@ -34,25 +30,24 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "insights",
   "mcp",
-  // the never-zero placeholder LEFT this list - see LEGACY_DOCK_COMPONENTS.. One
+  // the never-zero placeholder LEFT this list - see LEGACY_DOCK_COMPONENTS. One
   // terminal per pane (the singleton invariant reads one per host); more terminals =
   // more panes/splits. Known ceiling, built honestly around it: sites that send
   // X-Frame-Options refuse the embed, and the tab answers with a clean fallback panel
   // (open in a new tab + copy-URL), never a silent blank frame.
   ...TAB_MODULES,
-  // (deletability law): "continuous" left the dock registry with its tab.
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
 // pre-reset trees persist tabs {component. It was the never-zero placeholder a close
-// seated in a pane's last-tab slot; Endo's ruling retired the approach - the blank "New
+// seated in a pane's last-tab slot; retired the approach - the blank "New
 // Tab" body WAS the empty bad looking space, and the law it carried is now THE LOCKED
 // LAST TAB.
 export const LEGACY_DOCK_COMPONENTS = ["inspector", "newtab"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
 
-// -- THE CLASS LAW (canvas C1, the seat map) --------------------------------
+// THE CLASS LAW (canvas C1, the seat map) ------------------------------
 //
 // Every view has ONE class and ONE default home. The class IS its home's
 // zone - there is no separate "area" truth to drift from it: `area` on a
@@ -79,7 +74,7 @@ export type DockInstancePolicy = "singleton" | "multi";
 export type ViewClass = "primary-sidebar" | "secondary-sidebar" | "main" | "bottom";
 
 /**
- * the four seats, in the pane vocabulary the layout record persists (panes.ts PaneZone.
+ * the four seats, in the pane vocabulary the layout record persists.
  */
 export type DockArea = PaneZone;
 
@@ -108,7 +103,6 @@ export function zonesOfClass(c: ViewClass): readonly DockArea[] {
       return ["left", "right", "bottom"];
     case "primary-sidebar":
     case "secondary-sidebar":
-      // sidebar views move freely between the two sidebars, visit the main pane as a.
       return ["left", "right", "main", "bottom"];
     default:
       // runtime data outside the union (a stale entry, a fixture) occupies
@@ -157,8 +151,7 @@ export interface DockableComponent {
   minPx: number;
 }
 
-// THE pinned identity: sidebar = the sessions pane (singleton, pinned left,
-// unclosable).
+// THE pinned identity: sidebar = the sessions pane.
 export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "area">)[] = [
   {
     id: "sidebar",
@@ -232,7 +225,7 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     // settings is an ON-DEMAND main-area tab. It is NOT a permanent inspector tab
     // anymore; the inspector strip and its boot repair never seat it
     // (retireInspectorSettings drops a legacy seat on load), which is the whole point
-    // of the ruling.
+    // of the rule.
     id: "settings",
     title: "Settings",
     icon: "settings",
@@ -381,7 +374,7 @@ export function dockableMinPx(id: string): number {
 
 /**
  * the tab chip's iconset name - lenient like safeEntry: a tab carrying an id outside
- * the openable registry renders no icon, never throws
+ * the openable registry renders no icon, never throws / /
  */
 export function dockableIcon(id: string): string | null {
   return safeEntry(id)?.icon ?? null;
@@ -395,20 +388,14 @@ export function isLockedTab(id: DockComponentName): boolean {
   return d === null ? true : d.id === "sidebar";
 }
 
-// -- THE SEAT MAP (canvas C1) ------------------------------------------------ One
-// question, one answer.
+// THE SEAT MAP (canvas C1) ------------------------------------------------ One.
 
-/**
- * the class a view belongs to (throws on an unknown id - panes only host registry ids)
- */
+/** the class a view belongs to (throws on an unknown id. */
 export function viewClassOf(id: DockComponentName): ViewClass {
   return dockableOf(id).class;
 }
 
-/**
- * lenient class read for RUNTIME data (persisted tabs can carry legacy ids like
- * "inspector").
- */
+/** lenient class read for RUNTIME data (persisted tabs can carry legacy ids like. */
 export function dockableClass(id: string): ViewClass | null {
   return safeEntry(id)?.class ?? null;
 }
@@ -453,7 +440,6 @@ export const MAIN_DOCKABLES: readonly DockComponentName[] =
  */
 export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
   .filter(
-    // viewer joins the exclusions.
     (d) =>
       d.id !== "sidebar" &&
       d.id !== "settings" &&
@@ -475,7 +461,7 @@ export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
 export const PRIMARY_TAB_COMPONENTS: readonly DockComponentName[] =
   classMembers("left");
 
-// -- the host homes: the registry decides the default home per host.
+// the host homes: the registry decides the default home per host.
 
 /** the components a fresh `host` pane seats as its default tabs. */
 export function defaultHostTabs(host: DockArea): DockComponentName[] {
@@ -485,14 +471,14 @@ export function defaultHostTabs(host: DockArea): DockComponentName[] {
 }
 
 /**
- * which hosts may keep an instance of `id` alive (the singleton invariant reads ONE.
+ * which hosts may keep an instance of `id` alive.
  */
 export function hostsOf(id: DockComponentName): readonly DockArea[] {
   const d = dockableOf(id);
   return d.homes ?? [d.area];
 }
 
-// -- the composition-manifest side (module-owned components) ----------------
+// the composition-manifest side (module-owned components) --------------
 
 // What ui/dockable.json may declare.
 export interface DockableSpec {
@@ -501,8 +487,7 @@ export interface DockableSpec {
   policy?: DockInstancePolicy;
 }
 
-// default icon name for modules that declare no icon of their own (the iconset "module"
-// entry.
+// default icon name for modules that declare no icon of their own.
 const MODULE_ICON = "module";
 
 export interface DockableComponentLike {
@@ -530,7 +515,7 @@ export function dockablesFromPanels(
   return out;
 }
 
-// -- THE MODULE GATE -------------------------------------- A dockable is MODULE-OWNED
+// THE MODULE GATE -------------------------------------- A dockable is MODULE-OWNED
 // when its pane body ships from a module's ui/ dir instead of the shell's: the
 // composition manifests already carry that fact (harness/<name>/ui/<File>.vue under
 // either modulePanels or moduleTabs), so the owned set is DERIVED from the manifests -

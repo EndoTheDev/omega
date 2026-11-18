@@ -40,8 +40,7 @@ func TestImagesOllamaWire(t *testing.T) {
 	imagesToOllamaWire(textOnly) // must not panic
 }
 
-// TestImagesAnthropicWire: images become Anthropic image source blocks in the user
-// message content.
+// TestImagesAnthropicWire: images become Anthropic image source blocks in the user.
 func TestImagesAnthropicWire(t *testing.T) {
 	msgs := []core.Message{
 		core.NewUserWithImages("look", []core.ImageContent{

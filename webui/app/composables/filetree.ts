@@ -139,7 +139,6 @@ export function createFileTreeStore(opts?: {
     },
   };
 
-  // Restored branches have no toggle to fire their lazy load.
   for (const p of [...expanded]) ensureLoaded(p);
 
   // The FilesTab toolbar's seam: the tab cannot reach this store, it talks through. The

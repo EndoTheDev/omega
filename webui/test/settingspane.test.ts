@@ -21,7 +21,7 @@ function knob(key: string, label: string, value: unknown, help?: string): object
   return { key, label, type: "text", value, ...(help ? { help } : {}) };
 }
 
-// -- normalizeSettingsPayload: a malformed response never kills the pane --
+// normalizeSettingsPayload: a malformed response never kills the pane
 
 test("normalize keeps well-formed groups and knobs", () => {
   const out = normalizeSettingsPayload({
@@ -52,7 +52,6 @@ test("normalize drops non-object entries and unnamed groups", () => {
       }],
     }],
   });
-  // only the "ok" group survives.
   assert.equal(out.groups.length, 1);
   assert.equal(out.groups[0].knobs.length, 0);
 });
@@ -95,7 +94,7 @@ test("normalize keeps optional fields typed", () => {
   assert.equal(k.live, true);
 });
 
-// -- filterSettingGroups: the search box narrows label + help --
+// filterSettingGroups: the search box narrows label + help
 
 const DEMO: SettingGroup[] = [
   group("compaction", [
@@ -132,7 +131,7 @@ test("filtering never mutates the caller's groups", () => {
   assert.equal(DEMO[0].knobs.length, 2);
 });
 
-// -- settingsDiff: only changed knobs go on the wire --
+// settingsDiff: only changed knobs go on the wire
 
 test("diff lists only keys whose draft differs from loaded", () => {
   const out = settingsDiff(
@@ -145,7 +144,7 @@ test("diff lists only keys whose draft differs from loaded", () => {
 test("identical draft and loaded diff to an empty map", () => {
   assert.deepEqual(settingsDiff({ a: 1 }, { a: 1 }), {});
 });
-// --: the modified dot + reset-to-default pure helpers --
+// the modified dot + reset-to-default pure helpers
 
 test("normalize carries the knob default through, null included", () => {
   const out = normalizeSettingsPayload({

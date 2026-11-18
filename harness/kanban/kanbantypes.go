@@ -37,7 +37,7 @@ type KanbanComment struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// KanbanEvent is one audit-trail entry on a task (created, moved, comment,..).
+// KanbanEvent is one audit-trail entry on a task (created, moved, comment,.).
 type KanbanEvent struct {
 	ID        int64  `json:"id"`
 	TaskID    string `json:"task_id"`
@@ -83,14 +83,13 @@ type BoardLister interface {
 
 // Reorderer is the optional drag-order capability on the kanban seam.
 type Reorderer interface {
-	// ReorderTask moves taskID to (status, after afterID) on the named board and.
+	// ReorderTask moves taskID to (status, after afterID) on the named board.
 	ReorderTask(ctx context.Context, board, taskID, status, afterID string) (KanbanTask, error)
 }
 
-// TaskDeleter is the optional delete capability on the kanban seam
-// (BoardLister/Reorderer's shape). A provider that cannot delete stays legal without it
-// - the DELETE route then answers 400 with that reason, and the board UI's delete
-// control refuses.
+// TaskDeleter is the optional delete capability on the kanban seam. A provider that
+// cannot delete stays legal without it - the DELETE route then answers 400 with that
+// reason, and the board UI's delete control refuses.
 type TaskDeleter interface {
 	// DeleteTask removes taskID from the named board.
 	DeleteTask(ctx context.Context, board, taskID string) error
@@ -106,9 +105,9 @@ type Batcher interface {
 
 // KanbanProvider is the board seam: task CRUD plus the comment and event threads.
 type KanbanProvider interface {
-	// CreateTask inserts a task on the named board ("" = the current board, resolved at.
+	// CreateTask inserts a task on the named board.
 	CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error)
-	// ListTasks returns the board's tasks in board order (drag order, newest-first.
+	// ListTasks returns the board's tasks in board order.
 	ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error)
 	// GetTask returns one task by id on the named board (store.ErrNotFound when missing).
 	GetTask(ctx context.Context, board, id string) (KanbanTask, error)

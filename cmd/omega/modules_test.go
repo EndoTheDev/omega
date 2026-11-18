@@ -1,7 +1,6 @@
 package main
 
-// The E2 host-side tests: the config.yaml `disabled:` write boot shares with the UI
-// toggle (Q7's one code path.
+// The E2 host-side tests: the config.yaml `disabled:` write boot shares with the UI.
 
 import (
 	"context"
@@ -30,7 +29,7 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban", "delegate"}}); err != nil {
 		t.Fatal(err)
 	}
-	// LoadConfig decodes the same file boot reads: the write must be legible to it (one.
+	// LoadConfig decodes the same file boot reads: the write must be legible to it.
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)

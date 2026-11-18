@@ -12,7 +12,7 @@ import {
   shouldCaptureTyping,
 } from "../app/composables/focus.ts";
 
-// -- type-to-capture: the key filter ---------------------------------------
+// type-to-capture: the key filter -------------------------------------
 
 describe("isTypeToCaptureKey", () => {
   const plain = (key: string) => ({ key, ctrlKey: false, altKey: false, metaKey: false });
@@ -43,7 +43,7 @@ describe("isTypeToCaptureKey", () => {
   });
 });
 
-// -- type-to-capture: the target filter ------------------------------------
+// type-to-capture: the target filter ----------------------------------
 
 describe("isEditableTarget", () => {
   const tag = (name: string, editable = false) =>
@@ -65,7 +65,7 @@ describe("isEditableTarget", () => {
   });
 });
 
-// -- the full capture gate --------------------------------------------------
+// the full capture gate ------------------------------------------------
 
 describe("shouldCaptureTyping", () => {
   const evt = (key: string, target: { tagName?: string; isContentEditable?: boolean } | null) =>
@@ -106,7 +106,7 @@ describe("shouldCaptureTyping", () => {
   });
 });
 
-// -- the focus signal --------------------------------------------------------
+// the focus signal ------------------------------------------------------
 
 describe("composer focus signal", () => {
   it("request names the key and ticks the sequence every time", () => {

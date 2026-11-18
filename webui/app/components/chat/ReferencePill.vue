@@ -25,8 +25,6 @@
   const props = defineProps<{ pill: RefToken }>();
   const emit = defineEmits<{ (e: "open"): void }>();
 
-  // skill pills read "/name" (the invocation form); file and dir pills read the
-  // basename.
   const pillName = computed(() =>
     props.pill.kind === "skill" ? "/" + props.pill.name : props.pill.label,
   );

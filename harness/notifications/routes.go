@@ -13,7 +13,7 @@ import (
 // notificationsListDefault is the page size when no limit is given.
 const notificationsListDefault = 50
 
-// notificationsListMax caps a client-provided limit (the retention cap is 200.
+// notificationsListMax caps a client-provided limit.
 const notificationsListMax = 200
 
 // notifySSEPing keeps the stream honest through silent stretches.

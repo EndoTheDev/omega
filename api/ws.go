@@ -46,7 +46,6 @@ func (s *Server) handleSocket(w http.ResponseWriter, r *http.Request) {
 	sub := s.Server.Sockets().Attach()
 	defer sub.Close()
 	go func() {
-		// The client closed, or the read failed.
 		defer sub.Close()
 		defer conn.Close()
 		for {

@@ -94,8 +94,7 @@ describe("AppSidebar: the ruled panel order (card t_7ee0a673)", () => {
   });
 
   it("the in-band input keeps the band's 22px row - compact padding, no height growth", () => {
-    // the seat's geometry moved into TabBand's scoped stylesheet (one shared seat in
-    // the band vocabulary).
+    // the seat's geometry moved into TabBand's scoped stylesheet.
     const seat = tabband.match(/\.band-search \.search-input input\)\s*\{[^}]*\}/)?.[0] ?? "";
     assert.match(seat, /padding:\s*2px/, "the band seat's input is compact (the shared 5px grows the band)");
     assert.doesNotMatch(sidebar, /^\.band-search\s*\{/m, "no per-tab seat copy - the shared definition owns it");

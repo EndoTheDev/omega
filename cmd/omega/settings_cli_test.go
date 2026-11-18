@@ -24,8 +24,7 @@ func settingsCLIHome(t *testing.T, body string) (home, cfgPath string) {
 	return home, cfgPath
 }
 
-// TestSettingsCLIListsEveryKnobGroup proves the bare verb renders the whole schema the
-// pane's GET serves.
+// TestSettingsCLIListsEveryKnobGroup proves the bare verb renders the whole schema.
 func TestSettingsCLIListsEveryKnobGroup(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML)
 
@@ -68,8 +67,7 @@ func schemaKnobKeysFromCLI(t *testing.T, out string) map[string]bool {
 	return keys
 }
 
-// TestSettingsCLIGetReadsOneKnob: a single key prints the raw value (no quotes) so a
-// script can consume it.
+// TestSettingsCLIGetReadsOneKnob: a single key prints the raw value (no quotes).
 func TestSettingsCLIGetReadsOneKnob(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML)
 
@@ -252,7 +250,7 @@ func TestSettingsArgsStripsConfigFlag(t *testing.T) {
 	}
 }
 
-// TestSettingsCLIHonorsConfigFlag: the write lands in the --config file, not the.
+// TestSettingsCLIHonorsConfigFlag: the write lands in the --config file, not.
 func TestSettingsCLIHonorsConfigFlag(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML) // home config (untouched)
 	other := filepath.Join(t.TempDir(), "other.yaml")

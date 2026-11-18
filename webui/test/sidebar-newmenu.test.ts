@@ -29,7 +29,6 @@ describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
   it("the Continuous entry is GONE - the roster folded into the Agents tab (card t_c7222095)", () => {
     assert.doesNotMatch(picker, /"Continuous"/, "no picker slot survives the merge");
     assert.doesNotMatch(sidebar, /new-continuous/, "no emit wiring survives the merge");
-    // disabled-dim rule still holds for any future disabled entry.
     assert.match(sidebar, /\.new-menu-item:disabled\b/, "the disabled styling survives");
   });
 
@@ -60,7 +59,6 @@ describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
   });
 
   it("the chevron renders at 12x12 through the iconset wrapper (card t_502b8e81)", () => {
-    // the hand-rolled svg is gone.
     const at = sidebar.indexOf('class="new-caret-chevron"');
     assert.notEqual(at, -1, "the caret chip is the wrapper's chevron-down");
     const start = sidebar.lastIndexOf("<Icon", at);

@@ -256,8 +256,7 @@ func TestToggleRemountPanicRollsBackAndRejects(t *testing.T) {
 	}
 }
 
-// emitterProbeCapsule mounts the notifications seam and an emitter hook that counts its
-// deliveries.
+// emitterProbeCapsule mounts the notifications seam and an emitter hook that counts.
 type emitterProbeCapsule struct {
 	name   string
 	counts *int
@@ -314,7 +313,6 @@ func TestRemountReplaysEmitter(t *testing.T) {
 	if after := core.Census(ctx); !after.Equal(full) {
 		t.Fatalf("the replay drifted the census: %v", after.Diff(full))
 	}
-	// The undo is per-lifetime.
 	if err := reg.Toggle(ctx, "mod", false, core.StartDeps{}); err != nil {
 		t.Fatal(err)
 	}

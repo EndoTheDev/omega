@@ -62,7 +62,6 @@
 </template>
 
 <script setup lang="ts">
-  // The recursive layout renderer.
   import { inject, onBeforeUnmount, onMounted, ref } from "vue";
   import { snapCandidateAt, travelSnapAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
@@ -84,8 +83,7 @@
   const api = inject(DOCK_API_KEY)!;
   const rootEl = ref<HTMLElement | null>(null);
 
-  // how this child is sized: fixed px panes keep their size (exactly the pre-dock
-  // sidebar behavior).
+  // how this child is sized: fixed px panes keep their size.
   function cellStyleFor(child: DockNode, idx: number): Record<string, string> {
     const node = props.node as DockSplit; // root may be a bare pane; this runs for splits only
     const axis = node.direction === "row" ? "width" : "height";
@@ -109,7 +107,7 @@
     return { [axis]: "auto", flex: `${grow} 1 0` };
   }
 
-  // -- drag --- dragging = divider index during a gesture. The raw->delta reduction
+  // drag --- dragging = divider index during a gesture. The raw->delta reduction
   // (cumulative-from-baseline) lives in dividerGesture.ts so its contract is
   // unit-tested - found it silently sending per-event increments (dead-looking
   // dividers) after the snap-ladder rework.
@@ -146,19 +144,16 @@
     if (!startPx) return;
     const cumulative = dividerDelta(pointerState, delta, raw);
     if (cumulative === null) return;
-    // content box for the pure math.
     const contentPx = startPx.reduce((a, p) => a + p, 0);
     const res = api.drag((props.node as DockSplit).id, dividerIndex, startPx, cumulative, contentPx);
     if (res.collapsedPaneId) {
-      // the controlled pane (and this divider with it) is gone.
       dropGesture();
       return;
     }
-    // the controlled pane is left (fixed) or, when it flexes, the fixed right one.
     const node = props.node as DockSplit;
     const li = dividerIndex - 1;
     const i = dividerIndex;
-    // mirror the pure fn's branch read (a nested split child is flexible - kind must.
+    // mirror the pure fn's branch read.
     const fixedPane = (k: number): boolean =>
       node.children[k]!.kind === "pane" &&
       (node.children[k] as DockPaneNode).fixed !== null;
@@ -171,7 +166,6 @@
           ? startPx[i] - cumulative
           : startPx[li] + cumulative;
     const step = bottomCase ? BOTTOM_SNAP_STEP : SNAP_STEP;
-    // the guide mirrors the drag law.
     const bothFlexible = !fixedPane(li) && !fixedPane(i);
     const attract = bothFlexible
       ? travelSnapAt(startPx[li], px, step)

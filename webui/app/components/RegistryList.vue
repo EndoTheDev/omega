@@ -62,7 +62,6 @@
                 name="name-side"
                 :row="r" />
             </div>
-            <!-- the row law's subtitle: a flex line so bars/badges can ride it. -->
             <span
               v-if="r.description || r.status"
               class="reg-row-sub">
@@ -92,7 +91,6 @@
                 class="registry-preview-at">{{ r.previewAt }}</span>
             </span>
           </div>
-          <!-- the generic row side: numbers, bars, badges. -->
           <slot
             name="side"
             :row="r" />
@@ -130,10 +128,6 @@
               :key="line"
               class="registry-detail-line"><span>{{ line }}</span></li>
           </ul>
-          <!--
-            richer consumers (the agents tab renders the config summary + session list)
-            slot in here.
-          -->
           <slot
             name="detail"
             :row="r" />
@@ -158,7 +152,6 @@
     type RegistryRow,
   } from "~/composables/omega";
 
-  // The rows the parent built (registry listing + fold flags merged through.
   const props = withDefaults(
     defineProps<{
       kind: RegistryKind;
@@ -213,11 +206,9 @@
 
   const hasDetail = (r: RegistryRow) => !!(r.detail && r.detail.length);
 
-  // one key per row identity.
   const rowKey = (r: RegistryRow) => r.name;
 
-  // -- one-click toggle --- checkbox trap needed the per-row remount hack when the
-  // toggle was an input.
+  // one-click toggle --- checkbox trap needed the per-row remount hack when.
   function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
     // a no-toggle row never renders a pill; the guard stays so a consumer cannot.
@@ -235,8 +226,8 @@
   const toggleHint = (r: RegistryRow) =>
     r.noToggle ? "" : registryNote(props.kind, r.disabled);
 
-  // -- the sessions feel's open surface --- Under feel="sessions" the whole HEAD line.
-  // A control inside the head already owns its own action - the name button and the
+  // the sessions feel's open surface --- Under feel="sessions" the whole HEAD line. A
+  // control inside the head already owns its own action - the name button and the
   // expander stop propagation themselves, and the pill's click is skipped here so a
   // toggle never opens a chat. The DETAIL below the head is never a click surface: it
   // carries the agent's edit form.
@@ -260,7 +251,6 @@
 </script>
 
 <style scoped>
-  /* the row geometry (paddings, separators, the name/subtitle typography, the. */
   .registry-list {
     padding: 8px 0 14px;
   }
@@ -269,7 +259,6 @@
     margin: 0;
     padding: 0;
   }
-  /* the openable name: a button styled back into the row. */
   .registry-open {
     border: none;
     background: none;
@@ -297,7 +286,6 @@
   .registry-expander:hover {
     opacity: 0.9;
   }
-  /* the sessions expander glyph. */
   .registry-expander-icon {
     display: block;
     transition: transform 0.12s ease;
@@ -306,7 +294,7 @@
     transform: rotate(90deg);
   }
   /*
-   * --: THE SESSIONS FEEL ------------------------------- The agents tab's opt-in.
+   * THE SESSIONS FEEL ------------------------------- The agents tab's opt-in.
    * Every rule is gated on.feel-sessions: the quiet list - cron, tools, skills, mcp,
    * modules - keeps the ROW LAW's plain render until its own round, byte for byte.
    * Round 1 wore the negative margin at rest too, which widened the quiet list's
@@ -330,12 +318,12 @@
     /*
      * the raised chip reaches past the text column so the row reads as ONE surface; the
      * negative margin and the matching padding cancel each other, so the name never
-     * shifts - only the chip's edges grow
+     * shifts - only the chip's edges grow / /
      */
     margin: 0 -8px;
     padding: 5px 8px;
     /*
-     * his fork ruling ("try first"): the hairline under a raised chip fades, so the
+     * his fork rule ("try first"): the hairline under a raised chip fades, so the
      * chip never crosses a seam.
      */
     border-bottom-color: transparent;
@@ -379,7 +367,6 @@
     flex: none;
     opacity: 0.7;
   }
-  /* the under-row detail lines are the note line above only. */
   .registry-detail {
     list-style: none;
     margin: 2px 0 2px 10px;

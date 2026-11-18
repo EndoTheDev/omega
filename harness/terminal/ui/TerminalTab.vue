@@ -1,8 +1,5 @@
 <template>
-  <!--
-    the webui Terminal tab - the integrated shell, VS Code-style with zero
-    restrictions..
-  -->
+  <!-- the webui Terminal tab - the integrated shell, VS Code-style with zero. -->
   <section class="terminal-pane">
     <div class="terminal-toolbar">
       <span class="terminal-state" :class="{ dead }">{{ stateLine }}</span>
@@ -41,7 +38,6 @@
   // it at claim time; a later focus change never re-roots a living shell.
   const props = defineProps<{ focusedSession?: string | null }>();
 
-  // the module routes (harness/terminal): claim, stream, input, resize, kill.
   const CLAIM = "/terminal/sessions";
 
   const host = ref<HTMLElement | null>(null);
@@ -76,7 +72,6 @@
     return out;
   }
 
-  /** the pane's xterm palette reads the shell's own tokens. */
   function termTheme(): ITheme {
     const cs = getComputedStyle(document.documentElement);
     const tok = (n: string, fallback: string) =>
@@ -96,7 +91,6 @@
     }
   }
 
-  /** claim the pane's session (reattach-else-spawn server-side). */
   async function claim(): Promise<string | null> {
     // the focused session id rides the claim (never a root!).
     const url = props.focusedSession
@@ -181,7 +175,7 @@
     requestAnimationFrame(() => void resize());
   }
 
-  /** keystrokes ride POST../input as raw frame bodies (control chars are data. */
+  /** keystrokes ride POST./input as raw frame bodies (control chars are data. */
   async function input(s: string) {
     const id = sessionId.value;
     if (!id || dead.value) return;
@@ -261,7 +255,6 @@
     flex-direction: column;
     height: 100%;
     min-height: 120px;
-    /* the flex shrink guard. */
     min-width: 0;
     overflow: hidden;
     background: var(--z1, #1a1a1c);
@@ -294,7 +287,6 @@
   .terminal-host {
     flex: 1 1 auto;
     min-height: 0;
-    /* the same guard one level down. */
     min-width: 0;
     overflow: hidden;
     padding: 4px 6px;

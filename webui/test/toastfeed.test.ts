@@ -7,8 +7,7 @@ import { onToastPanel, emitLocalToast } from "../app/composables/canvas.ts";
 import { toastLifetime, upsertRecord, type OmegaNotification } from "../app/composables/notifications.ts";
 import { createCanvasStore } from "../app/composables/canvas.ts";
 
-// decodeToast mirrors NotificationCenter.vue's decoder (script-setup code can't be
-// imported from node --test.
+// decodeToast mirrors NotificationCenter.vue's decoder.
 function decodeToast(payload: unknown): OmegaNotification | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
@@ -110,8 +109,7 @@ test("emitLocalToast: the boot repair receipt rides the same funnel (t_d54c718a)
   assert.equal(decodeToast(frames[0])?.title, "layout repaired: 2 constraints eased");
   assert.equal(decodeToast(frames[0])?.read, true);
 
-  // the same payload emitted again (an HMR replant, a re-run of the boot block) dedupes
-  // against the fingerprint.
+  // the same payload emitted again (an HMR replant, a re-run of the boot block).
   emitLocalToast(receipt);
   emitLocalToast({ ...receipt, created_at: "2026-10-28T12:00:00.000Z" });
   assert.equal(frames.length, 1);

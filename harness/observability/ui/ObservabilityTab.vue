@@ -17,8 +17,7 @@
         {{ scopeLabel }}
       </button>
       <!--
-        the errors-only chip: a view filter over the fetched page, never a server
-        parameter.
+        the errors-only chip: a view filter over the fetched page, never a server.
       -->
       <button
         class="band-tool obs-chip obs-errors"
@@ -83,7 +82,6 @@
           <span class="obs-cell obs-tool">{{ e.tool || "" }}</span>
           <span class="obs-cell obs-dur">{{ formatDuration(e.duration_ms) }}</span>
           <span class="obs-cell obs-sum" :title="e.summary">{{ e.summary }}</span>
-          <!-- the failure text rides its own line under the row. -->
           <span v-if="e.error" class="obs-cell obs-errline">{{ e.error }}</span>
         </div>
       </template>
@@ -166,7 +164,6 @@
     scopeAll.value = !scopeAll.value;
   }
 
-  // the painted rows: newest first, errors-only applied, the render cap bounding the.
   const shown = computed(() => visibleEvents(events.value, errorsOnly.value));
 
   const metaLine = computed(() => {
@@ -183,7 +180,7 @@
     return `${count} · ${errs} error${errs === 1 ? "" : "s"} · ${ring}`;
   });
 
-  // -- the two reads --------------------------------------------------- One in-flight
+  // the two reads --------------------------------------------------- One in-flight
   // read at a time: a scope flip while a fetch is airborne must not paint the OLD
   // scope's answer over the new one.
   let ticket = 0;
@@ -228,7 +225,6 @@
     loaded.value = true;
   }
 
-  /** refresh reads whichever view is up. */
   function refresh(): Promise<void> {
     return tailOpen.value ? readTail() : readStream();
   }
@@ -249,7 +245,6 @@
   watch(scopedSession, () => void readStream());
   watch(tailOpen, () => void refresh());
 
-  // -- the bounded refresh ------------------------ The push channel.
   let timer: ReturnType<typeof setInterval> | null = null;
 
   onMounted(() => {
@@ -262,7 +257,7 @@
     timer = null;
   });
 
-  // -- narrow adaptation, the module-UI recipe.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -413,14 +408,12 @@
     word-break: break-all;
     opacity: 0.75;
   }
-  /* the chips: the band-tool look plus the toggle state (the Logs strip's. */
   .obs-pane .obs-chip[aria-pressed="true"] {
     color: var(--text);
   }
   .obs-pane .obs-chip.off {
     opacity: 0.45;
   }
-  /* narrow: the meta cells fold. */
   .obs-pane.narrow .obs-head {
     display: none;
   }

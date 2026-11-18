@@ -85,7 +85,6 @@ func (c *Captioner) providerFor(ctx context.Context) (agent.Provider, error) {
 		if run := agent.CaptionProvider(ctx); run != nil {
 			return run, nil
 		}
-		// Outside a run there is no chip to follow.
 		if base == nil {
 			return nil, fmt.Errorf("no vision model configured")
 		}

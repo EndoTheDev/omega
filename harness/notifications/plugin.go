@@ -38,7 +38,7 @@ func (p *Plugin) Description() string {
 	return "notifications: the finished-things store behind the dock's Notifications tab chip (tasks, crons, chats)"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "notifications" }
 
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
@@ -68,12 +68,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("notifications store: %w", err)
 	}
-	// A same-instance re-mount (the double-mount removal proofs) opens a second store.
 	if p.store != nil {
 		_ = p.store.Close()
 	}
 	p.store = s
-	// Capsule law: the module ships its view-model with its store.
 	p.capsule = newCapsule(s)
 	seam := &emittingStore{store: s, capsule: p.capsule}
 	p.routes = newRoutes(seam)
@@ -98,7 +96,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return err
 		}
 	}
-	// The read-only /notifications table command (the /board pattern.
 	return api.RegisterCommand("/notifications", "list recent finished things (tasks, crons, chats)", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
 			if name != "/notifications" {

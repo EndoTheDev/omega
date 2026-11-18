@@ -47,8 +47,7 @@ func TestFDRedirectWritesPins(t *testing.T) {
 	}
 }
 
-// TestFDRedirectAssess: writesThrough feeds the would-interrupt decision (the trust
-// boundary).
+// TestFDRedirectAssess: writesThrough feeds the would-interrupt decision.
 func TestFDRedirectAssess(t *testing.T) {
 	for _, cmd := range []string{
 		"echo hi 2> f.txt", "echo hi 2>> f.txt", "echo hi &> f.txt",

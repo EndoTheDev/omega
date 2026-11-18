@@ -197,7 +197,6 @@ func tailLines(path string, n int) ([]string, error) {
 
 	text := string(buf)
 	if window < size {
-		// the window starts mid-file.
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = text[i+1:]
 		} else {
@@ -259,7 +258,6 @@ func (s *Server) followLogs(ctx context.Context) {
 			return
 		case <-ticker.C:
 			offset, carry = s.pushLogDelta(path, offset, carry)
-			// The baseline is what makes the next append publishable.
 			if seeded != nil && offset >= 0 {
 				close(seeded)
 				seeded = nil

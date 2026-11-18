@@ -54,8 +54,7 @@ func (e panicErr) Error() string {
 	return "panic: not a string panic"
 }
 
-// needKeys is the closed need-key namespace (agent/seams.go, the census comment in
-// extensionapi.go).
+// needKeys is the closed need-key namespace.
 var needKeys = []string{
 	"provider",
 	"store",
@@ -81,8 +80,7 @@ var capsuleServiceKeys = []string{
 	"chat-runs",
 }
 
-// TestBindMissingStoreOffersFloor pins the missing-supply flip side for the needs with
-// documented floors.
+// TestBindMissingStoreOffersFloor pins the missing-supply flip side for the needs.
 func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 	var ctx Context
 	ctx.ApplyOffer("provider", "test", FakeProvider{})
@@ -96,10 +94,9 @@ func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 	}
 }
 
-// TestClassANounsLeaveTheSubstrate is the wave-2 noun law (part 3, the seam
-// constitution). The scan is identifier-level (go/ast), so comments and the accepted
-// residual string keys ("store", "provider" as data in the census and resolve calls)
-// never trip it.
+// TestClassANounsLeaveTheSubstrate is the wave-2 noun law (part 3, the seam. The scan
+// is identifier-level (go/ast), so comments and the accepted residual string keys
+// ("store", "provider" as data in the census and resolve calls) never trip it.
 func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 	forbidden := map[string]bool{
 		"Provider":           true,
@@ -131,7 +128,6 @@ func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 		"RegisterTurnNudger":    true,
 		"RegisterLoop":          true,
 	}
-	// The scan covers core/ and llm/ - the substrate rings.
 	for _, dir := range []struct {
 		path      string
 		skipTests bool
@@ -231,7 +227,6 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("abs root: %v", err)
 	}
-	// The substrate rings the constitution names: core, llm, agent (incl.
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
@@ -275,12 +270,12 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	}
 }
 
-// TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site in the tree and
-// holds the namespace shut. Offering a 16th key is a design event, argued in a card -
-// not a line a capsule may add silently. The ApplyOffer walk closes the one-abstraction
-// bypass: a census that only pins.Offer( call sites is decoration - the raw core
-// primitive is the mount machinery's own, and every literal-key caller (the host's
-// store offer, the shell's chat-runs) must sit in the same closed list.
+// TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site in the tree.
+// Offering a 16th key is a design event, argued in a card - not a line a capsule may
+// add silently. The ApplyOffer walk closes the one-abstraction bypass: a census that
+// only pins.Offer( call sites is decoration - the raw core primitive is the mount
+// machinery's own, and every literal-key caller (the host's store offer, the shell's
+// chat-runs) must sit in the same closed list.
 func TestOffersStayInClosedKeys(t *testing.T) {
 	closed := map[string]bool{}
 	for _, k := range needKeys {

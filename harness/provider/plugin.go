@@ -21,7 +21,7 @@ func (Plugin) Description() string {
 	return "model provider: LLM transport (Ollama, OpenAI, Anthropic), streaming and model listing"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "provider" }
 
 func (Plugin) Provides() []string { return []string{"provider"} }
@@ -36,7 +36,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
-	// The instances: one resolver per config provider.instances row, eager at mount (no.
+	// The instances: one resolver per config provider.instances row, eager at mount.
 	// The shell resolves a run's pinned instance through agent.ProviderInstances and fails
 	// loudly on a missing name, which is how a removed instance can never strand a
 	// session's run into a silent fallback.

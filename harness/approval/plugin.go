@@ -18,7 +18,7 @@ func (p *Plugin) Description() string {
 	return "approval: the smart approval gate - risky shell commands reach a decision model + deterministic ladder, escalations ride verdict cards"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "approvals" }
 
 // Provides approvals (exclusive). Requires verdicts: an escalation HARD-PAUSES inside
@@ -29,7 +29,7 @@ func (p *Plugin) ConfigKey() string { return "approvals" }
 func (p *Plugin) Provides() []string { return []string{"approvals"} }
 func (p *Plugin) Requires() []string { return []string{"verdicts"} }
 
-// MountWithAPI registers the seam; nothing else exists (no tools.
+// MountWithAPI registers the seam; nothing else exists.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["approvals"].(Config); ok {

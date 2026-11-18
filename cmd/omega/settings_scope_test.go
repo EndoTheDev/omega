@@ -174,7 +174,7 @@ func TestSettingsScopesListsAgentHomes(t *testing.T) {
 	if k := scopeKnob(t, alpha, "max_turns"); k.Value != 7 || !k.Overridden {
 		t.Errorf("max_turns = %+v, want the layer's 7", k)
 	}
-	// Group roll-ups: provider overridden (type + api_key), all four groups the agent's.
+	// Group roll-ups: provider overridden (type + api_key), all four groups.
 	for _, key := range []string{"provider", "system_prompt", "description", "max_turns"} {
 		if !scopeGroup(t, alpha, key).Overridden {
 			t.Errorf("group %q not flagged overridden for a layer that names its knob", key)
@@ -313,7 +313,6 @@ func TestSettingsScopesSkipsMainAndMalformedDirs(t *testing.T) {
 
 func TestSettingsScopesReportsUnparsableLayer(t *testing.T) {
 	home := scopeHome(t, scopeMainConfig, map[string]string{
-		// A mapping where a scalar belongs.
 		"broken": "description:\n  nested: true\n",
 	})
 	schema, err := settingsSchema(filepath.Join(home, "config", "config.yaml"))
@@ -344,7 +343,6 @@ func TestSettingsScopeHome(t *testing.T) {
 }
 
 func TestSettingsScopesEmptyInstanceStaysEmpty(t *testing.T) {
-	// An explicitly empty instance is an override with no instance behind it.
 	home := scopeHome(t, scopeMainConfig, map[string]string{
 		"alpha": "provider:\n  instance: \"\"\n",
 	})

@@ -31,14 +31,14 @@ func NewPluginFromEnv() (*Plugin, error) {
 	return NewPlugin(b), nil
 }
 
-// activeBridge returns the live bridge under the read lock (nil still possible.
+// activeBridge returns the live bridge under the read lock.
 func (p *Plugin) activeBridge() *Bridge {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.bridge
 }
 
-// swapBridge installs the fresh bridge and returns the replaced one (the caller.
+// swapBridge installs the fresh bridge and returns the replaced one.
 func (p *Plugin) swapBridge(b *Bridge) *Bridge {
 	p.mu.Lock()
 	defer p.mu.Unlock()

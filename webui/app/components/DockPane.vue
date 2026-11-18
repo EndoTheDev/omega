@@ -8,7 +8,6 @@
         'drop-hover': dropHover,
         'drop-refused': refusedIdx !== null,
         pinned,
-        // the bottom shell gets its own class (the bottom-panel css file owns its.
         'edge-bottom': node.edge === 'bottom',
         // Endo's comment: the fullscreen VIEW rides the pane class - bottompanel.css
         // owns the takeover; the sidebars never hide (Endo: they stay as-is, still
@@ -21,7 +20,7 @@
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
-    <!-- the pane's tab bar IS the header (35px, MenuBar contract).. -->
+    <!-- the pane's tab bar IS the header (35px, MenuBar contract). -->
     <div
       ref="tabsEl"
       class="dock-tabbar"
@@ -41,7 +40,7 @@
               'drop-refused': refusedIdx === i,
               /*
                * sidebar strips (icon-only) get their own 28px centered chip shape - the
-               * text-tab rules never move
+               * text-tab rules never move / /
                */
               'ic-only': iconTabs,
             }"
@@ -62,7 +61,6 @@
               v-if="tabIcon(t)"
               :name="tabIcon(t)"
               class="dock-tab-ic" />
-            <!-- the notifications tab's unread chip. -->
             <span
               v-if="tabBadge(t)"
               class="dock-tab-badge"
@@ -71,10 +69,6 @@
             <span
               v-if="!iconTabs"
               class="dock-tab-title">{{ tabTitle(t) }}</span>
-            <!--
-              the close X: every closable-class tab carries one (chat, viewer, browser,
-              settings)..
-            -->
             <button
               v-if="tabClosable(t)"
               class="dock-tab-close"
@@ -87,9 +81,6 @@
               ×
             </button>
           </div>
-          <!--
-            insertion caret "after the last tab" rides the '+' button's left edge.
-          -->
           <button
             v-if="!pinned"
             class="dock-tab-new"
@@ -132,10 +123,7 @@
       </template>
     </div>
 
-    <!--
-      v0.14.4 a GROWN pinned root renders its local split tree in place of the classic
-      bar+body.
-    -->
+    <!-- v0.14.4 a GROWN pinned root renders its local split tree in place of the. -->
     <DockSplitNode
       v-if="node.grown"
       :node="node.grown"
@@ -149,10 +137,7 @@
       </template>
     </DockSplitNode>
 
-    <!--
-      the pane's active tab: rendered by app.vue via the forwarded slot named
-      pane-<component>.
-    -->
+    <!-- the pane's active tab: rendered by app.vue via the forwarded slot named. -->
     <div
       v-if="outletName"
       class="dock-content">
@@ -201,7 +186,6 @@
         remove pane
       </button>
     </div>
-    <!-- docking prediction overlay. -->
     <div
       v-if="dropZone"
       class="dock-drop-overlay"
@@ -247,13 +231,9 @@
   import DockGhost from "./DockGhost.vue";
   // the ONE icon wrapper: every icon in the webui
   import Icon from "./ui/Icon.vue";
-  // the viewer chip's extension-glyph vocabulary (the same pure table the file tree's.
   import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
-  // the notifications tab chip's unread badge.
   import { notificationsBadgeText } from "./shell/notificationFeed";
-  // the recursive split renderer, lazy.
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
-  // the re-export path keeps one import surface for dock consumers.
 
   // MENU_DOCKABLES left this pane with the empty-pane component menu.
 
@@ -263,12 +243,10 @@
   }>();
 
   const api = inject(DOCK_API_KEY)!;
-  // the chat tab is multi-instance.
   const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
   // the focused tab IS the draft conversation.
   const draftFocus = inject(DOCK_DRAFT_FOCUS_KEY, null);
   const draftFocused = computed(() => draftFocus?.value === true);
-  // card 3: chat tabs show their session's title ('new chat' unsaved).
   const tabTitleFor = inject(DOCK_TAB_TITLE_KEY, null);
 
   function tabTitle(tab: DockTab): string {
@@ -294,7 +272,7 @@
     const z = paneZone.value;
     return z !== null && splitFitsZone(z, direction);
   }
-  // the X renders on EVERY closable-class tab. Endo ruling, corrected, stands: the
+  // the X renders on EVERY closable-class tab. corrected, stands: the
   // last-main-pane law protects the PANE (removePane), never the tabs - the census
   // feeds no X.
   function tabClosable(t: DockTab): boolean {
@@ -343,7 +321,7 @@
     return tab.component === "notifications" ? notificationsBadgeText.value : "";
   }
 
-  // -- tab DnD: EVERY tab bar is a drop target.
+  // tab DnD: EVERY tab bar is a drop target.
   const TAB_MIME = "application/x-omega-dock-tab";
 
   interface DragPayload {
@@ -380,22 +358,19 @@
     ghostRegistry.begin(props.node.id, index);
   }
 
-  // one caret per pane: the index BEFORE which to insert (tabs.length = after the.
+  // one caret per pane: the index BEFORE which to insert.
   const dropIdx = ref<number | null>(null);
-  // the refused-drag affordance.
   const refusedIdx = ref<number | null>(null);
   const dropHover = ref(false);
-  // the docking prediction - the landing zone a dragged tab would drop into on THIS.
+  // the docking prediction - the landing zone a dragged tab would drop.
   const dropZone = ref<DragZone | null>(null);
   // v0.14.4 the GHOST preview.
   const predicted = ref<GhostPreview | null>(null);
-  // the ghost chip's registry entry.
   const dragGhost = computed(() => {
     if (!dropZone.value) return null;
     const d = tabDrag.current();
     return d ? dockableOf(d.component) : null;
   });
-  // the zone rectangle as body fractions (pure dockdnd math).
   const zoneStyle = computed(() => {
     const f = zoneRectFractions(dropZone.value ?? "center");
     return {
@@ -418,7 +393,7 @@
   const tabsEl = ref<HTMLElement | null>(null);
   const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
 
-  // -- active-tab reachability: the tab strip scrolls at narrow pane widths (css
+  // active-tab reachability: the tab strip scrolls at narrow pane widths (css
   // overflow-x on.dock-tabs), so a selection can land on a tab sitting outside the
   // visible band - the ACTIVE tab must never clip or strand off-viewport. Keep it
   // honest: whenever the active tab (or the tab list) changes, scroll the strip just
@@ -427,7 +402,6 @@
   function scrollActiveIntoView(): void {
     const bar = tabsEl.value;
     if (!bar) return;
-    // the scroll box is the strip (.dock-tabs), not the bar hosting it.
     const strip = bar.querySelector<HTMLElement>(".dock-tabs");
     if (!strip || strip.scrollWidth <= strip.clientWidth) return;
     const el = strip.querySelector<HTMLElement>(".dock-tab.active");
@@ -446,7 +420,6 @@
   // Scrolling the strip never changes its box, so this observer cannot re-enter itself.
   let stripObserver: ResizeObserver | null = null;
   onMounted(() => {
-    // a remount restores a persisted tree whose active tab may open out of view.
     scrollActiveIntoView();
     const strip = tabsEl.value?.querySelector<HTMLElement>(".dock-tabs");
     if (strip && typeof ResizeObserver !== "undefined") {
@@ -484,7 +457,6 @@
   }
 
   function refuse(e: DragEvent): void {
-    // no highlight, no caret: the browser's no-drop cursor plus the chip-level.
     e.preventDefault();
     if (e.dataTransfer) e.dataTransfer.dropEffect = "none";
     refusedIdx.value = caretIndexFor(e);
@@ -554,8 +526,7 @@
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;
-    // v0.14.4 the GHOST reads the commit's own formula over the registry's frozen
-    // geometry.
+    // v0.14.4 the GHOST reads the commit's own formula over the registry's frozen.
     const drag = tabDrag.current();
     const rect = bodyRect();
     ghostRegistry.record(props.node.id, rect);
@@ -580,9 +551,9 @@
     predicted.value = null;
   }
 
-  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around the dragged
-  // tab. The pure op refuses its illegal landings as no-ops (locked tabs land nowhere
-  // fresh, the law's split caps hold), so release never tears the layout.
+  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around the. The
+  // pure op refuses its illegal landings as no-ops (locked tabs land nowhere fresh, the
+  // law's split caps hold), so release never tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation(); // the leaf owns the drop; a grown root re-handles nothing
@@ -607,7 +578,7 @@
     // through instance-owned state.
     endGesture();
   }
-  // dragend/drop/Esc/blur cleanup is COMPOSABLE-owned (the guard in dockdnd.ts, one.
+  // dragend/drop/Esc/blur cleanup is COMPOSABLE-owned.
   // This pane only holds its LOCAL highlight state and clears it through the
   // gesture-end subscription, so an instance dying mid-gesture cannot orphan the
   // record.

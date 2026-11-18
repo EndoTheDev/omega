@@ -37,21 +37,21 @@ func chdirToWorkdir(t *testing.T) string {
 	return testWorkdir
 }
 
-// claimTestWorkdir registers an already-chdir'd directory as this test's workdir, so.
+// claimTestWorkdir registers an already-chdir'd directory as this test's workdir,.
 func claimTestWorkdir(t *testing.T, dir string) {
 	t.Helper()
 	testWorkdir = dir
 	t.Cleanup(func() { testWorkdir = "" })
 }
 
-// filesRouteMux mounts one files plugin (no store.
+// filesRouteMux mounts one files plugin.
 func filesRouteMux(t *testing.T) *http.ServeMux {
 	t.Helper()
 	mux, _, _, _ := filesRouteMuxWithStore(t)
 	return mux
 }
 
-// filesRouteMuxWithStore mounts one files plugin with an in-memory store offered (the.
+// filesRouteMuxWithStore mounts one files plugin with an in-memory store offered.
 func filesRouteMuxWithStore(t *testing.T) (*http.ServeMux, *Routes, agent.StoreProvider, string) {
 	t.Helper()
 	cwd := chdirToWorkdir(t)

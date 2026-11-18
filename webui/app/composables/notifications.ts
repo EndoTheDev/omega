@@ -35,7 +35,7 @@ export async function markNotificationRead(id: number): Promise<void> {
   if (!r.ok) throw new Error(`read: ${r.status}`);
 }
 
-// markAllNotificationsRead flags every record read (POST {"all".
+// markAllNotificationsRead flags every record read.
 export async function markAllNotificationsRead(): Promise<void> {
   const r = await fetch("/notifications/read", {
     method: "POST",
@@ -45,8 +45,7 @@ export async function markAllNotificationsRead(): Promise<void> {
   if (!r.ok) throw new Error(`read-all: ${r.status}`);
 }
 
-// clearAllNotifications deletes every record (DELETE /notifications) - the tab's
-// clear-all button.
+// clearAllNotifications deletes every record (DELETE /notifications).
 export async function clearAllNotifications(): Promise<number> {
   const r = await fetch("/notifications", { method: "DELETE" });
   if (!r.ok) throw new Error(`clear-all: ${r.status}`);
@@ -54,7 +53,7 @@ export async function clearAllNotifications(): Promise<number> {
   return typeof body.cleared === "number" ? body.cleared : 0;
 }
 
-// -- pure helpers (node-tested: test/notifications.test.ts) --
+// pure helpers (node-tested: test/notifications.test.ts)
 
 // notificationAge renders the age line.
 export function notificationAge(created_at: string, nowMs = Date.now()): string {
@@ -104,7 +103,7 @@ export const VERDICT_TOAST_MS = 15_000;
 //
 // Generic over `{ id }` so this composable keeps ZERO imports - the
 // verdict capsule's card shape lives in omega.ts, and the store hands its
-// own rows in.
+// own rows.
 //
 // the FIRST successful read SEEDS: a reload must not replay a toast for
 //   an approval that was already pending - the badge carries that fact,
@@ -130,7 +129,7 @@ export function newlyPendingVerdicts<T extends { id: string }>(
   return opts.seed ? [] : arrivals;
 }
 
-// -- the board-select seam ----------------------------
+// the board-select seam --------------------------
 
 // A task notification's click focuses the kanban tab. The stash covers the mount race:
 // the tab activation mounts the Board on the tick after the tree swap, so the component

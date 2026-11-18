@@ -21,7 +21,7 @@ const viewer = read("app/components/ViewerTab.vue");
 const omega = read("app/composables/omega.ts");
 const serverFiles = readRepo("harness/files/routes.go");
 
-// -- the pure branch logic ------------------------------------------------------
+// the pure branch logic ----------------------------------------------------
 
 describe("fileViewKind (t_42c8aced)", () => {
   it("mime decides pdf/image - sniffed bytes, never the extension", () => {
@@ -57,7 +57,7 @@ describe("bytesLabel", () => {
   });
 });
 
-// -- the viewer's five bodies ---------------------------------------------------
+// the viewer's five bodies -------------------------------------------------
 
 describe("ViewerTab's content-class branches (t_42c8aced)", () => {
   it("the skill body IS markdown - the chat grammar renders it", () => {
@@ -99,7 +99,7 @@ describe("ViewerTab's content-class branches (t_42c8aced)", () => {
   });
 });
 
-// -- the wire -------------------------------------------------------------------
+// the wire -----------------------------------------------------------------
 
 describe("the t_42c8aced wire", () => {
   it("filesRawUrl carries the download lane; the default omits it", () => {
@@ -140,7 +140,6 @@ describe("the t_42c8aced wire", () => {
     );
     assert.match(serverFiles, /Content-Disposition/, "the attachment lane");
     assert.match(serverFiles, /"download"/, "the download query decides the lane");
-    // one guard set covers every lane that passes the gate.
     const count = (serverFiles.match(/X-Content-Type-Options/g) ?? []).length;
     assert.ok(count === 1, `nosniff is set once, covering both lanes (${count})`);
   });

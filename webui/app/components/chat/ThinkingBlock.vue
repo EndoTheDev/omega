@@ -32,7 +32,6 @@
   import { nextTick, onMounted, ref, watch } from "vue";
   import { useElapsed } from "../../composables/useElapsed";
   import Icon from "../ui/Icon.vue";
-  // the thinking display knob (auto | expanded | collapsed).
   import { thinkingWantOpen, useThinkingDisplay } from "../../composables/thinkingDisplay";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import type { VariantBlock } from "../../composables/omega";
@@ -53,15 +52,13 @@
     (e: "select", index: number): void;
   }>();
 
-  // Elapsed counter: ticks every second while the stream is live and freezes at the
-  // final value when it ends.
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => props.streaming ?? false,
     () => props.elapsedMs ?? 0,
   );
 
-  // -- auto open/close The display knob decides what a block does on its own. A manual
+  // auto open/close The display knob decides what a block does on its own. A manual
   // summary click PINS the block - its open state is the user's, and mode flips
   // recompute around it, never over it.
   const el = ref<HTMLDetailsElement | null>(null);

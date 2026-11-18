@@ -79,7 +79,6 @@ func (rt *Routes) handleSkillsContent(w http.ResponseWriter, r *http.Request) {
 	}
 	description, content, err := rt.svc.SkillRead(name)
 	if err != nil {
-		// the provider's not-found is a loud 404 (the viewer tab shows it).
 		if strings.Contains(err.Error(), "not found") {
 			fileError(w, http.StatusNotFound, err.Error())
 			return

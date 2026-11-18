@@ -18,8 +18,7 @@ import (
 // the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// The verdict REST face's self-check: pin the answering wire contract directly against
-// the capsule's Routes.
+// The verdict REST face's self-check: pin the answering wire contract directly.
 
 // vo already exists in hub_test.go - the routes tests reuse it.
 func routesServer(t *testing.T) (*httptest.Server, *Hub) {
@@ -243,7 +242,7 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------------------- The
+// ------------------------------------------------------------------------ The
 // follow-up message field.
 
 // gateHubCard issues one gate-shaped card in the background.

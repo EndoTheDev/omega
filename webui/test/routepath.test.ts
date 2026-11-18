@@ -95,11 +95,11 @@ describe("settingsAddress", () => {
   });
 });
 
-// -- the landing's wiring (source pin) -------------------------------------- The
-// helpers above cannot prove the app CALLS them, and the node suite has no DOM. The
-// landing has exactly two doors (boot, popstate) and one guard (the chat URL derivation
-// pauses while the path is up) - pin that shape so a rewrite cannot silently drop the
-// route while the helper tests stay green.
+// the landing's wiring (source pin) -------------------------------------- The helpers
+// above cannot prove the app CALLS them, and the node suite has no DOM. The landing has
+// exactly two doors (boot, popstate) and one guard (the chat URL derivation pauses
+// while the path is up) - pin that shape so a rewrite cannot silently drop the route
+// while the helper tests stay green.
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const appSrc = readFileSync(join(root, "webui", "app", "app.vue"), "utf8");
@@ -147,11 +147,9 @@ describe("/settings landing wiring (app.vue)", () => {
       refocus.slice(refocus.indexOf("no chat focus in this gesture")) || "";
     assert.ok(fallback.length > 0, "the fallback branch is where the release lives");
     assert.match(fallback, /settingsRoute\.value = false/);
-    // live state, not a blanket clear.
     assert.match(fallback, /settingsRoute\.value && !settingsTabMounted\(\)/);
     // the release adopts the tab the dock is SHOWING, so the URL names what the user.
     assert.match(fallback, /dock\.activeChatTab\(\)/);
-    // the mark falls before the focus transition, so the focus watcher's composer.
     const release = fallback.slice(fallback.indexOf("settingsTabMounted()"));
     assert.ok(
       release.indexOf("settingsRoute.value = false") < release.indexOf("focusedKey.value = showing"),
@@ -177,7 +175,6 @@ describe("/settings landing wiring (app.vue)", () => {
   it("the chat openers clear the mark - before their focus-existing returns", () => {
     const open = appSrc.match(/function openChatTab\([\s\S]*?\n  \}\n/)?.[0] ?? "";
     assert.match(open, /settingsRoute\.value = false/);
-    // the focus-existing / focus-draft branches return early, so a late clear would.
     assert.ok(
       open.indexOf("settingsRoute.value = false") <
         open.indexOf("if (sessionId)"),
@@ -194,7 +191,6 @@ describe("/settings landing wiring (app.vue)", () => {
   });
 
   it("a released landing WRITES the path the pause held", () => {
-    // the pause suppresses every derivation, so a release whose derived path did not.
     const release =
       appSrc.match(/watch\(settingsRoute, \(up\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? "";
     assert.match(release, /if \(up\) return;/);
@@ -213,7 +209,6 @@ describe("/settings landing wiring (app.vue)", () => {
       appSrc.match(/function claimSettingsPath\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
     assert.ok(claim.length > 0, "claimSettingsPath is the one writer");
     assert.match(claim, /settingsRoute\.value = true/);
-    // the path is already the settings one on a landing.
     assert.match(claim, /if \(isSettingsPath\(window\.location\.pathname\)\) return;/);
     assert.match(
       claim,

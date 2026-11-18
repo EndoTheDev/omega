@@ -17,8 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// finishedThings is the consumer-side face of the finished-things store (part 3 seam
-// constitution).
+// finishedThings is the consumer-side face of the finished-things store.
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
@@ -29,10 +28,10 @@ type Delegate struct {
 	tasks       map[string]*delegateTask
 	taskCounter int64
 	logger      agent.LoggerProvider
-	// notifier is the finished-things consumers face, wired by the plugin at mount from.
+	// notifier is the finished-things consumers face, wired by the plugin at mount.
 	// Nil-safe: no capsule, no notification.
 	notifier finishedThings
-	// store is the session-persistence seam, captured from the mount Context (nil-safe.
+	// store is the session-persistence seam, captured from the mount Context.
 	store agent.StoreProvider
 	// storeDBPath is the caller's store file, pinned onto the child env as OMEGA_DB_PATH.
 	storeDBPath string
@@ -73,7 +72,7 @@ const (
 
 const stderrTailCap = 2000
 
-// Description constants for the delegate tools (the machine-facing identities, Q10.
+// Description constants for the delegate tools.
 const (
 	delegateTaskDesc   = "Spawn a subagent to work on a task in the background. The result re-enters as this call's tool result when the subagent finishes."
 	delegateStatusDesc = "Check the status of running and completed subagent tasks."
@@ -113,9 +112,9 @@ func (d *Delegate) Tools() map[string]core.Tool {
 		"required": []string{"prompt"},
 	}
 	return map[string]core.Tool{
-		// The machine-facing identities are the module.verb pairs (Q10, the v0.12 mount
-		// migration). A wakeless host (the CLI loop, a bare run) runs it loop-back instead:
-		// the blocking wait the one-shot shape always had.
+		// The machine-facing identities are the module.verb pairs (Q10, the v0.12 mount. A
+		// wakeless host (the CLI loop, a bare run) runs it loop-back instead: the blocking
+		// wait the one-shot shape always had.
 		"delegate.task": {
 			Description: delegateTaskDesc,
 			Yield:       true,
@@ -198,7 +197,7 @@ func workerStamp(taskID, omegaBin string) []string {
 	return env
 }
 
-// fenceShimDir returns the bin/shims dir sitting next to the omega binary, when that.
+// fenceShimDir returns the bin/shims dir sitting next to the omega binary, when.
 // Empty when it does not - an installed instance never fakes a fence.
 func fenceShimDir(omegaBin string) string {
 	if omegaBin == "" {
@@ -228,7 +227,6 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 		timeoutSec = int(t)
 	}
 
-	// Agent target, under the defaulting law.
 	if name := resolveAgent(agentName); name != agent.DefaultAgentName {
 		home := os.Getenv("OMEGA_HOME")
 		if _, err := agent.LoadProfile(home, name); err != nil {
@@ -253,8 +251,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	if d.store != nil {
 		if sid, err := agent.NewSessionID(); err == nil {
 			label := "delegate:" + taskID
-			// Fresh context is the ruling: the child's lineage rides delegate_parent, NEVER
-			// parent_id.
+			// Fresh context is the rule: the child's lineage rides delegate_parent, NEVER.
 			var createErr error
 			if ds, ok := d.store.(agent.DelegateSessionStore); ok {
 				createErr = ds.CreateDelegateSession(ctx, sid, agent.SessionIDFromContext(ctx), label)
@@ -276,7 +273,6 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
 	cmd.Env = append(os.Environ(), childEnv(agentName, model, d.storeDBPath)...)
 	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
-	// Process-group kill, same as the shell tool.
 	agent.SetupProcessGroupKill(cmd)
 
 	task := &delegateTask{id: taskID, prompt: prompt, session: session, cmd: cmd}
@@ -344,7 +340,7 @@ func stderrReport(stderr string) string {
 	return "\nstderr:\n" + s
 }
 
-// clipSummary bounds an injected result at summaryCap runes, cutting the middle with.
+// clipSummary bounds an injected result at summaryCap runes, cutting the middle.
 func clipSummary(s string) string {
 	runes := []rune(s)
 	if len(runes) <= summaryCap {
@@ -356,15 +352,8 @@ func clipSummary(s string) string {
 		string(runes[len(runes)-summaryTail:])
 }
 
-// runDelegateStatus renders the task listing. Payload shape (scope
-// addition A4, ): every row is
-//
-// task-N [running|done] (session <sid>) <prompt digest, 120 runes>
-//
-// and a done row carries the task's final answer as its own indented
-// line - the queryable home the injected-user seam used to be the only
-// door for. The FULL prompt never enters the payload; the digest
-// identifies, the child session holds the prompt.
+// runDelegateStatus renders the task listing. The FULL prompt never enters the payload;
+// the digest identifies, the child session holds the prompt.
 func (d *Delegate) runDelegateStatus(ctx context.Context, args map[string]any) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()

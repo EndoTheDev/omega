@@ -441,7 +441,7 @@ func (hangLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		turns++
 		opts.Events <- core.TurnStart{Type: "turn_start", Turn: turns}
 		if turns > 1 {
-			// The tool returned without a deadline hit (cannot happen with hangTool, but the.
+			// The tool returned without a deadline hit.
 			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "stop"}
 			return nil
 		}
@@ -526,7 +526,7 @@ func TestDetachedRunTimeoutUnbricksSession(t *testing.T) {
 	waitFor(t, "replacement run deregistered", func() bool { return !s.runs.active("t1") })
 }
 
-// stopHangTool is the hang tool the stop tests block in.
+// stopHangTool is the hang tool the stop tests block.
 func stopHangTool(started func()) core.Tool {
 	return core.Tool{
 		Description: "blocks until its context ends",
@@ -549,7 +549,6 @@ func (l scriptedStopLoop) Run(ctx context.Context, opts agent.LoopOptions) error
 	opts.Events <- core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "par"}}
 	opts.Events <- core.StreamEvent{Event: core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "hang"}}}
 	opts.Events <- core.StreamEvent{Event: core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"}}
-	// Mirror the real loop: the assistant persists before the tool runs, and both.
 	if sink := agent.RunTurnSink(ctx); sink != nil {
 		_ = sink.AppendTurnMessage(context.WithoutCancel(ctx), core.NewAssistant("par"))
 	}
@@ -602,7 +601,6 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	readFrames(t, sc, "response_chunk", 1)
 	waitFor(t, "run registered active", func() bool { return s.runs.active("t2") })
 
-	// The loop parks in the hang tool; the started signal proves it.
 	<-toolStarted
 
 	stopResp, err := http.Post(ts.URL+"/sessions/t2/stop", "application/json", nil)
@@ -640,7 +638,6 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 		t.Fatalf("persisted assistant = %q, want [par] first", msgs)
 	}
 
-	// The freed slot takes a new run - no stale 409.
 	s.runTimeout = 400 * time.Millisecond
 	resp2, cancel2, _ := postChatStream(t, ts, "t2")
 	if resp2.StatusCode != http.StatusOK {
@@ -660,7 +657,7 @@ func TestDetachedRunStopCancelsLiveRun(t *testing.T) {
 	}
 }
 
-// TestDetachedRunStopIdleNotFound: stop on an idle session is a clean 404, and.
+// TestDetachedRunStopIdleNotFound: stop on an idle session is a clean 404,.
 func TestDetachedRunStopIdleNotFound(t *testing.T) {
 	_, _, st5, ts := newStepServer(t)
 	createSession(t, ts, "t5")
@@ -720,7 +717,6 @@ func TestRunHubCutSlowSubscriber(t *testing.T) {
 	}
 	slow := h.subscribe(run)
 
-	// Overrun the slow subscriber's buffer.
 	for i := 0; i < subscriberBuffer+1; i++ {
 		h.broadcast(run, runFrame{event: "x", data: []byte("1")})
 	}

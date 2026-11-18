@@ -2,7 +2,6 @@
   <aside
     class="aside pane inspector-panel"
     :class="{ open: open }">
-    <!-- module-panels: the composition mount (see. -->
     <div
       v-if="panel"
       class="module-panels">
@@ -22,7 +21,6 @@
   import { computed } from "vue";
   import { modulePanels } from "../composables/module-panels.generated";
 
-  // module = the dock-tab component id (cron / skills / tools).
   const props = defineProps<{
     module: string;
     open?: boolean;

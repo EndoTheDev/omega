@@ -24,7 +24,7 @@ func (e UnknownServerError) Error() string {
 	return fmt.Sprintf("no mcp server named %q", e.Name)
 }
 
-// writableConfigFile resolves the mcp.yaml a CRUD write lands in.
+// writableConfigFile resolves the mcp.yaml a CRUD write lands.
 func writableConfigFile() (string, error) {
 	if os.Getenv("MCP_SERVERS") != "" {
 		return "", fmt.Errorf("config came from MCP_SERVERS - it is not a file; edit the env var")
@@ -52,7 +52,6 @@ func validateServerEntry(sc serverConfig) error {
 	if strings.HasPrefix(name, "-") || strings.ContainsAny(name, " \t\r\n/\\") {
 		return fmt.Errorf("name %q: a server name is one bare word (no spaces, slashes, leading dash)", name)
 	}
-	// Discovered tools surface as <server>.<tool>.
 	if strings.Contains(name, ".") {
 		return fmt.Errorf("name %q: a server name carries no dot - its tools already read <server>.<tool>", name)
 	}
@@ -134,8 +133,7 @@ func serverEntryNode(sc serverConfig) (*yaml.Node, error) {
 	return nil, fmt.Errorf("marshal server: no entry produced")
 }
 
-// serversDocument reads the mcp.yaml at path and returns its document node plus the
-// servers.
+// serversDocument reads the mcp.yaml at path and returns its document node plus.
 func serversDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

@@ -60,7 +60,6 @@ describe("the turn total on the restored transcript", () => {
     const answer = answerItem(items);
     assert.equal(answer.role, "assistant");
     assert.equal(answer.turnMs, 51_000, "prompt arrival -> answer landing");
-    // the segment's own measurement is not destroyed.
     assert.equal(answer.finalMs, 841);
     const think = items[1];
     assert.ok(think.kind === "thinking");

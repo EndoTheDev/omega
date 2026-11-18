@@ -69,8 +69,7 @@ func NewUserWithImages(content string, images []ImageContent) User {
 	return User{Content: content, Images: images, Timestamp: NowISO()}
 }
 
-// Timing carries server-measured generation durations so a reloaded session renders
-// real elapsed values.
+// Timing carries server-measured generation durations so a reloaded session renders.
 type Timing struct {
 	ThinkingMs int64 `json:"thinking_ms,omitempty"`
 	ResponseMs int64 `json:"response_ms,omitempty"`
@@ -95,7 +94,7 @@ func NewAssistant(content string) Assistant {
 	return Assistant{Content: content, Timestamp: NowISO()}
 }
 
-// ToolResult is the result of a tool execution, appended to the message history so.
+// ToolResult is the result of a tool execution, appended to the message history.
 type ToolResult struct {
 	Content    string  `json:"content"`
 	ToolCallID string  `json:"tool_call_id"`
@@ -281,7 +280,7 @@ func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text
 	return v
 }
 
-// MessageRole returns the role string for a message ("user", "assistant", "system".
+// MessageRole returns the role string for a message.
 // Shared by export, store commands, the CLI, and the transcript surfaces to avoid
 // duplicating the type switch.
 func MessageRole(m Message) string {
@@ -293,7 +292,6 @@ func MessageRole(m Message) string {
 	case Assistant:
 		return "assistant"
 	case ToolResult, YieldResult:
-		// The synthetic re-entry message renders as its call's tool result row on every.
 		return "tool"
 	case QuestionCard:
 		return "verdict_card"

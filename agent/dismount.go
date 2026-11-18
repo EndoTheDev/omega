@@ -19,9 +19,9 @@ type Dismounter interface {
 	Dismount(ctx *core.Context) error
 }
 
-// DismountAll dismounts the mounted plugin set in the REVERSE of MountAllAPI's recorded
-// topo order. Every module must prove its teardown - journaled (mounted through the
-// ExtensionAPI) or a Dismount implementation - or the proof fails loud naming it.
+// DismountAll dismounts the mounted plugin set in the REVERSE of MountAllAPI's. Every
+// module must prove its teardown - journaled (mounted through the ExtensionAPI) or a
+// Dismount implementation - or the proof fails loud naming it.
 func DismountAll(reg *Registry, ctx *core.Context) error {
 	for i := len(reg.mountOrder) - 1; i >= 0; i-- {
 		name := reg.mountOrder[i].Name()
@@ -54,8 +54,7 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 				"add %q to \"disabled\" in config.yaml", p.Name()),
 		}
 		if remount {
-			// The Context side died with the scoped proxy - the live Context never saw those
-			// writes.
+			// The Context side died with the scoped proxy - the live Context never saw those.
 			j.playBackRegistry(reg)
 			err = mpe
 			return

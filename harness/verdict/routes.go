@@ -76,8 +76,7 @@ func (rt *Routes) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveVerdictsList answers GET /verdicts (all sessions) and GET
-// /sessions/{id}/verdicts (one session).
+// serveVerdictsList answers GET /verdicts (all sessions) and GET.
 func (rt *Routes) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
 	cards := rt.hub.Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
@@ -124,7 +123,6 @@ func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, ses
 		}
 		return
 	}
-	// the hub resolves the real card id and fills the picked option's label.
 	out := map[string]any{
 		"card_id": answered.CardID,
 		"verdict": answered.Kind(),

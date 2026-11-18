@@ -26,7 +26,6 @@
           name="refresh"
           :size="13" />
       </button>
-      <!-- the tab becomes a skill editor. -->
       <button
         class="band-tool"
         title="add skill"
@@ -122,7 +121,6 @@
         :empty-text="query.trim() ? 'no matching skills' : 'no skills installed'"
         @toggle="onToggle"
         @open="openSkill">
-        <!-- the row's edit affordance. -->
         <template #side="{ row }">
           <button
             class="band-tool skill-edit-ctrl"
@@ -143,7 +141,6 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { refreshSkills, type SkillInfo } from "./refresh";
-  // the band search's filter (name / description), pure so the node suite pins it.
   import { filterSearchableRows } from "./search";
   // the skill editor chain (pure module - the cron edit.ts convention).
   import {
@@ -161,10 +158,8 @@
   const loaded = ref(false);
   const error = ref("");
   const busy = ref<string | null>(null);
-  // the refresh button's lock.
   const refreshing = ref(false);
   const toggleError = ref<string | null>(null);
-  // false when the host serves no toggle seam (501 on /disabled).
   const toggleable = ref(false);
 
   // rows are a computed (the AgentsPanel shape): RegistryList binds `rows` straight
@@ -183,7 +178,6 @@
   const query = ref("");
   const visibleRows = computed(() => filterSearchableRows(rows.value, query.value));
 
-  // -- the viewer open: a name click opens the skill in a main-pane viewer tab.
   const VIEWER_OPEN_EVENT = "omega:open-viewer";
 
   interface SkillRow {
@@ -202,14 +196,13 @@
     applyInventory(await refreshSkills());
   }
 
-  // server truth lands on the tab: the skills list always (the caller only gets a.
+  // server truth lands on the tab: the skills list always.
   function applyInventory(u: Awaited<ReturnType<typeof refreshSkills>>): void {
     skills.value = u.skills;
     if (u.fold !== null) fold.value = u.fold;
     if (u.toggleable !== null) toggleable.value = u.toggleable;
   }
 
-  // the refresh: re-run the fetch chain without a remount.
   async function refresh(): Promise<void> {
     if (refreshing.value) return;
     refreshing.value = true;
@@ -223,8 +216,6 @@
     }
   }
 
-  // -- the skill editor ------------------------------- One editor at a time (the
-  // CronJobs editor's shape).
   const editor = ref<{
     creating: boolean;
     loadingDraft: boolean;
@@ -269,7 +260,7 @@
     editor.value = null;
   }
 
-  // the commit: validate against the mirrored Go law first (the editor never ships a.
+  // the commit: validate against the mirrored Go law first.
   async function commitEditor(): Promise<void> {
     if (!editor.value || editor.value.busy) return;
     const msg = validateDraft(editor.value.draft);
@@ -314,7 +305,7 @@
     }
   }
 
-  // -- narrow adaptation, the module-UI recipe.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;

@@ -1,6 +1,6 @@
 package core
 
-// Tree derivation tests: the store is a linear append list, the tree derives from.
+// Tree derivation tests: the store is a linear append list, the tree derives.
 
 import (
 	"reflect"
@@ -28,7 +28,7 @@ func treeRows(t *testing.T, msgs ...Message) []StoredMessage {
 // withPtr returns a copy of the message carrying the parent pointer.
 func withPtr(m Message, parent string) Message { return WithParentID(m, parent) }
 
-// ids renders a path as the row-id order the consumers reason in.
+// ids renders a path as the row-id order the consumers reason.
 func pathIDs(view ActiveView) []string {
 	out := make([]string, len(view.Path))
 	for i, sm := range view.Path {
@@ -52,8 +52,7 @@ func TestDeriveLinearLegacySinglePath(t *testing.T) {
 	}
 }
 
-// TestDeriveRetryCreatesSiblingNoAppendSwap: the retry hop parents two assistant heads
-// to the same user.
+// TestDeriveRetryCreatesSiblingNoAppendSwap: the retry hop parents two assistant.
 func TestDeriveRetryCreatesSiblingNoAppendSwap(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
@@ -76,8 +75,7 @@ func TestDeriveRetryCreatesSiblingNoAppendSwap(t *testing.T) {
 	}
 }
 
-// TestDeriveVariantSelectPersistsAndWins: the selection entry flips the active variant
-// and survives.
+// TestDeriveVariantSelectPersistsAndWins: the selection entry flips the active.
 func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u"), ""),
@@ -99,7 +97,7 @@ func TestDeriveVariantSelectPersistsAndWins(t *testing.T) {
 	}
 }
 
-// TestDeriveToolChainStaysInGroup: a run's tool span (assistant with calls, results.
+// TestDeriveToolChainStaysInGroup: a run's tool span.
 func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	a1 := treeAssistant("")
 	a1.ToolCalls = []ToolCall{{ID: "c1", Name: "web"}}
@@ -123,8 +121,7 @@ func TestDeriveToolChainStaysInGroup(t *testing.T) {
 	}
 }
 
-// TestDeriveContinueFromSelected: the next message's chain continues the selected
-// branch's leaf.
+// TestDeriveContinueFromSelected: the next message's chain continues the selected.
 func TestDeriveContinueFromSelected(t *testing.T) {
 	rows := treeRows(t,
 		withPtr(treeUser("u1"), ""),
@@ -136,7 +133,6 @@ func TestDeriveContinueFromSelected(t *testing.T) {
 	if got := pathIDs(view); !reflect.DeepEqual(got, []string{"1", "2", "3", "4"}) {
 		t.Fatalf("fork path = %v, want [1 2 3 4]", got)
 	}
-	// the pre-existing continuation under u1..
 	rows = treeRows(t,
 		withPtr(treeUser("u1"), ""),
 		withPtr(treeAssistant("a1"), "1"),

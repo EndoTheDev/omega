@@ -1,7 +1,7 @@
 // omega webui: the canvas transcript's IDENTITY LAW. A prose row's cache address is its
 // STORE ROW ID, never its position. This file is the permanent pin for the audit probe:
 // 41+ rows, the head leaves, one append - every survivor keeps its object, the new tail
-// row never picks up an old one's.
+// row never picks up an old.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,7 +16,7 @@ import type { ChatPayloadWire, ChatRowWire } from "../app/composables/omega.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 const chatSource = readFileSync(join(here, "..", "app", "composables", "chat.ts"), "utf8");
 
-// -- row builders: the panel's own v1 vocabulary (ONE block per row) --
+// row builders: the panel's own v1 vocabulary (ONE block per row)
 
 function userRow(id: string | undefined, content: string): ChatRowWire {
   return {
@@ -82,7 +82,7 @@ const payload = (rows: ChatRowWire[], running = false): ChatPayloadWire => ({
   rows,
 });
 
-// -- the acceptance probe: a 41+ row window where the head leaves --
+// the acceptance probe: a 41+ row window where the head leaves
 
 test("41 rows, one append past the window: every surviving row keeps its object", () => {
   const t = createCanvasTranscript();
@@ -139,7 +139,7 @@ test("41 rows of a mixed transcript: thinking and tool rows survive the slide to
   assert.ok(!first.includes(second[39]!), "the appended tail row is new");
 });
 
-// -- the id-less case: a live row before the store names it --
+// the id-less case: a live row before the store names it
 
 test("an id-less live tail keeps its slot across a head slide", () => {
   const t = createCanvasTranscript();
@@ -234,7 +234,7 @@ test("a vanished live row leaves no object for a later row of that shape", () =>
   assert.equal((later[1] as { id?: string }).id, "77");
 });
 
-// -- the tool rows ride the same address law --
+// the tool rows ride the same address law
 
 // a call row with neither a store id nor a call id.
 function anonToolCallRow(): ChatRowWire {
@@ -265,7 +265,7 @@ test("a vanished id-less tool call leaves no object for a later call", () => {
   assert.notEqual(later[1], before, "the gone call's object is not inherited");
 });
 
-// -- source pins: the law is in the code, and the old key is gone --
+// source pins: the law is in the code, and the old key is gone
 
 test("chat.ts: prose rows are addressed by store id; the positional sig is gone", () => {
   assert.doesNotMatch(

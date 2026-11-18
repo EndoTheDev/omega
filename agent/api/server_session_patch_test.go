@@ -31,8 +31,7 @@ func TestSessionContextPatch(t *testing.T) {
 		t.Fatalf("patch: status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
 
-	// GET /sessions/{id} carries the pinned fields (the list payload rode the store
-	// capsule out with wave 2.
+	// GET /sessions/{id} carries the pinned fields.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/cx1", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

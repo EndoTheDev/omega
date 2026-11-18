@@ -51,7 +51,7 @@ func (p *verdictToolProvider) run(ctx context.Context, args map[string]any) (str
 
 // runRequest executes the request action: origin gate, card shape, and the blocked Ask.
 func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]any) (string, error) {
-	// Issuer gate (design Q7a): cron fires and delegate subagents never hard-pause for a.
+	// Issuer gate (design Q7a): cron fires and delegate subagents never hard-pause.
 	switch core.RunOriginFromContext(ctx) {
 	case originScheduled, originSubagent:
 		return "", fmt.Errorf("verdict is not available in background turns (origin %q) - decide without the user or surface the question in the transcript",
@@ -96,7 +96,7 @@ func (p *verdictToolProvider) runRequest(ctx context.Context, args map[string]an
 	return resultMap(verdict), nil
 }
 
-// argOptions pulls a JSON array of {label, description?} objects (or plain strings.
+// argOptions pulls a JSON array of {label, description?} objects.
 func argOptions(args map[string]any, key string) []core.QuestionOption {
 	raw, ok := args[key].([]any)
 	if !ok {

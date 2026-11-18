@@ -1,4 +1,4 @@
-// The logging half's tests, riding the capsule they folded into.
+// The logging half's tests, riding the capsule they folded.
 package observability
 
 import (
@@ -230,7 +230,7 @@ func TestPluginMountDisabled(t *testing.T) {
 	}
 }
 
-// Path reports the file the logger writes to.
+// Path reports the file the logger writes.
 func TestFileLoggerPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.log")
 	l, err := NewFileLogger(path)

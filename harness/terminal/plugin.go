@@ -43,7 +43,7 @@ import (
 // is pre-tier API vocabulary, not the module identity (see
 // RegisterBuiltinTool).
 //
-// Mounts through the ExtensionAPI exclusively; the trust-model ruling
+// Mounts through the ExtensionAPI exclusively; the trust-model rule
 // (the package comment) is part of the design - the route surface is the
 // whole feature and it is unconditionally available like the files routes.
 //
@@ -84,8 +84,7 @@ func (p *Plugin) SetDefaultWorkspace(ws string) {
 	p.defaultWorkspace.Store(ws)
 }
 
-// NewPluginWithStore is the test constructor (the store's spawn seam is the injection
-// point.
+// NewPluginWithStore is the test constructor.
 func NewPluginWithStore(store *Store) *Plugin {
 	return &Plugin{store: store}
 }
@@ -233,7 +232,6 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 		httpError(w, fmt.Errorf("no such terminal"), http.StatusNotFound)
 		return
 	}
-	// the adopt: a stream opening the claimed session clears the claim mark inside.
 	sub, replay, alreadyExited := s.subscribe()
 	defer s.unsubscribe(sub)
 
@@ -245,7 +243,6 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 		writeSSE(w, outputFrame(replay))
 		flusher.Flush()
 	}
-	// a reattach to an already-dead shell.
 	if alreadyExited {
 		s.mu.Lock()
 		code := s.exitCode
@@ -257,7 +254,6 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(20 * time.Second)
 	defer tick.Stop()
 
-	// the pane fell behind (publish dropped it).
 	if sub.missed {
 		writeSSE(w, frameJSON(wireFrame{T: "m"}))
 		flusher.Flush()
@@ -273,7 +269,7 @@ func (p *Plugin) handleStream(w http.ResponseWriter, r *http.Request) {
 				flusher.Flush()
 				return
 			}
-			// the SSE comment ping keeps middleboxes from dropping an idle stream (a quiet.
+			// the SSE comment ping keeps middleboxes from dropping an idle stream.
 			fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
 		case ev, ok := <-sub.ch:
@@ -358,7 +354,7 @@ func (p *Plugin) handleKill(w http.ResponseWriter, r *http.Request) {
 	_ = gone
 }
 
-// - small shared writers -----------------------------------------------
+// small shared writers ---------------------------------------------
 
 func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -385,7 +381,7 @@ func httpError(w http.ResponseWriter, err error, status int) {
 	writeJSON(w, status, map[string]any{"error": err.Error()})
 }
 
-// - the SSE wire frames -----------------------------------------------
+// the SSE wire frames ---------------------------------------------
 
 // wireFrame is the SSE "data:" payload.
 type wireFrame struct {
@@ -407,8 +403,6 @@ func outputFrame(d []byte) string {
 func frameJSON(f wireFrame) string {
 	b, err := json.Marshal(f)
 	if err != nil {
-		// unreachable shape (bytes -> base64 -> string); a dropped frame beats a broken
-		// stream.
 		return frameJSON(wireFrame{T: "m"})
 	}
 	return string(b)

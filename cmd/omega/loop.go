@@ -1,9 +1,8 @@
 package main
 
-// The CLI agent loop: bare `omega` is a plain readline-in, ANSI-out conversation
-// against the mounted agent. No alt screen, no panes, no mouse, no layout: the loop
-// never owns the screen, and anything that needs one belongs in the webui (the
-// regression guard is the law).
+// The CLI agent loop: bare `omega` is a plain readline-in, ANSI-out conversation. No
+// alt screen, no panes, no mouse, no layout: the loop never owns the screen, and
+// anything that needs one belongs in the webui (the regression guard is the law).
 
 import (
 	"bufio"
@@ -99,8 +98,6 @@ func cmdLoop(configPath string, appendPrompts []string, trust trustFlags) error 
 			return fmt.Errorf("agent layer %s: %w", name, err)
 		}
 	}
-	// The loop's fixed tech-support persona rides the prompt-append seam (see
-	// loopPersona).
 	appendPrompts = append(appendPrompts, loopPersona())
 
 	ag, store, logger, pctx, _, _, _, _, _, _, err := newAgent(cfg, configPath, appendPrompts, trust)
@@ -352,7 +349,7 @@ func (lo *cliLoop) commandSession(args string) error {
 	return nil
 }
 
-// commandWorkspace shows or changes the loop's working directory (the per-run CWD the.
+// commandWorkspace shows or changes the loop's working directory.
 func (lo *cliLoop) commandWorkspace(args string) error {
 	if args == "" {
 		lo.printf("workspace: %s\n", lo.cwd)
@@ -372,7 +369,7 @@ func (lo *cliLoop) commandWorkspace(args string) error {
 	return nil
 }
 
-// commandExtension runs a module-owned command (provider, verdict, cron, logs,..) and.
+// commandExtension runs a module-owned command (provider, verdict, cron, logs,.).
 func (lo *cliLoop) commandExtension(name, args string) error {
 	known := false
 	for _, c := range lo.pctx.Commands {
@@ -422,8 +419,6 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	runCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	runCtx = agent.WithSessionID(runCtx, lo.sessionID)
-	// interactive origin: the verdict tool may pause here, and the busy reader answers it
-	// while the run blocks.
 	runCtx = core.WithRunOrigin(runCtx, "interactive")
 	runCtx = agent.WithTurnSink(runCtx, agent.NewStoreTurnSink(lo.store, lo.sessionID, ""))
 	runCtx = agent.WithPersistInput(runCtx, []core.Message{userMsg})
@@ -511,8 +506,8 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
-// verdictSink is the CLI loop's own need face of the verdicts capsule (part 3, the seam
-// constitution). The key is data; the owner capsule never knows a loop exists.
+// verdictSink is the CLI loop's own need face of the verdicts capsule (part 3, the. The
+// key is data; the owner capsule never knows a loop exists.
 type verdictSink interface {
 	Pending(sessionID string) []core.QuestionPrompt
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
@@ -522,7 +517,7 @@ type verdictSink interface {
 // named return is load-bearing for the purity law (scripts/nm-purity.sh): the scrubber
 // deletes the module wire as one line and never deletes a host function, so the loop
 // must still compile and answer false with the module gone - the plain `return
-// verdict.AnswerInline(..)` shape strands a missing return.
+// verdict.AnswerInline(.)` shape strands a missing return.
 func (lo *cliLoop) answerPendingVerdict(line string) (handled bool) {
 	if lo.pctx == nil {
 		return false

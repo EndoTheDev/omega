@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The topic vocabulary: one closed set, six names (five live on every connection.
+// The topic vocabulary: one closed set, six names.
 const (
 	// TopicChat carries run event deltas.
 	TopicChat = "chat"
@@ -139,7 +139,7 @@ func (h *SocketHub) Attach() *SocketSub {
 	return sub
 }
 
-// Close detaches the connection and closes its frame channel (ending the transport's.
+// Close detaches the connection and closes its frame channel.
 // Idempotent: the read side and the write side both close on their way out.
 func (s *SocketSub) Close() {
 	s.hub.mu.Lock()
@@ -259,7 +259,7 @@ func (h *SocketHub) drop(sub *SocketSub) {
 	close(sub.ch)
 }
 
-// -- the broadcast hooks (the publish side of the serve seam) -----------
+// the broadcast hooks (the publish side of the serve seam) ---------
 
 // emitRunFrame is the ONE run broadcast seam.
 func (s *Server) emitRunFrame(run *activeRun, f runFrame) {
@@ -300,7 +300,7 @@ func (s *Server) chipTap(sessionID string) core.RunOutputTap {
 	}
 }
 
-// -- the verdict issuance push ------------------------
+// the verdict issuance push ----------------------
 
 // verdictIssuedEvent is the chat-topic event name a card's ISSUANCE rides.
 const verdictIssuedEvent = "verdict_issued"
@@ -319,9 +319,9 @@ type verdictIssuedFrame struct {
 	Title     string `json:"title"`
 }
 
-// subscribeVerdictCards wires the issuance push at serve boot and after every live
-// module rewire. Nil safe - a host without the verdict capsule (disabled, or never
-// mounted) subscribes nothing and boots clean.
+// subscribeVerdictCards wires the issuance push at serve boot and after every live. Nil
+// safe - a host without the verdict capsule (disabled, or never mounted) subscribes
+// nothing and boots clean.
 func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	if ctx == nil {
 		return
@@ -332,7 +332,6 @@ func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	}
 	src, ok := svc.(verdictCardSource)
 	if !ok {
-		// wrong-shaped offer: this is an optional consumer, so the push degrades (no hints).
 		return
 	}
 	if !s.claimVerdictSource(src) {

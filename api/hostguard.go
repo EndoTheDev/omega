@@ -15,7 +15,7 @@ import (
 // operator), so the browser same-site rules are the only firewall it
 // has - and a cross-site POST of Content-Type text/plain triggers no
 // CORS preflight, which made POST /files/write, POST /files/mkdir, the
-// module writes (PATCH /tasks/{id}, DELETE /boards/{name},..) and
+// module writes (PATCH /tasks/{id}, DELETE /boards/{name},.) and
 // the byte-returning reads (GET /files/read, GET /files/raw, the
 // transcript GETs) reachable from any web page the operator visits
 // while the server runs. DNS rebinding moves the same attack onto the
@@ -80,7 +80,7 @@ func (g *hostGuard) publicSet() map[string]bool {
 	return pub
 }
 
-// checkBindCoverage refuses a bind whose identities the guard cannot enumerate while.
+// checkBindCoverage refuses a bind whose identities the guard cannot enumerate.
 func checkBindCoverage(addr string, publicHosts map[string]bool) error {
 	if !isWildcardBind(addr) || len(publicHosts) > 0 {
 		return nil
@@ -92,7 +92,6 @@ func checkBindCoverage(addr string, publicHosts map[string]bool) error {
 func (g *hostGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	bind, _ := g.addr.Load().(string)
 	if bind == "" {
-		// no bind planted: direct Handler consumers and mux-level tests only.
 		g.next.ServeHTTP(w, r)
 		return
 	}
@@ -101,10 +100,8 @@ func (g *hostGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	loopback := !wildcard && isLoopbackName(bindHost(bind))
 	allowed := allowedHosts(bind)
 	if wildcard {
-		// nothing to derive from a wildcard bind: the declaration is the whole identity set.
 		allowed = pub
 	}
-	// Every request names a trusted identity in Host - reads included.
 	if !hostAllowed(r.Host, allowed, pub) {
 		http.Error(w, "forbidden: request from a foreign host (Host guard)",
 			http.StatusForbidden)
@@ -202,6 +199,5 @@ func originAllowed(r *http.Request, allowed map[string]bool, public map[string]b
 		}
 		return allowed[r.Host] || public[r.Host]
 	}
-	// a known bind: the derived set is the second chance (localhost origin hitting the.
 	return allowed[u.Host] || public[u.Host]
 }

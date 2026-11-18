@@ -38,8 +38,7 @@ test("withAuxDefault leaves non-aux knobs untouched", () => {
 });
 
 test("the default entry survives an empty catalog - the one live choice", () => {
-  // a vision-filtered list that matched nothing (or a listing that never landed) still
-  // offers "default".
+  // a vision-filtered list that matched nothing (or a listing that never landed).
   const empty = filterModelEntries([], "vision");
   const options = withAuxDefault(
     empty.map((e) => ({ value: e.name, label: e.name })),
@@ -75,7 +74,6 @@ test("pickerNeedsFreeText: the listbox renders only with named models (or mid-fl
   assert.equal(pickerNeedsFreeText(2, false, null), false);
   assert.equal(pickerNeedsFreeText(0, false, null), true);
   assert.equal(pickerNeedsFreeText(3, false, "boom"), true);
-  // in flight -> the listbox shows the loading hint rather than flashing the fallback.
   assert.equal(pickerNeedsFreeText(0, true, null), false);
 });
 

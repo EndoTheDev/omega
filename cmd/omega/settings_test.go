@@ -18,8 +18,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// settingsKnobKeys lists every knob the schema exposes, as the single inventory
-// assertion.
+// settingsKnobKeys lists every knob the schema exposes, as the single inventory.
 func settingsKnobKeys(t *testing.T) map[string]bool {
 	t.Helper()
 	return map[string]bool{
@@ -132,7 +131,7 @@ func TestModelKnobsTyped(t *testing.T) {
 	}
 }
 
-// TestModelKnobFilterValidValues fails a filter value the webui has no renderer for.
+// TestModelKnobFilterValidValues fails a filter value the webui has no renderer.
 func TestModelKnobFilterValidValues(t *testing.T) {
 	valid := map[string]bool{"": true, "vision": true, "decision": true}
 	cfg := DefaultConfig()
@@ -533,7 +532,6 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	if err := add(&cfg, inst("primary", "ollama")); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
 		t.Fatalf("expected the missing-primary refusal, got %v", err)
 	}
-	// ..
 	if err := add(&cfg); err == nil || !strings.Contains(err.Error(), PrimaryProviderInstance) {
 		t.Fatalf("expected the empty-list refusal, got %v", err)
 	}
@@ -544,7 +542,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 		t.Fatalf("expected the model_name refusal, got %v", err)
 	}
 
-	// save-side validation: a bad type lands in the row and cfg.Validate (run by.
+	// save-side validation: a bad type lands in the row and cfg.Validate.
 	cfg = newCfg()
 	if err := add(&cfg, inst("default", "azure")); err != nil {
 		t.Fatalf("apply: %v", err)
@@ -575,8 +573,7 @@ func TestApplyProviderInstancesKnob(t *testing.T) {
 	}
 }
 
-// TestSchemaProviderInstancesKnob: the merge folds every older provider shape into ONE
-// list.
+// TestSchemaProviderInstancesKnob: the merge folds every older provider shape.
 func TestSchemaProviderInstancesKnob(t *testing.T) {
 	path := writeTestConfig(t, testConfigYAML+`
   host: http://localhost:11434
@@ -695,7 +692,6 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 		door(err, t)
 	}
 
-	// the hot lane keeps working.
 	cfg = stored()
 	if err := apply(t, cfg,
 		primary,                                 // keep the served provider
@@ -711,7 +707,6 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	if dkey(cfg, "alpha") != "sk-alpha" {
 		t.Fatalf("masked round trip wiped the secret: %q", dkey(cfg, "alpha"))
 	}
-	// beta-r is beta's rename (beta left the list).
 	if dkey(cfg, "beta-r") != "sk-beta" {
 		t.Fatalf("rename did not inherit the removed row's key: %q", dkey(cfg, "beta-r"))
 	}
@@ -730,7 +725,7 @@ func TestApplyProviderInstancesGate(t *testing.T) {
 	}
 }
 
-// TestAuxModelDefaultOptionSet pins WHICH knobs offer the auxiliary "default (inherit.
+// TestAuxModelDefaultOptionSet pins WHICH knobs offer the auxiliary "default.
 // Exact set equality: a new model knob has to be a deliberate decision, never a silent
 // inheritance.
 func TestAuxModelDefaultOptionSet(t *testing.T) {
@@ -815,7 +810,7 @@ func TestAuxModelDefaultPersistsVerbatim(t *testing.T) {
 	}
 }
 
-// -- settings tier 2a: machine-readable Default -----
+// settings tier 2a: machine-readable Default ---
 
 // knobWire renders the schema as the /settings GET really carries it and returns knob.
 func knobWire(t *testing.T, payload *core.SettingsSchema) map[string]map[string]any {
@@ -942,7 +937,7 @@ func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	if !stub.pushed || stub.got != 45*time.Second {
 		t.Fatalf("re-push = %s (called %v), want 45s", stub.got, stub.pushed)
 	}
-	// An unmounted cron capsule (or a disabled module) is a no-op: no panic, and the.
+	// An unmounted cron capsule (or a disabled module) is a no-op: no panic,.
 	hotApply(cfg, cfg.Server.DefaultWorkspace, &agent.Context{}, nil, nil, nil, nil)
 }
 

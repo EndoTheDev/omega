@@ -44,7 +44,6 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
     assert.equal(before.length, 2);
     assert.equal((before[1] as { content: string }).content, "first answer");
 
-    // the retry's mid-run payload.
     const mid = t.apply({
       session: "s1",
       running: true,
@@ -67,7 +66,6 @@ describe("ruling 1: a retry delta replaces the response slot in place", () => {
       session: "s1",
       rows: [...userRow("1", "say hi"), ...assistantRow("3", "second answer")],
     });
-    // the switcher flips to variant 1.
     const flipped = t.apply({
       session: "s1",
       rows: [...userRow("1", "say hi"), ...assistantRow("2", "first answer")],
@@ -129,7 +127,6 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     const retryAt = chatMessage.indexOf('class="msg-retry"', actionsAt);
     assert.ok(retryAt > copyAt, "the chip renders after copy, in the row");
     assert.match(chatMessage, /v-if="retryable && itemId"/, "the chip gates on the owner's signal");
-    // the row hides while streaming.
     assert.match(
       chatMessage,
       /v-if="!streaming && role === 'assistant'"\s+class="msg-actions">/,
@@ -145,12 +142,10 @@ describe("ruling 2: the action row sits at the bottom of the message", () => {
     const actionsAt = chatMessage.indexOf('class="msg-actions"');
     const elapsedAt = chatMessage.indexOf('class="msg-elapsed"', actionsAt);
     assert.ok(elapsedAt > actionsAt, "the duration spans inside the action row");
-    // user bubbles carry no fork/copy/duration.
     assert.match(chatMessage, /role === 'assistant' && streaming && elapsedLabel/);
   });
 
   it("the row is the bubble's last child - under the content, not a top edge", () => {
-    // source order: the row follows the streaming cursor span and closes the bubble.
     const bubble = chatMessage.slice(
       chatMessage.indexOf('class="bubble"'),
       chatMessage.indexOf("</div>", chatMessage.indexOf('class="msg-actions"')),

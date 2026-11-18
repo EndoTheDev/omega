@@ -26,7 +26,6 @@
         aria-label="recompute insights"
         :disabled="loading"
         @click="load()">
-        <!-- (audit M7): the recompute glyph rides the Icon vocabulary. -->
         <Icon
           name="refresh"
           :size="13" />
@@ -53,7 +52,6 @@
     <div
       v-else-if="data"
       class="insights-body">
-      <!-- overview: the /insights report's Overview block. -->
       <section class="insights-box">
         <h3>overview</h3>
         <dl class="insights-overview">
@@ -67,8 +65,7 @@
       </section>
 
       <!--
-        activity by day: one registry row per weekday, the honest CSS bar rides the
-        row's #side slot.
+        activity by day: one registry row per weekday, the honest CSS bar rides the.
       -->
       <h3 class="insights-group">activity by day</h3>
       <RegistryList
@@ -85,7 +82,6 @@
         </template>
       </RegistryList>
 
-      <!-- top tools (hidden when zero, like the /insights report). -->
       <template v-if="data.tools.length">
         <h3 class="insights-group">top tools</h3>
         <RegistryList
@@ -103,7 +99,6 @@
         </RegistryList>
       </template>
 
-      <!-- notable sessions (hidden when zero, like the /insights report). -->
       <template v-if="notables.length">
         <h3 class="insights-group">notable sessions</h3>
         <RegistryList
@@ -136,7 +131,6 @@
   // initial window = 7 days (see./defaultWindow.ts).
   const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
 
-  // the fixed window literals (the /insights [days] arg): the band select's options.
   const WINDOW_OPTIONS = [
     { value: 7, label: "7 days" },
     { value: 30, label: "30 days" },
@@ -152,10 +146,10 @@
     data.value ? [...data.value.daily].sort((a, b) => a.count - b.count) : [],
   );
 
-  // -- the registry-browser row models (v0.14.3, the skills/tools pattern on the
-  // /insights report's blocks): every block renders through the shared RegistryList -
-  // read-only rows (no fold), the #side slot carries the honest CSS bar + count the
-  // plain name line can't.
+  // the registry-browser row models (v0.14.3, the skills/tools pattern on the /insights
+  // report's blocks): every block renders through the shared RegistryList - read-only
+  // rows (no fold), the #side slot carries the honest CSS bar + count the plain name
+  // line can't.
   const dailyRows = computed<RegistryRow[]>(() =>
     daily.value.map((d) => ({
       name: d.day,
@@ -181,7 +175,6 @@
     })),
   );
 
-  // notable sessions: a triple of [label, stat]; rows with value 0 are omitted.
   const notables = computed(() => {
     if (!data.value) return [];
     return [
@@ -226,8 +219,6 @@
 </script>
 
 <style scoped>
-  /* the root stops being the scrollport. */
-  /* the root stays padding-free. */
   .insights {
     flex: 1;
     min-height: 0;
@@ -266,7 +257,6 @@
     color: var(--text-dim);
   }
 
-  /* the registry-browser body. */
   .insights-group {
     margin: 2px 0 0;
     font-size: 11px;
@@ -310,7 +300,6 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* the row's honest bar + count, riding the row's #side slot. */
   .insights-bar {
     flex: none;
     height: 8px;

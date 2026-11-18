@@ -11,7 +11,7 @@ import (
 // The module-toggle surface (v0.12 E2). A host without the seam (nil modules) answers
 // 501 so the pane can hide the list.
 
-// shellModules never appear in the list (the tier law.
+// shellModules never appear in the list.
 var shellModules = map[string]bool{
 	"http_channel": true,
 }

@@ -212,7 +212,7 @@ func HandleNewCommand(args string) (core.CommandResult, error) {
 	return res, nil
 }
 
-// HandleResumeCommand resolves the argument to a session ID using the store, then.
+// HandleResumeCommand resolves the argument to a session ID using the store,.
 func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -303,7 +303,7 @@ func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionI
 	}, nil
 }
 
-// HandleExportCommand reads messages from the store and writes them as JSONL to the.
+// HandleExportCommand reads messages from the store and writes them as JSONL.
 func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {
 		return core.CommandResult{}, fmt.Errorf("no active session to export")

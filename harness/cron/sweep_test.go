@@ -180,7 +180,7 @@ func TestSweepKeepsDeclaredDropsStale(t *testing.T) {
 	}
 }
 
-// The live journey shape: an agent home with a declared wake is removed (the recipe's.
+// The live journey shape: an agent home with a declared wake is removed.
 func TestSweepOnReloadAfterAgentHomeRemoved(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, stateFileName), []byte("jobs: []\n"), 0o644); err != nil {

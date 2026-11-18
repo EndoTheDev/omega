@@ -104,8 +104,7 @@ func settingsScopes(home string, cfg *Config, runtimeMaxTurns func() int) []core
 			Groups: scopeGroups(cfg, lay, inheritedTurns),
 		}
 		if err != nil {
-			// The dir IS a scope (R8: no special-casing), so it rides with inherited values and
-			// no override flags.
+			// The dir IS a scope (R8: no special-casing), so it rides with inherited values.
 			scope.Error = err.Error()
 		}
 		scopes = append(scopes, scope)
@@ -140,7 +139,6 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 		{Key: scopeGroupKeys[1], Overridden: lay.SystemPrompt.Set, Knobs: []core.SettingsScopeKnob{
 			value("system_prompt", lay.SystemPrompt, cfg.SystemPrompt),
 		}},
-		// main carries no description knob (the home config has no such field), so the.
 		{Key: scopeGroupKeys[2], Overridden: lay.Description.Set, Knobs: []core.SettingsScopeKnob{
 			value("description", lay.Description, ""),
 		}},
@@ -187,7 +185,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					// shapes (and the modified-dot comparison) cannot drift.
 					Default: providerInstancesKnob(&def), Live: true,
 					Help: "every provider is a named instance: the name is the instance id the model pickers and slots speak (instance:model), so two accounts of one type are two rows; the row named \"default\" is the provider the agent serves. Rows can be added, renamed, retyped and removed here; a row's base url and api key are config.yaml-only, and changes apply live"},
-				// model fields are typed pickers.
 				{Key: "provider.model_name", Label: "model name", Type: "model",
 					Value: cfg.Provider.ModelName,
 					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
@@ -199,7 +196,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value:   cfg.TitleModel,
 					Default: def.TitleModel, Live: true,
 					Help: "cheap model for session titles; empty or \"default\" = the model this chat runs (resolved per call); applies live"},
-				// the four per-subsystem model slots.
 				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true, DefaultOption: true,
 					Value:   cfg.CompactionModel,
 					Default: def.CompactionModel, Live: true,
@@ -354,7 +350,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:    "applies on restart"},
 			},
 		},
-		// The approval gate group: mode off|manual|smart and the operator policy text.
 		{
 			Key:   "approvals",
 			Label: "approvals",
@@ -561,7 +556,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setStringField(cfg, key, raw)
 		case "provider.compaction_model", "provider.summarizer_model",
 			"provider.skills_model", "provider.approvals_model":
-			// the per-subsystem model slots live in the provider group (setStringField routes.
+			// the per-subsystem model slots live in the provider group.
 			err = setStringField(cfg, key, raw)
 		default:
 			err = fmt.Errorf("unknown setting: %s", key)
@@ -616,7 +611,7 @@ func setStringField(cfg *Config, key string, raw any) error {
 	return nil
 }
 
-// trim normalizes plain string inputs: surrounding whitespace is never significant in.
+// trim normalizes plain string inputs: surrounding whitespace is never significant.
 func trim(s string) string { return strings.TrimSpace(s) }
 
 // applyProviderInstances applies the instances knob. The PRIMARY is the row named
@@ -634,7 +629,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 	instancesDoor := func(name, field string) error {
 		return fmt.Errorf("%s: %s.%s: config.yaml is the only door for instance %s - not settable over the API", key, name, field, field)
 	}
-	// the submitted names, pre-computed in full (the rename source below must know what.
+	// the submitted names, pre-computed in full.
 	sent := make(map[string]bool, len(list))
 	for _, item := range list {
 		if obj, ok := item.(map[string]any); ok {
@@ -714,8 +709,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				return instancesDoor(name, "api_key")
 			}
 		default:
-			// a plain key: an identical echo of the stored secret is a no-op, anything else is a
-			// credential write.
+			// a plain key: an identical echo of the stored secret is a no-op, anything else is.
 			if !(has && existing.APIKey == inst.APIKey) {
 				return instancesDoor(name, "api_key")
 			}
@@ -850,8 +844,7 @@ func setBool(cfg *Config, key string, raw any) error {
 	return nil
 }
 
-// writeConfigFile persists the config as YAML, atomically (temp file + rename) and
-// mode-preserving.
+// writeConfigFile persists the config as YAML, atomically (temp file + rename).
 func writeConfigFile(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -878,7 +871,7 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	if pctx == nil {
 		return
 	}
-	// default_workspace rides the files capsule's knob hook (the shell-ring shrink wave 1.
+	// default_workspace rides the files capsule's knob hook.
 	// The hook is a bare func threaded from the mount (the continuous capsule's setAgents
 	// shape): nil means no files capsule is mounted and the knob stays where it was.
 	if cfg.Server.DefaultWorkspace != prevWorkspace {
@@ -889,7 +882,6 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 		if setChannelWorkspace != nil {
 			setChannelWorkspace(cfg.Server.DefaultWorkspace)
 		}
-		// The terminal capsule rides the same knob.
 		if setTerminalWorkspace != nil {
 			setTerminalWorkspace(cfg.Server.DefaultWorkspace)
 		}
@@ -898,13 +890,12 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	if c, ok := svc.(*compactor.Compactor); ok {
 		c.SetConfig(compactionSection(cfg))
 	}
-	// Approvals goes live: the smart approval gate re-reads its config per decision, so.
+	// Approvals goes live: the smart approval gate re-reads its config per decision,.
 	// Not mounted (mode off at boot) = a nil resolve, no-op: re-mounting stays out of
 	// scope.
 	if a, ok := pctx.Services().Resolve("approvals").(*approval.Gate); ok {
 		a.SetConfig(approvalSection(cfg))
 	}
-	// The providers go live: one save materializes the whole instance list, and the.
 	if pp, ok := pctx.Services().Resolve("provider").(providerConfigSetter); ok {
 		pp.SetConfig(providerSection(cfg))
 	}
@@ -934,7 +925,6 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	if setAgentConfig != nil {
 		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
 	}
-	// The cron fire's cap follows the operator's knob.
 	pushRunTimeout(pctx, cfg)
 }
 
@@ -965,8 +955,7 @@ type curatorSlotSetter interface {
 	SetCuratorModel(model string)
 }
 
-// providerConfigSetter is the host's consumer-owned face for the provider capsule's
-// live configuration.
+// providerConfigSetter is the host's consumer-owned face for the provider.
 type providerConfigSetter interface {
 	SetConfig(provider.Config)
 }
@@ -987,9 +976,9 @@ type omegaSettings struct {
 	pctx                 *agent.Context
 	setFilesWorkspace    func(string)      // the files capsule's hot knob, nil when it is not mounted
 	setChannelWorkspace  func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
-	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob (t_62d72028), nil when unset
-	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
-	maxTurns             func() int        // the serving agents' LIVE turn cap (t_f78acfd6 GETTER), the agent scopes' inherited max_turns
+	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob, nil when unset
+	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook
+	maxTurns             func() int        // the serving agents' LIVE turn cap, the agent scopes' inherited max_turns
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -997,7 +986,6 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Read-only hint for the auto-resolved compaction window.
 	if s.pctx == nil {
 		return schema, nil
 	}
@@ -1129,8 +1117,7 @@ func fileConfig(path string) (Config, error) {
 	return documentConfig(string(data))
 }
 
-// documentConfig parses ONE YAML document over the built-in defaults, with no
-// environment layer.
+// documentConfig parses ONE YAML document over the built-in defaults, with no.
 func documentConfig(text string) (Config, error) {
 	cfg := DefaultConfig()
 	if err := yaml.Unmarshal([]byte(text), &cfg); err != nil {
@@ -1139,8 +1126,8 @@ func documentConfig(text string) (Config, error) {
 	return cfg, nil
 }
 
-// configFromYAML parses a submitted document exactly the way LoadConfig parses the
-// file. Validate is the caller's, so the layer order stays in one place.
+// configFromYAML parses a submitted document exactly the way LoadConfig parses.
+// Validate is the caller's, so the layer order stays in one place.
 func configFromYAML(text string) (Config, error) {
 	cfg, err := documentConfig(text)
 	if err != nil {
@@ -1239,7 +1226,7 @@ func maskSecretNodes(n *yaml.Node) {
 // Compile-time assertion that omegaSettings implements core.Settings.
 var _ core.Settings = (*omegaSettings)(nil)
 
-// -- omega settings: the terminal face of the settings pane. Reads call settingsSchema
+// omega settings: the terminal face of the settings pane. Reads call settingsSchema
 // (the same function the pane's GET rides) and writes call saveSettings (the same
 // function the pane's PUT rides) - one schema, one setter, one validator, one writer,
 // so a CLI save and a pane save land byte-identically in config.yaml and every refusal
@@ -1398,13 +1385,13 @@ func settingsSet(configPath, key, raw string, w io.Writer) error {
 	return nil
 }
 
-// coerceSettingValue turns the operator's text into the JSON-shaped value the webui
-// would submit for this knob. This is an input adapter, never a second validator:
-// ranges, enum membership, absolute-path checks, the config.yaml-only doors and every
-// cross-field rule stay behind saveSettings (applySettingValues + cfg.Validate), so the
-// CLI can never accept what the pane refuses or refuse what the pane accepts. The one
-// guard added here is finiteness: JSON cannot carry NaN/Inf, so the pane can never
-// submit them while the CLI text can - and the seam's range test would let NaN through.
+// coerceSettingValue turns the operator's text into the JSON-shaped value the webui.
+// This is an input adapter, never a second validator: ranges, enum membership,
+// absolute-path checks, the config.yaml-only doors and every cross-field rule stay
+// behind saveSettings (applySettingValues + cfg.Validate), so the CLI can never accept
+// what the pane refuses or refuse what the pane accepts. The one guard added here is
+// finiteness: JSON cannot carry NaN/Inf, so the pane can never submit them while the
+// CLI text can - and the seam's range test would let NaN through.
 func coerceSettingValue(k core.SettingsKnob, raw string) (any, error) {
 	switch k.Type {
 	case "toggle":

@@ -8,7 +8,7 @@
 // convergence is pinned structurally on the source - the same
 // contract style tabband.test.ts / sidebar-order.test.ts use:
 // settings: superseded the own-row shape with an
-// in-band seat, then (Endo ruling,
+// in-band seat, then (
 //     option B) moved the filter OUT of the band to a pane-top
 // full-width bar (the VSCode shape), and (Endo,
 // ) removed the band itself - the dock tab already says

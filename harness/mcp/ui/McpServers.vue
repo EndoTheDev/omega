@@ -3,10 +3,7 @@
     ref="rootEl"
     class="mcp-list"
     :class="{ narrow: narrow }">
-    <!--
-      the toolbar row, the FilesTab pattern - the title flush LEFT, the refresh action
-      flush RIGHT on ONE row..
-    -->
+    <!-- the toolbar row, the FilesTab pattern. -->
     <TabBand title="MCP">
       <div class="band-search">
         <SearchInput
@@ -64,7 +61,6 @@
                 class="mcp-name reg-row-name"
                 :title="s.name">{{ s.name }}</span>
               <span class="mcp-sub reg-row-sub">
-                <!-- the transport badge: a small mono pill. -->
                 <span
                   v-if="s.transport"
                   class="mcp-pill"
@@ -132,7 +128,6 @@
     type McpServerWire,
     type McpStatusWire,
   } from "./serverRows";
-  // the band search's filter (name / transport / the expansion's tool names), pure so.
   import { filterMcpServers } from "./search";
 
   // Module-owned UI: the inspector's MCP tab content,
@@ -165,7 +160,7 @@
     rows.value = serverRows(rep);
   }
 
-  // -- the per-server toggle ---------------------------- ONE click commits. busy holds
+  // the per-server toggle ---------------------------- ONE click commits. busy holds
   // the committing row's name so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
@@ -210,7 +205,7 @@
     }
   }
 
-  // -- narrow adaptation, the module-UI recipe.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -251,7 +246,6 @@
 </script>
 
 <style scoped>
-  /* Module-owned look built on the shell's design tokens. */
   /*
    * the root stops being a flat scroll child - the TabBand stays fixed, the body owns
    * the scroll (structurally, never sticky).
@@ -299,7 +293,6 @@
   .mcp-name {
     min-width: 0;
   }
-  /* the transport badge: a small mono pill. */
   .mcp-pill {
     font-family: var(--mono);
     font-size: 9px;
@@ -313,7 +306,6 @@
     flex-shrink: 0;
   }
   .mcp-state {
-    /* the status cluster: pushed to the subtitle line's right edge. */
     margin-left: auto;
     display: inline-flex;
     align-items: center;
@@ -357,7 +349,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* the tool chips: wrapped inline pills. */
   .mcp-tools {
     display: flex;
     flex-wrap: wrap;

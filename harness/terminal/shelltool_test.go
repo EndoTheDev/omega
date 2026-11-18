@@ -114,8 +114,7 @@ func TestRunShellDetachedGroup(t *testing.T) {
 	}
 }
 
-// TestShellRoot pins the session-workspace rooting for the shell half (the file half is
-// pinned in harness/files).
+// TestShellRoot pins the session-workspace rooting for the shell half.
 func TestShellRoot(t *testing.T) {
 	ws := t.TempDir()
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
@@ -228,8 +227,7 @@ func TestRunShellQuotedPowerShell(t *testing.T) {
 	}
 }
 
-// TestRunShellChainRedirectTiming pins the `>` chain behavior with its only honest
-// witness.
+// TestRunShellChainRedirectTiming pins the `>` chain behavior with its only honest.
 func TestRunShellChainRedirectTiming(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("ping -n timing is the windows delay idiom")
@@ -252,7 +250,7 @@ func TestRunShellChainRedirectTiming(t *testing.T) {
 // TestShellSmallOutputNoMarker: the truncation marker fires ONLY when bytes were. The
 // pre-fix cappedBuffer counted every written byte in over (over was total-written, not
 // overflow), so an 8-byte echo read as a truncation and the reported total
-// double-counted the kept bytes - the exact QA receipt ("[output truncated, 8 bytes
+// double-counted the kept bytes - the exact QA record ("[output truncated, 8 bytes
 // total]" on a visible "A").
 func TestShellSmallOutputNoMarker(t *testing.T) {
 	p := testShellProvider(t)
@@ -291,7 +289,6 @@ func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	if !strings.Contains(out, want) {
 		t.Fatalf("marker missing or dishonest (want %q): tail of out = %q", want, out[len(out)-120:])
 	}
-	// The retrieval path is the shell domain's own verb.
 	if !strings.Contains(out, "shell.read id=sh-") || !strings.Contains(out, "survives the shell") {
 		t.Fatalf("the marker must name shell.read and the retention contract: %q", out[len(out)-160:])
 	}
@@ -300,7 +297,7 @@ func TestShellOversizeOutputHonestMarker(t *testing.T) {
 	}
 }
 
-// - the unification's helpers and round-trip pins ----------------------
+// the unification's helpers and round-trip pins --------------------
 
 // testShellProvider builds a provider over a private home: the registry state and logs
 // land in the test's temp dir, and the registry's Close fence kills any child a test
@@ -315,7 +312,7 @@ func testShellProvider(t *testing.T) *ShellProvider {
 // TestShellProviderWithoutRegistryNamesItself pins the review-round-1 fix. A zero
 // provider used to build one whose config resolved datadir.Home, so any test executing
 // through it rewrote the installed instance's process.json and dropped logs in ~/.omega
-// - two gate-run sites did exactly that.
+// - two gate-run sites did exactly.
 func TestShellProviderWithoutRegistryNamesItself(t *testing.T) {
 	p := &ShellProvider{}
 	ctx := context.Background()
@@ -358,7 +355,7 @@ func echoThenSleeper(word string) string {
 	return "echo " + word + "; " + longSleeper()
 }
 
-// shellIDFromText pulls the shell id out of a "<..> id=<id>" phrase.
+// shellIDFromText pulls the shell id out of a "<.> id=<id>" phrase.
 func shellIDFromText(t *testing.T, text string) string {
 	t.Helper()
 	i := strings.Index(text, "shell.read id=")
@@ -423,8 +420,7 @@ func TestShellVerbRoundTrip(t *testing.T) {
 	}
 }
 
-// TestShellRunReturnsOutputAndStatus: the inline path is unchanged in what the model
-// sees.
+// TestShellRunReturnsOutputAndStatus: the inline path is unchanged in what the model.
 func TestShellRunReturnsOutputAndStatus(t *testing.T) {
 	p := testShellProvider(t)
 	out, err := p.RunShell(context.Background(), map[string]any{"command": "echo on-stdout"})

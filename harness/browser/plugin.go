@@ -28,7 +28,7 @@ func (p *Plugin) Description() string {
 	return "browser: the general web browser pane (URL bar + iframe, any origin; last-URL memory)"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "" }
 
 // Provides lists the seams this plugin mounts.
@@ -55,7 +55,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	s, err := OpenStore(path)
 	if err != nil {
-		// The store is the cheapest loss in the home.
 		fmt.Printf("omega browser: %v (continuing without persistence)\n", err)
 		s = &Store{path: ""}
 	}

@@ -7,7 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Context is the shared service container that extensions mount into.
+// Context is the shared service container that extensions mount.
 type Context = core.Context
 
 // Plugin is the contract every extension implements.

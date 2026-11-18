@@ -29,8 +29,7 @@ func writeStub(t *testing.T, name, out string, code int) string {
 	return bin
 }
 
-// TestRunDelegateTaskMissingBinary verifies runDelegateTask fails cleanly when no omega
-// binary can be found.
+// TestRunDelegateTaskMissingBinary verifies runDelegateTask fails cleanly when no.
 func TestRunDelegateTaskMissingBinary(t *testing.T) {
 	t.Setenv("OMEGA_BIN", "")
 	d := NewDelegate()
@@ -166,7 +165,7 @@ func writeEnvStub(t *testing.T, name string) string {
 
 // TestSpawnPinsCallerStore pins the spawn env shape: with a store mounted, the child
 // carries OMEGA_DB_PATH = the caller's store file, so its `run --session <id>` opens
-// the database the host pre-created the session in.
+// the database the host pre-created the session.
 func TestSpawnPinsCallerStore(t *testing.T) {
 	bin := writeEnvStub(t, "stub-env-omega")
 	t.Setenv("OMEGA_BIN", bin)

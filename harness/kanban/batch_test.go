@@ -86,7 +86,6 @@ func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	batch := batchRun(p)
 	ctx := context.Background()
 
-	// a valid prefix that would have applied.
 	out, _ := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "orphan probe"},
 		map[string]any{"action": "comment", "id": "LAST", "body": "resolved"},
@@ -141,7 +140,7 @@ func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchDoneEmitsOnlyOnCommit: a done move inside a batch emits its.
+// TestRunTaskBatchDoneEmitsOnlyOnCommit: a done move inside a batch emits.
 func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	p, _ := toolProvider(t)
 	batch := batchRun(p)

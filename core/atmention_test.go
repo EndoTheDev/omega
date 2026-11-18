@@ -238,7 +238,7 @@ func TestExpandAtMentionsNoTokens(t *testing.T) {
 	}
 }
 
-// -- branch coverage tests --
+// branch coverage tests
 
 func TestExpandAtMentionsSkillInjection(t *testing.T) {
 	tests := []struct {
@@ -519,7 +519,7 @@ func TestExpandAtMentionsDetectImageError(t *testing.T) {
 	}
 }
 
-// -- unresolved reporting --
+// unresolved reporting
 
 // TestExpandAtMentionsUnresolvedReports verifies a standalone unresolvable
 // token rides along literally AND is reported so the caller can notice it.
@@ -574,7 +574,7 @@ func TestExpandAtMentionsUnresolvedPrefixedTokens(t *testing.T) {
 	}
 }
 
-// TestExpandAtMentionsResolvedNotUnresolved verifies resolved tokens never land in.
+// TestExpandAtMentionsResolvedNotUnresolved verifies resolved tokens never land.
 func TestExpandAtMentionsResolvedNotUnresolved(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "real.txt")

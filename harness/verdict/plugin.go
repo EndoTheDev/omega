@@ -33,7 +33,7 @@ func (p *Plugin) ConfigKey() string { return "" }
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 
-// MountWithAPI builds the hub from the seams the mount reads in place (store, logger.
+// MountWithAPI builds the hub from the seams the mount reads in place.
 // Capsule posture: this registration is the module's whole surface - the seam, the
 // blocking verdict tool, the /verdict command, the /verdicts REST routes, and the
 // Verdict Cards prompt section all ship from here, and the module ships nothing else.

@@ -41,7 +41,7 @@ func (s *stubLogger) Warnf(format string, args ...any) {
 
 func (s *stubLogger) Close() error { return nil }
 
-// TestNewFromContextFull verifies that NewFromContext wires every field from a.
+// TestNewFromContextFull verifies that NewFromContext wires every field.
 func TestNewFromContextFull(t *testing.T) {
 	prov := &stubProvider{name: "full-model"}
 	comp := stubCompactor{}

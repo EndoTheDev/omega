@@ -199,11 +199,11 @@ func writeStubArgs(t *testing.T, name string) string {
 	return bin
 }
 
-// TestChildSessionStoredAndPassed pins the stored+searchable ruling: with the store
+// TestChildSessionStoredAndPassed pins the stored+searchable rule: with the store
 // seam mounted, the host pre-creates the child's session (label delegate:<task>,
 // lineage = the calling session when the context carries one) and the child inherits it
 // via run --session - the --session persist contract makes the child's prompt, report
-// and tool results land in the sessions list. Lineage rides delegate_parent by ruling:
+// and tool results land in the sessions list. Lineage rides delegate_parent by rule:
 // the fork parent_id stays empty so the child never inherits the caller's context.
 func TestChildSessionStoredAndPassed(t *testing.T) {
 	bin := writeStubArgs(t, "stub-args-omega")

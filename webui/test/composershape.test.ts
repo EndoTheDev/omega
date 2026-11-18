@@ -19,7 +19,6 @@ describe("the single composer (one shape, no modes)", () => {
     // the retired two-mode binding must not return piecemeal
     assert.doesNotMatch(composer, /composerModeClass/);
     assert.doesNotMatch(composer, /composerMode/);
-    // added the ladder rung beside the flag.
     assert.match(composer, /:class="\{[\s\S]*?expanded: expanded,/);
     assert.match(composer, /'stage-icon': stage === 'icon'/);
     assert.match(composer, /'stage-stacked': stage === 'stacked'/);

@@ -40,7 +40,7 @@
     useModelCatalog,
     type ModelFilter,
   } from "~/composables/modelCatalog";
-  // THE composer's picker: settings and chat render the SAME popover since - never a.
+  // THE composer's picker: settings and chat render the SAME popover since - never.
   import ModelSelect from "../chat/ModelSelect.vue";
 
   const props = defineProps<{
@@ -69,7 +69,6 @@
     })),
   );
 
-  // the flat floor: the picker's default section while no grouped payload arrived (a.
   const flatModels = computed(() =>
     (catalog.value.entries ?? []).map((e) => e.name),
   );

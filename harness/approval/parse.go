@@ -35,7 +35,7 @@ func Parse(command string) Parsed {
 	tz := &tokenizer{out: make([]token, 0, 16)}
 	if err := tz.run(command); err != nil {
 		e := fmt.Errorf("shell parse: %w", err)
-		// Fail visible: hand back the raw text as one segment so a caller that wants to.
+		// Fail visible: hand back the raw text as one segment so a caller that wants.
 		return Parsed{
 			Canonical: command,
 			Segments:  []Segment{{Words: []string{command}}},
@@ -56,7 +56,6 @@ func assemble(toks []token) Parsed {
 			if len(cur.Words) > 0 || cur.Op != "" {
 				p.Segments = append(p.Segments, cur)
 			}
-			// an operator with no preceding words.
 			if len(p.Segments) > 0 {
 				// trailing op becomes the PREVIOUS segment's chain
 				p.Segments[len(p.Segments)-1].Op = t.text
@@ -137,7 +136,6 @@ func (tz *tokenizer) run(input string) error {
 		r := rs[i]
 		switch {
 		case r == '\\' && mode != modeSingle && i+1 < len(rs):
-			// a backslash escapes the next char (outside single quotes).
 			cur.text += string(rs[i+1])
 			i += 2
 			continue
@@ -165,7 +163,6 @@ func (tz *tokenizer) run(input string) error {
 			if r == '&' {
 				switch {
 				case isRedirectOpForm(cur.text):
-					// descriptor-dup continuation: 2>&1, 1>&2, >&3.
 					cur.text += "&"
 					i++
 					for i < len(rs) && rs[i] >= '0' && rs[i] <= '9' {
@@ -174,7 +171,6 @@ func (tz *tokenizer) run(input string) error {
 					}
 					continue
 				case cur.text == "" && i+1 < len(rs) && rs[i+1] == '>':
-					// stream-both redirect token at a word start (&>, &>>).
 					cur.text = "&>"
 					i += 2
 					if i < len(rs) && rs[i] == '>' {
@@ -224,7 +220,6 @@ func (tz *tokenizer) run(input string) error {
 			}
 			i++
 		case r == '~' && mode == modeNormal && cur.text == "":
-			// tilde expansion at a word start.
 			if i+1 < len(rs) && isUserWord(rs[i+1]) {
 				cur.text += "~"
 				i++
@@ -337,7 +332,7 @@ func isNameRune(r rune) bool {
 	return isNameStart(r) || r >= '0' && r <= '9'
 }
 
-// scanSub copies an unexpanded $ ${} span (or its backticked double) into out and.
+// scanSub copies an unexpanded $ ${} span (or its backticked double) into out.
 func scanSub(rs []rune, i int, mode int) (string, int, error) {
 	if rs[i+1] == '{' {
 		for j := i + 2; j < len(rs); j++ {

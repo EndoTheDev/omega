@@ -60,8 +60,7 @@ func TestSessionContextRoundTrip(t *testing.T) {
 		t.Errorf("clear: got model %q workspace %q, want both empty", sess.Model, sess.Workspace)
 	}
 
-	// A setter on a nonexistent row is a silent no-op (same contract as the
-	// pinned/archived setters.
+	// A setter on a nonexistent row is a silent no-op.
 	if err := s2.SetSessionModel(ctx, "gone", "m"); err != nil {
 		t.Errorf("set model on missing row: %v (want nil)", err)
 	}
@@ -137,7 +136,7 @@ func TestSessionContextMigration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open raw db: %v", err)
 	}
-	// The pre-session-context sessions table (every column up to last_run.
+	// The pre-session-context sessions table.
 	_, err = db.Exec(`CREATE TABLE sessions (
 	id         TEXT PRIMARY KEY,
 	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,

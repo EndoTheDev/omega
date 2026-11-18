@@ -81,7 +81,7 @@ func TestVerdictIssuanceRidesChatTopic(t *testing.T) {
 	}
 
 	// answering settles the Ask and pushes nothing (the tool result is the answer path's
-	// own hint) - and the run-only subscriber never sees the issuance frame at all.
+	// own hint) - and the run-only subscriber never sees the issuance frame.
 	if _, err := hub.Answer("sess-gate", "", core.QuestionAnswer{OptionIndex: 1}); err != nil {
 		t.Fatalf("Answer: %v", err)
 	}
@@ -106,7 +106,6 @@ func TestVerdictIssuancePushNilSafe(t *testing.T) {
 		t.Fatalf("verdictSrc = %v, want nil (nothing to subscribe to)", s.verdictSrc)
 	}
 
-	// a wrong-shaped offer is an optional consumer's degradation, not a boot failure.
 	offerServices(t, s, map[string]any{"verdicts": "not a card source"})
 	if s.verdictSrc != nil {
 		t.Fatalf("verdictSrc = %v, want nil for a wrong-shaped offer", s.verdictSrc)

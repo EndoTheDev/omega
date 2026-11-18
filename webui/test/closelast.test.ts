@@ -5,7 +5,7 @@
 // keeps its X - disabled and dimmed and `closeTab` refuses the request, so no close can
 // empty a pane - which is exactly how the pane stays non-empty. Nothing is seated in
 // its place: the never-zero placeholder of commit 8eabefc7 is retired as the blank
-// "empty bad looking space" Endo closed his last chat into.
+// "empty bad looking space" Endo closed his last chat.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -91,7 +91,7 @@ function legacySeat(): DockTab {
 
 /**
  * the fixed shell shape: left sessions + the single main pane + right inspector (the
- * census reads 1 - the shells never count)
+ * census reads 1 - the shells never count) / /
  */
 function shellTree(): { t: DockNode; main: DockPane } {
   const t: DockNode = makeSplit("row", [
@@ -103,7 +103,7 @@ function shellTree(): { t: DockNode; main: DockPane } {
 }
 
 /**
- * the same shell with the main pane hosting TWO chat tabs (the only shape a close is.
+ * the same shell with the main pane hosting TWO chat tabs.
  */
 function shellTreeTwoTabs(): { t: DockNode; main: DockPane } {
   const { t, main } = shellTree();
@@ -117,8 +117,7 @@ function shellTreeTwoTabs(): { t: DockNode; main: DockPane } {
 }
 
 /**
- * a fresh dock over the persisted shell shape (boot repair grafts the missing bottom
- * shell.
+ * a fresh dock over the persisted shell shape.
  */
 async function dockOver(t: DockNode): Promise<ReturnType<typeof createDock>> {
   const mem = new MemoryStorage() as unknown as Storage;
@@ -225,7 +224,6 @@ describe("case 2: two main panes - close on both, then the survivor loses it", (
       assert.equal(dock.canRemovePane(p.id), true, "both carry the pane X");
       assert.equal(dock.isLastMainPane(p.id), false, "neither is the last main pane");
     }
-    // closing one pane: the survivor becomes the last main pane.
     const gone = mains.find((p) => p.id !== main.id)!;
     dock.remove(gone.id);
     await flush();

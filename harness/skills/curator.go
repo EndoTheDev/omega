@@ -54,7 +54,7 @@ type CuratorReport struct {
 
 // RunCurator executes one pass against the provider's own skills dir. prov may be nil -
 // the deterministic staleness pass still runs; the LLM proposal steps are skipped and
-// the report says so.
+// the report says.
 func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, curatorModel string) (CuratorReport, error) {
 	if sp.Dir == "" {
 		return CuratorReport{}, fmt.Errorf("curator: skills directory not configured")
@@ -127,7 +127,6 @@ func (sp *SkillsProvider) applyStaleness(rep *CuratorReport) error {
 			rec = UsageRecord{CreatedAt: now.Format(time.RFC3339), State: StateActive}
 		}
 		if rec.State == "" {
-			// A seeded record without a phase rides as active.
 			rec.State = StateActive
 		}
 		anchor := anchorTime(rec, now)

@@ -25,9 +25,7 @@ export interface CanvasStore {
   applySnapshot(list: unknown): void;
   applyDelta(raw: unknown): void;
   actionState(panelId: string, actionId: string): CanvasActionState;
-  /** the action pipe round-trip. */
   invoke(panel: CanvasPanel, action: CanvasPanelAction, args?: unknown): Promise<void>;
-  /** refetch the snapshot (boot + later catch-ups). */
   refresh(): Promise<void>;
 }
 
@@ -93,7 +91,6 @@ export function createCanvasStore(): CanvasStore {
     try {
       applySnapshot(await fetchCanvas());
     } catch {
-      // snapshot fetch failure: keep the previous view (the deltas still apply on top.
     }
   }
 
@@ -107,7 +104,7 @@ export function createCanvasStore(): CanvasStore {
   };
 }
 
-// -- the module-UI delta seam ------------------------
+// the module-UI delta seam ----------------------
 
 // A module view that renders beyond a panel's view-model (the kanban board. Module UI
 // imports no shell code, so the event literal is duplicated on both sides ON PURPOSE -
@@ -134,9 +131,9 @@ export function announceCanvasReset(): void {
   );
 }
 
-// -- the toast feed --------------------------------
+// the toast feed ------------------------------
 
-// Panels of kind "toast" are canvas events, not persistent surface (the notifications.
+// Panels of kind "toast" are canvas events, not persistent surface.
 // Handlers receive the payload verbatim; decoding is the consumers' domain (the dock
 // knows the record shape, the canvas contract does not).
 type ToastPanelHandler = (payload: unknown) => void;
@@ -172,8 +169,7 @@ export function onToastPanel(fn: ToastPanelHandler): () => void {
   };
 }
 
-// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel the canvas feed
-// uses.
+// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel the canvas.
 export function emitLocalToast(payload: unknown): void {
   if (payload === null || payload === undefined) return;
   const fp = fingerprintOf(payload);

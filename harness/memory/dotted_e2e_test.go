@@ -31,7 +31,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	p := &memoryToolProvider{mem: mem}
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises every dotted tool back to back.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "memory.add", Arguments: map[string]any{

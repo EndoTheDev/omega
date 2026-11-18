@@ -29,7 +29,7 @@ func homeForExe(envHome, exePath, userHome string) string {
 	return canonPath(dir)
 }
 
-// isPathBinInstall reports whether dir is a known PATH-style bin directory where a.
+// isPathBinInstall reports whether dir is a known PATH-style bin directory where.
 // Both sides compare on canon spelling: the callers' fakes and the real exe path carry
 // different separators.
 func isPathBinInstall(dir, userHome string) bool {
@@ -53,8 +53,7 @@ func bootstrapHome(home string) {
 	for _, name := range []string{"config.yaml.example", "mcp.yaml.example", "crons.yaml.example"} {
 		seedFile(cfgDir, name, name)
 	}
-	// Upgrade path: a legacy home-root trust.yaml copies into config/ when the target
-	// doesn't exist.
+	// Upgrade path: a legacy home-root trust.yaml copies into config/ when the target.
 	trust.Bootstrap(home)
 }
 

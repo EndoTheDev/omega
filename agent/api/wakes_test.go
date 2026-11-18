@@ -1,6 +1,6 @@
 package api
 
-// The wake-path tests: the runaway guard's park-and-reset, the user-send reset, the.
+// The wake-path tests: the runaway guard's park-and-reset, the user-send reset,.
 
 import (
 	"context"
@@ -120,7 +120,6 @@ func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 		t.Fatalf("close store (the omega exit): %v", err)
 	}
 
-	// The restart: a fresh handle over the same file.
 	st2, err := store.Open(dsn)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
@@ -138,7 +137,7 @@ func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 	waitFor(t, "boot sweep settles the pending shell call", func() bool {
 		return len(s.yieldLedger.All()) == 0
 	})
-	// .. and what re-enters is the interrupted TIMEOUT result, not the shell's live output
+	// . and what re-enters is the interrupted TIMEOUT result, not the shell's live output
 	// - the wake path cannot reach the call again.
 	waitFor(t, "the interrupted result persists", func() bool {
 		msgs, err := st2.GetMessages(context.Background(), "s1")
@@ -222,7 +221,7 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 		dumpSessionRows(t, st, "s1")
 		t.Fatal("the wake run never landed the probe result")
 	}
-	// Flush-before-result held: the assistant that carries the call is durable BEFORE.
+	// Flush-before-result held: the assistant that carries the call is durable.
 	msgs, err := st.GetMessages(context.Background(), "s1")
 	if err != nil {
 		t.Fatalf("get messages: %v", err)
@@ -298,7 +297,6 @@ func TestWakeEmptyTurnLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The note is the run's last word.
 	if !hasYieldResult(msgs, "call_5b16qor0", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
@@ -318,7 +316,6 @@ func TestWakeStreamErrorLeavesNote(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	// The wake run's only script.
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
 		{core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "provider 500: upstream exploded"}},
 	})
@@ -360,7 +357,6 @@ func TestWakeStreamErrorLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The note is the run's last word.
 	if !hasYieldResult(msgs, "call_9err0r", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
@@ -423,7 +419,6 @@ func TestWakeCancelledBetweenTurnsLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The input row survives (the partial trace the gap left behind).
 	if !hasYieldResult(msgs, "call_9canc3l", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
@@ -458,7 +453,7 @@ func TestNonWakeStreamErrorLeavesNoRow(t *testing.T) {
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s1") })
 
 	// The error really reached the live wire - otherwise this pin
-	// would pass on a run that never errored at all.
+	// would pass on a run that never errored.
 	if !contains(strings.Join(lines, "\n"), `"finish_reason":"error"`) {
 		t.Fatalf("no error-end frame on the wire; frames: %v", lines)
 	}
@@ -493,7 +488,6 @@ func TestWakeGuardUserSendResets(t *testing.T) {
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// Park through the real path.
 	s.parkHome("s1")
 	if !s.wakes.parkedNow("s1") {
 		t.Fatal("parkHome left no parked flag")
@@ -542,7 +536,7 @@ func (p *wakeScripted) ModelName() string { return p.modelName }
 
 func (p *wakeScripted) SetThinkingLevel(level string) {}
 
-// Copies of a scripted provider share the script deck and the index (one serial.
+// Copies of a scripted provider share the script deck and the index.
 func (p *wakeScripted) nextCopy() *wakeScripted {
 	p.mu.Lock()
 	defer p.mu.Unlock()

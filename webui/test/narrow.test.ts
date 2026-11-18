@@ -30,7 +30,7 @@ test("isNarrowWidth: the ~300px column is narrow, a main pane is wide", () => {
 });
 
 test("the two narrow thresholds agree (shell + the board's module-owned copy)", () => {
-  // one value: the settings panel and the board flip on the same rendered width, or.
+  // one value: the settings panel and the board flip on the same rendered width,.
   assert.equal(BOARD_NARROW_MAX_PX, NARROW_MAX_PX);
   for (const px of [0, 100, 300, 360, 400, 640]) {
     assert.equal(boardIsNarrowWidth(px), isNarrowWidth(px), `at ${px}px`);

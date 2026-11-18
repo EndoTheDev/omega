@@ -17,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// --- shared fixture: one capsule's capability set ------------------
+// - shared fixture: one capsule's capability set ----------------
 
 func echoTool() core.Tool {
 	return core.Tool{
@@ -151,8 +151,7 @@ func (fakeStore) SessionModels(ctx context.Context) (map[string]string, error) {
 
 var emitterSeen noticeEmit
 
-// TestNamespaceEnforcement pins Q10: a machine-facing registration must carry its own
-// module prefix.
+// TestNamespaceEnforcement pins Q10: a machine-facing registration must carry its own.
 func TestNamespaceEnforcement(t *testing.T) {
 	var ctx Context
 	reg, err := MountAllAPI([]Plugin{badNamespace{}}, &ctx, nil, nil)
@@ -181,7 +180,6 @@ func (b badNamespace) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 
 // TestOneTenant pins Q5: a seam mounted by one module cannot be claimed by another.
 func TestOneTenant(t *testing.T) {
-	// Classic claim first, api claim after.
 	var ctxA Context
 	_, err := MountAllAPI([]Plugin{classicStore{}, apiStoreClaimer{}}, &ctxA, nil, nil)
 	if err == nil {
@@ -223,7 +221,7 @@ func (classicStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return nil
 }
 
-// apiStoreClaimer claims the store seam through the api, declaring no provides (the.
+// apiStoreClaimer claims the store seam through the api, declaring no provides.
 type apiStoreClaimer struct{}
 
 func (apiStoreClaimer) Name() string       { return "claimant" }
@@ -312,8 +310,7 @@ func (nilEmitterCapsule) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.RegisterEmitter(func(svc any) { emitterSeen, _ = svc.(noticeEmit) })
 }
 
-// TestCensusEnforcement walks the registration surface and demands the census
-// (post-flip, part 3 wave 2).
+// TestCensusEnforcement walks the registration surface and demands the census.
 func TestCensusEnforcement(t *testing.T) {
 	want := map[string]bool{
 		"RegisterTool":            true,
@@ -337,8 +334,7 @@ func TestCensusEnforcement(t *testing.T) {
 	}
 }
 
-// TestSubcommandRegistration pins the phase-D CLI law (grill Q6 - the module owns its
-// argv).
+// TestSubcommandRegistration pins the phase-D CLI law.
 type subCapsule struct {
 	name    string
 	summary string
@@ -412,7 +408,7 @@ func TestSubcommandRegistration(t *testing.T) {
 	}
 }
 
-// --- the chain-on-miss law -----------------------
+// - the chain-on-miss law ---------------------
 
 // chainInner owns one command and mounts FIRST, so every other capsule in the chain.
 type chainInner struct{}
@@ -467,7 +463,6 @@ func TestCommandChainFallsThroughOnlyOnAMiss(t *testing.T) {
 	if err != nil || res.Text != "[inner] answered" {
 		t.Fatalf("/inner-answer = %q, %v: a miss must fall through", res.Text, err)
 	}
-	// nobody answers: the chain ends at the miss, structurally recognisable and phrased.
 	_, err = ctx.CommandHandler(context.Background(), "/nobody", "")
 	if err == nil || !errors.Is(err, core.ErrCommandMiss) {
 		t.Fatalf("/nobody = %v, want a core.ErrCommandMiss", err)

@@ -32,7 +32,7 @@ export function drawerTabsForEdge(
 
 /**
  * clamp an active index against a tab set so a DnD that shrank the edge pane's tabs
- * while the drawer was closed never indexes past the end
+ * while the drawer was closed never indexes past the end / /
  */
 export function clampDrawerTab(
   tabs: readonly DrawerTab[],
@@ -42,7 +42,7 @@ export function clampDrawerTab(
   return tabs[Math.min(Math.max(0, index), tabs.length - 1)];
 }
 
-// -- the menubar toggle route ----------------------------- The menubar's three edge.
+// the menubar toggle route ----------------------------- The menubar's three edge.
 // Below it the tree is chrome the zero-collapse CSS overrides on sight - the toggles
 // must drive the OVERLAY DRAWER FLAGS instead, or the user clicks a toggle that changes
 // state nothing renders (report 1). The routing decision lives here so the node suite
@@ -93,8 +93,7 @@ export function routeShellToggle(
   return shellToggleMobile(shell, open);
 }
 
-// -- the drawer's renderable clamp ------------------------ A tab is FREE CONTENT in
-// the dock.
+// the drawer's renderable clamp ------------------------ A tab is FREE CONTENT.
 export const DRAWER_RENDERABLE: Record<MobileShell, readonly DockComponentName[]> = {
   sidebar: ["sidebar", "agents", "files", "settings"],
   inspector: ["files", "settings", "insights", "notifications", "agents"],

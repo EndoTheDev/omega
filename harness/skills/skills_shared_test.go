@@ -127,7 +127,6 @@ func TestAllowlistFiltersTheRegistry(t *testing.T) {
 	if strings.Join(names(got), ",") != "deploy" {
 		t.Fatalf("allowlist loaded %v, want only deploy", names(got))
 	}
-	// The reader tool answers the same registry, so an unnamed skill is not readable.
 	if _, err := sp.ReadSkill("ghost"); err == nil {
 		t.Errorf("an allowlisted-out skill was still readable")
 	}

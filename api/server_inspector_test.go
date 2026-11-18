@@ -21,9 +21,9 @@ import (
 // The inspector endpoint surface: /cron/jobs, /skills, /logs. Every test here also
 // re-asserts the read-only posture - the handlers never write.
 
-// -- test doubles --
+// test doubles
 
-// cronRow decodes one /cron/jobs wire row (the capsule pre-marshals.
+// cronRow decodes one /cron/jobs wire row.
 type cronRow struct {
 	Name     string `json:"name"`
 	Schedule string `json:"schedule"`
@@ -75,8 +75,7 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 	return ts
 }
 
-// wireInspector offers the fake supplies into a fresh Context and rewires the server
-// against it.
+// wireInspector offers the fake supplies into a fresh Context and rewires the server.
 func wireInspector(t *testing.T, s *Server, offers map[string]any, logger agent.LoggerProvider) {
 	t.Helper()
 	ctx := &core.Context{}
@@ -203,7 +202,7 @@ func TestSkillsListsNameAndDescriptionOnly(t *testing.T) {
 			t.Fatalf("row missing description: %+v", row)
 		}
 	}
-	// the wire shape is name+description only: content and dir must never ride the.
+	// the wire shape is name+description only: content and dir must never ride.
 	if strings.Contains(mustJSON(t, got), "SECRET-BODY") {
 		t.Fatal("skill content leaked onto the wire")
 	}
@@ -223,8 +222,7 @@ func TestSkillsScanErrorSurfaces(t *testing.T) {
 	}
 }
 
-// TestLogsTailRealFile is the endpoint contract against the kind of file the FileLogger
-// produces.
+// TestLogsTailRealFile is the endpoint contract against the kind of file.
 func TestLogsTailRealFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	var body string
@@ -355,7 +353,7 @@ func (nopTestLogger) Warnf(string, ...any)  {}
 func (nopTestLogger) Errorf(string, ...any) {}
 func (nopTestLogger) Close() error          { return nil }
 
-// -- helpers --
+// helpers
 
 type logPayload struct {
 	Path  string   `json:"path"`
@@ -391,7 +389,7 @@ func itoa(i int) string {
 	return strconv.Itoa(i)
 }
 
-// -- the logs topic's delta follower --
+// the logs topic's delta follower
 
 // readLogFrame reads one pushed frame off a hub subscriber, failing on timeout.
 func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage {
@@ -412,7 +410,7 @@ func readLogFrame(t *testing.T, sub *agentapi.SocketSub) agentapi.SocketMessage 
 	}
 }
 
-// appendLog appends raw bytes to the followed file (the logger's own write shape.
+// appendLog appends raw bytes to the followed file.
 func appendLog(t *testing.T, path, text string) {
 	t.Helper()
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
@@ -425,8 +423,7 @@ func appendLog(t *testing.T, path, text string) {
 	}
 }
 
-// TestPushLogDelta: the follower publishes ONLY the bytes appended since the last
-// offset, as whole lines.
+// TestPushLogDelta: the follower publishes ONLY the bytes appended since the last.
 func TestPushLogDelta(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {
@@ -504,8 +501,7 @@ func TestPushLogDelta(t *testing.T) {
 	}
 }
 
-// TestFollowLogsPublishesAppends: the follower goroutine wires the file to the topic
-// end to end.
+// TestFollowLogsPublishesAppends: the follower goroutine wires the file to the topic.
 func TestFollowLogsPublishesAppends(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "omega.log")
 	if err := os.WriteFile(path, []byte("boot line\n"), 0o644); err != nil {

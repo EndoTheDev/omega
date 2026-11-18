@@ -111,8 +111,7 @@ var actionRules = []struct {
 	}},
 }
 
-// gitHardDestruct: git subcommands only destructive with a flag (reset --hard, checkout
-// --force, push --force).
+// gitHardDestruct: git subcommands only destructive with a flag.
 var gitHardFlags = set("--hard", "--force", "-f", "--prune", "--amend", "--no-gpg-sign", "--delete")
 
 // Assess runs the rule set over the parsed command. Substitution
@@ -165,7 +164,6 @@ func assessSegment(seg Segment) []string {
 			switch {
 			case interpreterInerts[b], runnerFlags[b], b == "":
 			case strings.HasPrefix(b, "<<"), strings.HasPrefix(b, ">"):
-				// heredoc markers and redirect wrappers are not interpreter work.
 			case interpreterCodeFlags[b]:
 				work++
 			case strings.Contains(w, ".test."):
@@ -180,8 +178,7 @@ func assessSegment(seg Segment) []string {
 			fired["script-execution"] = true
 		}
 	}
-	// a script file named as a command word:./deploy.sh, bin/setup.sh (*.test.* files stay
-	// inert.
+	// a script file named as a command word:./deploy.sh, bin/setup.sh.
 	for _, w := range seg.Words {
 		if hasScriptExtension(w) && !strings.Contains(w, ".test.") {
 			fired["script-execution"] = true
@@ -240,8 +237,7 @@ func actionsHit(seg Segment, tool map[string]wordSet) bool {
 	return false
 }
 
-// toolsAreFlags removed: flag-form tools (pacman -Syu) are modeled by (tool, action)
-// pairs directly.
+// toolsAreFlags removed: flag-form tools (pacman -Syu) are modeled by (tool, action).
 
 func gitHardFlagsHit(seg Segment) bool {
 	for i, w := range seg.Words {
@@ -263,8 +259,7 @@ func gitHardFlagsHit(seg Segment) bool {
 	return false
 }
 
-// segHitsInterpreter reports whether an interpreter word rides the segment (any
-// position.
+// segHitsInterpreter reports whether an interpreter word rides the segment.
 func segHitsInterpreter(seg Segment) bool {
 	for _, w := range seg.Words {
 		if interpreters[baseWord(w)] {
@@ -278,8 +273,7 @@ func segHitsInterpreter(seg Segment) bool {
 // --test on the repo's *.test.* files) - routine dev work, never an ask.
 var runnerFlags = set("--test", "--check", "--compile-only", "lint")
 
-// interpreterCodeFlags: flags whose value IS code (visible, but it still executes
-// unvetted.
+// interpreterCodeFlags: flags whose value IS code.
 var interpreterCodeFlags = set("-c", "-e", "-x", "--eval", "-X")
 
 // dataEgressHit: curl/wget/fetch that SENDS data (POST/PUT/form/
@@ -349,7 +343,6 @@ func writesThrough(seg Segment) bool {
 		body := strings.TrimLeft(w, "0123456789") // fd prefix
 		switch {
 		case body == ">" || body == ">>":
-			// the operator stands alone; its file operand rides as the next word (spaced form).
 			return true
 		case strings.HasPrefix(body, ">&"):
 			if isFDOperand(body[2:]) {

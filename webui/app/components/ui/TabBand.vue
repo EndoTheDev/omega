@@ -32,7 +32,7 @@
 </template>
 
 <script setup lang="ts">
-  // `title` = what the tab is (the registry's display voice.
+  // `title` = what the tab is.
   withDefaults(
     defineProps<{
       title: string;
@@ -52,7 +52,7 @@
     /*
      * min-height, not height: a band action taller than the row (the settings filter,
      * the insights window select) grows the row instead of clipping; the Files geometry
-     * below is exactly what renders there
+     * below is exactly what renders there / /
      */
     min-height: 22px;
     margin-top: 14px;
@@ -77,10 +77,7 @@
     gap: 2px;
     flex-shrink: 0;
   }
-  /*
-   * the lead seat sits BETWEEN the title and the actions, and it is what eats the free
-   * space.
-   */
+  /* the lead seat sits BETWEEN the title and the actions, and it is what eats the. */
   .tab-band-lead {
     display: flex;
     align-items: center;
@@ -89,8 +86,7 @@
     flex: 1 1 auto;
   }
   /*
-   * the ONE action-button look: FilesTab's files-tool contract promoted to the band
-   * vocabulary.
+   * the ONE action-button look: FilesTab's files-tool contract promoted to the band.
    */
   .tab-band-actions :deep(.band-tool),
   .tab-band-lead :deep(.band-tool) {
@@ -108,8 +104,7 @@
     font-size: 12px;
   }
   /*
-   * the compact SEARCH SEAT, the AppSidebar's pattern promoted here (one definition,
-   * the band-tool vocabulary.
+   * the compact SEARCH SEAT, the AppSidebar's pattern promoted here.
    */
   .tab-band-actions :deep(.band-search) {
     width: 128px;

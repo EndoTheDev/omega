@@ -23,7 +23,7 @@ func (s *captureSink) Log(r core.Refusal) {
 	s.refusals = append(s.refusals, r)
 }
 
-// bootMount boots the full default plugin set into a fresh Context and returns the.
+// bootMount boots the full default plugin set into a fresh Context and returns.
 // OMEGA_HOME must be set by the caller (each proof gets its own home).
 func bootMount(t *testing.T, sink core.RefusalSink) (*agent.Registry, *core.Context, *agent.Canvas) {
 	t.Helper()
@@ -103,7 +103,6 @@ func TestMutationConformance(t *testing.T) {
 	sink := &captureSink{}
 	_, _, canvas := bootMount(t, sink)
 
-	// the action census from the canvas snapshot.
 	var actions []act
 	seen := map[string]bool{}
 	for _, p := range canvas.Snapshot() {
@@ -120,7 +119,6 @@ func TestMutationConformance(t *testing.T) {
 	}
 	t.Logf("CONFORMANCE: battery covers %d registered actions (%v)", len(actions), actionsNames(actions))
 
-	// the module's no counts as a refusal.
 	send := func(canvas *agent.Canvas, module, action string, args []byte) (err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -206,7 +204,6 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// reconcile 3 lives inside the battery.
 	for _, a := range actions {
 		if got := expected[a.id]; got.Accepted == len(mutationBattery) {
 			t.Logf("CONFORMANCE: %s tolerates every mutation (garbage-in decode choice)", a.id)

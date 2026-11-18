@@ -13,7 +13,7 @@ import { toolRows, toggleTargets } from "../../harness/tools/ui/toolRows.ts";
 // module UI source lives at the repo root (webui/test is three levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// -- tools rows: the one-domain grouping --
+// tools rows: the one-domain grouping
 
 test("tool rows group by domain: actions as dotted detail, siblings merged, lone dotted rows stay", () => {
   const tools = [
@@ -42,7 +42,6 @@ test("tool rows group by domain: actions as dotted detail, siblings merged, lone
 });
 
 test("the kanban split groups under one kanban row: seven dotted tools, one parent (t_f616ed78)", () => {
-  // the real post-split wire.
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "kanban.list", description: "list board tasks" },
@@ -70,7 +69,6 @@ test("the kanban split groups under one kanban row: seven dotted tools, one pare
     "each member keeps its full dotted identity as a detail line",
   );
   assert.equal(rows.some((r) => r.name.startsWith("kanban.")), false, "no orphan kanban.* rows");
-  // the group parent is not a tool name.
   assert.deepEqual(toggleTargets("kanban", tools), [
     "kanban.list",
     "kanban.create",
@@ -83,7 +81,6 @@ test("the kanban split groups under one kanban row: seven dotted tools, one pare
 });
 
 test("the phase-2 split renders pure-dotted domains as one group row each (t_d8fbad57)", () => {
-  // the real post-split wire.
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "files.read", description: "read a file" },
@@ -138,9 +135,9 @@ test("toggleTargets: an exact tool toggles itself, a group parent fans out to it
   assert.deepEqual(toggleTargets("shell.run", tools), ["shell.run"]);
 });
 
-// --: the dotless/dotted collision (files + files.grep + files.glob) - the domain row
+// the dotless/dotted collision (files + files.grep + files.glob) - the domain row
 // ABSORBS the dotted siblings; two rows on one domain is a red shape that must stay
-// impossible --
+// impossible
 
 test("a dotless domain row absorbs its dotted siblings: ONE files row, actions + grep + glob nested (t_7871a56a)", () => {
   const tools = [
@@ -199,10 +196,9 @@ test("a merged domain row's disabled is group-style: off only when every member 
   assert.equal(domainOnly[0].disabled, false, "the domain tool off but siblings on = row on (the toggle fans to all)");
 });
 
-// --: the fold-aware management read (GET /tools?disabled=1).
+// the fold-aware management read (GET /tools?disabled=1).
 
 test("the fold-aware inventory keeps disabled web.* in their group row - dimmed, never gone", () => {
-  // the wire the fold-aware read serves.
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "web.search", description: "search the web", disabled: true },
@@ -226,7 +222,6 @@ test("red shape: disabling a tool can never remove its re-enable path (t_5c9bb50
   ];
   const fold = ["web.search", "web.fetch"];
   const rows = toolRows(tools, fold);
-  // every fold-disabled tool still holds a row seat.
   for (const name of fold) {
     const seated = rows.some(
       (r) => r.name === name || r.detail.some((d) => d.startsWith(`${name} - `)),
@@ -252,7 +247,6 @@ test("a fold-disabled absorbed sibling stays a member of its domain row, not a s
     "files.grep - search file contents",
     "files.glob - list matching paths",
   ]);
-  // the re-enable target survives.
   assert.deepEqual(toggleTargets("files", tools), ["files", "files.grep", "files.glob"]);
 });
 

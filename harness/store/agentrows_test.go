@@ -47,7 +47,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// the agent store holds both sessions with full history and keeps the tree link.
 	t.Setenv("OMEGA_AGENT", "scout")
 	agentStore, err := Open(agentDSN)
 	if err != nil {
@@ -81,7 +80,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 		t.Errorf("FTS lost the moved history: %v", results)
 	}
 
-	// the main store holds main only (identity back to main first.
 	t.Setenv("OMEGA_AGENT", "")
 	reopened, err := Open(mainDSN)
 	if err != nil {

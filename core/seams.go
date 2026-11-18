@@ -34,9 +34,7 @@ type LiveSeams interface {
 
 // Channel is a delivery transport that connects external clients to the agent.
 type Channel interface {
-	// Start runs the channel until the context is cancelled or Stop is called.
 	Start(ctx context.Context, deps ChannelDeps) error
-	// Stop shuts the channel down.
 	Stop() error
 }
 
@@ -95,8 +93,7 @@ type SettingsScope struct {
 	Error string `json:"error,omitempty"`
 }
 
-// SettingsScopeGroup is one overridable knob group inside a scope - the four R2 groups,
-// in render order.
+// SettingsScopeGroup is one overridable knob group inside a scope.
 type SettingsScopeGroup struct {
 	Key        string              `json:"key"`
 	Overridden bool                `json:"overridden"`
@@ -154,8 +151,7 @@ type Settings interface {
 	Reset() (*SettingsSchema, error)
 }
 
-// ModuleStatus is one module in the registry introspection (v0.12 E2, the
-// settings-toggle small law.
+// ModuleStatus is one module in the registry introspection.
 type ModuleStatus struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
@@ -176,7 +172,6 @@ type ModuleToggles interface {
 	// Toggle enables or disables one module at runtime. A rejection (tier law, Q3 edge,
 	// roll-back panic) returns an error naming the module and the failed check.
 	Toggle(ctx context.Context, name string, enabled bool) error
-	// Refusals returns the recorded boundary rejections (Q12).
 	Refusals() []Refusal
 }
 
@@ -219,8 +214,7 @@ type ChannelDeps struct {
 	Version    string
 }
 
-// QuestionPrompt is one agent-issued question card as it rides the wire and the
-// transcript surfaces.
+// QuestionPrompt is one agent-issued question card as it rides the wire.
 type QuestionPrompt struct {
 	ID        string
 	SessionID string
@@ -266,7 +260,7 @@ func WithRunOrigin(ctx context.Context, origin string) context.Context {
 	return context.WithValue(ctx, runOriginKey{}, origin)
 }
 
-// RunOriginFromContext returns the run's origin tag ("" when unset - callers treat.
+// RunOriginFromContext returns the run's origin tag.
 func RunOriginFromContext(ctx context.Context) string {
 	origin, _ := ctx.Value(runOriginKey{}).(string)
 	return origin
@@ -282,13 +276,13 @@ type runScope struct {
 
 type runScopeKey struct{}
 
-// RunWorkspace returns the run's session workspace root ("" = none.
+// RunWorkspace returns the run's session workspace root.
 func RunWorkspace(ctx context.Context) string {
 	scope, _ := ctx.Value(runScopeKey{}).(runScope)
 	return scope.CWD
 }
 
-// RunPromptContext returns the run's trust-gated project context override ("" = unset.
+// RunPromptContext returns the run's trust-gated project context override.
 func RunPromptContext(ctx context.Context) string {
 	scope, _ := ctx.Value(runScopeKey{}).(runScope)
 	return scope.PromptContext
@@ -304,7 +298,7 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 	return context.WithValue(ctx, runScopeKey{}, runScope{CWD: dir, PromptContext: promptContext})
 }
 
-// -- the run output tap ------------------ A tool that produces output OVER TIME (the.
+// the run output tap ------------------ A tool that produces output OVER TIME.
 // Unset = no streaming, exactly the pre-tap behavior.
 type ToolOutputChunk struct {
 	// CallID and Tool identify the running call. The loop stamps them
@@ -362,7 +356,7 @@ func EmitToolOutput(ctx context.Context, text string, truncated bool) {
 	tap(ToolOutputChunk{CallID: call.CallID, Tool: call.Tool, Text: text, Truncated: truncated})
 }
 
-// The trust capsule's own consumer surfaces (the serving surface's workspace.
+// The trust capsule's own consumer surfaces.
 
 // Notice is one finished-thing record. The title line is METADATA ONLY (source kind +
 // id + verdict) - prompt and session content never rides a notice (privacy law).
@@ -376,5 +370,4 @@ type Notice struct {
 	Read      bool   `json:"read"`
 }
 
-// Emitter delivery is generic (mount machinery), so core carries no emitter contract at
-// all.
+// Emitter delivery is generic (mount machinery), so core carries no emitter contract.

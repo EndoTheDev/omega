@@ -22,7 +22,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// -- parseEnvelope: the envelope guard -----------------------------------
+// parseEnvelope: the envelope guard ---------------------------------
 
 test("a pushed frame parses: topic, session, event, seq, data", () => {
   const env = parseEnvelope(
@@ -50,7 +50,7 @@ test("an already-parsed object envelope passes through (fake sockets hand object
   assert.equal(env?.topic, "health");
 });
 
-// -- dispatchFrame: the typed topic dispatch -----------------------------
+// dispatchFrame: the typed topic dispatch ---------------------------
 
 test("the five topics land on their typed handlers", () => {
   const seen: string[] = [];
@@ -100,7 +100,7 @@ test("a runs frame without a session or a bad payload is dropped", () => {
   assert.equal(calls, 0);
 });
 
-// -- the backoff ladder --------------------------------------------------
+// the backoff ladder ------------------------------------------------
 
 test("backoff doubles from 500ms and caps at 15s", () => {
   const mid = () => 0.5; // rand 0.5 = no jitter
@@ -124,7 +124,7 @@ test("a garbage attempt index starts the ladder at the base delay", () => {
   assert.equal(backoffDelay(-3, () => 0.5), SOCKET_BACKOFF_BASE_MS);
 });
 
-// -- the chip frame guard ------------------------------------------------
+// the chip frame guard ----------------------------------------------
 
 test("a chip frame without a call id drops - nothing to attach to", () => {
   assert.equal(normalizeChipFrame({ tool: "shell.run", text: "x" }), null);
@@ -149,7 +149,7 @@ test("a fill frame carries its content", () => {
   assert.equal(f?.elapsed_ms, 1200);
 });
 
-// -- socketURL -----------------------------------------------------------
+// socketURL ---------------------------------------------------------
 
 test("the endpoint rides the page's own origin with the right scheme", () => {
   assert.equal(socketURL({ protocol: "http:", host: "127.0.0.1:8098" }), "ws://127.0.0.1:8098/ws");
@@ -157,7 +157,7 @@ test("the endpoint rides the page's own origin with the right scheme", () => {
   assert.equal(socketURL(undefined), "/ws");
 });
 
-// -- the client, against a fake WebSocket --------------------------------
+// the client, against a fake WebSocket ------------------------------
 
 class FakeSocket {
   static made: FakeSocket[] = [];
@@ -342,7 +342,7 @@ test("the ladder runs even when the dead socket never reports close", async () =
     2,
     "a fresh connection replaces the quiet one without waiting for a close event",
   );
-  // the browser's own close event, arriving late, is not news: it must not null the.
+  // the browser's own close event, arriving late, is not news: it must not null.
   sock.drop();
   await sleep(300);
   assert.equal(FakeSocket.made.length, 2, "a stale close never spawns a second ladder step");
@@ -443,7 +443,7 @@ test("the app wires every topic and catches up on reconnect only", () => {
   assert.ok(app.includes("ingestChipFrame"), "the chips topic feeds the live tail store");
 });
 
-// -- the logs topic's client half is retired ------------
+// the logs topic's client half is retired ----------
 
 test("the client speaks five topics - the server's sixth has no client half", () => {
   assert.deepEqual([...SOCKET_TOPICS], ["chat", "chips", "canvas", "runs", "health"]);

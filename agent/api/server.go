@@ -85,14 +85,12 @@ type Server struct {
 // seamSet is the optional-module surface behind the Server's routes (v0.12 E2).
 type seamSet struct {
 	mu sync.RWMutex
-	// modules is the module-rest mux rebuilt from ctx.ModuleRoutes at every rewire (boot,
-	// mount, live toggle). A nil mux sends every request to the SPA fallback - no module
-	// routes, no module paths.
+	// modules is the module-rest mux rebuilt from ctx.ModuleRoutes at every rewire. A nil
+	// mux sends every request to the SPA fallback - no module routes, no module paths.
 	modules *http.ServeMux
 	routeRoots map[string]bool
-	// moduleLiterals is the exact-match lane of the module REST set (the same
-	// ctx.ModuleRoutes at every rewire). ServeMux has no precedence hook across muxes, so
-	// the rescue layer reads this.
+	// moduleLiterals is the exact-match lane of the module REST set (the same. ServeMux
+	// has no precedence hook across muxes, so the rescue layer reads.
 	moduleLiterals map[string]http.HandlerFunc
 	logger         agent.LoggerProvider
 	// ctx is the live Context (part 3, the seam constitution): the capsule-facing routes
@@ -117,8 +115,7 @@ func (s *Server) LiveServices() *core.Services {
 
 // Consumers' local faces (part 3).
 
-// skillFaces is the skill inventory face the content/atmention consumers hold (std
-// types only.
+// skillFaces is the skill inventory face the content/atmention consumers hold.
 type skillFaces interface {
 	SkillsEntries() (index map[string]string, contents map[string]string, err error)
 	SkillRead(name string) (description, content string, err error)
@@ -166,14 +163,11 @@ func (s *Server) RewireSeams(ctx *core.Context, modmux *http.ServeMux, roots map
 	s.seams.commands = append([]core.ExtensionCommand(nil), ctx.Commands...)
 	s.seams.commandHandler = ctx.CommandHandler
 	s.seams.mu.Unlock()
-	// The verdict issuance push follows the same Context-stays-source- of-truth law.
 	s.subscribeVerdictCards(ctx)
 	if s.agent != nil {
 		s.agent.RefreshToolProviders(ctx)
 		s.agent.RefreshDisabledTools(ctx)
-		// The smart-approval seam rides the same Context-stays- source-of-truth law.
 		s.agent.RefreshApprovals(ctx)
-		// The extension inventory follows the same Context-stays- source-of-truth law.
 		s.agent.RefreshExtensionInfos(ctx)
 	}
 	if s.canvas != nil {
@@ -188,7 +182,6 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 		tools = map[string]core.Tool{}
 	}
 	s := &Server{agent: a, tools: tools, store: store, settings: settings, modules: modules, registries: registries, ctxWindow: map[string]int{}, runTimeout: 30 * time.Minute, runs: &RunHub{}, sockets: NewSocketHub(), mux: http.NewServeMux()}
-	// Chat panel capsule (chat-last 1/3).
 	s.chat = NewChatCapsule()
 	s.chat.srv.Store(s)
 	// The yield harness: the pending-calls table is session-typed. A nil agent (some tests
@@ -213,8 +206,6 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	s.registerRoutes(s.mux)
 	s.serve = http.HandlerFunc(s.serveModuleRescue)
 	if a != nil {
-		// Boot recovery: every entry the durable table carried across a restart injects its
-		// synthetic timeout result.
 		s.recoverPendingCalls()
 	}
 	return s
@@ -276,7 +267,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/attach-image", s.handleAttachImage)
-	// The non-image sibling of the image attach lane.
 	mux.HandleFunc("/attach-file", s.handleAttachFile)
 	// (the raw-bytes image route was the file explorer's. The base keeps the chat floor:
 	// POST /sessions (session id creation), /sessions/{id} (detail/context/delete -
@@ -294,7 +284,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
 	mux.HandleFunc("/settings", s.handleSettings)
-	// the whole-document door beside the knob door.
 	mux.HandleFunc("/settings/raw", s.handleSettingsRaw)
 	mux.HandleFunc("/settings/reset", s.handleSettingsReset)
 	// GET /insights rode the store capsule out with wave 2 (a view over store data. The
@@ -309,9 +298,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 // Active reports whether the session has a live run right now.
 func (s *Server) Active(id string) bool { return s.runs.active(id) }
 
-// -- carve seams: the shell reaches the base state it must wire, through these.
+// carve seams: the shell reaches the base state it must wire, through these.
 
-// Agent exposes the agent handle (the shell's extension-inventory and disabled-tools.
+// Agent exposes the agent handle.
 func (s *Server) Agent() *agent.Agent { return s.agent }
 
 // Store exposes the store seam (the shell's /health database fact pings it through. Nil
@@ -321,7 +310,7 @@ func (s *Server) Store() agent.StoreProvider { return s.store }
 // ModuleToggles exposes the module-toggle seam (GET/PUT /modules).
 func (s *Server) ModuleToggles() core.ModuleToggles { return s.modules }
 
-// Registries exposes the registry-toggle seam (GET/PUT /disabled/..).
+// Registries exposes the registry-toggle seam (GET/PUT /disabled/.).
 func (s *Server) Registries() core.RegistryToggles { return s.registries }
 
 // ModuleMux returns the capsule mux and its route roots read under one lock.
@@ -419,7 +408,7 @@ func (s *Server) SetAgentPrompt(prompt string, maxTurns int) {
 // WriteJSON is the exported seam for the shell's JSON responses.
 func WriteJSON(w http.ResponseWriter, status int, v any) { writeJSON(w, status, v) }
 
-// getOnly is the GET-only guard shared by the base handlers (the inspector family in.
+// getOnly is the GET-only guard shared by the base handlers.
 func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -477,7 +466,6 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		"models":         models,
 		"context_window": window,
 	}
-	// the typed model pickers filter on capability.
 	if len(caps) > 0 {
 		out["capabilities"] = caps
 	}
@@ -555,8 +543,6 @@ func (s *Server) modelSections() []ModelSection {
 	}
 	var jobs []job
 	if ir, ok := prov.(agent.ProviderInstances); ok {
-		// the instance set rides the listed names (an optional upgrade like the instances
-		// one).
 		if listed, ok := prov.(agent.ProviderInstanceNames); ok {
 			for _, n := range listed.InstanceNames() {
 				if inst, ok2 := ir.Instance(n); ok2 {
@@ -566,7 +552,6 @@ func (s *Server) modelSections() []ModelSection {
 		}
 	}
 	if len(jobs) == 0 || jobs[0].name != "default" {
-		// the primary lane is the picker's default section whatever the resolver's name.
 		jobs = append([]job{{name: "default", inst: prov}}, jobs...)
 	}
 	// every fetch goroutine sends exactly once on a buffered channel,
@@ -623,15 +608,15 @@ type chatRequest struct {
 	Retry bool `json:"retry,omitempty"`
 	Fork string `json:"fork,omitempty"`
 	Workspace string `json:"workspace,omitempty"`
-	// branchParent pins the run head's parent when the channel computed it
-	// (retry/fork-of-user). Unexported: never part of the request wire.
+	// branchParent pins the run head's parent when the channel computed it. Unexported:
+	// never part of the request wire.
 	branchParent string
 	// wake marks a WAKE LAUNCH (async agent loop, agent/api/wakes.go). A wake launch takes
 	// the same prepareRun pipe but never fires the title kick (it is agent-speech, not a
 	// conversation start) and never resets the runaway guard.
 	wake bool
-	// branchFloor is the session's max store row id observed at run start, set alongside
-	// branchParent. Unexported: never part of the request wire.
+	// branchFloor is the session's max store row id observed at run start, set alongside.
+	// Unexported: never part of the request wire.
 	branchFloor int64
 	// persistInput is the send's incoming messages. Unexported: never part of the request
 	// wire. Unexported: never part of the request wire.
@@ -644,19 +629,17 @@ type chatRequest struct {
 	// the persisted tree, which ephemeral sessions never have. The memory tool never runs
 	// in an ephemeral session.
 	Ephemeral bool `json:"ephemeral,omitempty"`
-	// runAgent is the agent that serves THIS run when the session belongs to an agent
-	// home. Nil = the daemon's agent. Unexported: never part of the request wire.
+	// runAgent is the agent that serves THIS run when the session belongs to an agent. Nil
+	// = the daemon's agent. Unexported: never part of the request wire.
 	runAgent *agent.Agent
 }
 
-// assistantRecord accumulates one response segment of an assistant turn for session
-// persistence.
+// assistantRecord accumulates one response segment of an assistant turn for session.
 type assistantRecord struct {
 	thinking  string
 	toolCalls []core.ToolCall
 	results   []core.ToolResult
 	content   string
-	// server-side timing so reloaded sessions render real durations (client meters die.
 	thinkDur, respDur   time.Duration
 	lastThink, lastResp time.Time
 	openAt              time.Time
@@ -720,14 +703,11 @@ type chatPrepare struct {
 	tools    map[string]core.Tool
 }
 
-// prepareRun performs the shared pre-launch steps of a session-backed chat run
-// (chat-last 1/3).
+// prepareRun performs the shared pre-launch steps of a session-backed chat run.
 func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []core.Message) (*chatPrepare, error) {
-	// Replay-turn guards: store presence is enforced here too.
 	if err := replayGuards(req, s.store != nil); err != nil {
 		return nil, err
 	}
-	// The pipe's entry needs nothing else here.
 
 	// Run-slot acquisition comes BEFORE any persistence: a second /chat for a session with
 	// a live run is a 409 that must not leave the incoming user message appended - the
@@ -747,7 +727,6 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// "active" edge has exactly one source.
 	s.publishRunState(req.SessionID, true)
 
-	// One session row up front.
 	var sess core.Session
 	sessionKnown := false
 	if s.store != nil && req.SessionID != "" && !req.Ephemeral {
@@ -792,7 +771,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		}
 	}
 
-	// @-mention expansion: the new input is expanded BEFORE history assembly, so the.
+	// @-mention expansion: the new input is expanded BEFORE history assembly,.
 	incoming = s.expandAtMentions(incoming, req.workspace)
 	messages, err := s.sessionHistory(ctx, req, incoming)
 	if err != nil {
@@ -801,7 +780,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		return nil, err
 	}
 
-	// Instance pin: a wire provider name WINS and sticks on the session (picker concerns.
+	// Instance pin: a wire provider name WINS and sticks on the session.
 	// No wire name serves the session's pinned one - which is exactly how a removed
 	// instance strands ITS sessions: the next send resolves the dead name and the run
 	// fails loudly (pinProvider's 400), never a silent fallback to the default instance.
@@ -861,14 +840,13 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	tools := s.tools
 	if req.Ephemeral {
-		// No-persist contract: the memory tools never run in an ephemeral session (nothing.
+		// No-persist contract: the memory tools never run in an ephemeral session.
 		// The run context carries the deny too, so extension-merged providers cannot
 		// reintroduce them (the loop filters post-merge).
 		tools = withoutMemoryTools(tools)
 	}
 	if req.wake {
-		// Launch record: the slot is taken, the run is prepared, and launchWake's launchRun
-		// is the only statement left.
+		// Launch record: the slot is taken, the run is prepared, and launchWake's launchRun.
 		s.wakeMu.Lock()
 		if s.wakeLaunches == nil {
 			s.wakeLaunches = map[string]int{}
@@ -899,7 +877,7 @@ type runMeter struct {
 	chunks    int
 }
 
-// tick counts one streamed chunk (thinking or response.
+// tick counts one streamed chunk.
 func (m *runMeter) tick(event core.Event) {
 	se, ok := event.(core.StreamEvent)
 	if !ok {
@@ -983,8 +961,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	} else if s.store != nil && req.SessionID == "" {
 		id, err := agent.NewSessionID()
 		if err != nil {
-			// same fallback POST /sessions uses - crypto/rand never fails on supported
-			// platforms.
+			// same fallback POST /sessions uses - crypto/rand never fails on supported.
 			id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
 		}
 		// Born-pin: the draft intent resolves BEFORE the row write.
@@ -1022,8 +999,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The legacy no-store path runs inline AFTER the SSE headers (the client's presence
-	// gates the run).
+	// The legacy no-store path runs inline AFTER the SSE headers.
 	if s.store != nil || req.Ephemeral {
 		cr, prepErr := s.prepareRun(r.Context(), &req, messages)
 		if prepErr != nil {
@@ -1046,7 +1022,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			s.publishRunState(cr.run.id, false)
 			return
 		}
-		// Tell the client its session id before any run frames.
 		if autoCreated {
 			writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
 			flusher.Flush()
@@ -1057,7 +1032,6 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// No store: the legacy path.
 	if s.store == nil && !req.Ephemeral {
 		if isEphemeralID(req.SessionID) {
 			http.Error(w, "ephemeral session id requires the ephemeral flag", http.StatusBadRequest)
@@ -1070,7 +1044,7 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		}
 		s.wsMu.Unlock()
 		messageIn := s.expandAtMentions(messages, req.workspace)
-		// the picker's slot grammar applies on the legacy path too (no store, so no sticky.
+		// the picker's slot grammar applies on the legacy path too.
 		s.resolveSlotModel(&req, req.Provider)
 		prov, pinErr := s.pinProvider(&req)
 		if pinErr != nil {
@@ -1115,7 +1089,7 @@ func (s *Server) handleSessionStop(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(`{"status":"cancelling"}`)) // constant body
 }
 
-// stopRun is the user hard stop, in one place for every surface that issues it (the.
+// stopRun is the user hard stop, in one place for every surface that issues it.
 func (s *Server) stopRun(id string) (ok, cancellable bool) {
 	ok, cancellable = s.runs.stop(id)
 	if ok && cancellable {
@@ -1201,7 +1175,6 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 			for i := range incoming {
 				incoming[i] = core.WithParentID(incoming[i], req.Fork)
 			}
-			// The fork's messages persist through the loop's sink.
 			req.persistInput = incoming
 			return append(storedMessages(view.Path[:at+1]), incoming...), nil
 		}
@@ -1330,7 +1303,7 @@ func (s *Server) pinProvider(req *chatRequest) (agent.Provider, *runError) {
 }
 
 // turnSinkFor builds the run's TurnSink. A legacy no-store non-ephemeral run gets nil -
-// it persists nothing, exactly as before.
+// it persists nothing, exactly.
 func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 	var sink agent.TurnSink
 	if req.Ephemeral && req.SessionID != "" {
@@ -1353,9 +1326,7 @@ func (s *Server) turnSinkFor(req chatRequest) agent.TurnSink {
 func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, flusher http.Flusher, prov agent.Provider, messages []core.Message, tools map[string]core.Tool, req chatRequest) ([]assistantRecord, streamUsage, *core.LastRunStats) {
 	// tools run in THIS session's context.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
-	// Session workspace: relative file operations root at the session's folder and the.
 	ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
-	// Verdict cards v1: the no-store legacy path is still an interactive turn.
 	ctx = core.WithRunOrigin(ctx, "interactive")
 	// Turn copy persistence belongs to the loop. Channels render from the store, never
 	// append turn content.
@@ -1405,7 +1376,6 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 			delete(rec.callStarts, tre.Message.ToolCallID)
 		}
 		rec.results = append(rec.results, tre.Message)
-		// The result opens the next segment's clock.
 		rec.openAt = now
 		return
 	}
@@ -1420,7 +1390,6 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 	switch ev := se.Event.(type) {
 	case core.ThinkingChunk:
 		if len(rec.results) > 0 {
-			// thinking after tool results is turn 2's.
 			*recs = append(*recs, *rec)
 			*rec = assistantRecord{openAt: rec.openAt}
 		}
@@ -1431,7 +1400,6 @@ func (s *Server) accumulateAssistant(recs *[]assistantRecord, rec *assistantReco
 		rec.openAt = now
 	case core.ResponseChunk:
 		if len(rec.results) > 0 {
-			// tool phase ended the current segment.
 			*recs = append(*recs, *rec)
 			*rec = assistantRecord{openAt: rec.openAt}
 		}
@@ -1486,8 +1454,6 @@ func phaseElapsed(acc time.Duration, last, open, now time.Time) int64 {
 // detached run broadcasts one).
 func (s *Server) persistAssistant(ctx context.Context, prov agent.Provider, req chatRequest, recs []assistantRecord, usage streamUsage, last *core.LastRunStats) error {
 	if req.Ephemeral && req.SessionID != "" {
-		// In-memory commit: the run's records land in the registry (transcript items +
-		// telemetry).
 		s.eph.commit(req.SessionID, recs, usage, last, time.Now())
 		return nil
 	}
@@ -1503,7 +1469,7 @@ func (s *Server) persistAssistant(ctx context.Context, prov agent.Provider, req 
 	if err := s.store.AddSessionTokens(ctx, req.SessionID, usage.prompt, usage.completion); err != nil {
 		return fmt.Errorf("persist usage: %w", err)
 	}
-	// the run's last-known rates ride the same persist; a nil block (no usage, no.
+	// the run's last-known rates ride the same persist; a nil block.
 	if last != nil {
 		if err := s.store.SetSessionLastRun(ctx, req.SessionID, last); err != nil {
 			return fmt.Errorf("persist last run: %w", err)
@@ -1636,7 +1602,7 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "invalid request: reserved session id prefix "+ephemeralPrefix, http.StatusBadRequest)
 			return
 		}
-		// The born-pin: resolve + store-capability check BEFORE CreateSession - never a.
+		// The born-pin: resolve + store-capability check BEFORE CreateSession - never.
 		var wsDir string
 		if req.Workspace != "" {
 			dir, err := core.ResolveWorkspaceDir(req.Workspace)
@@ -1700,7 +1666,6 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	}
 	id := r.PathValue("id")
 	if isEphemeralID(id) {
-		// No row, no fold: an ephemeral conversation is already one run's context.
 		writeJSON(w, http.StatusOK, map[string]any{"kind": "fork", "session": id})
 		return
 	}
@@ -1738,8 +1703,8 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 		if folded, ferr := c.Compact(ctx, path); ferr == nil && len(folded) < len(path) {
 			summary = foldSummary(folded)
 		}
-		// A compactor that refuses (no provider, a dead upsteam) leaves the fold without a
-		// summary. A fold that costs context is the point; it never costs the run.
+		// A compactor that refuses (no provider, a dead upsteam) leaves the fold without a. A
+		// fold that costs context is the point; it never costs the run.
 	}
 	if err := scx.SetSessionContextStart(ctx, id, start, summary); err != nil {
 		http.Error(w, "fold conversation: "+err.Error(), http.StatusInternalServerError)
@@ -1800,8 +1765,7 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "session not found: "+err.Error(), http.StatusNotFound)
 			return
 		}
-		// Typed messages marshal without a role field (core.User/core.Assistant only carry
-		// content).
+		// Typed messages marshal without a role field.
 		bare, err := s.store.GetMessagesWithTimes(r.Context(), id)
 		if err != nil {
 			http.Error(w, "get messages: "+err.Error(), http.StatusInternalServerError)
@@ -1820,7 +1784,6 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 			"session":  sess,
 			"messages": msgs,
 			"unread":   agent.SessionUnread(sess),
-			// live-run flag (always present, running:true/false).
 			"running": s.runs.active(id),
 		})
 	case http.MethodDelete:
@@ -1856,9 +1819,9 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 		// Row flags: {"pinned": true|false} (pin toggle, existing), {"read": true} (mark read
 		// - stamps last_read_at without touching updated_at, same shape as the pinned PATCH)
 		// and {"archived": true|false} (archive toggle, same no-touch contract). Session
-		// context joins the same no-touch contract: {"model": ".."} pins the model the
-		// session remembers, {"workspace": "/abs/dir"} roots the session's file operations
-		// ("" clears either).
+		// context joins the same no-touch contract: {"model": "."} pins the model the session
+		// remembers, {"workspace": "/abs/dir"} roots the session's file operations ("" clears
+		// either).
 		var body struct {
 			Pinned    *bool   `json:"pinned"`
 			Read      *bool   `json:"read"`
@@ -1925,7 +1888,6 @@ func (s *Server) handleSessionByID(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			if body.Workspace != nil {
-				// dir was resolved + validated above.
 				if err := scx.SetSessionWorkspace(r.Context(), id, resolvedDir); err != nil {
 					http.Error(w, "set session workspace: "+err.Error(), http.StatusInternalServerError)
 					return
@@ -1954,7 +1916,7 @@ type toolListing struct {
 	Name        string              `json:"name"`
 	Description string              `json:"description"`
 	Actions     []toolActionListing `json:"actions,omitempty"`
-	// Origin: where the tool registered from ("mcp" = MCP bridge, "" = native, omitted.
+	// Origin: where the tool registered from.
 	// The tools tab filters on this field - never on dotted-name shape.
 	Origin string `json:"origin,omitempty"`
 	// Disabled: true only in the fold-aware read (GET /tools?disabled=1). omitempty keeps
@@ -2021,8 +1983,7 @@ func fileError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// decodeMessages decodes polymorphic core.Message values from JSON using a role
-// discriminator.
+// decodeMessages decodes polymorphic core.Message values from JSON using a role.
 func decodeMessages(raw []json.RawMessage) ([]core.Message, error) {
 	messages := make([]core.Message, 0, len(raw))
 	for _, item := range raw {

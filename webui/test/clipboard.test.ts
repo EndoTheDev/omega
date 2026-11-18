@@ -25,7 +25,7 @@ function uninstallGlobals() {
   }
 }
 
-// stub the DOM bits execCommandCopy needs (append/remove/select/ setSelectionRange on.
+// stub the DOM bits execCommandCopy needs.
 function stubGlobals(opts: {
   clipboardWrite?: (text: string) => Promise<void>;
   clipboardPresent?: boolean;
@@ -167,11 +167,11 @@ describe("copyText: the insecure path (plain-http lane)", () => {
   });
 });
 
-// --: the sessions row's copy-id affordance --------------- The row action lives in
-// module UI (harness/store/ui/AppSidebar.vue) and this suite has no DOM, so the
-// contract is pinned in two halves: the helper writes the EXACT id it is handed
-// (behavior, both copy paths), and the SFC call site routes through the composable with
-// a verdict-branched toast (shape).
+// the sessions row's copy-id affordance --------------- The row action lives in module
+// UI (harness/store/ui/AppSidebar.vue) and this suite has no DOM, so the contract is
+// pinned in two halves: the helper writes the EXACT id it is handed (behavior, both
+// copy paths), and the SFC call site routes through the composable with a
+// verdict-branched toast (shape).
 
 const SESSION_ID = "jrn-13nov213000-copy-id";
 
@@ -239,15 +239,14 @@ describe("the sessions row's copy-id action (card t_61cc8762)", () => {
   it("confirms on the shell's local toast funnel - no second toast stack", () => {
     assert.match(sidebar, /import \{ emitLocalToast \} from "~\/composables\/canvas"/);
     assert.equal((sidebar.match(/emitLocalToast\(/g) ?? []).length, 1, "one emit, the shared funnel");
-    // the payload is the record shape the funnel's consumer decodes (notificationFeed
-    // decodeToast.
+    // the payload is the record shape the funnel's consumer decodes.
     assert.match(sidebar, /kind: "chat"/);
     assert.match(sidebar, /source_id: "session-copy"/);
     assert.match(sidebar, /read: true/, "a copy receipt never counts as unread");
     // distinct fingerprints: the funnel dedupes identical payloads, so a repeated copy
     // of the SAME id must carry a fresh timestamp or the second toast never fires
     assert.match(sidebar, /created_at: new Date\(\)\.toISOString\(\)/);
-    // the confirmation follows the awaited verdict - a failed copy never reads as.
+    // the confirmation follows the awaited verdict - a failed copy never reads.
     assert.match(sidebar, /verdict: ok \? "ok" : "failed"/);
     assert.match(sidebar, /title: ok \? `copied session id \$\{id\}` : "copy failed/);
     assert.doesNotMatch(sidebar, /toasts?\s*=\s*ref/, "no private toast stack");

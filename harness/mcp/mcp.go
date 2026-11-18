@@ -20,7 +20,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// -- MCP protocol types --
+// MCP protocol types
 
 type mcpRequest struct {
 	JSONRPC string `json:"jsonrpc"`
@@ -59,7 +59,7 @@ type mcpCallResult struct {
 	IsError bool `json:"isError"`
 }
 
-// -- unified MCP connection interface --
+// unified MCP connection interface
 
 // MCPConn is the abstraction over stdio and HTTP MCP server connections. Every call
 // that a live run drives takes a ctx: the agent loop's tool call carries cancellation,
@@ -103,7 +103,7 @@ func mcpCallTool(ctx context.Context, c MCPConn, name string, args map[string]an
 	return text.String(), call.IsError, nil
 }
 
-// -- stdio MCP server --
+// stdio MCP server
 
 type stdioServer struct {
 	name      string
@@ -114,7 +114,7 @@ type stdioServer struct {
 	pending   map[int64]chan mcpResponse
 	pendingMu sync.Mutex
 	nextID    int64
-	// done closes on close so an in-flight request fails fast instead of riding out its.
+	// done closes on close so an in-flight request fails fast instead of riding out.
 	done      chan struct{}
 	closeOnce sync.Once
 }
@@ -200,7 +200,6 @@ func (s *stdioServer) request(ctx context.Context, method string, params any) (j
 		}
 		return resp.Result, nil
 	case <-ctx.Done():
-		// The run above cancelled (turn aborted, request deadline).
 		s.pendingMu.Lock()
 		delete(s.pending, id)
 		s.pendingMu.Unlock()
@@ -224,7 +223,6 @@ func (s *stdioServer) initialize() error {
 		"clientInfo":      map[string]string{"name": "omega-mcp-bridge", "version": "0.1.0"},
 		"capabilities":    map[string]any{},
 	}
-	// The handshake runs at mount, before any run owns a cancellable ctx.
 	_, err := s.request(context.Background(), "initialize", params)
 	if err != nil {
 		return err
@@ -244,7 +242,6 @@ func (s *stdioServer) callTool(ctx context.Context, name string, args map[string
 }
 
 func (s *stdioServer) close() {
-	// ponytail: no graceful shutdown notification; kill directly.
 	if s.done != nil {
 		s.closeOnce.Do(func() {
 			close(s.done)
@@ -254,7 +251,7 @@ func (s *stdioServer) close() {
 	s.cmd.Wait()
 }
 
-// -- HTTP MCP server (Streamable HTTP transport) --
+// HTTP MCP server (Streamable HTTP transport)
 
 type httpServer struct {
 	name      string
@@ -294,7 +291,6 @@ func (s *httpServer) request(ctx context.Context, method string, params any) (js
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %w", err)
 	}
-	// The ctx rides the request (and its body read).
 	httpReq, err := s.newMCPRequest(ctx, s.url, "POST", body)
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
@@ -449,7 +445,6 @@ func (s *httpServer) initialize() error {
 			return fmt.Errorf("mcp error %d: %s", mcpResp.Error.Code, mcpResp.Error.Message)
 		}
 	}
-	// Send initialized notification.
 	notifBody, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": "notifications/initialized"})
 	httpReq2, err := s.newMCPRequest(ctx, s.url, "POST", notifBody)
 	if err != nil {
@@ -479,7 +474,7 @@ func (s *httpServer) close() {
 	// HTTP servers have no process to kill.
 }
 
-// -- config --
+// config
 
 type serverConfig struct {
 	Name    string            `json:"name" yaml:"name"`
@@ -494,8 +489,7 @@ type serverConfig struct {
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
 
-// isEnabled reports the toggle state (nil-safe: an absent or nil flag is an enabled
-// server.
+// isEnabled reports the toggle state.
 func (sc *serverConfig) isEnabled() bool { return sc.Enabled == nil || *sc.Enabled }
 
 type mcpConfig struct {
@@ -521,7 +515,7 @@ func loadConfig() (*mcpConfig, string, error) {
 	return cfg, name, err
 }
 
-// mcpHome resolves the omega home the mcp config lookup starts from (OMEGA_HOME.
+// mcpHome resolves the omega home the mcp config lookup starts from.
 func mcpHome() string {
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {
@@ -547,7 +541,7 @@ func configFile() (path string, name string, ok bool) {
 }
 
 func parseConfig(data []byte) (*mcpConfig, error) {
-	// YAML is a superset of JSON, so yaml.Unmarshal handles both.
+	// YAML is a superset of JSON, so yaml.Unmarshal handles.
 	var cfg mcpConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
@@ -555,7 +549,7 @@ func parseConfig(data []byte) (*mcpConfig, error) {
 	return &cfg, nil
 }
 
-// -- bridge --
+// bridge
 
 type toolMapping struct {
 	server string
@@ -570,7 +564,6 @@ type Bridge struct {
 	cfg    *mcpConfig
 	source string
 	errs   map[string]string
-	// stopped closes on shutdown.
 	stopped   chan struct{}
 	closeOnce sync.Once
 }
@@ -625,7 +618,7 @@ func (b *Bridge) shutdown() {
 	}
 }
 
-// NewBridgeFromEnv loads config from MCP_SERVERS env var or mcp.yaml/mcp.json in.
+// NewBridgeFromEnv loads config from MCP_SERVERS env var or mcp.yaml/mcp.json.
 func NewBridgeFromEnv() (*Bridge, error) {
 	cfg, source, err := loadConfig()
 	if err != nil {
@@ -664,7 +657,6 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 			continue
 		}
 		b.servers[sc.Name] = conn
-		// connect runs at mount, before any run owns a cancellable ctx.
 		tools, err := conn.listTools(context.Background())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "mcp: failed to list tools from %s: %v\n", sc.Name, err)

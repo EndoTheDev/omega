@@ -1,4 +1,4 @@
-// Package files owns the file domain, all of it (the shell-ring shrink wave 1, ADR.
+// Package files owns the file domain, all of it.
 package files
 
 import (
@@ -87,7 +87,7 @@ func prop(typ, desc string) map[string]any {
 }
 
 // object assembles the tool's JSON object schema. required names the args THIS verb
-// cannot run without - its own list, never another verb's.
+// cannot run without - its own list, never another.
 func object(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -126,7 +126,7 @@ type fileOp struct {
 	NewString string `json:"new_string"`
 }
 
-// parseFileOperations converts the raw interface{} from tool args into a slice of.
+// parseFileOperations converts the raw interface{} from tool args into a slice.
 func parseFileOperations(raw any) ([]fileOp, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -211,7 +211,7 @@ func opArgs(op fileOp) map[string]any {
 	return args
 }
 
-// restoreFiles writes every snapshot back and removes files that did not exist before.
+// restoreFiles writes every snapshot back and removes files that did not exist.
 // Writes are atomic (temp + rename) with each file's ORIGINAL mode - a rollback must
 // not truncate a half-written file in place or chmod a 0600 file world-readable.
 func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[string]os.FileMode) {

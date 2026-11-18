@@ -25,7 +25,7 @@ func (p *Plugin) Description() string {
 	return "session persistence: SQLite-backed message and session store"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "store" }
 
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
@@ -71,9 +71,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return err
 	}
-	// Routing home: the chat floor addresses sessions the agents roster lists, and those.
 	s.SetHome(cfg.Home)
-	// A same-instance re-mount (the double-mount removal proofs) opens a second store.
 	if p.store != nil {
 		_ = p.store.Close()
 	}
@@ -149,8 +147,7 @@ func sessionCommands() []core.ExtensionCommand {
 	}
 }
 
-// handleSessionCommand dispatches one session command (the classic wrapper's switch,
-// one command at a time.
+// handleSessionCommand dispatches one session command.
 func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/sessions":
@@ -171,8 +168,7 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	case "/resume":
 		return HandleResumeCommand(c, s, args)
 	case "/branch":
-		// /branch [parent-id]: the given id wins (branching FROM a session is the documented
-		// argument).
+		// /branch [parent-id]: the given id wins.
 		parentID, rest := sessionTarget(c, args)
 		return HandleBranchCommand(c, s, parentID, rest)
 	case "/label":
@@ -185,7 +181,7 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	return core.CommandResult{}, core.CommandMiss(name)
 }
 
-// sessionTarget resolves the session a command acts ON.
+// sessionTarget resolves the session a command acts.
 func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	head, tail, _ := strings.Cut(strings.TrimSpace(args), " ")
 	if head != "" {
@@ -194,7 +190,7 @@ func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	return core.CommandSession(c), ""
 }
 
-// sessionPayload is sessionTarget's sibling for commands whose args are the command's.
+// sessionPayload is sessionTarget's sibling for commands whose args are.
 // A caller that binds no session (the terminal loop) keeps the legacy shape, where the
 // first word names the session: "/label <session-id> <text>", "/export <session-id>
 // [path]".

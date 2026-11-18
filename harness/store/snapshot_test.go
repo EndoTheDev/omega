@@ -23,7 +23,7 @@ func TestSnapshotStoreCopiesALiveWALStore(t *testing.T) {
 		t.Fatalf("open source store: %v", err)
 	}
 	// Deliberately NOT closed before the snapshot. The rows below sit in the -wal until a
-	// checkpoint, which a clone never gets to wait for.
+	// checkpoint, which a clone never gets to wait.
 	ctx := context.Background()
 	if err := st.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
 		st.Close()
@@ -39,13 +39,11 @@ func TestSnapshotStoreCopiesALiveWALStore(t *testing.T) {
 		st.Close()
 		t.Fatalf("snapshot: %v", err)
 	}
-	// The snapshot carries no sidecars of its own.
 	for _, suffix := range []string{"-wal", "-shm"} {
 		if _, err := os.Stat(dst + suffix); err == nil {
 			t.Errorf("snapshot left a %s sidecar - the copy is not self-contained", suffix)
 		}
 	}
-	// Read the snapshot through a plain connection.
 	db, err := sql.Open("sqlite", dst)
 	if err != nil {
 		st.Close()

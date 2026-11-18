@@ -49,7 +49,7 @@ const (
 	backupKeep       = 5
 )
 
-// Curator state paths, all under <skillsdir>/.curator (the one ignored directory.
+// Curator state paths, all under <skillsdir>/.curator.
 const (
 	curatorDirName    = ".curator"
 	ledgerFileName    = "ledger.jsonl"
@@ -289,7 +289,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		return "", fmt.Errorf("rollback: entry %s is already a rollback", id)
 	}
 	var report strings.Builder
-	// Archive and merge rollbacks move the retired folder back whole.
 	arched, aerr := sp.archiveDir()
 	if aerr != nil {
 		return "", aerr
@@ -337,7 +336,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		}
 		switch target.Action {
 		case LedgerArchive:
-			// Degraded fallback: the archived folder is gone, so the recorded files are all.
 			if err := os.WriteFile(f.Path, []byte(f.Before), 0o644); err != nil {
 				return "", fmt.Errorf("rollback: %w", err)
 			}
@@ -349,7 +347,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 			report.WriteString("restored " + f.Path + "\n")
 		}
 	}
-	// Merge rollbacks un-archive too.
 	if target.Action == LedgerArchive || target.Action == LedgerMerge {
 		arch, err := sp.archiveDir()
 		if err == nil {
@@ -366,7 +363,7 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		writeUsageLocked(sp.Dir, m)
 		usageMu.Unlock()
 	}
-	// Archive-folder rollback: the archived folder vanishes above, so the ledger row's.
+	// Archive-folder rollback: the archived folder vanishes above, so the ledger.
 	// Merge/distill leave both files restored from `before` - byte-exact by construction.
 	undo := LedgerEntry{
 		ID:     randID(),

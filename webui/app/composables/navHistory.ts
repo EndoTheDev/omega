@@ -80,7 +80,6 @@ export function createNavHistory(activate: (e: NavEntry) => boolean) {
         index.value = target;
         break;
       }
-      // dead entry: cut it out of the middle.
       entries.value = entries.value.filter((x, i) => i !== target);
       index.value -= 1;
     }

@@ -94,7 +94,7 @@ func (b *PromptBuilder) writeSections(sb *strings.Builder, opts core.PromptBuild
 	}
 }
 
-// Guidelines returns the default guideline lines appended under "## Guidelines" in.
+// Guidelines returns the default guideline lines appended under "## Guidelines".
 func (b *PromptBuilder) Guidelines() []string {
 	return []string{
 		"Use tools to read files and run commands before making assumptions.",

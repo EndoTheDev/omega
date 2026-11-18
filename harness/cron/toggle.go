@@ -83,7 +83,7 @@ func (r *Runner) jobFileFor(job Job) (string, error) {
 	return "", UnknownJobError{Key: job.StateKey()}
 }
 
-// setJobEnabled flips the per-job `enabled:` flag on the named job entry in the.
+// setJobEnabled flips the per-job `enabled:` flag on the named job entry.
 func setJobEnabled(path, name string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -128,7 +128,7 @@ func setJobEnabled(path, name string, enabled bool) error {
 		if !named {
 			continue
 		}
-		// the named entry: replace an existing `enabled:` scalar in place, or append the.
+		// the named entry: replace an existing `enabled:` scalar in place, or append.
 		for i := 0; i+1 < len(item.Content); i += 2 {
 			key, val := item.Content[i], item.Content[i+1]
 			if key.Kind == yaml.ScalarNode && key.Value == "enabled" {

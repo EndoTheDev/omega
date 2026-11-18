@@ -1,7 +1,6 @@
 package observability
 
-// Config configures the outbound logging half of the capsule (the config section stays
-// `logging:`.
+// Config configures the outbound logging half of the capsule.
 type Config struct {
 	Enabled bool   `yaml:"enabled"`
 	File    string `yaml:"file"`

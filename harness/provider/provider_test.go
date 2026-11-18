@@ -50,7 +50,7 @@ func TestNewProviderDefaults(t *testing.T) {
 	}
 }
 
-// TestWithModel verifies WithModel returns a copy on the new model and leaves the.
+// TestWithModel verifies WithModel returns a copy on the new model and leaves.
 func TestWithModel(t *testing.T) {
 	p := NewProvider("ollama", "old", "", "")
 	cp := p.WithModel("new")
@@ -90,7 +90,7 @@ func TestWithThinkingLevel(t *testing.T) {
 	}
 }
 
-// TestUnknownProviderStreamError verifies Stream returns an error StreamEnd for an.
+// TestUnknownProviderStreamError verifies Stream returns an error StreamEnd.
 func TestUnknownProviderStreamError(t *testing.T) {
 	p := &Provider{typ: "bogus", baseURL: "http://localhost"}
 	events := p.Stream(testContext(), nil, nil)
@@ -103,7 +103,7 @@ func TestUnknownProviderStreamError(t *testing.T) {
 	}
 }
 
-// TestMessagesToJSON verifies role fields are added and timestamps are stripped for.
+// TestMessagesToJSON verifies role fields are added and timestamps are stripped.
 func TestMessagesToJSON(t *testing.T) {
 	msgs := []core.Message{
 		core.NewSystem("sys"),
@@ -127,7 +127,7 @@ func TestMessagesToJSON(t *testing.T) {
 	}
 }
 
-// TestThinkingMappers verifies the three thinking-level mappers across every.
+// TestThinkingMappers verifies the three thinking-level mappers across.
 func TestThinkingMappers(t *testing.T) {
 	t.Run("ollamaThinkValue", func(t *testing.T) {
 		cases := []struct {
@@ -279,21 +279,18 @@ func TestInitDefaults(t *testing.T) {
 		wantBaseURL string
 		wantAPIKey  string
 	}{
-		// a.
 		{
 			name:        "openai_default_baseURL",
 			typ:         "openai",
 			wantBaseURL: "https://api.openai.com/v1",
 			wantAPIKey:  "",
 		},
-		// b.
 		{
 			name:        "anthropic_default_baseURL",
 			typ:         "anthropic",
 			wantBaseURL: "https://api.anthropic.com/v1",
 			wantAPIKey:  "",
 		},
-		// c.
 		{
 			name:        "ollama_apiKey_from_env",
 			typ:         "ollama",
@@ -301,7 +298,6 @@ func TestInitDefaults(t *testing.T) {
 			wantBaseURL: "http://localhost:11434",
 			wantAPIKey:  "ollama-key",
 		},
-		// d.
 		{
 			name:        "openai_apiKey_from_env",
 			typ:         "openai",
@@ -309,7 +305,6 @@ func TestInitDefaults(t *testing.T) {
 			wantBaseURL: "https://api.openai.com/v1",
 			wantAPIKey:  "openai-key",
 		},
-		// e.
 		{
 			name:        "anthropic_apiKey_from_env",
 			typ:         "anthropic",
@@ -317,7 +312,6 @@ func TestInitDefaults(t *testing.T) {
 			wantBaseURL: "https://api.anthropic.com/v1",
 			wantAPIKey:  "anthropic-key",
 		},
-		// f.
 		{
 			name:        "ollama_baseURL_from_env",
 			typ:         "ollama",
@@ -325,7 +319,6 @@ func TestInitDefaults(t *testing.T) {
 			wantBaseURL: "http://myhost:11434",
 			wantAPIKey:  "",
 		},
-		// g.
 		{
 			name:        "explicit_values_win_over_env",
 			typ:         "ollama",
@@ -335,7 +328,6 @@ func TestInitDefaults(t *testing.T) {
 			wantBaseURL: "http://explicit:11434",
 			wantAPIKey:  "explicit-key",
 		},
-		// h.
 		{
 			name:        "openai_trailing_slash_trimmed",
 			typ:         "openai",
@@ -384,7 +376,7 @@ func TestInitDefaults(t *testing.T) {
 	}
 }
 
-// TestProviderModelCommand verifies /model <name> updates the base provider via.
+// TestProviderModelCommand verifies /model <name> updates the base provider.
 func TestProviderModelCommand(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
@@ -647,8 +639,6 @@ func TestModelInfo(t *testing.T) {
 		t.Errorf("modelInfo (HTTP 500) = %d, want error", info)
 	}
 
-	// openai/anthropic: ollama-lane hosts (keypool -> ollama-cloud) serve /api/show at the
-	// root.
 	p = &Provider{typ: "openai", baseURL: srv.URL}
 	if info, err := p.modelInfo(); err != nil || info != 131072 {
 		t.Errorf("modelInfo (openai) = %d, %v; want 131072, nil", info, err)
@@ -912,8 +902,7 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 	}
 }
 
-// TestStreamOllamaToolResultRoundTrip verifies the request side of the native
-// round-trip.
+// TestStreamOllamaToolResultRoundTrip verifies the request side of the native.
 func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
 	var gotMessages []any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -953,7 +942,6 @@ func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
 	if fn["name"] != "get_weather" {
 		t.Errorf("tool call function name = %v, want get_weather", fn["name"])
 	}
-	// ollama's native path requires arguments as the object.
 	args, _ := fn["arguments"].(map[string]any)
 	if args["city"] != "Tokyo" {
 		t.Errorf("tool call arguments = %v, want object {city: Tokyo}", fn["arguments"])
@@ -1049,8 +1037,7 @@ func TestStreamOllamaErrors(t *testing.T) {
 	})
 }
 
-// TestMessagesToJSONToolArgsEncoding verifies the tool_calls argument encoding per
-// provider wire.
+// TestMessagesToJSONToolArgsEncoding verifies the tool_calls argument encoding.
 func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
 	assistant := core.NewAssistant("")
 	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}

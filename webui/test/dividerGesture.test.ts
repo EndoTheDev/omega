@@ -75,7 +75,6 @@ test("dividerDelta + dragSplitDivider (column): drag DOWN tracks the pointer dow
   const CONTENT = 1000;
   const s = fresh();
   let t = columnShell();
-  // 50px of travel (5 moves).
   for (let i = 1; i <= 5; i++) {
     const raw = 800 + i * 10;
     const d = dividerDelta(s, i * 10, raw)!;

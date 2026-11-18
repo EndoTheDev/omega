@@ -35,7 +35,7 @@ func TestCreateAgentSessionBinds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("session agent = %q, want scout", sess.Agent)
 	}
-	// empty agent creation binds default (the same semantics the core CreateSession.
+	// empty agent creation binds default.
 	if err := s.CreateAgentSession(ctx, "def-a", "", "", ""); err != nil {
 		t.Fatalf("create default-bound: %v", err)
 	}

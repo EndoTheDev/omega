@@ -17,7 +17,7 @@ export const BOARD_STATUSES = [
 
 export type BoardStatus = (typeof BOARD_STATUSES)[number];
 
-// The URL the board view lives at (the shell anchors the main-pane switcher here, the.
+// The URL the board view lives at.
 export const BOARD_PATH = "/board";
 
 /** true when p is the board route ("/board", trailing slash tolerated). */
@@ -25,7 +25,7 @@ export function isBoardPath(p: string): boolean {
   return p === BOARD_PATH || p === BOARD_PATH + "/";
 }
 
-// -- lane rails: ANY lane folds to a thin vertical
+// lane rails: ANY lane folds to a thin vertical
 // rail - the Hermes lane-collapse model, ruled in for omega. The old
 // settled-only fold (done/archived collapsed, the "N folded" note) is
 // superseded and gone: the lane model below is the only one.
@@ -87,7 +87,7 @@ export function isNarrowWidth(px: number): boolean {
 
 // One task row, exactly what GET /tasks returns.
 
-// last_heartbeat_at rides only when the store stamps it (the Hermes board does.
+// last_heartbeat_at rides only when the store stamps it.
 export interface BoardTask {
   id: string;
   title: string;
@@ -108,7 +108,7 @@ export interface BoardTask {
   board?: string;
 }
 
-// -- priority: an integer urgency tiebreak in the Hermes shape (higher = more urgent.
+// priority: an integer urgency tiebreak in the Hermes shape.
 
 export const PRIORITY_LEVELS = [0, 1, 2, 3] as const;
 
@@ -140,15 +140,15 @@ export function bodyPreview(body: string): string {
   return line.length > 80 ? line.slice(0, 79) + "…" : line;
 }
 
-// -- card polish: the card is a reading surface, not a wall of text.
+// card polish: the card is a reading surface, not a wall of text.
 
 /** the card text clamp: two lines, title and teaser alike. */
 export const CARD_CLAMP_LINES = 2;
 
-// -- the running heartbeat chip
+// the running heartbeat chip
 // "the running card dont have a heartbeat"). The store kept
 // the data the eye never showed: a running card knows when it started,
-// and a beating worker knows when it last spoke. The chip says both.
+// and a beating worker knows when it last spoke. The chip says.
 //
 // Two clocks, deliberately different:
 // the WORKING duration only ever grows (from started_at);
@@ -205,7 +205,7 @@ export function heartbeatChip(
   return { label, stale, runningMs };
 }
 
-// -- board switcher: named boards + a current-board pointer, Hermes-shaped. There is no
+// board switcher: named boards + a current-board pointer, Hermes-shaped. There is no
 // cross-board move anywhere - a card lives on exactly one board.
 
 // One registry row (GET /boards payload).
@@ -219,7 +219,7 @@ export function isCurrentBoard(b: BoardInfo): boolean {
   return b.current;
 }
 
-/** withBoard appends ?board=.. */
+/** withBoard appends ?board=. */
 export function withBoard(path: string, board: string): string {
   const trimmed = (board ?? "").trim();
   if (trimmed === "") return path;
@@ -234,10 +234,10 @@ export function pickBootBoard(boards: BoardInfo[]): string {
   return cur ? cur.name : boards[0].name;
 }
 
-// -- the assignee source (0.17.3 make-over) --------------------------- The create.
-// Typing stays legal: a card may name a worker the registry no longer lists (or never
-// did), and the form must never strand that card. A failed GET degrades to no options -
-// the field stays a plain text input - never to a blocked form.
+// the assignee source (0.17.3 make-over) --------------------------- The create. Typing
+// stays legal: a card may name a worker the registry no longer lists (or never did),
+// and the form must never strand that card. A failed GET degrades to no options - the
+// field stays a plain text input - never to a blocked form.
 
 export interface AgentOption {
   value: string;
@@ -245,7 +245,7 @@ export interface AgentOption {
   hint: string;
 }
 
-// agentRowWire is the subset of GET /agents this view reads (the roster row shape the.
+// agentRowWire is the subset of GET /agents this view reads.
 interface AgentRowWire {
   name?: string;
   description?: string;
@@ -320,7 +320,7 @@ export function step(status: string, dir: -1 | 1): string | null {
   return BOARD_STATUSES[j];
 }
 
-// -- board removal / rename ------- The board's own surface lives in the panel band.
+// board removal / rename ------- The board's own surface lives in the panel band.
 
 export const DEFAULT_BOARD_NAME = "main";
 
@@ -342,12 +342,12 @@ export function boardRenamePath(name: string): string {
   return boardDeletePath(name);
 }
 
-// -- the board dropdown's VERBS --------------------- The band holds title + board.
-// They ride the SAME ladder as the boards (one roving tabindex, one keyboard law - no
-// second popup grammar), so a verb is an option value that cannot collide with a board
-// name: the server's boardNameRE starts every name with [a-z0-9]. The values are
-// exact-match only, so a stray `!`-prefixed board name from any other source switches
-// to a board and never fires a verb.
+// the board dropdown's VERBS --------------------- The band holds title + board. They
+// ride the SAME ladder as the boards (one roving tabindex, one keyboard law - no second
+// popup grammar), so a verb is an option value that cannot collide with a board name:
+// the server's boardNameRE starts every name with [a-z0-9]. The values are exact-match
+// only, so a stray `!`-prefixed board name from any other source switches to a board
+// and never fires a verb.
 
 /** the dropdown row that starts the inline rename. */
 export const BOARD_MENU_RENAME = "!rename";
@@ -390,8 +390,7 @@ export function boardCount(shown: number, total: number, filtering: boolean): st
   return `${total} card${total === 1 ? "" : "s"}`;
 }
 
-// -- search / filter (0.17.3 make-over) ------------------------------- One seat, TWO
-// scopes.
+// search / filter (0.17.3 make-over) ------------------------------- One seat, TWO.
 
 export type SearchScope = "board" | "all";
 
@@ -462,11 +461,11 @@ export function age(iso: string, now: Date = new Date()): string {
   return `${Math.floor(h / 24)}d`;
 }
 
-// -- the mounted /boards fetch retry: Board.vue gates the switcher chip on
-// `boards.length > 0` (0.17.3 make-over; the pre-make-over gate was `boards.length > 1
-// || boardName`, so the chip is a MORE present control now, never less), and the fetch
-// runs ONCE per mount - a fetch that misses under CI suite load leaves no chip for the
-// whole page life.
+// the mounted /boards fetch retry: Board.vue gates the switcher chip on `boards.length
+// > 0` (0.17.3 make-over; the pre-make-over gate was `boards.length > 1 || boardName`,
+// so the chip is a MORE present control now, never less), and the fetch runs ONCE per
+// mount - a fetch that misses under CI suite load leaves no chip for the whole page
+// life.
 
 export const BOARD_FETCH_ATTEMPTS = 3;
 export const BOARD_FETCH_BACKOFF_MS = 300;

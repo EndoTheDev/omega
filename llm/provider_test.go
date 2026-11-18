@@ -202,7 +202,7 @@ func TestThinkingEnabled(t *testing.T) {
 	}
 }
 
-// -- RetryHTTP / retryHTTP via httptest --
+// RetryHTTP / retryHTTP via httptest
 
 // newRetryReq builds a retryable GET request (bytes.Reader body => GetBody set).
 func newRetryReq(t *testing.T, target string) *http.Request {

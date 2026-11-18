@@ -55,7 +55,7 @@ function chain(over: Partial<ChainDraft> = {}): ChainDraft {
   return { agent: "", model: "", deliver: "new-session", ...over };
 }
 
-// -- the two links --
+// the two links
 
 test("mainAgentOf reads the roster's main mark, and falls back to the Go constant", () => {
   assert.equal(mainAgentOf(ROSTER), "default");
@@ -83,7 +83,7 @@ test("an authored agent is AUTHORED - no chip, no note, no resolution", () => {
 });
 
 test("a job with no model INHERITS from the agent the fire runs under", () => {
-  // in-process fires run as the main agent (runner.go's wrong-target law), so the.
+  // in-process fires run as the main agent (runner.go's wrong-target law),.
   const inproc = modelChain(chain(), ROSTER, MAIN_MODEL);
   assert.equal(inproc.inherited, true);
   assert.equal(inproc.value, MAIN_MODEL);
@@ -148,7 +148,7 @@ test("a degraded catalog names the source without a value", () => {
   assert.equal(c.note, "inherits the main agent");
 });
 
-// -- the state machine's state is PRESENCE, not a value --
+// the state machine's state is PRESENCE, not a value
 
 test("authored and inherited are distinct states even when they resolve alike", () => {
   // the same resolved agent, two different states: one authored, one inherited. This is
@@ -163,7 +163,7 @@ test("authored and inherited are distinct states even when they resolve alike", 
   );
 });
 
-// -- the chain's law: a wake cannot lean on the main agent --
+// the chain's law: a wake cannot lean on the main agent
 
 test("a wake inheriting the main agent is BLOCKED, and says why", () => {
   const c = agentChain(chain({ deliver: "continuous-agent" }), ROSTER);
@@ -173,7 +173,6 @@ test("a wake inheriting the main agent is BLOCKED, and says why", () => {
   assert.equal(c.note, "inherits the main agent (default), which never wakes");
   const m = modelChain(chain({ deliver: "continuous-agent" }), ROSTER, MAIN_MODEL);
   assert.equal(m.blocked, true, "the whole chain reads as blocked");
-  // ..
   assert.equal(agentChain(chain(), ROSTER).blocked, false);
 });
 
@@ -187,7 +186,7 @@ test("chainViolation refuses exactly the blocked chain", () => {
     chainViolation(chain({ agent: "scout", deliver: "continuous-agent" }), "default"),
     "",
   );
-  // an AUTHORED reference to the main agent IS the absence (save.go normalizes it.
+  // an AUTHORED reference to the main agent IS the absence.
   assert.notEqual(
     chainViolation(chain({ agent: "default", deliver: "continuous-agent" }), "default"),
     "",
@@ -219,7 +218,7 @@ test("validateDraft carries the chain's law last and takes the roster's main age
   );
 });
 
-// -- the SFC wiring (source pins: the node suite has no DOM) --------
+// the SFC wiring (source pins: the node suite has no DOM) ------
 
 test("CronJobs.vue renders the chip and the chain note, and keeps the draft empty", () => {
   const src = readFileSync(

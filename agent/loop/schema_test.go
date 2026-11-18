@@ -7,8 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestToolSchemasActionEnumDerivesFromMetadata pins the drift gate at the provider
-// boundary.
+// TestToolSchemasActionEnumDerivesFromMetadata pins the drift gate at the provider.
 func TestToolSchemasActionEnumDerivesFromMetadata(t *testing.T) {
 	tools := map[string]core.Tool{
 		"memory": {

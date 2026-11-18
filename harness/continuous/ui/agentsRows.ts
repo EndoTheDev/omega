@@ -1,6 +1,6 @@
 // omega webui: the agents surface model.
 
-// RECORD: - continuousRows.ts types fold in here (the merged agent row carries the.
+// RECORD: - continuousRows.ts types fold in here.
 import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
 
 // The 0.17.3 make-over made the row SECRET-FREE (agent/configedit.go law 2): an agent
@@ -70,10 +70,7 @@ export function agentsListIsEmpty(profiles: readonly OmegaAgent[]): boolean {
   return profiles.length === 0;
 }
 
-/**
- * session label voice for the agent's session list (same rule the sessions sidebar
- * uses.
- */
+/** session label voice for the agent's session list (same rule the sessions sidebar. */
 export function agentSessionTitle(s: OmegaAgentSession): string {
   return s.label || s.id.slice(0, 12) + "...";
 }
@@ -201,7 +198,7 @@ export function continuousIndex(
   return out;
 }
 
-// -- the create door (0.17.3 rulings 1 + 6) -------------------------
+// the create door (0.17.3 rulings 1 + 6) -----------------------
 //
 // ONE "+" opens ONE form. The KIND is a choice inside that form, and the
 // kind decides the wire - that routing is pure, so the suite pins it
@@ -311,11 +308,11 @@ export function agentKindOption(kind: AgentKind): string {
   return agentKindLabel(kind).split(" (")[0];
 }
 
-// -- delete = delete the HOME --------------------
+// delete = delete the HOME ------------------
 
 /**
  * agentDeleteConfirm names what the trigger will take.
- * The count is the ROW's session_count - the same number the delete receipt answers -
+ * The count is the ROW's session_count - the same number the delete record answers -
  * so the dialog can never promise a different number than the delete delivers.
  */
 export function agentDeleteConfirm(name: string, sessions: number): string {
@@ -334,7 +331,7 @@ export function agentDeleteLabel(name: string): string {
   return `delete ${name}'s home - sessions included`;
 }
 
-// -- the edit write (the draft diff) -------------------------------- The panel's. The
+// the edit write (the draft diff) -------------------------------- The panel's. The
 // diff is pure and lives here because it has one sharp edge the DOM hides: a `<input
 // type="number">` under v-model hands back a NUMBER, not the string the draft declares
 // - every read goes through String so a typed 7 cannot throw on.trim at submit time.
@@ -403,8 +400,8 @@ export function editRequest(
   return Object.keys(body).length ? body : null;
 }
 
-// -- the inheritance chips ------------------------ ONE state machine, both surfaces.
-// The panel never re-parses yaml: one read, two surfaces.
+// the inheritance chips ------------------------ ONE state machine, both surfaces. The
+// panel never re-parses yaml: one read, two surfaces.
 
 /** ScopeKnob is one knob inside an agent scope (core.SettingsScopeKnob). */
 export interface ScopeKnob {
@@ -438,7 +435,7 @@ export function scopeIndex(scope?: SettingsScope | null): Record<string, ScopeKn
 export interface FieldChip {
   /**
    * the dotted layer key - the SAME spelling the write lane's `unset` vocabulary takes,
-   * so the chip's reset button and the write path cannot drift
+   * so the chip's reset button and the write path cannot drift / /
    */
   key: string;
   label: string;
@@ -496,7 +493,7 @@ export function fieldChips(scope?: SettingsScope | null): FieldChip[] {
 }
 
 /**
- * chipOf looks one knob up in a resolved list (the panel keys its template by dotted.
+ * chipOf looks one knob up in a resolved list.
  */
 export function chipOf(chips: readonly FieldChip[], key: string): FieldChip | undefined {
   return chips.find((c) => c.key === key);
@@ -530,7 +527,7 @@ export function agentSkillsNote(allow: readonly string[]): string {
 export const LOCKED_AGENT_MODULES: readonly string[] = ["agent-loop", "provider"];
 
 /**
- * toggleOptions: the capsule names an agent may switch on.
+ * toggleOptions: the capsule names an agent may switch.
  * The subset law starts here: a module the host has off is not offered, so the operator
  * never meets a refusal they could have avoided.
  */

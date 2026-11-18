@@ -123,7 +123,7 @@ describe("live body tail-follow (long body)", () => {
 });
 
 describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
-  // a thinking block folding at answer start can SHRINK the scroller enough that the.
+  // a thinking block folding at answer start can SHRINK the scroller enough.
   // That arrival at bottom is a layout event, not a scroll decision: it must NOT re-arm
   // the tail-follow.
   it("a pinned view stays governed by the plain near-bottom check", () => {
@@ -132,8 +132,6 @@ describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
   });
 
   it("an unpinned view scrolled back to the bottom on GROWN content re-arms the follow", () => {
-    // content grew since the last scroll event (thinking kept streaming while the user
-    // read).
     assert.equal(
       resumesFollow(
         false,
@@ -148,7 +146,6 @@ describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
   });
 
   it("an unpinned view arriving at the bottom of SHRUNK content holds the follow off", () => {
-    // the fold shrank the scroller from 4000 to 1600.
     assert.equal(
       resumesFollow(false, 4000, 1200, 400, 1600),
       false,

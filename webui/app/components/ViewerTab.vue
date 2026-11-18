@@ -34,8 +34,7 @@
           v-if="skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
         <!--
-          the FOLDER body: a dir ref lists one directory (/files/browse, the same
-          listing the Files tab browses).
+          the FOLDER body: a dir ref lists one directory (/files/browse, the same.
         -->
         <div
           v-if="isDir"
@@ -78,7 +77,6 @@
             :src="rawSrc"
             :alt="viewer.name">
         </div>
-        <!-- pdf rides the browser's native viewer on the raw route. -->
         <iframe
           v-else-if="view === 'pdf'"
           class="viewer-pdf"
@@ -168,12 +166,11 @@
   const mime = ref("");
   const size = ref<number | undefined>(undefined);
   const skillDesc = ref("");
-  // the FOLDER body's rows: one directory listing, the same /files/browse read the.
+  // the FOLDER body's rows: one directory listing, the same /files/browse read.
   const dirEntries = ref<FileEntry[]>([]);
   const isDir = computed(() => props.viewer?.kind === "dir");
 
-  // the viewer's own opener: a folder row drills to another folder tab, a file row
-  // opens a file tab.
+  // the viewer's own opener: a folder row drills to another folder tab, a file row.
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function dirChildPath(e: FileEntry): string {
     return joinRelPath(props.viewer?.name ?? "", e.name);
@@ -182,8 +179,7 @@
     openViewerRef?.({ kind: e.is_dir ? "dir" : "file", name: dirChildPath(e) });
   }
 
-  // a refetch when the same tab instance is handed a DIFFERENT viewer (the outlet
-  // reuses the component.
+  // a refetch when the same tab instance is handed a DIFFERENT viewer.
   watch(
     () => (props.viewer ? `${props.viewer.kind}:${props.viewer.name}` : ""),
     () => void load(),
@@ -211,7 +207,6 @@
         const data = await fetchFilesBrowse(props.viewer.name, focusedSession?.value ?? undefined);
         dirEntries.value = sortFileEntries(data.entries ?? []);
       } else {
-        // the read roots on the focused session's resolved root.
         const data = await fetchFilesRead(props.viewer.name, focusedSession?.value ?? undefined);
         content.value = data.content;
         truncated.value = data.truncated;
@@ -247,7 +242,7 @@
     return all;
   });
 
-  // the markdown branch renders through the CHAT grammar (markdown-it, html:false.
+  // the markdown branch renders through the CHAT grammar.
   const renderedMd = ref("");
   const mdEl = ref<HTMLElement | null>(null);
   const collapsed = new Set<number>();
@@ -279,7 +274,6 @@
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined)
       : "",
   );
-  // the no-preview state's affordance.
   const downloadUrl = computed(() =>
     props.viewer && props.viewer.kind === "file"
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined, { download: true })
@@ -345,7 +339,6 @@
     font-size: 11px;
     opacity: 0.65;
   }
-  /* the folder body: the tree's row vocabulary, flat. */
   .viewer-dir {
     flex: 1;
     min-height: 0;
@@ -392,7 +385,7 @@
     line-height: 1.5;
   }
   /*
-   * the image body: fits the pane (contain), scrolls when the file is larger than it
+   * the image body: fits the pane (contain), scrolls when the file is larger than it.
    */
   .viewer-imgwrap {
     flex: 1;
@@ -405,7 +398,6 @@
     max-width: 100%;
     object-fit: contain;
   }
-  /* the pdf body: the browser's native viewer owns the frame. */
   .viewer-pdf {
     flex: 1;
     min-height: 0;

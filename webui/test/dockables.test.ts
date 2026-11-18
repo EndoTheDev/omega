@@ -47,7 +47,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 
-// helpers -----------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 function asSplit(n: DockNode): DockSplit {
   assert.equal(n.kind, "split");
@@ -125,7 +125,7 @@ function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
 
-// -- the registry itself ---------------------------------------------------
+// the registry itself -------------------------------------------------
 
 describe("the dockable registry", () => {
   it("covers the openable component universe 1:1 with unique ids", () => {
@@ -135,7 +135,6 @@ describe("the dockable registry", () => {
   });
 
   it("tab labels ride the Title Case siblings (card t_556ee727)", () => {
-    // every shell tab renders Title Case today: Files, Settings, Insights, Agents.
     assert.equal(COMPONENT_TITLES.agents, "Agents");
     for (const d of DOCKABLES) {
       if (d.id === "agents") continue;
@@ -171,10 +170,8 @@ describe("the dockable registry", () => {
         `${d.id}: area is one of the four`,
       );
       assert.equal(typeof d.closable, "boolean", `${d.id}: closable flag`);
-      // the lock is narrow now: only sessions is locked; unclosable is the wider
-      // property.
       assert.equal(isLockedTab(d.id), d.id === 'sidebar', `${d.id}: lock == sessions`);
-      // chat AND viewer are the closable multi class..
+      // chat AND viewer are the closable multi class.
       assert.equal(
         isClosableTab(d.id),
         d.id === "chat" || d.id === "viewer" || d.id === "browser" || d.id === "settings",
@@ -185,7 +182,6 @@ describe("the dockable registry", () => {
 
   it("policy split: chat + viewer are multi (t_36ceb99b); the closable class adds browser + settings singletons (t_95c91f9c, t_00e4a784)", () => {
     const multi = DOCKABLES.filter((d) => d.policy === "multi").map((d) => d.id);
-    // the new-tab placeholder is retired.
     assert.deepEqual(multi, ["chat", "viewer"]);
     const closable = DOCKABLES.filter((d) => isClosableTab(d.id)).map((d) => d.id);
     assert.deepEqual([...closable].sort(), ["browser", "chat", "settings", "viewer"]);
@@ -206,7 +202,6 @@ describe("the dockable registry", () => {
       PRIMARY_TAB_COMPONENTS.map((id) => viewClassOf(id)),
       ["primary-sidebar", "primary-sidebar", "primary-sidebar"],
     );
-    // the secondary sidebar keeps the seven inspector views (files, skills, tools.
     assert.deepEqual(
       DOCKABLES.filter((d) => d.area === "right").map((d) => d.id),
       ["files", "skills", "tools", "kanban", "insights", "mcp", "notifications"],
@@ -275,10 +270,8 @@ describe("the dockable registry", () => {
     assert.equal(settings.closable, true, "and closes like any tab");
     assert.equal(settings.policy, "singleton", "one settings tab, ever");
     assert.ok(!INSPECTOR_TAB_COMPONENTS.includes("settings"), "never a pinned inspector view");
-    // MAIN_DOCKABLES (the main-area list) carries it; MENU_DOCKABLES (the '+' refill
-    // inventory) does not.
+    // MAIN_DOCKABLES (the main-area list) carries it.
     assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "settings", "browser"]);
-    // the browser joins the main class.
     assert.ok(MAIN_DOCKABLES.includes("browser"), "browser IS a main-area tab");
     assert.ok(!MENU_DOCKABLES.includes("settings"), "no settings menu entry");
     assert.ok(!MENU_DOCKABLES.includes("viewer"), "no empty viewer menu entry");
@@ -298,7 +291,6 @@ describe("the dockable registry", () => {
   });
 
   it("card t_81d0901b: the modules cockpit is NOT a dockable any more", () => {
-    // module toggles are configuration, not content.
     assert.ok(
       !(DOCK_COMPONENTS as readonly string[]).includes("extensions"),
       "the removed tab id left the openable component universe",
@@ -342,7 +334,6 @@ describe("the dockable registry", () => {
       assert.equal(refused.tree, t, "the refusal changed nothing");
       assert.equal(instanceCount(refused.tree, scratch), 0);
     });
-    // the shell's own class opens there.
     const shell: DockNode = makeSplit("row", [makePane(null, 240, "left"), makePane("chat")]);
     const side = asSplit(shell).children[0] as DockPane;
     const res = openSingleton(shell, side.id, "files");
@@ -367,7 +358,6 @@ describe("the dockable registry", () => {
       Object.fromEntries(DOCKABLES.map((d) => [d.id, d.title])),
       { ...COMPONENT_TITLES },
     );
-    // the pinned sidebars have no menu-open path; insights left the main class..
     const ids = DOCKABLES.map((d) => d.id);
     assert.ok(MAIN_DOCKABLES.every((c) => ids.includes(c)));
     assert.deepEqual([...MAIN_DOCKABLES], ["chat", "viewer", "settings", "browser"]);
@@ -381,7 +371,7 @@ describe("the dockable registry", () => {
   });
 });
 
-// -- openSingleton (the webui half of the contract) ------------------------: no REAL
+// openSingleton (the webui half of the contract) ------------------------: no REAL
 // component lives in the main-singleton class anymore (settings is pinned in the
 // inspector now), so these tests run against the test-only scratch singleton (see
 // scratchDockable.ts) - the contract text is unchanged, only the fixture.
@@ -476,14 +466,13 @@ describe("openSingleton", () => {
 
   it("the locked component refuses every open path; free singletons open anywhere", async () => {
     const t = defaultTree();
-    // sessions has NO open path (the loader owns it)..
+    // sessions has NO open path (the loader owns it).
     for (const c of ["sidebar"] as const) {
       const res = openSingleton(t, firstMainPaneId(t)!, c);
       assert.equal(res.action, "noop", `${c} opens nowhere`);
       assert.equal(res.tree, t);
     }
-    // ..but kanban/files DO (they open wherever the user aims); settings no longer
-    // lives in the tree.
+    // .but kanban/files DO (they open wherever the user aims).
     for (const c of ["kanban"] as const) {
       const res = openSingleton(t, firstMainPaneId(t)!, c);
       assert.equal(res.action, "focused", `${c} already lives - focus wins`);
@@ -495,7 +484,7 @@ describe("openSingleton", () => {
   });
 });
 
-// -- the store (createDock: the reset-era ops over a persisted tree) --------
+// the store (createDock: the reset-era ops over a persisted tree) ------
 
 describe("dock store: the pane-model reset", () => {
   it("has() reads EVERY tab: a parked inactive singleton exists", async () => {
@@ -542,8 +531,7 @@ describe("dock store: the pane-model reset", () => {
     );
     // settings is NOT re-seated by the modernizer.
     assert.equal(findComponentTab(tree, "settings"), null);
-    // persisted at once so the next boot never re-modernizes; the record shape is v:3
-    // (px shares).
+    // persisted at once so the next boot never re-modernizes.
     const back = deserializeLayout(mem.getItem(DOCK_LAYOUT_KEY)!);
     assert.ok(back && treeShapesMatch(back.tree, tree), "the modern tree persisted on boot (same render)");
   });
@@ -573,7 +561,6 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const insp = paneById(dock.tree.value, "n4");
-    // the era strip's own tabs survive in place (existing layouts are untouched by.
     const era = ["files", "cron", "skills", "tools"];
     assert.deepEqual(
       insp.tabs.map((x) => x.component),
@@ -613,7 +600,7 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    const row = mainRowOf(tree); // t_67fc1905: the column root holds the row + the bottom shell
+    const row = mainRowOf(tree); //: the column root holds the row + the bottom shell
     const chatPane = paneById(tree, row.children[1].id);
     assert.deepEqual(
       chatPane.tabs.map((x) => x.component),
@@ -671,7 +658,6 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    // the boot graft adds the bottom shell (logs).
     assert.equal(panes(tree).length, 4, "sidebar + chat + inspector + bottom");
     const comps = panes(tree).map((p) => p.tabs[0]?.component);
     assert.deepEqual(comps[0], "sidebar");
@@ -691,8 +677,8 @@ describe("dock store: the pane-model reset", () => {
   });
 
   it("ensureMainPane re-inserts a main pane when the record lost the last one (stale state)", async () => {
-    // Endo ruling: removePane refuses the last main pane now, so the zero-main record
-    // is built BY HAND - the stale shape a pre-ruling session may still have persisted
+    // removePane refuses the last main pane now, so the zero-main record
+    // is built BY HAND - the stale shape a pre-rule session may still have persisted
     // (ensureMainPane is the repair path for exactly that record)
     const full = defaultTree();
     const row = asSplit(full);
@@ -705,11 +691,10 @@ describe("dock store: the pane-model reset", () => {
     const id = dock.ensureMainPane();
     const tree = dock.tree.value;
     const pane = paneById(tree, id);
-    // the recovered pane is EMPTY - the opener that asked for it mints the content
-    // (here.
+    // the recovered pane is EMPTY.
     assert.deepEqual(pane.tabs.map((x) => x.component), [], "a fresh, empty main pane");
     assert.equal(panes(tree).length, 4, "the dock has a main pane again");
-    // the new pane lands inside the MAIN ROW, at its after-edge (never beside the.
+    // the new pane lands inside the MAIN ROW, at its after-edge.
     assert.deepEqual(
       panes(tree).map((p) => p.id),
       [
@@ -728,7 +713,7 @@ describe("dock store: the pane-model reset", () => {
     const dock = createDock(mem as unknown as Storage);
     await flush();
     const tree = dock.tree.value;
-    const row = mainRowOf(tree); // t_67fc1905: row indexes live one level down now
+    const row = mainRowOf(tree); //: row indexes live one level down now
     const side = paneById(tree, row.children[0].id);
     const files = paneById(tree, row.children[2].id);
     const chatPane = paneById(tree, row.children[1].id);
@@ -760,7 +745,6 @@ describe("dock store: the pane-model reset", () => {
     mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
     const dock = createDock(mem as unknown as Storage);
     await flush();
-    // boot repair already has the fixed shape.
     const before = serialize(dock.tree.value);
     const chatPane = panes(dock.tree.value).find((p) => p.tabs[0]?.component === "chat")!;
     dock.remove(chatPane.id);
@@ -786,8 +770,7 @@ describe("dock store: the pane-model reset", () => {
       [...INSPECTOR_TAB_COMPONENTS].join(","),
       "none of them may close (logs left the strip - Endo's comment 2026-10-26)",
     );
-    // the main class still closes through the store on ANY census read - but locks the
-    // pane's LAST tab.
+    // the main class still closes through the store on ANY census read.
     const chatPane = paneById(tree, row.children[1].id);
     dock.split(chatPane.id, "row", "after");
     dock.openSingleton(chatPane.id, "settings");
@@ -825,10 +808,9 @@ describe("dock store: the pane-model reset", () => {
   });
 });
 
-// -- the composition-manifest lift -----------------------------------------
+// the composition-manifest lift ---------------------------------------
 
 describe("dockablesFromPanels", () => {
-  // "budget" plays the un-openable module id.
   const MODULE = "budget";
   it("panels without a declaration stay out of the registry", () => {
     assert.deepEqual(dockablesFromPanels([{ module: MODULE, dockable: null }]), []);
@@ -864,7 +846,7 @@ describe("dockablesFromPanels", () => {
   });
 });
 
-// -- the main-pane '+' source pins -----------
+// the main-pane '+' source pins ---------
 
 describe("the main-pane '+' mints a session, no menu", () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
@@ -887,8 +869,7 @@ describe("the main-pane '+' mints a session, no menu", () => {
   });
 
   it("the empty-pane component menu is GONE (card t_d04a1c80)", () => {
-    // DOCK-EMPTY-ACTIONS removal: the 15-button inventory the empty pane rendered is
-    // deleted.
+    // DOCK-EMPTY-ACTIONS removal: the 15-button inventory the empty pane rendered is.
     assert.doesNotMatch(pane, /dock-empty-actions/, "the menu wrapper is gone");
     assert.doesNotMatch(pane, /v-for="d in menuDockables"/);
     assert.doesNotMatch(pane, /function openDockable\(/);

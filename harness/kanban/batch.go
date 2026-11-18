@@ -147,7 +147,6 @@ func (p *ToolProvider) runTaskBatch(ctx context.Context, ops []map[string]any) (
 		fmt.Fprintf(&sb, "%d: %s\n", i+1, res)
 	}
 	if cerr := commit(); cerr != nil {
-		// a failed commit leaves nothing applied.
 		cancel()
 		committed = true
 		return "", fmt.Errorf("batch commit failed (rolled back): %w", cerr)
@@ -167,7 +166,7 @@ func (p *ToolProvider) runBatchFailForward(ctx context.Context, ops []map[string
 	for i, op := range ops {
 		res, _, err := p.runTaskOp(ctx, p.board, op)
 		if err != nil {
-			// earlier ops still applied: the panel refresh below is exactly the catch-up the.
+			// earlier ops still applied: the panel refresh below is exactly the catch-up.
 			p.refreshCapsule()
 			return sb.String() + fmt.Sprintf("failed at operations[%d]: %v", i, err), nil
 		}

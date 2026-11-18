@@ -80,7 +80,7 @@ func (l *Lifecycle) Register(owner string, h LifecycleHandle) {
 	l.entries = append(l.entries, &lifecycleEntry{LifecycleHandle: h, owner: owner})
 }
 
-// Unregister removes owner's handles (optionally just the named one when name is not.
+// Unregister removes owner's handles.
 func (l *Lifecycle) Unregister(owner, name string) []string {
 	l.mu.Lock()
 	defer l.mu.Unlock()

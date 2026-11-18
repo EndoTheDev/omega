@@ -267,7 +267,6 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	if len(subs) != 1 {
 		t.Fatalf("session observers = %d, want 1 (the recorder)", len(subs))
 	}
-	// The host's boot sequence, in order.
 	if err := ctx.RunGroup().StartAll(context.Background(), core.StartDeps{}, ""); err != nil {
 		t.Fatalf("start handles: %v", err)
 	}

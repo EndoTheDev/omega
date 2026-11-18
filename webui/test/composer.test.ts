@@ -11,7 +11,7 @@ const composer = readFileSync(
   "utf8",
 );
 
-// -- the onKeydown harness -------------------------------------------- AppComposer is
+// the onKeydown harness -------------------------------------------- AppComposer is
 // a.vue SFC: node cannot import it.
 
 function extractOnKeydown(src: string): string {
@@ -108,7 +108,7 @@ function build(
   return { onKeydown, sends, accepted, closed, active };
 }
 
-// -- the law ----------------------------------------------------------
+// the law --------------------------------------------------------
 
 describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   it("plain Enter sends and claims the key (preventDefault)", () => {
@@ -142,7 +142,6 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   });
 
   it("Backspace behind a chip hands to the dissolve and never reaches the send law", () => {
-    // the dissolve law is palette-closed-only.
     const { onKeydown, sends } = build({ dissolveBehindCaret: () => true });
     const e = key("Backspace");
     onKeydown(e);
@@ -168,7 +167,6 @@ describe("palette ownership is unchanged (t_631b5362: palette block untouched)",
   });
 
   it("palette open: Shift+Enter is palette-owned too (no newline, no send)", () => {
-    // documented choice: the palette block keeps ownership of every Enter while open.
     const { onKeydown, sends, accepted } = build({ open: true, items });
     const e = key("Enter", true);
     onKeydown(e);
@@ -199,7 +197,7 @@ describe("palette ownership is unchanged (t_631b5362: palette block untouched)",
   });
 });
 
-// -- the editor's Enter branch --------------------------
+// the editor's Enter branch ------------------------
 describe("source canary: the editor claims every Enter, the shift modifier is the exemption", () => {
   it("the final branch owns Enter unconditionally, then branches on shiftKey", () => {
     const at = composer.indexOf('if (e.key === "Enter") {');
@@ -211,7 +209,6 @@ describe("source canary: the editor claims every Enter, the shift modifier is th
     assert.match(block, /emit\("send"\)/, "plain Enter sends");
   });
   it("no unshifted send reaches the contenteditable's default newline", () => {
-    // the branch is claimed twice.
     const outside = composer.slice(composer.indexOf('if (e.key === "Enter") {'));
     assert.ok(outside.includes('e.preventDefault()'), "Enter is always claimed");
   });
@@ -221,10 +218,9 @@ const css = readFileSync(
   "utf8",
 );
 
-// a CSS block by selector: from the selector to its closing brace (composer rules are
-// flat.
+// a CSS block by selector: from the selector to its closing brace.
 function rule(sel: string): string {
-  // anchor at a line start - a suffix selector must not grab an earlier longer rule's.
+  // anchor at a line start - a suffix selector must not grab an earlier longer.
   const anchor = css.indexOf("\n" + sel);
   assert.ok(anchor > -1, `main.css carries ${sel} at a rule start`);
   const end = css.indexOf("}", anchor);
@@ -247,7 +243,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
   });
 
   it("the control row pins to the bottom through the composer-bottom class", () => {
-    // the row grows above the toolbar.
     assert.match(
       css,
       /\.composer\.expanded \.composer-row \{[^}]*flex:\s*1/,
@@ -340,7 +335,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
   });
 
   it("the fullscreen mount is an overlay: out of flow over the pane (t_9ff2f621)", () => {
-    // the displacement shape is retired.
     const at = composer.indexOf("<style scoped>");
     assert.ok(at > -1, "AppComposer carries the overlay's scoped block");
     const overlay = composer.slice(at);

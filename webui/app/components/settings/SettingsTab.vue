@@ -263,7 +263,6 @@
         class="settings-block"
         :data-category="block.id"
         :data-section="block.id">
-      <!-- the child heading: a multi-child category names its children. -->
       <h3 v-if="block.heading" class="settings-subgroup-title">{{ block.label }}</h3>
         <template v-for="knob in block.knobs" :key="knob.key">
         <div v-if="knob.type === 'toggle'" class="setting-row setting-toggle">
@@ -411,7 +410,6 @@
         @open-module="(moduleId: string) => emit('open-module', moduleId)" />
     </section>
     </div>
-    <!-- save row stays pinned below the scrollable body. -->
     <div v-if="dirtyCount > 0 && !scopeReadOnly" class="settings-save-row">
       <button
         class="settings-save"
@@ -431,7 +429,6 @@
       </section>
     </div>
 
-    <!-- the edit-as-yaml surface. -->
     <dialog
       ref="yamlDialogEl"
       class="settings-yaml"
@@ -516,7 +513,6 @@
     type UserTheme,
     type ProviderInstanceRow,
   } from "~/composables/omega";
-  // the typed model pickers ride the shared catalog (one /models fetch per settings.
   import { refreshModelCatalog } from "~/composables/modelCatalog";
   import ModelField from "./ModelField.vue";
   import ProvidersField from "./ProvidersField.vue";
@@ -558,7 +554,7 @@
     type SpyAnchorTrace,
     type SurfaceGroup,
   } from "./settingsNav";
-  // the MODULES section's body (the module lifecycle surface moved here from the.
+  // the MODULES section's body.
   import ModulesSection from "./ModulesSection.vue";
   import { useSettingsJump } from "~/composables/settingsJump";
   import { useNarrow } from "~/composables/narrow";
@@ -566,7 +562,6 @@
   import { DEFAULT_THINKING_DISPLAY, type ThinkingDisplay } from "~/composables/thinkingDisplay";
   import Icon from "../ui/Icon.vue";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
-  // item 6: the dock group's client knob rides the shared bottom-width mode ref (the.
   import {
     DEFAULT_BOTTOM_WIDTH_MODE,
     setBottomWidthMode,
@@ -587,7 +582,6 @@
     open?: boolean;
   }>();
 
-  // width-driven adaptation: the inspector column measures ~240-320px.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = useNarrow(rootEl);
 
@@ -604,14 +598,13 @@
 
 
   const groups = ref<SettingGroup[]>([]);
-  // loaded: values as the server handed them; draft: edited values.
   const loaded = ref<Record<string, unknown>>({});
   const draft = ref<Record<string, unknown>>({});
   const loadError = ref<string | null>(null);
   const saveError = ref<string | null>(null);
   const saving = ref(false);
 
-  // -- agent scopes (settings tier 3b) --- The payload's scopes ARE the tab strip (R8.
+  // agent scopes (settings tier 3b) --- The payload's scopes ARE the tab strip.
   // Each scope keeps its OWN loaded/draft/unset state, so switching tabs never throws
   // an unsaved edit away (and a main-tab save round-trip keeps an untouched agent tab's
   // draft, see applyPayload).
@@ -703,11 +696,10 @@
       void nextTick(() => {
         restoreAnchor();
         syncSpy();
-        // a palette jump that arrived before this payload landed lands HERE, after.
+        // a palette jump that arrived before this payload landed lands HERE,.
         applyJump();
       });
     } catch (err) {
-      // a host without the settings seam (501) or an unreachable server.
       groups.value = [];
       loaded.value = {};
       draft.value = {};
@@ -723,7 +715,6 @@
     loaded.value = values;
     draft.value = { ...values };
     applyScopes(payload.scopes);
-    // every read (mount reload + save round-trip) keeps the shared signal fresh.
     setDefaultWorkspace(values[DEFAULT_WORKSPACE_KNOB]);
   }
 
@@ -753,8 +744,6 @@
       activeScope.value = null;
   }
 
-
-  // -- theme picker: two knobs.
 
   // The theme knob's option list. A broken theme (server-flagged error) never enters.
   const themeOptions = computed(() => themePickOptions(props.userThemes));
@@ -838,7 +827,6 @@
     ],
   }));
 
-  // item 6: the dock's client knob - the bottom panel's width mode.
   const bottomWidthMode = useBottomWidthMode();
   const dockGroup = computed<SettingGroup>(() => ({
     key: "dock",
@@ -872,14 +860,13 @@
     group.key === "dock" ||
     (knob !== undefined && isClientKnob(knob));
 
-  // the path knob (default workspace) renders input + the workspace browse chip.
   const isPathKnob = (knob: SettingKnob) =>
     knob.key === "server.default_workspace";
 
-  // -- the curated first group --- Membership is DATA, one line to change. Each entry
-  // is picked BY KEY out of the already-loaded registry - the SAME knob objects, no
-  // clone and no second fetch - so an edit here writes the draft map / emits the client
-  // event exactly as the origin row does.
+  // the curated first group --- Membership is DATA, one line to change. Each entry is
+  // picked BY KEY out of the already-loaded registry - the SAME knob objects, no clone
+  // and no second fetch - so an edit here writes the draft map / emits the client event
+  // exactly as the origin row does.
   const COMMONLY_USED_KEYS = [
     "provider.model_name",
     "provider.vision_model",
@@ -924,14 +911,12 @@
     return out;
   });
 
-  // R3: an agent tab renders the four overridable groups and nothing else.
   const SCOPE_GROUP_LABELS: Record<string, string> = {
     provider: "provider",
     system_prompt: "system prompt",
     description: "description",
     max_turns: "max turns",
   };
-  // the control each scope knob renders through.
   const SCOPE_KNOB_TYPES: Record<string, SettingKnob["type"]> = {
     "provider.type": "select",
     "provider.host": "text",
@@ -990,7 +975,7 @@
   const allGroups = computed<SettingGroup[]>(() => {
     // R3: an agent tab's ONE source is the scope's four groups.
     if (activeScope.value !== null) return scopeGroups.value;
-    // the curated group is ALWAYS in the list now - the nav must keep its shape under.
+    // the curated group is ALWAYS in the list now - the nav must keep its shape.
     // The duplicate-row risk is answered in documentFor: a live query SKIPS the curated
     // section, so a hit renders once, under the domain that owns it.
     return [
@@ -1046,17 +1031,17 @@
   const navChildren = (cat: NavCategory): NavSubgroup[] =>
     cat.subgroups.length > 1 ? cat.subgroups : [];
 
-  // -- the selection: jump links, not a selector --- Selection is state the USER sets
-  // and clears - never a pure read of the scroll.
+  // the selection: jump links, not a selector --- Selection is state the USER sets and
+  // clears - never a pure read of the scroll.
   const selection = ref<string | null>(null);
 
   // the narrow drawer: the SAME jump links over the SAME document
   const drawerOpen = ref(false);
 
-  // -- the DRAWER's focus law --------------------------- The narrow pane's nav is a
-  // MODAL drawer: it covers the document behind a scrim, so while it is open the
-  // keyboard may not wander into that document, Escape must close it, and closing must
-  // hand focus back to the toggle that opened it.
+  // the DRAWER's focus law --------------------------- The narrow pane's nav is a MODAL
+  // drawer: it covers the document behind a scrim, so while it is open the keyboard may
+  // not wander into that document, Escape must close it, and closing must hand focus
+  // back to the toggle that opened it.
   const drawerEl = ref<HTMLElement | null>(null);
   const jumpEl = ref<HTMLButtonElement | null>(null);
 
@@ -1080,7 +1065,6 @@
   function closeDrawer() {
     if (!drawerOpen.value) return;
     drawerOpen.value = false;
-    // the covered document is the user's next stop.
     void nextTick(() => jumpEl.value?.focus());
   }
 
@@ -1147,7 +1131,6 @@
         spyLocked = false;
         spyTimer = undefined;
         clampOnLockEnd();
-        // the jump's trailing intersections may have landed while the lock was up.
         settleSpyIfIdle();
       }, ms);
     }
@@ -1159,20 +1142,20 @@
     clampOnLockEnd();
   }
 
-  // -- the pane's OWN scrolls --------------------------- The suppression above exists
-  // for ONE thing. Gating the release on the INTENT_EVENTS list alone was the defect: a
-  // scrollbar drag, an assistive-technology scroll and a programmatic scrollTop
-  // dispatch none of wheel/touchstart/pointerdown/keydown in Chromium, so a scroll that
-  // arrived while the lock was up was never clamped AND never moved the spy - the pane
-  // simply stayed wherever it landed (the nightly landed it on the document's end,
-  // 5709, where the selected section's bottom was 2509). A duration guess would be
-  // wrong twice - Chrome runs a long smooth jump ~1.1s, and an animation that gets
-  // OVERRIDDEN (a programmatic scrollTop, a scrollbar drag) lands nowhere at all -
-  // while the gap timer answers both: the events stop, the pane's scroll is over, and
-  // the clamp re-measures (a scroll that interrupted a jump can never leave the pane
-  // outside its section).
+  // the pane's OWN scrolls --------------------------- The suppression above exists.
+  // Gating the release on the INTENT_EVENTS list alone was the defect: a scrollbar
+  // drag, an assistive-technology scroll and a programmatic scrollTop dispatch none of
+  // wheel/touchstart/pointerdown/keydown in Chromium, so a scroll that arrived while
+  // the lock was up was never clamped AND never moved the spy - the pane simply stayed
+  // wherever it landed (the nightly landed it on the document's end, 5709, where the
+  // selected section's bottom was 2509). A duration guess would be wrong twice - Chrome
+  // runs a long smooth jump ~1.1s, and an animation that gets OVERRIDDEN (a
+  // programmatic scrollTop, a scrollbar drag) lands nowhere at all - while the gap
+  // timer answers both: the events stop, the pane's scroll is over, and the clamp
+  // re-measures (a scroll that interrupted a jump can never leave the pane outside its
+  // section).
   const PANE_SCROLL_GAP_MS = 400;
-  // a frame or two of settle: the animation's own trailing repeats must not release a.
+  // a frame or two of settle: the animation's own trailing repeats must not release.
   const PANE_SETTLE_GRACE_MS = 200;
   let paneScroll: PaneScrollState = { target: null, graceUntil: 0, intent: false };
   let paneScrollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1189,7 +1172,6 @@
       // the pane's own scroll is over: hold it to its section again, so an
       // interrupted animation cannot strand it outside the range
       if (clampId.value) scheduleClamp();
-      // and re-resolve the spy highlight against the box the pane actually came to.
       settleSpyIfIdle();
     }, PANE_SCROLL_GAP_MS);
   }
@@ -1212,12 +1194,12 @@
     return true;
   }
 
-  // -- the anchor is the USER's ------------------------- The spy may move the
-  // HIGHLIGHT on any delivery, but the remembered anchor is "the section the user
-  // actually scrolled to": a delivery armed by a geometry change (a viewport resize, a
-  // reflow, the clamp's own re-snap) resolves a different id at new boxes and must not
-  // overrule it - the nightly widened the pane after a drawer jump and the stored
-  // anchor read back as the neighbouring section.
+  // the anchor is the USER's ------------------------- The spy may move the HIGHLIGHT
+  // on any delivery, but the remembered anchor is "the section the user actually
+  // scrolled to": a delivery armed by a geometry change (a viewport resize, a reflow,
+  // the clamp's own re-snap) resolves a different id at new boxes and must not overrule
+  // it - the nightly widened the pane after a drawer jump and the stored anchor read
+  // back as the neighbouring section.
   let anchorTrace: SpyAnchorTrace = { userScrollAt: 0, geometryAt: 0, wroteAt: 0 };
 
   function collectSpyTargets(root: HTMLElement) {
@@ -1260,16 +1242,15 @@
       root.scrollTo({ top: 0, behavior });
       return;
     }
-    // a SECTION lands with its own heading exactly at the top (the heading pins there
-    // itself). The section box resolves through closest, so the clear is measured from
-    // the SAME box the jump moves - a target answering for its own section can never
-    // subtract the heading it is meant to sit under.
+    // a SECTION lands with its own heading exactly at the top.
+    // The section box resolves through closest, so the clear is measured from the SAME
+    // box the jump moves - a target answering for its own section can never subtract
+    // the heading it is meant to sit.
     const section = targetSection(node);
     const isBlock = node !== section;
     const rootTop = root.getBoundingClientRect().top;
     const delta = node.getBoundingClientRect().top - rootTop;
     const clear = isBlock ? pinnedHeadingHeight(node) : 0;
-    // the pane's own scroll, tracked by its landing position.
     notePaneScroll(root, root.scrollTop + delta - clear, true);
     root.scrollTo({ top: root.scrollTop + delta - clear, behavior });
   }
@@ -1306,8 +1287,6 @@
     persistAnchor(id);
     // the observer must not fight the smooth scroll it just started
     lockSpy(650);
-    // the same id narrows the document to this category, so the jump is measured AFTER
-    // that render.
     void nextTick(() => scrollToAnchor(id));
     if (narrow.value) closeDrawer();
   }
@@ -1322,7 +1301,6 @@
     if (narrow.value) closeDrawer();
   }
 
-  // -- the palette's jump requests ---------------------- /modules, /extensions and.
   const pendingJump = useSettingsJump();
 
   /** applyJump consumes a pending request. */
@@ -1394,7 +1372,7 @@
     if (clampId.value) scheduleClamp();
   }
 
-  // -- the SELECTED-SECTION scroll clamp ---------------- Endo, "when i select a. A
+  // the SELECTED-SECTION scroll clamp ---------------- Endo, "when i select a. A
   // RESTORED anchor does not clamp either: the remembered id is written by the spy too,
   // so reopening the pane must never trap a scroll in a section the user merely
   // scrolled past; a URL section is the one restore that DOES clamp, because the user
@@ -1408,7 +1386,7 @@
   /**
    * the section a selection clamps to - its CATEGORY section, which is the box carrying
    * the sticky heading; a block jump inside it still lands clear of that heading
-   * (scrollToAnchor), so the clamp never undoes a subsection jump
+   * (scrollToAnchor), so the clamp never undoes a subsection jump / /
    */
   function clampNode(id: string): HTMLElement | null {
     const root = bodyEl.value;
@@ -1438,8 +1416,7 @@
     if (!root) return;
     const id = clampId.value;
     if (!id) return;
-    // a section a live query or `modified only` filtered out of the document has no
-    // range to hold.
+    // a section a live query or `modified only` filtered out of the document has no.
     const node = clampNode(id);
     if (!node) return;
     const [min, max] = clampedRange({
@@ -1453,7 +1430,7 @@
     // landing is exempt - never the clamp's own re-snap, whose dropped pass would leave
     // a stale window in place
     if (paneScrollOwns(paneScroll)) return;
-    // the end is the ONE side of the window the bound cannot follow BOTH ways (a.
+    // the end is the ONE side of the window the bound cannot follow BOTH ways.
     const follow = clampEndFollow(now, clampHold, max);
     const next = follow ?? Math.min(Math.max(now, min), max);
     // the pane rests ON the end (or was put there by this pass). Any other resting
@@ -1469,10 +1446,10 @@
   }
 
   /**
-   * the clamp lands on the EVENT, and again on the frame after.
+   * the clamp lands on the EVENT, and again on the frame.
    * The event pass is NOT optional - a hidden or occluded tab throttles
    * requestAnimationFrame to nothing, and the pane then keeps a scroll it was never
-   * allowed to rest at.
+   * allowed to rest.
    */
   function scheduleClamp() {
     applyClamp();
@@ -1483,32 +1460,28 @@
     });
   }
 
-  /** clampOnLockEnd: a lock LIFTING is not the same thing as free scroll
-      /* ard ). Every lock above suppresses a measurement the pane
-      would otherwise take - and the clamp is only ever reached from a scroll
-      EVENT. A scroll request that produces NO event therefore slips between
-      both: a same-value instant request (`scrollTop = 1e6` while the pane
-      already rests at the document's end, which is exactly where a previous
-      free scroll left it) fires nothing, and the very request that ends the
-      pane's own scroll tracking (a wheel, an intent event) clears the settle
-      timer that would have re-measured 400ms later. The probe that opened
-      the card, on the dev lane's settings document (13 categories, pane
-      clientHeight 423, document end 6247, provider range [1813, 2722]):
-
-        nav-click provider, wheel + `scrollTop = 1e6` in the NEXT task,
-          /* side the same frame -> 6247, and it STAYED
-        the same wheel + assignment 2s after the click -> 2722 (clamped)
-        /* e same, 3s after (no lock, no suppression) -> 2722 (clamped)
-        /* e same frame WITHOUT the wheel -> 2722 (clamped)
-
-      So the swallow is not the spy lock refusing the clamp (the clamp never
-      read that lock - the un-wheeled row above is inside the same lock and
-      /* ill clamps) and not the merged event path (the 3s row): it
-      is a scroll nobody ever measures. A swallowed scroll must not become a
-      forgotten one, so the moment a lock lifts, ONE pass runs against the
-      position the pane actually sits at - the same applyClamp, the same
-      clampedRange, no new primitive. Do NOT shorten the timed lock: it is
-      what keeps the observer from fighting the smooth scroll it started. */
+  /**
+   * clampOnLockEnd: a lock LIFTING is not the same thing as free scroll ard ).
+   * A scroll request that produces NO event therefore slips between both: a same-value
+   * instant request (`scrollTop = 1e6` while the pane already rests at the document's
+   * end, which is exactly where a previous free scroll left it) fires nothing, and the
+   * very request that ends the pane's own scroll tracking (a wheel, an intent event)
+   * clears the settle timer that would have re-measured 400ms later.
+   * The probe that opened the card, on the dev lane's settings document (13 categories,
+   * pane clientHeight 423, document end 6247, provider range [1813, 2722]): nav-click
+   * provider, wheel + `scrollTop = 1e6` in the NEXT task, side the same frame -> 6247,
+   * and it STAYED the same wheel + assignment 2s after the click -> 2722 (clamped) e
+   * same, 3s after (no lock, no suppression) -> 2722 (clamped) e same frame WITHOUT the
+   * wheel -> 2722 (clamped) So the swallow is not the spy lock refusing the clamp (the
+   * clamp never read that lock - the un-wheeled row above is inside the same lock and
+   * ill clamps) and not the merged event path (the 3s row): it is a scroll nobody ever
+   * measures.
+   * A swallowed scroll must not become a forgotten one, so the moment a lock lifts, ONE
+   * pass runs against the position the pane actually sits at - the same applyClamp, the
+   * same clampedRange, no new primitive.
+   * Do NOT shorten the timed lock: it is what keeps the observer from fighting the
+   * smooth scroll it started.
+   */
   function clampOnLockEnd() {
     if (clampId.value) scheduleClamp();
   }
@@ -1527,7 +1500,6 @@
   }
 
   watch(clampId, () => {
-    // a different section owns a different end.
     clampHold = null;
     void nextTick(() => {
       observeClamp();
@@ -1568,7 +1540,6 @@
       const state = scopeStates[name];
       if (!state) return;
       state.draft = { ...state.draft, [key]: value };
-      // an edited key is no longer a pending override removal.
       if (state.unset.includes(key))
         state.unset = state.unset.filter((k) => k !== key);
       return;
@@ -1592,7 +1563,7 @@
   const serverValue = (knob: SettingKnob): unknown =>
     paneDraft.value[knob.key] ?? paneLoaded.value[knob.key];
 
-  // modelValue: the model pickers take strings - a number-typed server value (never.
+  // modelValue: the model pickers take strings - a number-typed server value.
   const modelValue = (knob: SettingKnob): string => {
     const v = serverValue(knob);
     return typeof v === "string" ? v : v == null ? "" : String(v);
@@ -1711,7 +1682,7 @@
     activeScope.value === null ? isModified(group, knob) : scopeDiffersFromMain(knob);
 
 
-  // The query's knob set comes from the EXISTING filter (tier 1's filterSettingGroups.
+  // The query's knob set comes from the EXISTING filter.
   // null means NO query is live; an EMPTY set is a query that matched nothing, and the
   // two must stay distinguishable (everything vs. the empty state).
   const searchHits = computed<ReadonlySet<string> | null>(() => {
@@ -1744,7 +1715,6 @@
   const knobModified = (knob: SettingKnob): boolean =>
     isModified(owner(knob), knob);
 
-  // The document: every category in nav order in the all-view, the selected one under.
   const docSections = computed<DocSection[]>(() =>
     documentFor(nav.value, {
       hits: searchHits.value,
@@ -1765,13 +1735,11 @@
     }),
   );
 
-  // the visible knob total under the live query / modified-only switch.
   const totalCount = computed(() =>
     docSections.value.reduce((n, section) => n + section.count, 0),
   );
 
-  // -- the scroll-spy (the nav follows the document) --- / added the MODULES section to
-  // the spy's order.
+  // the scroll-spy (the nav follows the document) --- / added the MODULES section.
   const spyOrder = computed<string[]>(() => [
     ...spyTargetIds(docSections.value),
     ...(modulesShown.value ? [MODULES_CATEGORY] : []),
@@ -1850,7 +1818,7 @@
   }
 
   /**
-   * resolveSpyAtRest re-resolves the highlight from the boxes the pane RESTS at.
+   * resolveSpyAtRest re-resolves the highlight from the boxes the pane RESTS.
    * It never writes the anchor: this is a programmatic jump, and the click already
    * persisted it.
    */
@@ -1898,7 +1866,7 @@
   function restoreAnchor() {
     if (restored || typeof window === "undefined") return;
     restored = true;
-    // part 3: an in-app deep link (`?settings=<section>`) is the EXPLICIT door and.
+    // part 3: an in-app deep link (`?settings=<section>`) is the EXPLICIT door.
     // Unlike the anchor (a spy highlight, never clamped), a URL section IS a selection,
     // so it clamps too.
     const fromUrl = urlSectionSelection();
@@ -1923,13 +1891,13 @@
     void nextTick(() => scrollToAnchor(id));
   }
 
-  // -- the URL carries the section --------------- The pane keeps ONE thing in the URL:
+  // the URL carries the section --------------- The pane keeps ONE thing in the URL:
   // the section it is filtered to, on the QUERY axis (`?settings=<section>`), because
   // the PATH already owns the focused chat session and a settings path is the
   // settings-path card's lane - one scheme, two axes, replaceState only (the app never
   // grows the history stack). The write follows `clampId` - a REAL selection - and
   // never the spy's highlight: a scroll must not rewrite the URL that a reload then
-  // lands on.
+  // lands.
 
   /**
    * urlSectionSelection resolves the section a deep link names against the LIVE nav.
@@ -1956,12 +1924,11 @@
 
   watch(clampId, (section) => writeUrlSection(section));
 
-  // a scope that cannot show the selection (an agent tab carries no Commonly Used)
-  // clears the HIGHLIGHT only. The clamp goes with it: a section that is not in this
-  // pane's document cannot bound its scroll. Reading `selection` alone resolved,
-  // cleared nothing, and left the filter standing on a category the live nav cannot
-  // render - the whole document emptied ("no settings here") and the URL kept a section
-  // the pane was not showing.
+  // a scope that cannot show the selection (an agent tab carries no Commonly Used). The
+  // clamp goes with it: a section that is not in this pane's document cannot bound its
+  // scroll. Reading `selection` alone resolved, cleared nothing, and left the filter
+  // standing on a category the live nav cannot render - the whole document emptied ("no
+  // settings here") and the URL kept a section the pane was not showing.
   watch(nav, (next) => {
     if (!selectionLost(next, [selection.value, clampId.value])) return;
     selection.value = null;
@@ -1969,7 +1936,6 @@
     lockSpy();
   });
 
-  // the document's targets move with the query/scope.
   watch(docSections, () => {
     void nextTick(() => {
       syncSpy();
@@ -1993,7 +1959,6 @@
     });
   });
 
-  // the empty state names the reason it is empty (a live query, the modified-only.
   const emptyText = computed(() => {
     if (query.value.trim() !== "") return `no settings match "${query.value.trim()}"`;
     if (modifiedOnly.value) return "no modified settings";
@@ -2124,7 +2089,6 @@
       state.unset = [];
     }
     try {
-      // the scopes slice, not the whole payload.
       applyScopes(await fetchSettingsScopes());
     } catch (err) {
       saveError.value = err instanceof Error ? err.message : String(err);
@@ -2133,15 +2097,10 @@
     }
   }
 
-  // -- the config-file actions ---------------------- Three actions ride the band's
-  // `config` chip.
 
   const configMenuEl = ref<HTMLElement | null>(null);
   const configMenuOpen = ref(false);
-  /**
-   * the reset action's arm: the FIRST click asks, the second applies (the module-toggle
-   * discipline.
-   */
+  /** the reset action's arm: the FIRST click asks, the second applies (the. */
   const resetArmed = ref(false);
   const configBusy = ref(false);
 
@@ -2288,7 +2247,7 @@
 
 <style scoped>
   /*
-   * (R6): the scope strip - the pane's own tab row at the head, [Main | agent names..].
+   * (R6): the scope strip - the pane's own tab row at the head, [Main | agent names.].
    */
   .settings-scopes {
     flex: none;
@@ -2325,8 +2284,7 @@
     outline-offset: -1px;
   }
   /*
-   * a read-only scope (a layer file that will not parse, or any refusal the endpoint
-   * sent).
+   * a read-only scope.
    */
   .settings-readonly {
     opacity: 0.7;
@@ -2474,7 +2432,6 @@
     opacity: 0.5;
     cursor: default;
   }
-  /* the edit-as-yaml surface: a native dialog in the top layer. */
   .settings-yaml {
     width: min(760px, 92vw);
     max-height: 86vh;
@@ -2555,7 +2512,7 @@
   /*
    * the pane's.settings-save/.settings-revert are flex:1 (they fill the save row);
    * inside the dialog's action row they must keep their own width instead of stretching
-   * across it
+   * across it / /
    */
   .settings-yaml-actions > button {
     flex: none;
@@ -2568,7 +2525,7 @@
   }
   /*
    * the knob select is the shared BandSelect chip - inline (the composer's listbox
-   * pattern), never wider than its row
+   * pattern), never wider than its row / /
    */
   .setting-select {
     max-width: 100%;
@@ -2612,7 +2569,7 @@
   }
   /*
    * the toggle row keeps its full-row click target on the label; the badges sit outside
-   * it so a reset click never flips the checkbox
+   * it so a reset click never flips the checkbox / /
    */
   .setting-toggle {
     cursor: default;
@@ -2627,7 +2584,7 @@
     cursor: pointer;
   }
 
-  /* --: the one-document bones --- LEFT is the JUMP-LINK nav, RIGHT is the single. */
+  /* the one-document bones --- LEFT is the JUMP-LINK nav, RIGHT is the single. */
   .settings-split {
     flex: 1;
     min-height: 0;
@@ -2676,7 +2633,6 @@
   .settings-nav-chev:hover {
     color: var(--text);
   }
-  /* collapsed points right (the iconset's down glyph, rotated). */
   .settings-nav-chev[aria-expanded="false"] .settings-nav-chevron {
     transform: rotate(-90deg);
   }
@@ -2704,8 +2660,7 @@
     cursor: pointer;
   }
   /*
-   * children are INDENTED under their parent and hidden while the parent is collapsed
-   * (the chevron toggles).
+   * children are INDENTED under their parent and hidden while the parent is collapsed.
    */
   .settings-nav-sub {
     padding-left: 30px;

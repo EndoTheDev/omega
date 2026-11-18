@@ -62,7 +62,7 @@ function scopePayload(overrides: Record<string, unknown> = {}) {
   return { name: "alpha", groups };
 }
 
-// -- normalizeSettingsPayload: the scopes half of the wire --
+// normalizeSettingsPayload: the scopes half of the wire
 
 test("normalize keeps a well-formed scope: name, group order, overridden flags", () => {
   const out = normalizeSettingsPayload({
@@ -120,7 +120,7 @@ test("normalize keeps a scope error string and drops an empty one", () => {
   assert.equal("error" in empty.scopes[0], false);
 });
 
-// -- agentConfigUpdate: the ONE write path's field mapping --
+// agentConfigUpdate: the ONE write path's field mapping
 
 test("AGENT_KNOB_FIELDS covers exactly the four overridable groups", () => {
   assert.deepEqual(Object.keys(AGENT_KNOB_FIELDS).sort(), [
@@ -184,7 +184,7 @@ test("agentConfigUpdate ignores knobs outside the four overridable groups", () =
   assert.deepEqual(body, {});
 });
 
-// -- scopeConfigDiff: the save derivation (count and wire are one truth) --
+// scopeConfigDiff: the save derivation (count and wire are one truth)
 
 test("scopeConfigDiff ships only keys that departed from the served truth", () => {
   const loaded = { "provider.host": "http://a", description: "d", max_turns: 42 };
@@ -221,7 +221,7 @@ test("scopeConfigDiff surfaces a bad max_turns before the round-trip", () => {
   assert.deepEqual(out.body, {});
 });
 
-// -- scopeKnobDiffersFromMain: the agent tab's dot predicate --
+// scopeKnobDiffersFromMain: the agent tab's dot predicate
 
 test("an agent tab's dot means differs-from-MAIN, and an override always lights it", () => {
   assert.equal(scopeKnobDiffersFromMain("provider.model_name", "llama", "llama", true, []), true);
@@ -242,8 +242,7 @@ test("R7: an agent tab's search can only ever return the scope's four groups", (
     groups: [],
     scopes: [scopePayload({ "provider.model_name": true })],
   }).scopes[0];
-  // the pane maps each scope knob onto a row (labels come from the main registry /
-  // SCOPE_GROUP_LABELS).
+  // the pane maps each scope knob onto a row.
   const ROW_LABELS: Record<string, string> = {
     "provider.type": "type",
     "provider.model_name": "model name",
@@ -281,11 +280,10 @@ test("R7: an agent tab's search can only ever return the scope's four groups", (
   assert.equal(filterSettingGroups(groups, "vision").length, 0);
 });
 
-// -- SettingsTab.vue wiring: strip, tab source, search, one write path --
+// SettingsTab.vue wiring: strip, tab source, search, one write path
 
 test("R8: the scope strip exists only when the payload carries a scope", () => {
-  // scopeTabs is Main + one per scope, so a bare payload (zero scopes) renders the pane
-  // with NO strip at all.
+  // scopeTabs is Main + one per scope, so a bare payload (zero scopes) renders.
   assert.match(SETTINGS_TAB, /const scopeTabs = computed<\{ name: string \| null; label: string \}\[\]>\(\(\) => \[\s*\{ name: null, label: "Main" \},\s*\.\.\.scopes\.value\.map/);
   // the gate moved to the HEAD WRAPPER.
   assert.match(SETTINGS_TAB, /<div\s+v-if="scopeTabs\.length > 1"\s+class="settings-content-head">/);

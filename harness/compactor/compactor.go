@@ -28,8 +28,7 @@ func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
 // AutoWindow returns the context window probed at startup, or 0 when the probe.
 func (c *Compactor) AutoWindow() int { return c.autoWindow }
 
-// window resolves the effective context window: a manual override (>0) wins exactly as
-// before; 0 means auto.
+// window resolves the effective context window: a manual override (>0) wins exactly.
 func (c *Compactor) window() int {
 	if c.config.ContextWindow > 0 {
 		return c.config.ContextWindow
@@ -84,9 +83,9 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 // summarize calls the provider to summarize a slice of messages.
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
-	// The summarization prompt carries the billion-context doctrine (idea-level
-	// extraction. The summary is the only thing that survives a fold, so the classes below
-	// tell the model what must not be lost.
+	// The summarization prompt carries the billion-context doctrine (idea-level. The
+	// summary is the only thing that survives a fold, so the classes below tell the model
+	// what must not be lost.
 	b.WriteString("Summarize the conversation below for a context fold. " +
 		"The summary is the only thing that survives the fold; the first and last few messages around it are kept separately.\n" +
 		"\n" +
@@ -114,7 +113,6 @@ func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (strin
 		b.WriteString("\n")
 	}
 
-	// The consult resolves the per-subsystem model slot.
 	prov, model := agent.ResolveModelSlot(c.provider, c.config.Model)
 	if model != "" {
 		prov = prov.WithModel(model)

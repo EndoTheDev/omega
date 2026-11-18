@@ -63,7 +63,6 @@ func TestModuleOmissionDropsCommands(t *testing.T) {
 			}
 		}
 	}
-	// the mounted set keeps the other migrated commands.
 	for _, want := range []string{"/logs", "/verdict"} {
 		found := false
 		for _, name := range cmds {

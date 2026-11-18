@@ -38,7 +38,7 @@ func (p *Plugin) Description() string {
 	return "HTTP channel: the web UI API server - chat streaming, sessions, inspector endpoints"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "http_channel" }
 
 func (p *Plugin) Provides() []string { return []string{"channel"} }
@@ -67,9 +67,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if len(binds) == 0 {
 		binds = []string{"127.0.0.1"}
 	}
-	// One run registry per process.
 	p.hub = &agentapi.RunHub{}
-	// ONE push hub per process, the run registry's law one seam over.
+	// ONE push hub per process, the run registry's law one seam.
 	p.sockets = agentapi.NewSocketHub()
 	p.canvas = &sharedCanvas{}
 	p.api = api
@@ -116,8 +115,7 @@ func (p *Plugin) SetDefaultWorkspace(ws string) {
 	}
 }
 
-// SetAgentPromptConfig is the settings hot-apply hook for the serving agent's live
-// knobs.
+// SetAgentPromptConfig is the settings hot-apply hook for the serving agent's live.
 func (p *Plugin) SetAgentPromptConfig(prompt string, maxTurns int) {
 	for _, ch := range p.mounted {
 		if h, ok := ch.(*HTTPChannel); ok {

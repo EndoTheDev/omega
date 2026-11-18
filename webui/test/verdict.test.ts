@@ -36,7 +36,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// -- pure helpers --
+// pure helpers
 
 test("verdictCardFromToolArgs builds the card from the tool args", () => {
   const card = verdictCardFromToolArgs({
@@ -114,7 +114,7 @@ test("verdictFromResultText: non-JSON and unknown kinds are a dead card, not a c
   }
 });
 
-// -- wire restore --
+// wire restore
 
 test("renderTranscriptItems: a verdict call renders the card, not a tool line", () => {
   const items = renderTranscriptItems([
@@ -186,8 +186,7 @@ test("isVerdictTool: the dotted wire verb, and nothing else", () => {
 });
 
 test("a canvas payload carrying verdict.request paints a card - actionable, anchored, run ENDED", () => {
-  // The canvas path IS the chat pane's render source, and the wire name is the whole
-  // regression.
+  // The canvas path IS the chat pane's render source, and the wire name is the whole.
   const started = new Date(Date.now() - 30_000).toISOString();
   const t = createCanvasTranscript();
   const items = t.apply({
@@ -243,7 +242,7 @@ test("renderTranscriptItems: a verdict tool_result without its call renders noth
   assert.deepEqual(items, []);
 });
 
-// -- fetch wrappers --
+// fetch wrappers
 
 test("fetchVerdicts: empty session lists every pending card via /verdicts", async () => {
   const seen: string[] = [];
@@ -366,7 +365,7 @@ test("postVerdict: a plain non-OK status still throws something truthful", async
   }
 });
 
-// -- source pins (components are not importable in node) --
+// source pins (components are not importable in node)
 
 test("ChatItem routes verdict items to the VerdictCard component", () => {
   const chatItem = read("app/components/ChatItem.vue");
@@ -386,7 +385,6 @@ test("VerdictCard renders the list layout and sends every answer shape", () => {
   assert.match(vue, /postVerdict\(props\.sessionId/, "answers post to the session the chat tab owns");
   assert.match(vue, /skip: true/, "no silent dismissal: the skip posts as a verdict");
   assert.match(vue, /error\.value = e instanceof Error \? e\.message/, "the race reason renders (no silent retry)");
-  // a pending card is actionable and counts down.
   assert.match(vue, /item\.status === 'pending' && countdown/, "a pending card renders its countdown");
   assert.match(vue, /verdict-countdown/, "the counting-down label exists");
   assert.doesNotMatch(vue, /item\.stale/, "no run-derived staleness bit decides the card's fate");
@@ -441,7 +439,7 @@ test("a pending card is a wake waiter, so a reload arms the watcher (card t_7938
   assert.equal(transcriptHasPending(settled), false);
   assert.equal(transcriptPendingCount(pending), 1, "the status bar agrees with the canvas count");
   assert.equal(transcriptPendingCount(settled), 0);
-  // the CARD shape itself is a waiter: the tool-chip branch cannot answer for it, so.
+  // the CARD shape itself is a waiter: the tool-chip branch cannot answer for it,.
   const card: VerdictItem = { kind: "verdict", title: "ship?", options: [], multi: false, allowText: false, status: "pending" };
   assert.equal(awaitsWake(card), true, "a pending card is a yield-class waiter");
   assert.equal(awaitsWake({ ...card, status: "settled" }), false);

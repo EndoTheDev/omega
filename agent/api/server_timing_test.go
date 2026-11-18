@@ -22,7 +22,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// eventDelay spaces consecutive streamed events so chunk-to-chunk and.
+// eventDelay spaces consecutive streamed events so chunk-to-chunk.
 const eventDelay = 60 * time.Millisecond
 
 // toolSleep is the scripted tool duration. Assert floors must stay
@@ -80,7 +80,7 @@ type persistedMessage struct {
 	Timing  *core.Timing `json:"timing"`
 }
 
-// fetchPersistedMessages GETs the session detail and decodes every message with its.
+// fetchPersistedMessages GETs the session detail and decodes every message.
 func fetchPersistedMessages(t *testing.T, ts *httptest.Server, id string) []persistedMessage {
 	t.Helper()
 	resp, err := ts.Client().Get(ts.URL + "/sessions/" + id)
@@ -100,8 +100,7 @@ func fetchPersistedMessages(t *testing.T, ts *httptest.Server, id string) []pers
 	return detail.Messages
 }
 
-// TestChatTimingPostToolSegments drives the full repro turn shape and asserts the
-// persisted history.
+// TestChatTimingPostToolSegments drives the full repro turn shape and asserts.
 func TestChatTimingPostToolSegments(t *testing.T) {
 	_, st, ts, _ := timingTestAgent(t)
 	createSession(t, ts, "s1")
@@ -116,7 +115,6 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 		t.Fatalf("chat request: %v", err)
 	}
 	sc := bufio.NewScanner(resp.Body)
-	// Detached run: drain the wire until the channel closes (run hub finish), then wait.
 	for sc.Scan() {
 	}
 	if err := resp.Body.Close(); err != nil {
@@ -142,7 +140,7 @@ func TestChatTimingPostToolSegments(t *testing.T) {
 		}
 	}
 
-	// Every assistant message must carry a timing record - nil timing is exactly the.
+	// Every assistant message must carry a timing record - nil timing is exactly.
 	assistants := []int{1, 3, 5}
 	for _, i := range assistants {
 		suffix := ""

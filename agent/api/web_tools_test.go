@@ -117,7 +117,7 @@ func TestDoFetchSuccess(t *testing.T) {
 	}
 }
 
-// TestDoSearchInvalidJSON verifies parse failures come back as (msg, nil), not as a.
+// TestDoSearchInvalidJSON verifies parse failures come back as (msg, nil), not.
 func TestDoSearchInvalidJSON(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, "not json")
@@ -177,7 +177,7 @@ func TestDoSearchHTTP401(t *testing.T) {
 	}
 }
 
-// TestDoFetchHTTP401 verifies non-2xx statuses surface as loud error strings for.
+// TestDoFetchHTTP401 verifies non-2xx statuses surface as loud error strings.
 func TestDoFetchHTTP401(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,8 +196,7 @@ func TestDoFetchHTTP401(t *testing.T) {
 	}
 }
 
-// TestDoSearchHTTP500 verifies 5xx responses surface as loud errors through the
-// llm.RetryHTTP path.
+// TestDoSearchHTTP500 verifies 5xx responses surface as loud errors through.
 func TestDoSearchHTTP500(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "0")
 	var hits int
@@ -253,7 +252,7 @@ func TestHTTPErrorMessage(t *testing.T) {
 	}
 }
 
-// TestNewDefaultBaseURL verifies the fallback to the default upstream mirror and.
+// TestNewDefaultBaseURL verifies the fallback to the default upstream mirror.
 func TestNewDefaultBaseURL(t *testing.T) {
 	if got := NewWebTools(WebToolsConfig{}).baseURL; got != defaultWebToolsURL {
 		t.Errorf("empty BaseURL -> %q, want %q", got, defaultWebToolsURL)
@@ -268,7 +267,7 @@ func TestWebToolsImplementsToolProvider(t *testing.T) {
 	var _ core.ToolProvider = (*webTools)(nil)
 }
 
-// TestToolsShape checks the namespaced tool pair registers with correct names and.
+// TestToolsShape checks the namespaced tool pair registers with correct names.
 func TestToolsShape(t *testing.T) {
 	ext := NewWebTools(DefaultWebTools()) // no API key, tools still registered
 	tools := ext.Tools()
@@ -280,8 +279,6 @@ func TestToolsShape(t *testing.T) {
 	if len(tools) != 2 {
 		t.Errorf("expected 2 tools, got %d", len(tools))
 	}
-	// Each verb carries its own parameters (the schema split that came with the Q10
-	// rename).
 	if _, ok := tools["web.search"].Parameters["properties"].(map[string]any)["query"]; !ok {
 		t.Error("web.search schema lost the query property")
 	}

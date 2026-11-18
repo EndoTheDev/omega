@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// scriptedConn is a test MCPConn whose request returns a pre-encoded JSON payload (or.
+// scriptedConn is a test MCPConn whose request returns a pre-encoded JSON payload.
 type scriptedConn struct {
 	result json.RawMessage
 	err    error
@@ -24,7 +24,7 @@ func (s scriptedConn) callTool(ctx context.Context, name string, args map[string
 }
 func (s scriptedConn) close() {}
 
-// -- mcpListTools --
+// mcpListTools
 
 func TestMcpListToolsValid(t *testing.T) {
 	payload := json.RawMessage(`{"tools":[
@@ -74,7 +74,7 @@ func TestMcpListToolsRequestError(t *testing.T) {
 	}
 }
 
-// -- mcpCallTool --
+// mcpCallTool
 
 func TestMcpCallToolTextContent(t *testing.T) {
 	payload := json.RawMessage(`{"content":[

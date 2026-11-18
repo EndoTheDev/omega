@@ -1,12 +1,12 @@
-// omega webui: the notifications feed store.. Module-level reactive singleton: the
-// badge must stay live wherever the notifications tab chip renders (DockPane),
-// independent of whether the feed panel or the toast stack is mounted.
-// startNotificationFeed is idempotent - the first mount (usually NotificationToasts)
-// lights the feed; every later mount is a no-op.: the store owns THREE emitters now,
-// and the third one is the approval surface. What it never had was a VOICE: the badge
-// rides the notifications chip, which is invisible when that tab is not on screen, so
-// an approval from a session the page never opened looked like nothing happening until
-// the panel's activation read.
+// omega webui: the notifications feed store. Module-level reactive singleton: the badge
+// must stay live wherever the notifications tab chip renders (DockPane), independent of
+// whether the feed panel or the toast stack is mounted. startNotificationFeed is
+// idempotent - the first mount (usually NotificationToasts) lights the feed; every
+// later mount is a no-op.: the store owns THREE emitters now, and the third one is the
+// approval surface. What it never had was a VOICE: the badge rides the notifications
+// chip, which is invisible when that tab is not on screen, so an approval from a
+// session the page never opened looked like nothing happening until the panel's
+// activation read.
 
 import { computed, ref } from "vue";
 import {
@@ -25,7 +25,7 @@ import {
 import { onToastPanel } from "../../composables/canvas";
 import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
 
-// the age renderer rides the one surface (the panel rows import the store, not the.
+// the age renderer rides the one surface.
 export { notificationAge };
 
 // the durable feed (newest first) + the server's unread count
@@ -47,11 +47,11 @@ export type NotificationToast =
 // the transient toast stack
 const toasts = ref<NotificationToast[]>([]);
 
-// THE badge: the dockable's tab chip reads this.
+// THE badge: the dockable's tab chip reads.
 export const notificationsBadge = computed(
   () => unread.value + pendingVerdicts.value.length,
 );
-// the chip text: the cap voice (99+), "" at zero (DockPane renders no badge element.
+// the chip text: the cap voice (99+), "" at zero.
 export const notificationsBadgeText = computed(() =>
   notificationBadgeText(notificationsBadge.value),
 );
@@ -106,9 +106,9 @@ async function refresh(): Promise<void> {
   }
 }
 
-// newlyPendingVerdicts (the arrival diff this read feeds) lives in
-// composables/notifications.ts. Every caller of refresh shares the bookkeeping law -
-// the boot read, an event hint, the panel's activation, a reconnect catch-up.
+// newlyPendingVerdicts (the arrival diff this read feeds) lives in. Every caller of
+// refresh shares the bookkeeping law - the boot read, an event hint, the panel's
+// activation, a reconnect catch-up.
 
 // pushVerdictToast announces one newly pending approval in the shell.
 function pushVerdictToast(card: PendingVerdictCard): void {

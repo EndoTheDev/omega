@@ -75,7 +75,6 @@
 </template>
 
 <script setup lang="ts">
-  // Verdict card: the interactive render of a verdict tool call.
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   import type { VerdictItem } from "../../composables/omega";
@@ -102,7 +101,6 @@
     if (ticker) clearInterval(ticker);
   });
 
-  // countdown: mm:ss until the deadline the anchor implies.
   const countdown = computed(() => {
     if (!props.item.issuedAt) return "";
     const timeoutS = props.item.timeoutS && props.item.timeoutS > 0 ? props.item.timeoutS : 1200;

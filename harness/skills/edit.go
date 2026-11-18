@@ -48,11 +48,9 @@ func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, er
 	if sp.Dir == "" {
 		return nil, fmt.Errorf("skills directory not configured")
 	}
-	// one trailing newline: the body seats under the fence in the loader-neutral shape.
 	body = strings.TrimRight(body, "\n") + "\n"
 
 	if skillFile, err := sp.resolveSkillFile(name); err == nil {
-		// update: the merge-winner's file, the operator's frontmatter keys preserved, only.
 		raw, err := os.ReadFile(skillFile)
 		if err != nil {
 			return nil, fmt.Errorf("read SKILL.md: %w", err)

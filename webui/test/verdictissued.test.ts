@@ -41,8 +41,7 @@ function goIssuedEvent(source: string): string {
   return m![1]!;
 }
 
-// appHintSet returns the body of app.vue's chat-topic handler, up to the hint call it
-// ends with.
+// appHintSet returns the body of app.vue's chat-topic handler, up to the hint call it.
 function appHintSet(source: string): string {
   const start = source.indexOf("chat: (session, event, payload) =>");
   assert.ok(start >= 0, "app.vue wires the chat topic's handler");
@@ -51,7 +50,7 @@ function appHintSet(source: string): string {
   return source.slice(start, hint);
 }
 
-// -- app.vue: the issuance name rides the hint set -----------------------
+// app.vue: the issuance name rides the hint set ---------------------
 
 test("app.vue's chat hint set names the issuance frame beside the call/turn edges", () => {
   const chat = appHintSet(appSrc());
@@ -77,7 +76,7 @@ test("the 1.5s hint debounce stays - issuance is a hint, not a bypass", () => {
   assert.ok(body.includes("refreshNotifications"), "the hint still pulls the REST truth");
 });
 
-// -- the cross-language name agreement -----------------------------------
+// the cross-language name agreement ---------------------------------
 
 test("the Go event name and the webui literal agree", () => {
   const go = goIssuedEvent(socketsSrc());
@@ -88,7 +87,7 @@ test("the Go event name and the webui literal agree", () => {
   );
 });
 
-// -- the frame's shape: ws-topic-only, minimal payload -------------------
+// the frame's shape: ws-topic-only, minimal payload -----------------
 
 test("the issuance frame rides the chat topic only - the SSE path is untouched", () => {
   const go = socketsSrc();
@@ -114,7 +113,7 @@ test("the issuance frame rides the chat topic only - the SSE path is untouched",
   }
 });
 
-// -- the server side of the seam ----------------------------------------
+// the server side of the seam --------------------------------------
 
 test("the hub notifies at issuance and the server subscribes at boot", () => {
   const hub = read(repo, "harness", "verdict", "hub.go");

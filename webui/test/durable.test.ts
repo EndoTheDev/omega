@@ -1,5 +1,4 @@
-// omega webui: unit tests for the status bar durability helpers in
-// composables/omega.ts.
+// omega webui: unit tests for the status bar durability helpers.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

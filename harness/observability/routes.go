@@ -112,7 +112,7 @@ func (rt *Routes) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logsResponse{Path: path, Lines: lines})
 }
 
-// logPath resolves the logger seam per request (a live toggle can swap the logger.
+// logPath resolves the logger seam per request.
 func (rt *Routes) logPath() string {
 	if rt.ctx == nil {
 		return ""
@@ -173,7 +173,6 @@ func tailLines(path string, n int) ([]string, error) {
 
 	text := string(buf)
 	if window < size {
-		// The window starts mid-file.
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = text[i+1:]
 		} else {
@@ -194,7 +193,7 @@ func tailLines(path string, n int) ([]string, error) {
 	return lines, nil
 }
 
-// getOnly is the read-only guard (the shell's GetOnly equivalent.
+// getOnly is the read-only guard.
 func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

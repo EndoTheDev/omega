@@ -28,8 +28,7 @@ func Dir(home string) string {
 	return filepath.Join(home, dirName)
 }
 
-// DBPath returns the database file path for name (e.g. "omega.db") inside home's data
-// directory.
+// DBPath returns the database file path for name (e.g. "omega.db") inside home's data.
 func DBPath(home, name string) string {
 	return filepath.Join(Dir(home), name)
 }
@@ -60,7 +59,6 @@ func AgentHome() (string, error) {
 		return home, nil
 	}
 	if name == "default" {
-		// main exists by definition at the root.
 		return home, nil
 	}
 	if err := agent.ValidAgentName(name); err != nil {
@@ -69,7 +67,7 @@ func AgentHome() (string, error) {
 	return filepath.Join(home, "agents", name), nil
 }
 
-// Migrate performs the boot-time data/ layout migration for one database before its.
+// Migrate performs the boot-time data/ layout migration for one database.
 // dsn must be a file path inside a data directory (parent dir named "data"); anything
 // else - empty, ":memory:", DSNs with query params (only the file path part is
 // considered), paths outside a data dir - passes through untouched. If <home>/<name>

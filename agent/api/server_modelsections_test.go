@@ -1,7 +1,6 @@
 package api
 
-// TestSetDefaultWorkspaceRefusal lives in server_defaultworkspace_test.go
-// (TestSetDefaultWorkspaceGuards).
+// TestSetDefaultWorkspaceRefusal lives in server_defaultworkspace_test.go.
 
 import (
 	"context"
@@ -44,8 +43,7 @@ func (p *timedProvider) Stream(context.Context, []core.Message, []llm.ToolSchema
 	return ch
 }
 
-// TestModelsSectionsDeadInstance: one unreachable instance must not stall GET /models
-// (part 1).
+// TestModelsSectionsDeadInstance: one unreachable instance must not stall GET /models.
 func TestModelsSectionsDeadInstance(t *testing.T) {
 	old := modelSectionsTimeout
 	modelSectionsTimeout = 100 * time.Millisecond

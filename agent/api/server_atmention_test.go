@@ -8,8 +8,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Submit-path expansion: the last incoming user message is the prompt; the webui
-// attaches PATHS.
+// Submit-path expansion: the last incoming user message is the prompt.
 func TestExpandAtMentionsReferencesRide(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "notes.txt"), []byte("inlined body"), 0o644); err != nil {

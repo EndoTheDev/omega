@@ -24,7 +24,6 @@ func TestLoadAllConfigsReadsAgentHomes(t *testing.T) {
 	if err := agent.ScaffoldAgent(home, "scout", ""); err != nil {
 		t.Fatal(err)
 	}
-	// Two agents can honestly carry the same job name.
 	if err := agent.ScaffoldAgent(home, "warden", ""); err != nil {
 		t.Fatal(err)
 	}

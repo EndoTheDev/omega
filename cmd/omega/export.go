@@ -14,7 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// exportMessages writes messages as JSONL (one JSON object per line with role and.
+// exportMessages writes messages as JSONL.
 func exportMessages(messages []core.Message, w io.Writer) error {
 	enc := json.NewEncoder(w)
 	for _, msg := range messages {
@@ -60,7 +60,7 @@ func resolveSessionCLI(storeDB agent.StoreProvider, arg string) (string, error) 
 	}
 }
 
-// cmdExport loads config, opens the store, resolves the session, and writes its.
+// cmdExport loads config, opens the store, resolves the session, and writes.
 func cmdExport(configPath string, rest []string) error {
 	args := stripConfigFlag(rest)
 	if len(args) == 0 {

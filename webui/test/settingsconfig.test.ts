@@ -11,7 +11,7 @@ import {
   saveConfigYaml,
 } from "../app/composables/omega.ts";
 
-// -- a stub fetch --------------------------------------------------------
+// a stub fetch ------------------------------------------------------
 
 type Call = { url: string; init: RequestInit | undefined };
 
@@ -34,7 +34,7 @@ function restoreFetch() {
   for (const fn of cleanupFetch.splice(0)) fn();
 }
 
-// -- configExportFilename ------------------------------------------------
+// configExportFilename ----------------------------------------------
 
 test("configExportFilename stamps the day and keeps the .yaml suffix", () => {
   const name = configExportFilename(new Date(2026, 10, 4, 13, 5, 0));
@@ -43,7 +43,7 @@ test("configExportFilename stamps the day and keeps the .yaml suffix", () => {
   assert.equal(configExportFilename(new Date(2026, 0, 9)), "config-2026-01-09.yaml");
 });
 
-// -- the wire -----------------------------------------------------------
+// the wire ---------------------------------------------------------
 
 test("fetchConfigYaml reads the document from /settings/raw", async () => {
   const calls = stubFetch(200, "provider:\n  api_key: '****'\n", "application/yaml");
@@ -119,7 +119,7 @@ test("a bodyless failure still names the call and status", async () => {
   }
 });
 
-// -- the pane's SOURCE pins ---------------------------------------------
+// the pane's SOURCE pins -------------------------------------------
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");

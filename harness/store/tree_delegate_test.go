@@ -107,7 +107,6 @@ func TestForkChildStillInherits(t *testing.T) {
 		t.Fatalf("fork child messages[0] = %T %+v, want the parent user", msgs[0], msgs[0])
 	}
 
-	// The fork child's first own message chains onto the ancestor leaf (the merged.
 	if err := s.AppendMessage(ctx, "fork", core.NewUser("fork prompt")); err != nil {
 		t.Fatal(err)
 	}

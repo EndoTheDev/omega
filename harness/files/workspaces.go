@@ -94,7 +94,7 @@ type workspaceFile struct {
 // It backs the @ mention picker when a workspace intent (or a pinned session workspace)
 // is set: the token the picker inserts expands SERVER-side against the session
 // workspace at run time, so the listing must read THAT folder, not the process working
-// directory /files/browse is jailed to.
+// directory /files/browse is jailed.
 func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

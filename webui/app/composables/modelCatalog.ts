@@ -11,7 +11,7 @@ export interface ModelEntry {
 // The decision family (System One).
 export const KNOWN_DECISION_MODELS = ["clef", "clef-flash", "nimble", "tev1"];
 
-// Vision families for listings that answer without capabilities (openai/anthropic id.
+// Vision families for listings that answer without capabilities.
 // Extend here when the wire does not say, never guess per-slot in the components.
 export const KNOWN_VISION_MODELS = [
   "gemma3",
@@ -53,12 +53,12 @@ export function filterModelEntries(
   return entries;
 }
 
-// -- the auxiliary "default" entry --
+// the auxiliary "default" entry
 
-// AUX_DEFAULT_VALUE is the sentinel an auxiliary model knob persists for "follow the.
+// AUX_DEFAULT_VALUE is the sentinel an auxiliary model knob persists for "follow.
 export const AUX_DEFAULT_VALUE = "default";
 
-// withAuxDefault prepends the "default" entry to a model picker's option list for the.
+// withAuxDefault prepends the "default" entry to a model picker's option list.
 export function withAuxDefault(
   options: { value: string; label: string }[],
   enabled: boolean,
@@ -68,9 +68,9 @@ export function withAuxDefault(
   return [{ value: AUX_DEFAULT_VALUE, label }, ...options];
 }
 
-// -- when a picker must fall back to free text --
+// when a picker must fall back to free text
 
-// pickerNeedsFreeText: the ONE rule that decides whether a model picker renders the.
+// pickerNeedsFreeText: the ONE rule that decides whether a model picker renders.
 // Count only the NAMED models: the aux "default" sentinel is a rendering entry, not a
 // model, so a knob that offers it must still degrade to free text when the filtered
 // catalog matched nothing - otherwise the escape hatch (type a model name) disappears
@@ -84,7 +84,7 @@ export function pickerNeedsFreeText(
   return !loading && namedCount === 0;
 }
 
-// -- a filtered slot's DISQUALIFIER --
+// a filtered slot's DISQUALIFIER
 
 // slotRejectReason says why a model may not be picked in a filtered slot, or null. The
 // settings pickers render a rejected row DISABLED WITH THIS REASON instead of dropping
@@ -104,14 +104,14 @@ export function slotRejectReason(
   return null;
 }
 
-// -- the value a knob PERSISTS --
+// the value a knob PERSISTS
 
 // knobModelValue maps the picker's emit onto the value a settings knob
 // stores. The word "default" carries TWO meanings here and they stay
 // apart: the composer grammar's "default:model" addresses the BASE
 // PROVIDER's section, while the aux inherit word "default"
 // (AUX_DEFAULT_VALUE) means "follow the model the chat runs" - a literal
-// the pinned inherit row is the only source of.
+// the pinned inherit row is the only source.
 // slot knobs (compaction, summarizer, curator, approval) persist the
 //     chat grammar VERBATIM: "instance:model" / "default:model" - the
 //     server resolves them on its slot lane.
@@ -136,7 +136,7 @@ export function knobModelValue(
   return raw;
 }
 
-// -- the shared catalog state (one fetch per settings open) --
+// the shared catalog state (one fetch per settings open)
 
 export interface ModelCatalogState {
   /** null until a fetch answers; null + error = the list never landed */

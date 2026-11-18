@@ -38,7 +38,7 @@ import {
   withSubgroups,
 } from "../app/components/settings/settingsNav.ts";
 
-// -- fixtures ------------------------------------------------------------
+// fixtures ----------------------------------------------------------
 
 const knob = (key: string, label: string): SettingKnob => ({
   key,
@@ -55,7 +55,7 @@ const group = (key: string, label: string, knobs: SettingKnob[]): SettingGroup =
 
 /**
  * the pane's real payload shape: the curated view, the two client-state domains, the
- * ten server domains - in WIRE order, exactly as the pane hands it to buildNav
+ * ten server domains - in WIRE order, exactly as the pane hands it to buildNav / /
  */
 const payloadGroups = (): SettingGroup[] => [
   group(COMMON_CATEGORY, "Commonly Used", [knob("provider.model_name", "model name")]),
@@ -78,7 +78,7 @@ const paneNav = () => [...buildNav(withSubgroups(payloadGroups())), modulesNavCa
 
 const flatten = <T>(groups: { items: T[] }[]): T[] => groups.flatMap((g) => g.items);
 
-// -- 1.
+// 1.
 
 test("SURFACE_ORDER is curated, frontend, backend, modules - and only the two schema bands carry a header", () => {
   assert.deepEqual(
@@ -133,7 +133,7 @@ test("buildNav and modulesNavCategory stamp the surface class", () => {
   assert.equal(modulesNavCategory(2).surface, SURFACE_MODULES);
 });
 
-// -- 2.
+// 2.
 
 test("groupBySurface buckets in SURFACE_ORDER and keeps each bucket's own order", () => {
   const groups = groupBySurface(paneNav(), (cat) => cat.surface);
@@ -209,7 +209,7 @@ test("an empty class prints nothing (no header over an empty band)", () => {
   );
 });
 
-// -- 3.
+// 3.
 
 test("documentFor stamps each section with its surface class", () => {
   const sections = documentFor(paneNav());
@@ -230,7 +230,6 @@ test("the section FILTER keeps the class but prints no band (the section heads t
   const sections = documentFor(paneNav(), { only: "chat" });
   assert.deepEqual(sections.map((s) => s.id), ["chat"]);
   assert.equal(sections[0]!.surface, SURFACE_FRONTEND, "the class survives the filter");
-  // ..
   assert.match(
     tab,
     /v-if="group\.header && filterSection === null"/,
@@ -238,7 +237,7 @@ test("the section FILTER keeps the class but prints no band (the section heads t
   );
 });
 
-// -- 4.
+// 4.
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tab = readFileSync(`${root}/app/components/settings/SettingsTab.vue`, "utf8");

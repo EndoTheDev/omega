@@ -45,7 +45,7 @@ func (p *ShellProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"shell.run": {
 			Description: "Run a shell command and return its stdout and stderr.\nThe command runs detached: a call still running when the turn ends keeps running past it, its result re-enters when the shell settles, and shell.list / shell.read / shell.kill address it meanwhile.",
-			// Escalation-eligible: a fast command runs INLINE in the turn (zero overhead.
+			// Escalation-eligible: a fast command runs INLINE in the turn.
 			Parameters: map[string]any{
 				"type": "object",
 				"properties": map[string]any{
@@ -222,7 +222,6 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	if p.guard.DenyShell(command) {
 		return "", datadir.DBDenied(command)
 	}
-	// Per-call workdir override: an explicit dir wins over the run's session workspace.
 	workdir, err := dirOverride(ctx, args)
 	if err != nil {
 		return "", err
@@ -254,7 +253,6 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 				"shell %s stopped: the user ended the turn (%v) - %s; the log stays readable (shell.read id=%s)",
 				e.ID, ctx.Err(), note, e.ID)
 		}
-		// The call was cut short (a run timeout, or the converted call's yield deadline).
 		return shellOutput(out, total, e.ID), fmt.Errorf(
 			"shell %s is still running (pid %d): the call was interrupted (%v) - the shell outlives it; shell.read id=%s tails it, shell.kill id=%s stops it",
 			e.ID, e.PID, ctx.Err(), e.ID, e.ID)

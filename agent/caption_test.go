@@ -21,7 +21,7 @@ func (c *countingCaptioner) Caption(ctx context.Context, img core.ImageContent) 
 	return c.caption, c.err
 }
 
-// recordingLoop is a LoopProvider that captures the messages it was handed and.
+// recordingLoop is a LoopProvider that captures the messages it was handed.
 type recordingLoop struct {
 	messages   []core.Message
 	streamCall bool
@@ -44,8 +44,7 @@ func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
 	return nil
 }
 
-// capsFakeProvider is a FakeProvider that also answers the capability upgrade
-// (ModelCapabilitiesProvider).
+// capsFakeProvider is a FakeProvider that also answers the capability upgrade.
 type capsFakeProvider struct {
 	*FakeProvider
 	entries []core.ModelEntry
@@ -85,7 +84,7 @@ func runOnce(t *testing.T, ag *Agent, messages []core.Message) (core.AgentEnd, *
 }
 
 // The gate: caption-once, then the main model reasons over captions - the loop-visible
-// copy carries "[image:..]" and no binary images, while the caller's original message
+// copy carries "[image:.]" and no binary images, while the caller's original message
 // keeps its images untouched (channels persist and re-render the originals).
 func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
@@ -175,8 +174,7 @@ func TestRunNoCaptionerKeepsImages(t *testing.T) {
 	}
 }
 
-// visionRegistry builds a capability-carrying provider whose listing marks the named
-// model vision-capable.
+// visionRegistry builds a capability-carrying provider whose listing marks the named.
 func visionRegistry(model string, vision bool) *capsFakeProvider {
 	caps := []string{"completion", "tools", "thinking"}
 	if vision {
@@ -243,8 +241,7 @@ func TestRunVisionMainModelSkipsCaptionHop(t *testing.T) {
 	}
 }
 
-// Regression: a main model the registry does NOT mark vision-capable keeps today's aux
-// behavior.
+// Regression: a main model the registry does NOT mark vision-capable keeps.
 func TestRunBlindMainModelKeepsCaptionHop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
 	captioner := &countingCaptioner{caption: "an 8x8 solid red square"}
@@ -285,8 +282,7 @@ func TestRunCapabilityListingFailureKeepsCaptionHop(t *testing.T) {
 	}
 }
 
-// modelRecordingCaptioner records the model of the run provider each caption call saw
-// on the context.
+// modelRecordingCaptioner records the model of the run provider each caption call saw.
 type modelRecordingCaptioner struct{ models []string }
 
 func (c *modelRecordingCaptioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {

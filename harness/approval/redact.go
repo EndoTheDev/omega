@@ -18,7 +18,7 @@ import (
 
 var schemaPairRes = schemaPairPatterns()
 
-// schemaPairPatterns builds one regex per wire fragment the reviewer answers with.
+// schemaPairPatterns builds one regex per wire fragment the reviewer answers.
 func schemaPairPatterns() []*regexp.Regexp {
 	keys := []string{"verdict", "policy_allows", "blast_radius", "self_advocating",
 		"reads_secrets", "sends_outbound", "choice", "confidence",
@@ -65,7 +65,7 @@ func redactCredentials(text string) string {
 	return text
 }
 
-// sanitize is the egress boundary: strip schema fragments first (so a cut never.
+// sanitize is the egress boundary: strip schema fragments first.
 func sanitize(text string) (string, bool) {
 	stripped := stripSchemaFragments(text)
 	out := redactCredentials(stripped)

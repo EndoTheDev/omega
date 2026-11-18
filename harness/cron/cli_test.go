@@ -54,7 +54,7 @@ func jobByName(jobs []JobInfo, name string) *JobInfo {
 	return nil
 }
 
-// TestCronsCLIRoundTrip drives add -> list -> edit -> delete through the handler the.
+// TestCronsCLIRoundTrip drives add -> list -> edit -> delete through the handler.
 func TestCronsCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliTestCrons)
 	cmd := cmdCrons(p)
@@ -141,7 +141,6 @@ func TestCronsCLIEnabledFlip(t *testing.T) {
 	if !strings.Contains(text, "# the human-authored file") {
 		t.Fatalf("edit lost the FILE-level comment:\n%s", text)
 	}
-	// The replaced entry re-marshals clean.
 	if strings.Contains(text, "# the owner's note rides the entry") {
 		t.Fatalf("edit kept a stale inline comment on the replaced entry:\n%s", text)
 	}

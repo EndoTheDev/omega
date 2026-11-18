@@ -69,8 +69,7 @@ savedFetch = globalThis.fetch;
 
 describe("reattach: the serve-side merge renders on restore", () => {
   it("restore renders persisted history + the live tool row + the open thinking block", async () => {
-    // the transcript endpoint composes the live run's open tail BEHIND the persisted
-    // history.
+    // the transcript endpoint composes the live run's open tail BEHIND the persisted.
     const held = stubFetch(
       {
         session: { id: "s1", updated_at: "t" },

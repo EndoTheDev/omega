@@ -1,4 +1,4 @@
-// omega webui: unit tests for the LOCAL split trees in the pinned roots (v0.14.4.
+// omega webui: unit tests for the LOCAL split trees in the pinned roots.
 // Canvas C2's shape law: a sidebar STACKS (column splits) and never splits into
 // side-by-side columns, main + bottom take both directions (drop position decides), the
 // tight roots cap at two split levels, tabs stay free across roots, and the auto-merge
@@ -148,7 +148,7 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     const { root, left, right } = rowRoot();
     const grown = growRoot(root, left.id, "column", "before")!;
     const L = findPane(grown.tree, left.id)!;
-    // canvas C1: the dragged view must be one the class law ALLOWS in a sidebar (a.
+    // canvas C1: the dragged view must be one the class law ALLOWS in a sidebar.
     const src = findPane(grown.tree, right.id)!.id;
     const filesIdx = findPane(grown.tree, right.id)!.tabs.findIndex((t) => t.component === "files");
     const freshId = (L.grown!.children[0] as DockPane).id;
@@ -160,7 +160,6 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     sameShape(pred.tree, commit);
     const grownSplit = findPane(pred.tree, left.id)!.grown!;
     assert.equal(splitDepthInRoot(grownSplit, freshId), 2, "depth 2 reached");
-    // the fresh leaf's split sibling also sits at depth 2.
     const inner = asSplit(grownSplit.children[0]);
     const siblingId = (inner.children[0] as DockPane).id === freshId
       ? (inner.children[1] as DockPane).id
@@ -239,7 +238,6 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
 
   it("a leaf's tab WITH company still closes; the split keeps its survivors", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // three leaves, the middle one carrying two tabs.
     const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
     const withTwo = openTab(root, fresh.id, { component: "chat" });
@@ -302,7 +300,6 @@ describe("the sessions seat with a grown left root (ruling 4: tabs free, bar = t
       null,
       "the right shell refuses",
     );
-    // canvas C1: the zone read behind that refusal.
     assert.equal(paneZone(grown.tree, freshId), "left", "the grown leaf is the root's zone");
     assert.equal(paneZone(grown.tree, a.id), "main", "an unmarked pane is main");
     assert.equal(paneZone(grown.tree, left.id), "left", "the shell's own marker");

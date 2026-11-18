@@ -25,7 +25,7 @@ type fakeChatRuns struct {
 
 func (f fakeChatRuns) Active(id string) bool { return f.live[id] }
 
-// newRoutesFixture opens an in-memory store, mounts the capsule's registrationRows on.
+// newRoutesFixture opens an in-memory store, mounts the capsule's registrationRows.
 func newRoutesFixture(t *testing.T) (*Routes, *Store, *http.ServeMux, *core.Context) {
 	t.Helper()
 	st, err := Open(":memory:")
@@ -42,7 +42,7 @@ func newRoutesFixture(t *testing.T) (*Routes, *Store, *http.ServeMux, *core.Cont
 	return rt, st, mux, ctx
 }
 
-// serve runs one request through the registered mux (a real pattern dispatch, not a.
+// serve runs one request through the registered mux.
 func serve(t *testing.T, mux *http.ServeMux, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	var rd io.Reader
@@ -70,7 +70,7 @@ func createFixtureSession(t *testing.T, st *Store, id, label string) {
 	}
 }
 
-// -- the sessions list ------------------------------------------------
+// the sessions list ----------------------------------------------
 
 func TestSessionsListRows(t *testing.T) {
 	_, st, mux, ctx := newRoutesFixture(t)
@@ -110,7 +110,6 @@ func TestSessionsListRows(t *testing.T) {
 		}
 	}
 
-	// archived filtering: the default list hides archived rows.
 	if err := st.SetSessionArchived(context.Background(), "b", true); err != nil {
 		t.Fatalf("archive: %v", err)
 	}
@@ -147,7 +146,7 @@ func TestSessionsListNoChatRunsOffer(t *testing.T) {
 	}
 }
 
-// -- the search seat ---------------------------------------------------
+// the search seat -------------------------------------------------
 
 func TestSessionsSearchCapsule(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
@@ -214,7 +213,7 @@ func TestSessionsSearchCapsule(t *testing.T) {
 	}
 }
 
-// -- branch -------------------------------------------------------------
+// branch -----------------------------------------------------------
 
 func TestBranchEndpointCreatesChild(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
@@ -293,7 +292,6 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 	if a, ok := msgs[1].(core.Assistant); !ok || a.Content != "parent answer" {
 		t.Fatalf("child path[1] = %T %+v, want the parent assistant", msgs[1], msgs[1])
 	}
-	// the summary row lands after the lineage marker.
 	if err := st.AppendMessage(context.Background(), child.ID, core.NewUser("child question")); err != nil {
 		t.Fatalf("append child message: %v", err)
 	}
@@ -307,9 +305,9 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 	}
 }
 
-// -- export --------------------------------------------------------------
+// export ------------------------------------------------------------
 
-// TestExportJSONLShape: one {"role","content"} line per active-path message (the.
+// TestExportJSONLShape: one {"role","content"} line per active-path message.
 func TestExportJSONLShape(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
 	createFixtureSession(t, st, "exp1", "")
@@ -384,7 +382,7 @@ func TestExportHead(t *testing.T) {
 	}
 }
 
-// -- insights ------------------------------------------------------------
+// insights ----------------------------------------------------------
 
 // seedInsightsRows writes the known rows into the scratch store: two
 // sessions, 3 user messages, 2 assistants carrying 3 tool calls (the
@@ -478,7 +476,7 @@ func TestInsightsParity(t *testing.T) {
 	}
 }
 
-// -- the mux patterns themselves (the mount is the proof) -----------------
+// the mux patterns themselves (the mount is the proof) ---------------
 
 func TestRoutePatternsAreMethodScoped(t *testing.T) {
 	_, _, mux, _ := newRoutesFixture(t)

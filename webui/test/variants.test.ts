@@ -105,7 +105,7 @@ describe("variantLabel: the « 2/3 » index/total math", () => {
   });
 });
 
-// -- variantAnchors: WHERE the switcher renders.
+// variantAnchors: WHERE the switcher renders.
 
 // the live-probed shape: the retry replayed thinking + tool_call + tool_result + text.
 const MULTIBRANCH: VariantBlock = {
@@ -157,7 +157,6 @@ describe("variantAnchors: the switcher survives multi-row replays", () => {
   });
 
   it("one anchor per branch: the tool-call head does not double-anchor", () => {
-    // head = the tool call row itself, run carries a text row.
     const items: TranscriptItem[] = [
       { kind: "message", role: "user", content: "q", id: "45" },
       { kind: "tool", name: "grep", status: "done", result: "x", id: "47" } as TranscriptItem,
@@ -302,7 +301,7 @@ describe("ChatItem + composer wiring", () => {
   });
 });
 
-// -- the host half: stubbed fetch routing by URL.
+// the host half: stubbed fetch routing by URL.
 
 let savedFetch: typeof globalThis.fetch;
 afterEach(() => {
@@ -380,7 +379,7 @@ describe("host.selectVariant: POST then the path re-renders", () => {
       assert.equal(ok, true);
       assert.deepEqual(posts, [{ message_id: "1", select: 0 }]);
       assert.equal(transcriptCalls, 1, "the select re-reads the branch truth");
-      // the fallback render was REPLACED by the refetch's render (a canvas-covered.
+      // the fallback render was REPLACED by the refetch's render.
       assert.equal(st.restored[1]?.kind, "message");
       assert.equal((st.restored[1] as { content: string }).content, "selected answer");
       assert.deepEqual(st.variants, [branch]);
@@ -539,7 +538,6 @@ describe("a run end refreshes the variants (switcher appears after retry)", () =
       assert.equal(ok, true);
       assert.equal(transcriptCalls >= 1, true, "the run end refetched the branch truth");
       assert.deepEqual(host.states.get("c1")!.variants, [branch], "the branch block arrived");
-      // the rendered ids come from the canvas rows now.
       const msg = { kind: "message", role: "assistant", id: "9" } as Parameters<typeof variantOf>[0];
       assert.deepEqual(variantOf(msg, host.states.get("c1")!.variants), branch);
     } finally {

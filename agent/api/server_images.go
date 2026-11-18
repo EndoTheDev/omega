@@ -46,8 +46,7 @@ func urlHost(raw string) string {
 	return u.Hostname()
 }
 
-// internalRings is the deny list of IP rings that point back into the box or its
-// private networks.
+// internalRings is the deny list of IP rings that point back into the box.
 var internalRings = func() []netip.Prefix {
 	rings := []string{
 		"127.0.0.0/8", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12",
@@ -62,7 +61,6 @@ var internalRings = func() []netip.Prefix {
 }()
 
 func addrInInternalRing(addr netip.Addr) bool {
-	// A zone ("fe80:1%eth0") would fail every prefix membership check.
 	addr = addr.WithZone("").Unmap()
 	for _, ring := range internalRings {
 		if ring.Contains(addr) {

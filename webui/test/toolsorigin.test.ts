@@ -8,7 +8,7 @@ import assert from "node:assert/strict";
 
 import { nativeTools, toolRows, type ToolWire } from "../../harness/tools/ui/toolRows.ts";
 
-// -- nativeTools: the exclusion (mandate 1 - MCP shows in the MCP tab alone) --
+// nativeTools: the exclusion (mandate 1 - MCP shows in the MCP tab alone)
 
 test("nativeTools excludes origin=mcp tools, keeps native dotted tools", () => {
   const tools: ToolWire[] = [
@@ -37,7 +37,7 @@ test("nativeTools does not mutate its input", () => {
   assert.equal(tools.length, 1);
 });
 
-// -- the rows pipeline consumes the FILTERED slice --
+// the rows pipeline consumes the FILTERED slice
 
 test("toolRows built from the filtered slice: no mcp rows or groups leak", () => {
   const tools: ToolWire[] = [

@@ -18,7 +18,7 @@ type fakeLogger struct{ path string }
 
 func (f fakeLogger) Path() string { return f.path }
 
-// newTestRoutes builds the REST face over a seeded ring; ctx may be nil (the log.
+// newTestRoutes builds the REST face over a seeded ring; ctx may be nil.
 func newTestRoutes(ctx *core.Context, events []Event) (*Routes, *Ring) {
 	ring := NewRing(32)
 	for _, e := range events {
@@ -186,7 +186,7 @@ func TestTailLines(t *testing.T) {
 		t.Fatal("tail of a missing file returned no error")
 	}
 
-	// Bigger than the read window: every returned line must be a WHOLE line, never the.
+	// Bigger than the read window: every returned line must be a WHOLE line, never.
 	big := filepath.Join(dir, "big.log")
 	var sb strings.Builder
 	for i := 0; sb.Len() < logTailWindow+4096; i++ {

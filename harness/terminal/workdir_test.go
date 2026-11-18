@@ -57,7 +57,7 @@ func newWorkspaceStore(t *testing.T, fallback string) (*Store, *spawnRecorder) {
 	return st, rec
 }
 
-// mountWorkspaceMux mounts the plugin through the real registration path with the.
+// mountWorkspaceMux mounts the plugin through the real registration path.
 func mountWorkspaceMux(t *testing.T, st *Store, sess fakeSessionStores) (*Plugin, *http.ServeMux) {
 	t.Helper()
 	plug := NewPluginWithStore(st)
@@ -73,7 +73,7 @@ func mountWorkspaceMux(t *testing.T, st *Store, sess fakeSessionStores) (*Plugin
 	return plug, mux
 }
 
-// claimOnMux drives POST /terminal/sessions (with the optional ?session= id) and.
+// claimOnMux drives POST /terminal/sessions (with the optional ?session= id).
 func claimOnMux(t *testing.T, mux *http.ServeMux, session string) string {
 	t.Helper()
 	url := "/terminal/sessions"
@@ -153,7 +153,7 @@ func TestSpawnWorkspaceChain(t *testing.T) {
 
 	// reattach: a claim for a live unattached shell adopts it - no new spawn, its cwd
 	// never re-resolves under the user. The chain claims above never subscribed, so they
-	// stay taken (the claim mark law) - this claim spawns fresh (number 6)..
+	// stay taken (the claim mark law) - this claim spawns fresh (number 6).
 	id := claimOnMux(t, mux, "pinned")
 	if n := len(rec.spawned()); n != len(want)+1 {
 		t.Fatalf("spawn count after claim: %d, want %d (a fresh spawn was expected)", n, len(want)+1)

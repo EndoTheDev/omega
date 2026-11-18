@@ -92,7 +92,7 @@ describe("per-component floors (card t_ae9ac5cf Defect 1)", () => {
   });
 });
 
-// the END-TO-END reveal: the tool-heavy layout reveal now OPENS -------------
+// the END-TO-END reveal: the tool-heavy layout reveal now OPENS -----------
 
 /**
  * Endo's round-2 layout, test twin: both shells built + hidden, the main row grown to 5
@@ -148,7 +148,6 @@ describe("the reveal with per-component floors (card t_ae9ac5cf Defect 1)", () =
   it("adding a chat tab to a tool pane floors THAT pane at 320 - the same reveal refuses", () => {
     const { tree, mainPanes } = fiveToolTree();
     mainPanes[0]!.tabs = [{ component: "files" }, { component: "chat" }];
-    // one bumped pane: 4x128 + 320 + 16.
     const after = minDockPx(tree) + 320 + 4;
     assert.equal(after, 4 * MIN_PANE_PX + CHAT_FLOOR_PX + 4 * 4 + 320 + 4, "the chat tab cost exactly its wall");
     const res = tryRevealEdgePane(tree, "sidebar", "before", 320, null, after - 192);

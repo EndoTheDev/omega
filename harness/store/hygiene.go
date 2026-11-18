@@ -143,7 +143,6 @@ func (s *Store) summarizeSession(ctx context.Context, prov agent.Provider, sess 
 		return "", fmt.Errorf("summarize: %w", err)
 	}
 	out = strings.TrimSpace(out)
-	// Defensive cap: a runaway model answer does not become an unbounded row.
 	if len(out) > 2000 {
 		out = out[:2000]
 	}
@@ -185,7 +184,7 @@ func renderTranscript(msgs []core.Message, maxChars int) string {
 	return sb.String()
 }
 
-// completeText runs ONE collect-the-text completion over the provider (the curator's.
+// completeText runs ONE collect-the-text completion over the provider.
 func completeText(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
 	var sb strings.Builder
 	for ev := range prov.Stream(ctx, []core.Message{core.NewUser(prompt)}, nil) {
@@ -304,7 +303,7 @@ func (s *Store) DBFileSizes() (db, wal int64) {
 	return db, wal
 }
 
-// fileSize stats path, reporting 0 for any miss (an absent WAL is an empty WAL, not.
+// fileSize stats path, reporting 0 for any miss.
 func fileSize(path string) int64 {
 	info, err := os.Stat(path)
 	if err != nil {

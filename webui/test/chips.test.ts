@@ -101,7 +101,7 @@ test("an unknown call id reads nothing (a row with no live tail)", () => {
   assert.equal(chipDisplay(undefined), "", "no tail renders no section");
 });
 
-// -- the render wiring (a dead store passes every pure test) -------------
+// the render wiring (a dead store passes every pure test) -----------
 
 test("the chat pane merges the live tail onto the row that owns the call", () => {
   const chatTab = src("components/ChatTab.vue");

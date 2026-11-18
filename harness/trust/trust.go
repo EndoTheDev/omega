@@ -166,7 +166,7 @@ func (p *Provider) ResolveContext(cwd string, approve, noApprove, interactive bo
 	return ""
 }
 
-// promptTrust asks the user whether to trust dir, reading a single y/n answer from.
+// promptTrust asks the user whether to trust dir, reading a single y/n answer.
 func promptTrust(dir string) bool {
 	fmt.Printf("Trust files in %s? [y/N] ", dir)
 	line, _ := bufio.NewReader(os.Stdin).ReadString('\n')

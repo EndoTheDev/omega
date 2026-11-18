@@ -12,7 +12,7 @@ import (
 // Usage state for the learning loop. Shape follows Hermes' skill_usage records:
 // created_at anchors a never-used skill so it cannot self-archive by sitting unread,
 // last_used_at is the freshest real activity, state is the staleness phase the
-// deterministic pass moved the skill to.
+// deterministic pass moved the skill.
 
 // Usage states (Hermes skill_usage vocabulary).
 const (
@@ -118,7 +118,6 @@ func TouchUsage(dir, name, kind, author string) {
 	if author != "" {
 		rec.Author = author
 	}
-	// Real activity reactivates a stale skill (Hermes: used again after going stale).
 	if rec.State == StateStale {
 		rec.State = StateActive
 	}

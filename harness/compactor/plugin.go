@@ -17,7 +17,7 @@ func (p *Plugin) Description() string {
 	return "context compaction: keeps the transcript head and tail, summarizes the middle when the token budget is exceeded"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "compactor" }
 
 func (p *Plugin) Provides() []string { return []string{"compactor"} }
@@ -49,14 +49,14 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			provider: prov,
 		}
 	}
-	// /compact stays an extension command (it returns CommandResult with a display-mode.
+	// /compact stays an extension command.
 	if err := api.Offer("compactor", compactor); err != nil {
 		return err
 	}
 	return api.RegisterCommand("/compact", "summarize conversation history", nil, p.handleCompact)
 }
 
-// handleCompact answers the /compact command (the command body moved here so the.
+// handleCompact answers the /compact command.
 func (p *Plugin) handleCompact(ctx context.Context, name, args string) (core.CommandResult, error) {
 	if name != "/compact" {
 		return core.CommandResult{}, core.CommandMiss(name)

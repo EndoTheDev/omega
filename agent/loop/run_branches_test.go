@@ -10,11 +10,11 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// -------------------------------------------------------------------------- Mock
+// ------------------------------------------------------------------------ Mock
 // implementations for PromptBuilder and CompactionProvider
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
-// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt and.
+// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt.
 type mockPromptBuilder struct {
 	prompt     string
 	guidelines []string
@@ -30,7 +30,7 @@ func (m *mockPromptBuilder) Guidelines() []string {
 	return m.guidelines
 }
 
-// mockCompactionProvider implements agent.CompactionProvider, recording calls and.
+// mockCompactionProvider implements agent.CompactionProvider, recording calls.
 type mockCompactionProvider struct {
 	called    bool
 	callCount int
@@ -39,12 +39,11 @@ type mockCompactionProvider struct {
 func (m *mockCompactionProvider) Compact(_ context.Context, messages []core.Message) ([]core.Message, error) {
 	m.called = true
 	m.callCount++
-	// Replace the message history with a single system message so len(compacted) <.
 	return []core.Message{core.NewSystem("compacted")}, nil
 }
 
-// -------------------------------------------------------------------------- Tests
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------ Tests
+// ------------------------------------------------------------------------
 
 // TestRunContextCancellation covers lines 105-108: Run with a cancelled context.
 func TestRunContextCancellation(t *testing.T) {
@@ -202,7 +201,6 @@ func TestRunCompactionProvider(t *testing.T) {
 	if compactor.callCount < 1 {
 		t.Errorf("Compact call count = %d, want >= 1", compactor.callCount)
 	}
-	// After compaction, the provider should have received the compacted messages (a.
 	if len(provider.LastMessages) != 1 {
 		t.Errorf("provider received %d messages, want 1 (compacted)", len(provider.LastMessages))
 	}

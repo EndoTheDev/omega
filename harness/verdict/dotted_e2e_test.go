@@ -74,8 +74,7 @@ func TestDottedRequestEndToEndThroughTheLoop(t *testing.T) {
 	if results != 1 {
 		t.Fatalf("the loop executed %d tool results, want 1", results)
 	}
-	// the wire's JSON verdict is the tool result the model reads (option indexes are
-	// 1-based.
+	// the wire's JSON verdict is the tool result the model reads.
 	if !strings.Contains(resultContent, `"verdict":"answer"`) || !strings.Contains(resultContent, `"option":"yes"`) || !strings.Contains(resultContent, `"option_index":1`) {
 		t.Fatalf("verdict.request result = %s, want the answered pick (option yes)", resultContent)
 	}

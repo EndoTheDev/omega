@@ -1,3 +1,6 @@
+// Package kanban provides the omega task board: a SQLite-backed 9-status store, the
+// board verbs as kanban.* wire tools, the /board and /boards commands, the canvas
+// panels, and the seam the HTTP channel serves /tasks.
 package kanban
 
 import (
@@ -46,8 +49,7 @@ func IsSettled(s string) bool {
 	return s == StatusDone || s == StatusArchived
 }
 
-// newTaskID returns a "t_" + 8 random hex chars id (collision chance ~1 in 4 billion
-// per draw.
+// newTaskID returns a "t_" + 8 random hex chars id.
 func newTaskID() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {

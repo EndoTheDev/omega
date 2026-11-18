@@ -69,7 +69,7 @@ func (c *Cache) Len() int {
 }
 
 // contentLimits bounds the hashing pass. The pass never opens device nodes, sockets or
-// directories, and never reads the databases or logs it would be recording into.
+// directories, and never reads the databases or logs it would be recording.
 const (
 	targetCapCount = 16
 	targetCapBytes = 1 << 20

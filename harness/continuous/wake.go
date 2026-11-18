@@ -23,7 +23,7 @@ import (
 // cron fire guard, ported to spawns).
 var ErrAwake = errors.New("continuous: agent already awake")
 
-// wakeTickPayload is the raw-JSON shape cron fires for wake ticks (payload law.
+// wakeTickPayload is the raw-JSON shape cron fires for wake ticks.
 type wakeTickPayload struct {
 	Agent  string `json:"agent"`
 	Job    string `json:"job"`
@@ -130,7 +130,7 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, exe, args...)
 	cmd.Dir = p.Dir
-	// Environment: the ROOT home (datadir.AgentHome re-derives the agent's own data dir.
+	// Environment: the ROOT home.
 	cmd.Env = append(os.Environ(),
 		"OMEGA_HOME="+m.home,
 		"OMEGA_AGENT="+p.Name,
@@ -138,11 +138,9 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	if m.cfg.WakeTurnBudget > 0 {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("OMEGA_MAX_TURNS=%d", m.cfg.WakeTurnBudget))
 	}
-	// The per-fire model override.
 	if model != "" {
 		cmd.Env = append(cmd.Env, "OMEGA_MODEL="+model)
 	}
-	// The log: the agent home holds <name>.log.
 	log, err := os.OpenFile(filepath.Join(p.Dir, p.Name+".log"),
 		os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err == nil {

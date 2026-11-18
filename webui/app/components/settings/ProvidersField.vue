@@ -9,7 +9,6 @@
     keeps the masked round trip failing server-side (a masked key must mean something).
   -->
   <div class="providers-editor">
-    <!-- (the one-line explainer survives the reshape). -->
     <p class="provider-hint">
       every provider is a named instance: a name, its type, a base url
       and an api key - the model pickers (chat picker and the slot

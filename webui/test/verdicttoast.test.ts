@@ -47,7 +47,7 @@ function card(id: string, session = "sess-bg"): PendingVerdictCard {
   };
 }
 
-// -- the pure arrival diff ---------------------------------------------
+// the pure arrival diff -------------------------------------------
 
 test("newlyPendingVerdicts seeds on the first read - a reload never replays", () => {
   const seen = new Set<string>();
@@ -104,7 +104,7 @@ test("newlyPendingVerdicts keeps a valid row inside a malformed batch", () => {
   assert.deepEqual(newlyPendingVerdicts(seen, mixed).map((c) => c.id), ["ok-1"]);
 });
 
-// -- the dwell ---------------------------------------------------------
+// the dwell -------------------------------------------------------
 
 test("an approval toast outlives a finished thing's", () => {
   assert.equal(VERDICT_TOAST_MS, 15000);
@@ -114,7 +114,7 @@ test("an approval toast outlives a finished thing's", () => {
   );
 });
 
-// -- source pins: the wiring ------------------------------------------
+// source pins: the wiring ----------------------------------------
 
 test("the store toasts ARRIVALS from the hint path, never from the panel", () => {
   const store = read("app/components/shell/notificationFeed.ts");
@@ -153,7 +153,6 @@ test("the toast component renders the verdict branch and routes its click", () =
 
 test("the approval toast keeps the menubar's single forward", () => {
   const bar = read("app/components/shell/MenuBar.vue");
-  // one open intent, one forward.
   assert.match(bar, /@open="\$emit\('open-notification', \$event\)"/, "the stack forwards its open intent");
   assert.ok(!bar.includes("open-approval"), "no second event was added to the menubar");
   const toasts = read("app/components/shell/NotificationToasts.vue");

@@ -43,8 +43,7 @@ func streamScript(content string) []core.ProviderStreamEvent {
 	}
 }
 
-// ResolveModelSlot routes a configured instance prefix to the instance provider and
-// keeps the model part.
+// ResolveModelSlot routes a configured instance prefix to the instance provider.
 func TestResolveModelSlotKnownInstances(t *testing.T) {
 	base := NewFakeProvider("main", streamScript("base")...)
 	big := NewFakeProvider("big-model", streamScript("big")...)

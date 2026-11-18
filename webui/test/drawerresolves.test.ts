@@ -202,7 +202,6 @@ test("every edge-home dockable is renderable in its home drawer", () => {
 });
 
 test("every edge-home dockable is reachable from its home drawer's floor", () => {
-  // the drawer unions the live pane with the floor.
   for (const side of SIDES) {
     const host = HOST_OF_SIDE[side];
     for (const d of DOCKABLES) {
@@ -280,7 +279,6 @@ test("cross-host drag residual: a tab outside a drawer's branch set never surfac
     "the agents view stays reachable from a sidebar drawer it visits",
   );
 
-  // reachability is the other half of the law.
   const bottomHome = drawerTabs(null, defaultHostTabs("bottom"), title, clamped("bottom"));
   assert.ok(bottomHome.some((t) => t.id === "terminal"), "terminal keeps its home drawer");
   const leftHome = drawerTabs(null, PRIMARY_TAB_COMPONENTS, title, clamped("left"));
@@ -319,7 +317,7 @@ test("the bottom drawer seats the terminal capsule from the tabs manifest (card 
     block.includes(':focused-session="focusedSessionId"'),
     "the drawer copy keeps the focused-session claim the desktop outlet passes",
   );
-  // ..and it seats BEFORE the catch-all, or the catch-all wins the chain
+  // .and it seats BEFORE the catch-all, or the catch-all wins the chain
   assert.ok(
     block.indexOf(':is="terminalTabView"') < block.lastIndexOf("<InspectorPanel"),
     "the terminal branch precedes the InspectorPanel catch-all",

@@ -24,15 +24,13 @@ import (
 // maxChatFileBytes is the per-file cap for non-image attachments.
 const maxChatFileBytes = maxChatImageBytes
 
-// uploadsDirName is the folder inside an omega home that holds every uploaded
-// attachment.
+// uploadsDirName is the folder inside an omega home that holds every uploaded.
 const uploadsDirName = "uploads"
 
-// pendingDirName is the staging folder for a draft chat, whose upload happens BEFORE
-// any session id exists.
+// pendingDirName is the staging folder for a draft chat, whose upload happens.
 const pendingDirName = "_pending"
 
-// uploadsRoot resolves <home>/uploads, the tree every attachment lands in.
+// uploadsRoot resolves <home>/uploads, the tree every attachment lands.
 func uploadsRoot() string {
 	if d := os.Getenv("OMEGA_UPLOADS_DIR"); d != "" {
 		return filepath.Clean(d)
@@ -117,7 +115,7 @@ func createUniqueUpload(dir, name string) (*os.File, error) {
 	}
 }
 
-// pendingTTL is how long a staged draft upload survives without being moved into a.
+// pendingTTL is how long a staged draft upload survives without being moved.
 const pendingTTL = 24 * time.Hour
 
 // sweepPending removes staging token dirs older than pendingTTL. Best effort: a failure
@@ -212,7 +210,7 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(encoded) // best-effort response
 }
 
-// errUploadTooLarge separates the size refusal from the other write errors so the.
+// errUploadTooLarge separates the size refusal from the other write errors.
 var errUploadTooLarge = errors.New("file too large")
 
 // saveUpload streams one multipart part into the target directory and returns its. The
@@ -273,7 +271,7 @@ func saveUpload(root, sessionID string, part multipartFilePart) (*core.Attachmen
 	}, nil
 }
 
-// multipartFilePart is the sliver of *multipart.Part saveUpload needs (FileName +.
+// multipartFilePart is the sliver of *multipart.Part saveUpload needs.
 type multipartFilePart interface {
 	io.Reader
 	FileName() string

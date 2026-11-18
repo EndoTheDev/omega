@@ -40,7 +40,7 @@ func trustGate(pctx *agent.Context, dir string, flags trustFlags, interactive bo
 	return seam.ResolveContext(dir, flags.approve, flags.noApprove, interactive)
 }
 
-// trustStatus is trustGate for the frontend status bar: the same nil-guard, an.
+// trustStatus is trustGate for the frontend status bar: the same nil-guard,.
 func trustStatus(pctx *agent.Context, dir string, flags trustFlags) string {
 	if pctx == nil {
 		return ""

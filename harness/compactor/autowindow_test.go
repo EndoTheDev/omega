@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// contextWindowProvider wraps a provider with a forced ModelInfo result, so the.
+// contextWindowProvider wraps a provider with a forced ModelInfo result,.
 type contextWindowProvider struct {
 	agent.Provider
 	info  llm.ModelInfo

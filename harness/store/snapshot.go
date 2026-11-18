@@ -35,7 +35,7 @@ func SnapshotStore(srcDSN, dstPath string) error {
 	if err := os.MkdirAll(filepath.Dir(dstPath), 0o755); err != nil {
 		return fmt.Errorf("snapshot store: %w", err)
 	}
-	// The same pragma set Open applies: the read side must see the source exactly as its.
+	// The same pragma set Open applies: the read side must see the source exactly.
 	db, err := sql.Open("sqlite", srcDSN+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return fmt.Errorf("snapshot store %s: open: %w", srcDSN, err)

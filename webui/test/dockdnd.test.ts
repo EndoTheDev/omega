@@ -166,7 +166,6 @@ describe("dockDropToZone (the docking mutation)", () => {
 
   it("drop center groups the tab into the target (no split)", () => {
     const { root, a, b } = row();
-    // A keeps a tab so the source pane survives.
     (root.children[0] as DockPane).tabs = [{ component: "files" }, { component: "chat" }];
     const out = dockDropToZone(root, a.id, 1, b.id, "center");
     assert.equal(paneCount(out), 2);
@@ -347,7 +346,7 @@ describe("predictDockDrop (v0.14.4 milestone 1: the one formula)", () => {
   });
 
   it("shells: sidebar row zones refuse with a reason, column zones grow, center predicts the group", () => {
-    // canvas C1: a SIDEBAR-class view is the one the seat gate lets land in a.
+    // canvas C1: a SIDEBAR-class view is the one the seat gate lets land.
     const a = makePane("files");
     const b = makePane("kanban", 240, "right");
     const root = makeSplit("row", [a, b]);

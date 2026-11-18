@@ -103,7 +103,7 @@ func mockToolCall(tool map[string]any, seed string, messages []map[string]any) c
 	return core.ToolCall{ID: fmt.Sprintf("mock_call_%d", seen+1), Name: name, Arguments: args}
 }
 
-// mockFill derives the deterministic value for a required schema property of the.
+// mockFill derives the deterministic value for a required schema property.
 func mockFill(typ any, seed string) any {
 	switch typ {
 	case "string":

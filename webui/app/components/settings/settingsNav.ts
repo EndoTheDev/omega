@@ -12,10 +12,10 @@ export const MODULES_CATEGORY = "modules";
 /** client storage key for the remembered LAST ANCHOR */
 export const NAV_STORAGE_KEY = "omega.settings-category";
 
-// -- the surface classification ------------------------- The pane's sections are
-// GROUPED, not flat-ordered. The classification is DATA - a table, never a derivation
-// from a key's spelling - exactly like the nesting table below: Endo vetoes the mapping
-// at review, and a veto edits ONE line here.
+// the surface classification ------------------------- The pane's sections are. The
+// classification is DATA - a table, never a derivation from a key's spelling - exactly
+// like the nesting table below: Endo vetoes the mapping at review, and a veto edits ONE
+// line here.
 export const SURFACE_FRONTEND = "frontend";
 export const SURFACE_BACKEND = "backend";
 export const SURFACE_CURATED = "curated";
@@ -112,7 +112,7 @@ export function groupBySurface<T>(
   return groups;
 }
 
-// -- the nesting data ----------------------------------------
+// the nesting data --------------------------------------
 
 /** KNOB_SUBGROUPS: knob key -> subgroup id. */
 export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
@@ -205,7 +205,7 @@ export function subgroupLabel(id: string): string {
   return SUBGROUP_LABELS[id] ?? id;
 }
 
-// -- the tree ------------------------------------------------------------
+// the tree ----------------------------------------------------------
 
 export interface NavSubgroup {
   id: string;
@@ -309,7 +309,7 @@ export function buildNav(groups: SettingGroup[]): NavCategory[] {
   return nav;
 }
 
-// -- selection algebra ---------------------------------------------------
+// selection algebra -------------------------------------------------
 
 export interface Selection {
   category: string;
@@ -365,7 +365,7 @@ export function selectionLost(
 }
 
 /**
- * anchorSelection resolves the REMEMBERED value into the id the pane opens scrolled to.
+ * anchorSelection resolves the REMEMBERED value into the id the pane opens scrolled.
  * A remembered CHILD the current nav no longer carries normalises to its category: a
  * stale id is never a broken restore.
  */
@@ -392,7 +392,7 @@ export function expandedCategoryIds(
   return new Set<string>([parseSelection(selection).category]);
 }
 
-// -- the ONE document ----------------------------------------------------
+// the ONE document --------------------------------------------------
 
 export interface DocBlock {
   id: string;
@@ -407,6 +407,7 @@ export interface DocSection {
   /**
    * the surface class the renderer groups this section under (carried from the nav so
    * the document and the nav can never disagree about which group a section belongs to)
+   * / /
    */
   surface: string;
   count: number;
@@ -432,7 +433,7 @@ function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
 }
 
 /**
- * sectionFilter is the CATEGORY the pane's document is narrowed to, from the pane's.
+ * sectionFilter is the CATEGORY the pane's document is narrowed to,.
  * It used to be exempted as a "curated all-view" (its knobs are borrowed from every
  * domain, so the narrowing looked like a duplicate list); the exemption read as a
  * broken filter, because every category narrowed except this one, which left the whole
@@ -550,7 +551,7 @@ export function matchingCategoryIds(
   return ids;
 }
 
-// -- the selected-section scroll clamp -----------------
+// the selected-section scroll clamp ---------------
 
 export interface ClampGeometry {
   top: number;
@@ -577,17 +578,17 @@ export function clampedRange(input: ClampGeometry): [number, number] {
   return [min, max];
 }
 
-// -- the end follows the box ---------------------------- clampedRange bounds a
-// position. That makes the START follow its box in both directions (it is enforced with
-// max(now, min), so a section whose top moves DOWN drags the pane with it) and the END
-// follow it in only ONE (min(now, max) pulls a pane UP when the end shrinks, but a
-// section that GROWS under a pane resting on its bottom leaves that pane short of it
-// for as long as nothing scrolls again - the nightly's clamp witness rested at 810
-// while its own end measured 814, and every later pass found 810 a legal position, so
-// the 4px never healed). A later pass that measures a LONGER end while the pane still
-// rests exactly there answers the new end; every other pass answers null and the pane
-// keeps its place. Only a pane ON the end follows - one parked anywhere inside the
-// section is never moved.
+// the end follows the box ---------------------------- clampedRange bounds a. That
+// makes the START follow its box in both directions (it is enforced with max(now, min),
+// so a section whose top moves DOWN drags the pane with it) and the END follow it in
+// only ONE (min(now, max) pulls a pane UP when the end shrinks, but a section that
+// GROWS under a pane resting on its bottom leaves that pane short of it for as long as
+// nothing scrolls again - the nightly's clamp witness rested at 810 while its own end
+// measured 814, and every later pass found 810 a legal position, so the 4px never
+// healed). A later pass that measures a LONGER end while the pane still rests exactly
+// there answers the new end; every other pass answers null and the pane keeps its
+// place. Only a pane ON the end follows - one parked anywhere inside the section is
+// never moved.
 
 export interface ClampHold {
   at: number;
@@ -611,8 +612,8 @@ export function clampEndFollow(
   return max;
 }
 
-// -- the pane's OWN scrolls ----------------------------- The clamp and the scroll-spy
-// are suppressed for exactly ONE reason: a scroll the PANE issued itself (a jump, a
+// the pane's OWN scrolls ----------------------------- The clamp and the scroll-spy are
+// suppressed for exactly ONE reason: a scroll the PANE issued itself (a jump, a
 // deselect's return to top, a restore, a cleared query's give-back).
 
 export interface PaneScrollState {
@@ -627,7 +628,7 @@ export function paneScrollSettled(state: PaneScrollState): boolean {
 }
 
 /**
- * paneScrollOwns: the ONE scroll the clamp may not measure over.
+ * paneScrollOwns: the ONE scroll the clamp may not measure.
  * The suppression exists so a jump's smooth scroll is never cut short: the pane is
  * travelling to a position it chose, and the window it passes through on the way is not
  * the clamp's business (a filtered document puts the pane's old position just past the
@@ -642,7 +643,7 @@ export function paneScrollOwns(state: PaneScrollState): boolean {
 /**
  * paneScrollIsUser: this scroll event is the USER's - no pane scroll in flight, and the
  * settle window (which swallows an animation's trailing repeats, so a deselect cannot
- * re-select what its return-to-top just passed) is over.
+ * re-select what its return-to-top just passed) is.
  */
 export function paneScrollIsUser(state: PaneScrollState, now: number): boolean {
   return state.target === null && now >= state.graceUntil;
@@ -653,8 +654,8 @@ export function paneScrollSettle(now: number, graceMs: number): PaneScrollState 
   return { target: null, graceUntil: now + graceMs, intent: false };
 }
 
-// -- the anchor is the USER's --------------------------- The remembered anchor means.
-// A delivery like that resolves whatever id the NEW boxes put at the top edge, and the
+// the anchor is the USER's --------------------------- The remembered anchor means. A
+// delivery like that resolves whatever id the NEW boxes put at the top edge, and the
 // nightly caught it overwriting the anchor an explicit jump had just written - a drawer
 // jump to "compaction" at 340px, a widen to 1280px, and the stored anchor read back as
 // the neighbouring section. So the write is gated on ORDER, never on a flag someone
@@ -668,6 +669,7 @@ export interface SpyAnchorTrace {
   userScrollAt: number;
   /**
    * when the spy's boxes last moved with no scroll - a resize, a re-arm (ms); 0 = never
+   * / /
    */
   geometryAt: number;
   wroteAt: number;
@@ -678,11 +680,11 @@ export function spyAnchorMayWrite(trace: SpyAnchorTrace): boolean {
   return trace.userScrollAt > trace.geometryAt && trace.userScrollAt > trace.wroteAt;
 }
 
-// -- the URL carries the section ----------------- The in-app URL owns the focused.
-// This card adds the settings pane's section on the QUERY axis instead of inventing a
-// second path scheme: `?settings=<section>` rides whatever path is current, so the two
-// never fight, and the settings-path card can add `/settings` later without touching
-// this parameter.
+// the URL carries the section ----------------- The in-app URL owns the focused. This
+// card adds the settings pane's section on the QUERY axis instead of inventing a second
+// path scheme: `?settings=<section>` rides whatever path is current, so the two never
+// fight, and the settings-path card can add `/settings` later without touching this
+// parameter.
 
 /** the query parameter the settings section rides */
 export const SETTINGS_SECTION_PARAM = "settings";

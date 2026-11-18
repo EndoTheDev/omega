@@ -24,7 +24,7 @@ func TestToolsFoldAwareRead(t *testing.T) {
 
 	a.SetDisabledTools([]string{"web.search", "web.fetch"})
 
-	// bare read: the executable registry - web.* absent (the model must not see disabled.
+	// bare read: the executable registry - web.* absent.
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tools", nil))
 	if rec.Code != http.StatusOK {

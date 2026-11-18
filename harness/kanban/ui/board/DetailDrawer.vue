@@ -34,7 +34,6 @@
       </button>
     </header>
 
-    <!-- round: the title and body are editable in place. -->
     <div
       v-if="!editingTitle"
       class="drawer-title-row">
@@ -220,7 +219,6 @@
     type BoardTask,
   } from "./boardLogic";
 
-  // The detail drawer: full body + comment thread + event trail + status/priority.
   const props = defineProps<{
     task: BoardTask;
     comments: BoardComment[];
@@ -312,7 +310,7 @@
     emit("save", { body });
   }
 
-  // -- armed delete. There is deliberately NO undo - see the template comment: the tool
+  // armed delete. There is deliberately NO undo - see the template comment: the tool
   // layer cannot resurrect a deleted card.
   const confirmingDelete = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
@@ -421,7 +419,8 @@
   }
   /*
    * armed delete: the drawer-level danger zone.
-   * The heavier border is the warning, the same tinge the board-remove button carries
+   * The heavier border is the warning, the same tinge the board-remove button carries /
+   * /
    */
   .drawer-danger {
     flex: none;

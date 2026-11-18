@@ -14,7 +14,7 @@ import (
 )
 
 func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
-	// A FILE-backed board, not:memory: the loop executes tool calls concurrently, and.
+	// A FILE-backed board, not:memory: the loop executes tool calls concurrently,.
 	s, err := Open(filepath.Join(t.TempDir(), "kanban.db"))
 	if err != nil {
 		t.Fatal(err)

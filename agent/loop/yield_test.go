@@ -100,7 +100,7 @@ func (w *wakeRecorder) snapshot() []core.YieldResult {
 	return append([]core.YieldResult(nil), w.list...)
 }
 
-// waitForWakes blocks until the recorder holds n wakes or the deadline lapses (the.
+// waitForWakes blocks until the recorder holds n wakes or the deadline lapses.
 func waitForWakes(t *testing.T, rec *wakeRecorder, n int) {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -233,8 +233,7 @@ func TestLoopYieldResultStartsNewTurn(t *testing.T) {
 	}
 }
 
-// TestLoopTwoPendingWakeIndependently: two yield-class calls in one completion both
-// dispatch.
+// TestLoopTwoPendingWakeIndependently: two yield-class calls in one completion.
 func TestLoopTwoPendingWakeIndependently(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "a"}}},
@@ -418,8 +417,7 @@ func TestLoopPendingPlaceholders(t *testing.T) {
 	}
 }
 
-// shrinkBudget points the loop's inline budget at a test-sized window (the production
-// value is 2s.
+// shrinkBudget points the loop's inline budget at a test-sized window.
 func shrinkBudget(t *testing.T, d time.Duration) {
 	t.Helper()
 	old := inlineToolBudget
@@ -573,7 +571,6 @@ func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	if res := rec.snapshot()[0]; res.ToolCallID != "slow" || res.Content != "slow:later" {
 		t.Errorf("wake = %+v, want exactly the escalated call's result", res)
 	}
-	// The provider context of the turn that followed the mixed batch carries the inline.
 	marker, inline := "", false
 	for _, m := range provider.LastMessages {
 		switch v := m.(type) {
@@ -597,8 +594,7 @@ func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	}
 }
 
-// TestLoopStopCancelsStillInlineCall: a run stop inside the inline window still kills
-// the running call.
+// TestLoopStopCancelsStillInlineCall: a run stop inside the inline window still kills.
 func TestLoopStopCancelsStillInlineCall(t *testing.T) {
 	shrinkBudget(t, 100*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",

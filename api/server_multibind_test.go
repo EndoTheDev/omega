@@ -69,7 +69,6 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 	if tx["running"] != true {
 		t.Fatalf("transcript through mirror A: running = %v, want true", tx["running"])
 	}
-	// finish the replay through mirror B's agent (the capsule pin's provider is shared.
 	prov.send(finalStep("second answer")...)
 	prov.done()
 	waitFor(t, "retry replay done", func() bool { return !sA.ActiveRun("mb1") })

@@ -24,8 +24,7 @@
           @click="$emit('remove-attachment', i)">&times;</button>
       </div>
       <!--
-        non-image references: the bytes never reach the browser, so there is nothing to
-        thumbnail.
+        non-image references: the bytes never reach the browser, so there is nothing.
       -->
       <div
         v-for="(f, i) in files"
@@ -45,10 +44,6 @@
           @click="$emit('remove-file-attachment', i)">&times;</button>
       </div>
     </div>
-    <!--
-      the fork anchor: a visible affordance while the next send is chained onto a
-      historical message.
-    -->
     <div
       v-if="forkAnchor"
       class="fork-chip">
@@ -60,8 +55,7 @@
         @click="$emit('clear-fork')">&times;</button>
     </div>
     <!--
-      the reference CHIPS: the draft's /skill and @file / @folder tokens render INLINE
-      in the editor.
+      the reference CHIPS: the draft's /skill and @file / @folder tokens render.
     -->
     <div class="composer-row">
       <button
@@ -102,7 +96,6 @@
         @click="onCaret"
         @paste="onPaste" />
     </div>
-    <!-- the / command palette and @ mention picker. -->
     <div
       v-if="paletteOpen"
       ref="paletteEl"
@@ -184,8 +177,7 @@
           @update:model-value="$emit('update:thinking', $event)" />
       </div>
       <!--
-        ONE morphing button: while a run streams this is the stop control; idle it is
-        send always.
+        ONE morphing button: while a run streams this is the stop control.
         The replay affordance renders in the newest response's action row
         (ChatMessage's msg-retry chip), never here.
       -->
@@ -291,12 +283,10 @@
     () => !!props.draft.trim() || props.attachments.length > 0 || props.files.length > 0,
   );
 
-  // the effort chip's option ladder.
   const thinkingOptions = computed(() =>
     THINKING_UI_LEVELS.map((level) => ({ value: level, label: level })),
   );
 
-  // the morph: busy -> stop, else send.
   const face = computed(() => composerFace(props.busy));
   const faceLabel = computed(() => (face.value === "stop" ? "■ stop" : "send"));
   const faceTitle = computed(() =>
@@ -317,7 +307,6 @@
   const expanded = ref(false);
   const overflowing = ref(false);
 
-  // the squeeze ladder: the composer's own width picks the rung.
   const root = ref<HTMLElement | null>(null);
   const ladderTouch = computed(
     () => `${props.model}|${props.thinking}|${props.busy}|${expanded.value}`,
@@ -343,12 +332,10 @@
     // the height math reads state-dependent layout: the class must land in the DOM.
     nextTick(() => {
       resize();
-      // fullscreen hands the canvas to the input immediately.
       if (expanded.value) ta.value?.focus();
     });
   }
 
-  // fullscreen canvas law: a click on empty composer space.
   function onCanvasClick(e: MouseEvent) {
     if (!expanded.value) return;
     const el = e.target as HTMLElement | null;
@@ -363,7 +350,6 @@
     ta.value?.focus();
   }
 
-  // the height follows every draft write.
 
   // fileToImage reads one File into the ai.ImageContent shape. Returns {img: null,
   // reason} for unsniffable content - handleFiles reports the first reason instead of
@@ -436,7 +422,7 @@
     }
   }
 
-  // -- the / command palette and @ mention picker --- Derived from draft + caret. NOTE:
+  // the / command palette and @ mention picker --- Derived from draft + caret. NOTE:
   // the mode is DERIVED (mention.value.active), never stored in an imperative ref
   // flipped from onInput - that flip raced the draft prop update (the handler sees the
   // PREVIOUS emit's draft) and the bare-@ list rendered empty one beat too late.
@@ -494,7 +480,6 @@
 
   const paletteOpen = computed(() => {
     if (dismissed.value) return false;
-    // slash lists while the caret sits inside a "/" token.
     if (slash.value.active) return true;
     return mention.value.active;
   });
@@ -519,7 +504,6 @@
           kind: "skill" as const,
         }));
       }
-      // bare @: the two prefix rows plus the token's dir listing.
       const prefixRows: PaletteItem[] = [
         { name: "session:", description: "inject a session's history", kind: "session" },
         { name: "skill:", description: "inject a skill's content", kind: "skill" },
@@ -564,11 +548,9 @@
   watch(mentionActive, (on) => {
     if (on) {
       void loadMentionRows();
-      // the skill: prefix rows ride the same snapshot the slash palette uses.
       void loadPaletteData();
     }
   });
-  // the @ drill: the token's dir drives the file rows.
   watch(
     () => (mentionActive.value ? mentionDirOf(mention.value.token) : null),
     (dir) => {
@@ -584,7 +566,6 @@
   });
   onMounted(() => {
     if (slashSurface.value) void loadPaletteData();
-    // a remount carrying a draft.
     if (scanRefTokens(props.draft, CHIP_SCAN).some((t) => t.kind === "skill")) {
       void loadPaletteData();
     }
@@ -595,19 +576,12 @@
     dismissed.value = true;
   }
 
-  // -- the chip editor: a pill REPLACES the text it --
-  // -- represents, inline in the flow --
-  //
-  // The editor is a contenteditable div (a textarea cannot render markup
-  // in place). Its children are owned by this module, never by Vue's
-  // patcher: native typing mutates the DOM freely, and the sync rewrites
-  // the children ONLY when the plan (the chip law over the draft) and
-  // the DOM disagree - a rebuild restores the caret at the same
-  // draft-space index, so the cursor never visibly jumps. The draft
-  // string always carries the RAW tokens: chips are a view of their
-  // spans (data-token carries the span out), and the send posts the
-  // same text the strip-era flow posted (the server-side at-mention
-  // expansion is the consumer of that exact string).
+  // the chip editor: a pill REPLACES the text it -- -- represents, inline in the flow
+  // -- The editor is a contenteditable div (a textarea cannot render markup in place).
+  // Its children are owned by this module, never by Vue's patcher: native typing
+  // mutates the DOM freely, and the sync rewrites the children ONLY when the plan (the
+  // chip law over the draft) and the DOM disagree - a rebuild restores the caret at the
+  // same draft-space index, so the cursor never visibly jumps.
 
   // chip eligibility: a file or dir token stands as-is; a skill token chips as soon as
   // its name is a loaded skill's (a shell verb like "/theme" is a command, never a pill
@@ -620,7 +594,6 @@
   const isPill = (t: RefToken): boolean =>
     t.kind === "file" || t.kind === "dir" || skillNames.value.has(t.name);
 
-  // fresh swallows (the accept path) and dissolved reveals (the Backspace law).
   const forcedChip = ref<ReadonlySet<string>>(new Set());
   const dissolvedChip = ref<ReadonlySet<string>>(new Set());
 
@@ -638,7 +611,7 @@
     ),
   );
 
-  // -- caret arithmetic (draft space <-> editor DOM) --- A chip contributes its token's
+  // caret arithmetic (draft space <-> editor DOM) --- A chip contributes its token's
   // full length to draft space but offers exactly two caret seats: before it (the
   // token's start index) and after it (the span's end index). A token's interior
   // indexes exist in draft space but never in the chip'd DOM - a chip there means the
@@ -698,11 +671,9 @@
     let idx = 0;
     for (let i = 0; i < kids.length; i++) {
       const c = kids[i]!;
-      // the caret anchors on the editor itself.
       if (anchor === el) {
         if (range.startOffset === i) return idx;
       } else if (c === anchor) {
-        // the caret anchors on the child.
         return c.nodeType === Node.TEXT_NODE ?
             idx + Math.min(range.startOffset, (c.nodeValue ?? "").length)
           : idx;
@@ -745,7 +716,7 @@
     sel.collapse(el, kids.length);
   }
 
-  // -- the chip DOM + the sync --
+  // the chip DOM + the sync
 
   const appContext = getCurrentInstance()?.appContext ?? null;
 
@@ -758,7 +729,7 @@
     wrap.dataset.token = t.token;
     wrap.addEventListener("mousedown", (e) => e.preventDefault());
     wrap.addEventListener("dragstart", (e) => e.preventDefault());
-    // chip click: a file opens in the Files pane, a skill opens its SKILL.md, a.
+    // chip click: a file opens in the Files pane, a skill opens its SKILL.md,.
     const vnode = h("span", { class: "ref-chip-body" }, [
       h(ReferencePill, { pill: t, onOpen: () => openRef(t) }),
       h(
@@ -812,8 +783,6 @@
       .filter((p): p is EditorChipNode => p.type === "chip")
       .map((p) => p.token.token);
     if (domText === props.draft && domChips.join("\u0000") === wantChips.join("\u0000")) {
-      // parity: maybe resize anyway (heights follow plain text edits, whose own flush
-      // took the plan watch here).
       capTail(el, domText);
       resize();
       return;
@@ -834,7 +803,6 @@
     resize();
   }
 
-  // the sync triggers: any plan change (draft text, caret, chip state) rebuilds the.
   watch(editorPlan, () => nextTick(syncEditor));
 
   // dissolveBehindCaret runs the Backspace law.
@@ -865,13 +833,11 @@
       next.add(tok.token);
       dissolvedChip.value = next;
     }
-    // the caret stays parked at the span's end.
     caretAt.value = tok.start + tok.token.length;
     return true;
   }
 
-  // absorbWrite: the shared tail of every text write (typing, paste, the newline
-  // insert).
+  // absorbWrite: the shared tail of every text write.
   function absorbWrite(el: HTMLElement): void {
     const text = draftTextOf(el);
     dismissed.value = false;
@@ -932,7 +898,6 @@
       // token surgery: replace ONLY the "/" word under the caret.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
-      // the fresh swallow: the completed token chips immediately.
       const forced = new Set(forcedChip.value);
       forced.add("/" + item.name);
       forcedChip.value = forced;
@@ -949,8 +914,6 @@
       return;
     }
     if (!mention.value.active && (item.kind === "shell" || item.kind === "extension")) {
-      // token surgery: the completed command replaces only the "/" word under the
-      // caret.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       closePalette();
       emit("update:draft", next.draft);
@@ -958,13 +921,11 @@
       active.value = -1;
       return;
     }
-    // the insert: a file or dir row's name is the entry's own.
     const isDir = item.kind === "dir";
     const dir = mentionDirOf(mention.value.token);
     const insertion = "@" + dir + item.name + (isDir ? "/" : "");
     const next = replaceMentionToken(props.draft, caretAt.value, mention.value.token, insertion);
     closePalette();
-    // the fresh swallow: the completed token chips immediately (a file's path, a.
     const forced = new Set(forcedChip.value);
     forced.add(insertion);
     forcedChip.value = forced;
@@ -986,11 +947,9 @@
     if (!item) return closePalette();
     if (submit) return acceptItem(item);
     if (!mention.value.active) {
-      // token surgery: only the "/" word dies.
       const next = replaceSlashToken(props.draft, caretAt.value, slash.value.token, item.name);
       emit("update:draft", next.draft);
       caretAt.value = next.caret;
-      // the completion chips a fresh skill token.
       if (item.kind === "skill") {
         const forced = new Set(forcedChip.value);
         forced.add("/" + item.name);
@@ -1030,7 +989,6 @@
         return;
       }
       if (e.key === "Enter") {
-        // the palette owns Enter while it is open.
         e.preventDefault();
         acceptActive(true);
         return;
@@ -1056,8 +1014,7 @@
     }
   }
 
-  // composer auto-focus: the ChatTab parent delivers focus-on-select and
-  // type-to-capture through this handle.
+  // composer auto-focus: the ChatTab parent delivers focus-on-select.
   defineExpose({
     focus: () => {
       ta.value?.focus();
@@ -1075,7 +1032,6 @@
   .composer.expanded {
     position: absolute;
     inset: 0;
-    /* above the pane's content. */
     z-index: 20;
   }
 </style>

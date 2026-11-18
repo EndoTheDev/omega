@@ -1,4 +1,4 @@
-// omega webui: unit tests for the per-session stream busy map (the pure busy logic in.
+// omega webui: unit tests for the per-session stream busy map.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { anyBusy, isBusy, withBusy, runningIds } from "../app/composables/omega.ts";

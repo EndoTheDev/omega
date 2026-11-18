@@ -72,7 +72,6 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
       });
       continue;
     }
-    // the iconset name rides the keyword fuel too.
     cmds.push({
       id: "open:" + id,
       title: "Open " + d.title,

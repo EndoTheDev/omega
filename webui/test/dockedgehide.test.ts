@@ -27,7 +27,7 @@ import {
   type HiddenEdgeState,
 } from "../app/composables/dock.ts";
 
-// helpers -----------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -110,10 +110,9 @@ function hiddenSidebar(): DockPane {
   };
 }
 
-// tests --------------------------------------------------------------------
+// tests ------------------------------------------------------------------
 
 describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
-  /** the realistic reveal context. */
   function closedWithKanbanStowed(): { closed: DockSplit; stow: DockPane } {
     const open = ensurePinnedEdges(shellTree());
     const left = findEdgePane(open, "sidebar")!;
@@ -152,7 +151,6 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const opened = revealEdgePane(closed, "sidebar", "before", null, stow);
     const pane = asPane(findEdgePane(opened, "sidebar")!);
     assert.notEqual(pane.id, stow.id);
-    // every id in the restored tree is unique.
     const ids = new Set<string>();
     for (const p of panesOf(opened)) {
       assert.ok(!ids.has(p.id), `duplicate id ${p.id}`);
@@ -201,7 +199,6 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const back = deserializeLayout(old)!;
     assert.deepEqual(back.closedEdges, ["sidebar"]);
     assert.equal(back.hiddenEdges, undefined);
-    // the total reader stays null-free with today's semantics.
     const parsed = parseAnyLayout(old, () => tree);
     assert.equal(findEdgePane(parsed.tree, "sidebar"), null);
     assert.equal(parsed.hiddenEdges, undefined);
@@ -247,7 +244,6 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     assert.ok(rec.closedEdges?.includes("sidebar"));
     assert.deepEqual(
       rec.hiddenEdges?.sidebar?.tabs,
-      // the drag inserted kanban at index 1.
       [PRIMARY_TAB_COMPONENTS[0]!, "kanban", ...PRIMARY_TAB_COMPONENTS.slice(1)].map((c) => ({
         component: c,
       })),
@@ -384,7 +380,7 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     await flush();
     const pane = asPane(findEdgePane(dock.tree.value, "inspector")!);
     assert.equal(pane.tabs.length, INSPECTOR_TAB_COMPONENTS.length, "the pre-hide composition came back");
-    // the restored pane carries the FULL recorded composition, no duplicates the.
+    // the restored pane carries the FULL recorded composition, no duplicates.
     await flush();
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!) as { closedEdges?: string[] };
     assert.ok(!rec.closedEdges?.includes("inspector"));

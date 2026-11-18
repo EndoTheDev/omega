@@ -49,9 +49,6 @@
                 :gate-cards="entry.items.map(gateCardForItem)"
                 :session-id="sessionId"
                 :live="busy" />
-              <!--
-                the live pin: the streaming turn's user row rides a sticky slot.
-              -->
               <div
                 v-else-if="pinnedSlot(block, index)"
                 class="live-pin">
@@ -106,7 +103,6 @@
           :card="card"
           :session-id="sessionId ?? undefined" />
       </div>
-      <!-- the activity line: phase-aware narration above the composer. -->
       <div
         v-if="activityText"
         class="activity-line">{{ activityText }}</div>
@@ -183,7 +179,7 @@
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   import { chipDisplay, chipOf } from "../composables/chips";
-  // consecutive tool rows collapse into ONE group block (render-site view, the.
+  // consecutive tool rows collapse into ONE group block.
   import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
@@ -210,8 +206,6 @@
 
   const host = inject(CHAT_HOST_KEY)!;
 
-  // the tab key: minted at creation, present on every persisted chat tab (dock
-  // boot-time normalization).
   const stateKey = props.tab.key ?? "";
   // the tab owns the binding: unsaved (no sessionRef) -> composer-first.
   const sessionId = computed(() =>
@@ -227,10 +221,8 @@
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   const state = computed(() => host.states.get(stateKey));
 
-  // -- the session's remembered context --- The pinned model belongs to the SESSION,
-  // not to the app.
+  // the session's remembered context --- The pinned model belongs to the SESSION.
   const modelValue = ref(props.session?.model || props.model);
-  // rebind (draft -> sent adopts an id.
   function restorePins() {
     const pinnedModel = props.session?.model ?? "";
     if (sessionId.value) {
@@ -243,7 +235,6 @@
     () => [sessionId.value, props.session?.model ?? ""] as const,
     restorePins,
   );
-  // the app's default model moved (models fetch or another draft tab's change).
   watch(
     () => props.model,
     (m) => {
@@ -255,7 +246,6 @@
     emit("update:model", v);
   }
 
-  // -- the transcript's render source (chat-last 2a) --- The chat panel (kind 'chat'.
   const canvasTranscript = createCanvasTranscript();
   const panelPayload = computed(() => {
     const panel = host.chatPanel();
@@ -292,7 +282,6 @@
   });
   const statusLine = computed(() => state.value?.statusLine ?? "");
   const itemKey = createItemKeySource();
-  // stacked layout: the transcript cut at user messages.
   const blocks = computed(() => splitBlocks(transcript.value));
   // the outer key rides the block's first ENTRY.
   function blockKey(block: ChatEntry[]): number {
@@ -306,14 +295,14 @@
     },
   });
 
-  // composer busy = the PER-SESSION run slot (either this tab's stream, another tab's.
+  // composer busy = the PER-SESSION run slot.
   const busy = computed(() => {
     const id = sessionId.value;
     if (id) return host.busyAll.value.has(id);
     return host.busyKeys.value.has(stateKey);
   });
   const canRetry = computed(
-    // ephemeral: nothing persisted to replay - the affordance never renders, the.
+    // ephemeral: nothing persisted to replay - the affordance never renders,.
     () =>
       !busy.value &&
       sessionId.value !== null &&
@@ -324,7 +313,7 @@
   // the retry affordance lives on the message action row: the transcript owner derives
   // BOTH signals - the run must be idle (canRetry above; the row also hides while the
   // row's bubble streams) and this item is the NEWEST assistant response, the one the
-  // retry's sibling replay appends under.
+  // retry's sibling replay appends.
   const lastAssistantId = computed(() => {
     const items = transcript.value;
     for (let i = items.length - 1; i >= 0; i--) {
@@ -343,7 +332,6 @@
     );
   }
 
-  // -- stacked live-run pin: the last user message of the streaming turn rides a.
   const liveRun = computed(() => liveRunSlice(transcript.value));
   const liveLayout = computed(
     () =>
@@ -360,7 +348,6 @@
     return block === groupedBlocks.value[groupedBlocks.value.length - 1];
   }
 
-  // -- pending gate questions.
   const sessionGateBinding = computed(() =>
     bindGateQuestions(transcript.value, pendingVerdictList.value, sessionId.value ?? null),
   );
@@ -373,8 +360,7 @@
     return gateByItem.value.get(item) ?? null;
   }
 
-  // the freeze cadence: the feed is pulled on EVENT HINTS since the push channel
-  // landed.
+  // the freeze cadence: the feed is pulled on EVENT HINTS since the push channel.
   watch(busy, (live) => {
     if (live) void refreshNotifications();
   });
@@ -385,8 +371,8 @@
     () => nextTick(resizeContentRO),
   );
 
-  // -- the activity line: the phase is a pure derivation of the rendered items + the.
-  // One elapsed meter per phase stretch - recreated on the phase swap, so the counter
+  // the activity line: the phase is a pure derivation of the rendered items + the. One
+  // elapsed meter per phase stretch - recreated on the phase swap, so the counter
   // restarts exactly on the event that ended one phase and started the next (a running
   // tool counts on from the panel's elapsed-so-far through initialMs, like the
   // ToolCallLine meter).
@@ -420,7 +406,6 @@
   );
   onBeforeUnmount(() => tick?.stop());
 
-  // -- scroll pinning + jump-to-live pill.
   const messagesEl = ref<HTMLElement | null>(null);
   const pinned = ref(true);
   const jumpPill = ref(false);
@@ -431,9 +416,8 @@
   // the scrollTop OUR last follow write landed at (the browser clamps it).
   let followWrite = -1;
 
-  // -- the transcript has ONE scroll writer ---------- The follow and the browser's.
+  // the transcript has ONE scroll writer ---------- The follow.
 
-  // -- content-change follow.
   let contentRO: ResizeObserver | null = null;
   const roTargets = new WeakSet<HTMLElement>();
 
@@ -470,7 +454,6 @@
     const el = messagesEl.value;
     if (!el) return;
     if (followWrite >= 0 && el.scrollTop === followWrite) {
-      // our own follow write coming back as a scroll event.
       followWrite = -1;
       lastScrollHeight = el.scrollHeight;
       jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
@@ -488,7 +471,7 @@
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
-  // a run starting: the send path lands the reader at the tail and re-arms the.
+  // a run starting: the send path lands the reader at the tail and re-arms.
   watch(liveLayout, (live) => {
     if (!live) return;
     pinned.value = true;
@@ -507,11 +490,9 @@
       const el = messagesEl.value;
       if (!el) return;
       if (!force && !pinned.value) return;
-      // the clamp target is what the browser would land on anyway.
       const target = Math.max(el.scrollHeight - el.clientHeight, 0);
       if (el.scrollTop >= target - 1) return;
       el.scrollTop = el.scrollHeight;
-      // read back the clamped value.
       followWrite = el.scrollTop;
     });
   }
@@ -521,10 +502,10 @@
     scrollDown(true);
   }
 
-  // the painted transcript changes (canvas deltas, restore fetches or streaming
-  // repaints). The pinned flag only changes on real scroll events - never measured
-  // after the append (the scroll-pinning law). The RO target list rides each paint too:
-  // new items and branch swaps must enter the observation set.
+  // the painted transcript changes (canvas deltas, restore fetches or streaming. The
+  // pinned flag only changes on real scroll events - never measured after the append
+  // (the scroll-pinning law). The RO target list rides each paint too: new items and
+  // branch swaps must enter the observation set.
   watch(transcript, () => {
     scrollDown();
     nextTick(resizeContentRO);
@@ -552,11 +533,10 @@
     host.submit(stateKey, text, modelValue.value, thinkingLevelWire(props.thinking), fork ?? undefined);
   }
   function onRetry() {
-    // the message action row's retry chip.
     void host.retry(stateKey);
   }
 
-  // -- variants --- variantOfItem resolves ONE rendered item's switcher block.
+  // variants --- variantOfItem resolves ONE rendered item's switcher block.
   const variantAnchorMap = computed(() =>
     variantAnchors(transcript.value, state.value?.variants),
   );
@@ -571,7 +551,7 @@
     return variantAnchorMap.value.get(id) ?? null;
   }
 
-  // -- tool-call grouping: consecutive tool rows --- groupToolRuns folds each render
+  // tool-call grouping: consecutive tool rows --- groupToolRuns folds each render
   // list's runs of consecutive tool items into collapsible group blocks; a
   // variant-anchored row stays in flow (the switcher must stay visible).
   const groupedTranscript = computed(() => groupToolRuns(transcript.value, variantOfItem));
@@ -604,10 +584,10 @@
     return findMessageItem(transcript.value, id) ? id : null;
   });
 
-  // -- composer auto-focus: the app signals chat selections and type-to-capture
-  // keystrokes through the focus signal; each pane renders only its ACTIVE tab, so the
-  // instance whose state key matches the request is by construction the visible one -
-  // the focused tab's composer receives, hidden tabs never match.
+  // composer auto-focus: the app signals chat selections and type-to-capture keystrokes
+  // through the focus signal; each pane renders only its ACTIVE tab, so the instance
+  // whose state key matches the request is by construction the visible one - the
+  // focused tab's composer receives, hidden tabs never match.
   const composerEl = ref<{ focus: () => void } | null>(null);
   const focusSignal = inject<ComposerFocusSignal | null>(COMPOSER_FOCUS_KEY, null);
   function deliverFocus() {
@@ -629,25 +609,22 @@
     // registration fire rides the pinned gate, so priming this way never forces a
     // mount-time jump
     nextTick(resizeContentRO);
-    // pending selection focus for a tab minted after the request (the new-chat /.
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
     if (sessionId.value) host.load(stateKey, sessionId.value);
   });
 
   watch(sessionId, (id) => {
     if (!id) return;
-    // the tab's binding moved (unsaved chat's create path, or a session a shared tab
-    // reopened).
     if (!host.states.get(stateKey)?.loaded) host.load(stateKey, id);
   });
 
-  // a run starting for the session AFTER this tab mounted (another tab on the same.
+  // a run starting for the session AFTER this tab mounted.
   watch(
     () => sessionId.value ? host.busyAll.value.has(sessionId.value) : false,
     (live) => {
       if (!live) return;
       const st = host.states.get(stateKey);
-      // a run this tab never subscribed to.
+      // a run this tab never subscribed.
       if (!st || st.attached || host.busyKeys.value.has(stateKey)) return;
       if (!st.loaded) {
         host.load(stateKey, sessionId.value!);
@@ -659,7 +636,6 @@
 </script>
 
 <style scoped>
-  /* the fullscreen composer's containing block. */
   .chat.pane {
     position: relative;
   }

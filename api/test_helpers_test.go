@@ -1,6 +1,6 @@
 package api
 
-// The shell's mock helpers. Test-only duplication, same-shaped as agent/api's.
+// The shell's mock helpers. Test-only duplication, same-shaped as agent/.
 
 import (
 	"bufio"
@@ -148,7 +148,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 		opts.Events <- core.StreamEvent{Event: event}
 		if end, ok := event.(core.StreamEnd); ok && end.FinishReason == "stop" {
-			// Persist BEFORE the event, like the real loop: a reload mid-run must find the.
+			// Persist BEFORE the event, like the real loop: a reload mid-run must find.
 			assistant := core.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
@@ -164,7 +164,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	return nil
 }
 
-// newTestServerWithStore returns a server with an in-memory store and a handle to the.
+// newTestServerWithStore returns a server with an in-memory store and a handle.
 func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(":memory:")
@@ -343,9 +343,9 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only (the generic postJSON helper.
+// postAny posts a JSON body and returns the status only.
 
-// postChatStream POSTs a "/chat" run and leaves the stream open (the agents'.
+// postChatStream POSTs a "/chat" run and leaves the stream open.
 func postChatStream(t *testing.T, ts *httptest.Server, sessionID string) (*http.Response, context.CancelFunc, *bufio.Scanner) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{

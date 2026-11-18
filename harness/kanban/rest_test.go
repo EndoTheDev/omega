@@ -1,6 +1,6 @@
 package kanban
 
-// The board REST tests (from the pre-dissolve http_channel tests.
+// The board REST tests.
 
 import (
 	"encoding/json"
@@ -182,7 +182,7 @@ func TestTasksIllegalStatusFiltered400(t *testing.T) {
 	}
 }
 
-// multiBoardCtx mounts on a temp home registry with alpha and beta created before the.
+// multiBoardCtx mounts on a temp home registry with alpha and beta created.
 func multiBoardCtx(t *testing.T) (*core.Context, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -346,7 +346,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete of a board holding a live card = %d %q", res.StatusCode, string(body))
 	}
 
-	// the archive lane is the last stop.
 	res, _ = do("PATCH", ts.URL+"/tasks/"+created.ID+"?board=beta", `{"status":"archived"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -358,7 +357,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete of an all-archived board = %d", res.StatusCode)
 	}
 
-	// the default board is deletable now (it is the current one here).
 	res, _ = do("DELETE", ts.URL+"/boards/main", "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -381,7 +379,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete ghost = %d %q", res.StatusCode, string(body))
 	}
 
-	// the last board leaves too.
 	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {

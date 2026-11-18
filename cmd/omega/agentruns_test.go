@@ -40,7 +40,6 @@ func TestAgentRunFactoryLayersTheHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build scout agent: %v", err)
 	}
-	// The daemon holds these mounts for its lifetime.
 	defer func() {
 		if err := build.close(); err != nil {
 			t.Fatalf("close agent mounts: %v", err)

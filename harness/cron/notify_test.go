@@ -41,7 +41,7 @@ func (f *fakeNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// -- fire emission --
+// fire emission
 
 func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "nightly", Schedule: "0 3 * * *", Prompt: "p"})

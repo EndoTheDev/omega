@@ -20,7 +20,6 @@ func TestLogsCommandAnswersOnlyItsOwnName(t *testing.T) {
 		t.Fatalf("logger: %v", err)
 	}
 	if fl, ok := logger.(*FileLogger); ok {
-		// windows keeps the handle open.
 		t.Cleanup(func() { _ = fl.Close() })
 	}
 	ctx := &core.Context{}

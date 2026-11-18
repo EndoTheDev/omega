@@ -25,8 +25,7 @@ var ErrNotFound = errors.New("session not found")
 // Compile-time assertion that Store implements agent.StoreProvider.
 var _ agent.StoreProvider = (*Store)(nil)
 
-// Compile-time assertion that Store carries the optional health probe
-// (agent.StorePinger).
+// Compile-time assertion that Store carries the optional health probe.
 var _ agent.StorePinger = (*Store)(nil)
 
 // Ping is the store health probe (agent.StorePinger). Deliberately NOT a PRAGMA
@@ -52,7 +51,7 @@ func (s *Store) Ping(ctx context.Context) error {
 type Store struct {
 	db *sql.DB
 	// identity is the store's own agent binding. Empty = main; every session row the store
-	// filters must be main's.
+	// filters must be.
 	identity string
 	dbPath string
 	hygMu sync.RWMutex
@@ -104,7 +103,7 @@ func openStore(dsn string) (*Store, error) {
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
 	}
-	// WAL mode allows concurrent readers + one writer across multiple processes (e.g..
+	// WAL mode allows concurrent readers + one writer across multiple processes.
 	// foreign_keys rides the DSN, not a post-open PRAGMA: a SQLite pragma is
 	// per-connection, so a one-shot `PRAGMA foreign_keys = ON` covered a single connection
 	// out of the pool and left the rest (the majority under concurrent writers) with
@@ -125,7 +124,6 @@ func openStore(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// An in-memory database lives per connection.
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
@@ -141,8 +139,7 @@ func openStore(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// Close closes the underlying database and every agent home store this one opened for
-// routing.
+// Close closes the underlying database and every agent home store this one opened.
 func (s *Store) Close() error {
 	homesErr := s.closeHomes()
 	if err := s.db.Close(); err != nil {
@@ -355,7 +352,7 @@ INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary F
 // CreateSession creates a session with the given id.
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
 	now := core.NowISO()
-	// An empty parentID is stored as NULL so the FK constraint does not try to match a.
+	// An empty parentID is stored as NULL so the FK constraint does not try to match.
 	var parent any
 	if parentID != "" {
 		parent = parentID
@@ -574,12 +571,11 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error)
 	return roots, nil
 }
 
-// GetAncestorMessages returns the messages of a session and all its ancestors up to.
+// GetAncestorMessages returns the messages of a session and all its ancestors up.
 func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Message, error) {
 	if o := s.owner(ctx, id); o != nil {
 		return o.GetAncestorMessages(ctx, id)
 	}
-	// ponytail: walk the parent chain one query per hop.
 	var chain []string
 	cur := id
 	for cur != "" {
@@ -601,7 +597,7 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 	return out, nil
 }
 
-// AppendMessage appends a message to a session's history and touches the session's.
+// AppendMessage appends a message to a session's history and touches.
 // Without the touch, updated_at froze after the title's last write - the sidebar's time
 // buckets silently drifted off the real activity, and no unread state could ever be
 // derived from the row.
@@ -662,7 +658,7 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Messa
 	return out, rows.Err()
 }
 
-// GetMessagesWithTimes returns a session's messages in append order, each paired with.
+// GetMessagesWithTimes returns a session's messages in append order, each paired.
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.GetMessagesWithTimes(ctx, sessionID)
@@ -726,7 +722,7 @@ func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archiv
 	return err
 }
 
-// SetSessionRead stamps the session's last-read time to now, so unread (updated_at.
+// SetSessionRead stamps the session's last-read time to now, so unread.
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionRead(ctx, sessionID)
@@ -766,7 +762,7 @@ func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string
 	return err
 }
 
-// SessionModels returns the last recorded model per session from the session's.
+// SessionModels returns the last recorded model per session.
 func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT m.session_id, m.payload FROM messages m
@@ -792,7 +788,7 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// GetImageCaption returns the persisted caption for an image id (media type + sha256.
+// GetImageCaption returns the persisted caption for an image id.
 func (s *Store) GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT caption FROM image_captions WHERE image_id = ?`, imageID).
@@ -828,7 +824,7 @@ func boolToInt(b bool) int {
 	return 0
 }
 
-// AddSessionTokens adds a turn's real provider-reported usage to the session's.
+// AddSessionTokens adds a turn's real provider-reported usage.
 func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.AddSessionTokens(ctx, sessionID, prompt, completion)
@@ -843,7 +839,7 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	return err
 }
 
-// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it matches as a.
+// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it matches.
 func quoteFTS(term string) string {
 	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
@@ -936,7 +932,6 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	out := []core.SearchResult{}
 	seen := make(map[string]bool)
 
-	// Label hits first.
 	trows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, label FROM sessions_fts
 		 WHERE sessions_fts MATCH ? ORDER BY rank`, labelScoped)
@@ -963,7 +958,6 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	}
 	trows.Close()
 
-	// Summary hits, best rank first.
 	srows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("sessions_fts", 2)+`
 		 FROM sessions_fts WHERE sessions_fts MATCH ? ORDER BY rank`, summaryScoped)
@@ -1063,7 +1057,7 @@ func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, det
 	}
 }
 
-// processSession fetches messages for one session and accumulates its stats into the.
+// processSession fetches messages for one session and accumulates its stats.
 func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
 	t, err := time.Parse(time.RFC3339, sess.CreatedAt)
 	if err != nil {

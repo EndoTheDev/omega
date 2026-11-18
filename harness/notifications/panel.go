@@ -131,7 +131,6 @@ func (c *capsule) Panels() []core.Panel {
 func (c *capsule) listPanel() core.Panel {
 	notes, unread, err := c.store.List(context.Background(), false, listPanelRows, 0)
 	if err != nil {
-		// A dead store serves an empty panel.
 		return core.Panel{ID: listPanelID, Title: "Notifications", Kind: "list"}
 	}
 	rows := make([]row, 0, len(notes))
@@ -176,7 +175,7 @@ func (c *capsule) toastPanel() core.Panel {
 	}
 }
 
-// noteRow strips a record to its view-model row (no mark binding.
+// noteRow strips a record to its view-model row.
 func noteRow(n core.Notice) row {
 	return row{
 		ID:        n.ID,
@@ -195,8 +194,7 @@ func (c *capsule) pushEmit(n core.Notice) {
 	c.push(c.listPanel())
 }
 
-// toastPanelFor builds the toast descriptor for an emitted record directly from the
-// record.
+// toastPanelFor builds the toast descriptor for an emitted record directly.
 func (c *capsule) toastPanelFor(n core.Notice) core.Panel {
 	return core.Panel{
 		ID:      toastPanelID,

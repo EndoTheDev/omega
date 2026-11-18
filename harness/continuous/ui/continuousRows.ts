@@ -26,8 +26,7 @@ export interface OmegaEvidenceRow {
   verifier?: string;
 }
 
-// OmegaChatMessage is one canonical-chat tail message (the view renders only what the
-// store returned.
+// OmegaChatMessage is one canonical-chat tail message.
 export interface OmegaChatMessage {
   content: string;
   timestamp?: string;
@@ -58,7 +57,7 @@ export function evidenceSummary(rows: OmegaEvidenceRow[]): string {
   return failed === 0 ? `${ok} ok` : `${ok} ok, ${failed} failed`;
 }
 
-// verifierVoice renders one row's verifier verdict or a dash (absent verifier = the.
+// verifierVoice renders one row's verifier verdict or a dash.
 export function verifierVoice(row: OmegaEvidenceRow): string {
   return row.verifier || "-";
 }

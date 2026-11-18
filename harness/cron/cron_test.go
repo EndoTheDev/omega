@@ -234,7 +234,7 @@ func TestSchedulePrevNoOccurrence(t *testing.T) {
 	}
 }
 
-// mustLocal builds a fixed time.Date in the local zone (schedules evaluate in server.
+// mustLocal builds a fixed time.Date in the local zone.
 func mustLocal(y, m, d, hh, mm int) time.Time {
 	return time.Date(y, time.Month(m), d, hh, mm, 0, 0, time.Local)
 }

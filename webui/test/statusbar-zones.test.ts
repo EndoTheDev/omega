@@ -30,7 +30,7 @@ const statusBar = () => src("components/shell/StatusBar.vue");
 const appVue = () => src("app.vue");
 const css = () => src("assets/css/main.css");
 
-// -- 4a.
+// 4a.
 
 const payload = (rows: ChatPayloadWire["rows"]): ChatPayloadWire => ({
   session: "s1",
@@ -127,7 +127,7 @@ describe("chatPanelPendingCount: the open session's pending calls", () => {
   });
 });
 
-// -- 1/2/3/5/7.
+// 1/2/3/5/7.
 
 describe("the bar's zones and the closed clickable set", () => {
   it("renders exactly two zones: health + work context LEFT, metrics + version RIGHT", () => {
@@ -206,7 +206,7 @@ describe("the bar's zones and the closed clickable set", () => {
   });
 });
 
-// -- 6.
+// 6.
 
 describe("narrow collapse (ruling 6)", () => {
   it("every right-zone metric carries hide-sm; the dot and the picker do not", () => {
@@ -226,7 +226,7 @@ describe("narrow collapse (ruling 6)", () => {
   });
 });
 
-// -- 5.
+// 5.
 
 describe("the health popover", () => {
   it("opens from the health segment and names its role + state to AT", () => {
@@ -256,14 +256,12 @@ describe("the health popover", () => {
     assert.match(bar, /\{\{ providerReachable \? "reachable" : "not reachable" \}\}/, "provider row reads its verdict");
     assert.match(bar, /\{\{ databaseHealthy \? "healthy" : "unhealthy" \}\}/, "database row reads its verdict");
     assert.match(bar, /\{\{ lastErrorMessage \|\| "none" \}\}/, "last error row reads the recorded message, or none");
-    // ..and each degrades to not reported when it has no source.
     assert.equal((bar.match(/\{\{ NOT_REPORTED \}\}/g) ?? []).length, 3);
     assert.equal((bar.match(/v-else class="hp-val muted"/g) ?? []).length, 3, "every row has an unsourced branch");
   });
 
   it("only names the gap while a row is actually unsourced", () => {
     const bar = statusBar();
-    // the footnote is conditional.
     assert.match(bar, /<p v-if="unsourcedCount" class="hp-note">/);
     assert.match(bar, /if \(!providerSourced\.value\) n\+\+;/);
     assert.match(bar, /if \(!databaseSourced\.value\) n\+\+;/);
@@ -283,7 +281,7 @@ describe("the health popover", () => {
   });
 });
 
-// -- 5b.
+// 5b.
 
 describe("the health facts' wiring (card t_5e2f3095)", () => {
   it("the wire types carry the three optional facts", () => {

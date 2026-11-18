@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// AtMentionEnv carries the seams the @-mention expansion reaches for.
+// AtMentionEnv carries the seams the @-mention expansion reaches.
 // Core is stdlib-only by law, so the pieces it cannot own ride in as
 // functions the caller supplies - one expansion law, one caller per
 // submit surface (the CLI loop and the webui). A nil seam degrades the
@@ -63,22 +63,11 @@ func atMentionResolve(dir, path string) string {
 	return filepath.Join(dir, path)
 }
 
-// ExpandAtMentions scans a text string for @path tokens, loads any
-// image files as base64 ImageContent, and inlines text files. Also
-// supports:
-//
-// @*.go - glob patterns (expand all matches, inline text files)
-// @session:<id> - inject session message history as context
-// @skill:<name> - inject skill content
-//
-// Relative paths resolve against env.Dir. Tokens that don't resolve are
-// left as-is in the text (unresolvable passthrough is the protocol,
-// never a send-blocker) and reported in `unresolved` so the caller can
-// surface them. Only a standalone @ (at input start or after a space)
-// counts as unresolved; a mid-word @ is an email address or handle, not
-// a file reference. Both submit paths (loop and webui) run this on their
-// own thread; there is exactly one copy of the law. The returned error
-// is the first I/O error hit (the submission surfaces it; the send proceeds).
+// ExpandAtMentions scans a text string for @path tokens, loads any image files.
+// Tokens that don't resolve are left as-is in the text (unresolvable passthrough is the
+// protocol, never a send-blocker) and reported in `unresolved` so the caller can
+// surface them. Both submit paths (loop and webui) run this on their own thread; there
+// is exactly one copy of the law.
 func ExpandAtMentions(input string, env AtMentionEnv) (prompt string, images []ImageContent, unresolved []string, err error) {
 	var b strings.Builder
 	var loadedImages []ImageContent
@@ -144,8 +133,7 @@ func atMentionToken(token string, env AtMentionEnv) (string, *ImageContent, int,
 		return sb.String(), nil, atResolved, nil
 	}
 
-	// ReferenceOnly: every FILE-shaped token (plain path or glob) is a path reference on
-	// this path.
+	// ReferenceOnly: every FILE-shaped token (plain path or glob) is a path reference.
 	if env.ReferenceOnly {
 		return token, nil, atLiteral, nil
 	}

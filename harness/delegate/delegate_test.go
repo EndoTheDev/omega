@@ -17,8 +17,7 @@ func TestCompile(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestTools verifies both tools are registered with correct names, and that the task
-// tool is yield-class.
+// TestTools verifies both tools are registered with correct names, and that the task.
 func TestTools(t *testing.T) {
 	d := NewDelegate()
 	tools := d.Tools()
@@ -168,7 +167,7 @@ func (stubNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// TestEmitterDeliversSeamAtMountEnd: with the notifications module mounted, the.
+// TestEmitterDeliversSeamAtMountEnd: with the notifications module mounted,.
 func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
@@ -181,7 +180,7 @@ func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	}
 }
 
-// stubNotificationsPlugin provides the notifications seam via a stub store so the.
+// stubNotificationsPlugin provides the notifications seam via a stub store.
 type stubNotificationsPlugin struct{}
 
 func (stubNotificationsPlugin) Name() string       { return "notifications" }

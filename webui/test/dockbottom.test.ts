@@ -1,5 +1,4 @@
-// omega webui: unit tests for the bottom panel - the dock's pinned horizontal child
-// under the main panel.
+// omega webui: unit tests for the bottom panel.
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -51,7 +50,7 @@ test("fullscreen keeps the sidebars: css owns the takeover (Endo's comment 2026-
   assert.match(css, /\.dock-pane\.edge-bottom\.bottom-fullscreen\s*{[^}]*position:\s*absolute/s);
   assert.match(css, /left:\s*var\(--bottom-inset-left/s);
   assert.match(css, /right:\s*var\(--bottom-inset-right/s);
-  // the sidebars never hide: only their measured overhang is neutralized (the row.
+  // the sidebars never hide: only their measured overhang is neutralized.
   assert.match(css, /:has\(\.dock-pane\.edge-bottom\.bottom-fullscreen\)[^}]*margin-bottom:\s*0\s*!important/s);
   // the pane class is bound in DockPane (the view rides the class, not inline styles)
   const pane = srcPath("../app/components/DockPane.vue");
@@ -66,7 +65,7 @@ function flush(): Promise<void> {
   return new Promise((r) => setTimeout(r, 0));
 }
 
-// tiny Storage stand-in (same shape as dock.test.ts's MemoryStorage.
+// tiny Storage stand-in.
 class MemoryStorage {
   private m = new Map<string, string>();
   getItem(k: string): string | null {
@@ -179,7 +178,7 @@ describe("the bottom shell's place in the tree", () => {
   });
 
   it("insertMainPane lands in the MAIN ROW of a column root, not beside the bottom shell", () => {
-    // Endo ruling: removePane can no longer strip the last main pane, so the no-main
+    // removePane can no longer strip the last main pane, so the no-main
     // state is built BY HAND - the shape a stale persisted record may still carry
     // (ensureMainPane is the repair path for exactly that record)
     const dock = createDock(new MemoryStorage() as unknown as Storage);
@@ -257,8 +256,7 @@ describe("close / reopen (persistence rulings)", () => {
   it("the bottom panel's drag-close (divider push) persists closure too", async () => {
     const store = new MemoryStorage() as unknown as Storage;
     const dock = createDock(store);
-    // drag the horizontal divider DOWN past the floor (drag down shrinks the
-    // viewport-bottom-anchored shell).
+    // drag the horizontal divider DOWN past the floor.
     const res = dock.drag(
       (dock.tree.value as DockSplit).id,
       1,
@@ -338,7 +336,6 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
   const shellOf = (tree: DockNode): DockPane => findEdgePane(tree, "bottom")!;
   const stripOf = (tree: DockNode): string[] =>
     shellOf(tree).tabs.map((t) => t.component);
-  // the strip's named residents.
   const terminal = "terminal";
   const observability = "observability";
   // what the sync appends: every default the strip lacks, in registry order, at the END
@@ -445,7 +442,6 @@ describe("the boot repair's strip sync (syncBottomHostTabs, card t_841df625)", (
     const raw = JSON.stringify(rec);
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const healed = createDock(store);
-    // the strip now seats three homes.
     assert.deepEqual(
       [...(bottomOf(healed.tree.value)?.tabs.map((t) => t.component) ?? [])].sort(),
       [...bottomDefaults].sort(),
@@ -534,7 +530,6 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   it("snaps on the +200 ladder (200/400/600), not the sidebars' +320", () => {
     const { split, startPx, contentPx } = column(200);
     assert.equal(BOTTOM_SNAP_STEP, 200);
-    // into the +14 zone of 400: 400 - 214 =..
     const d = dragSplitDivider(split, 1, startPx, -190, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 400, "snapped to rung 400");
@@ -544,13 +539,12 @@ describe("the horizontal divider drag (the bottom shell)", () => {
   });
 
   it("the chat (the absorbing neighbor above) keeps its 320 floor", () => {
-    // 600 content, not 700 - at the 0.5 max share the share cap (300) binds below the.
+    // 600 content, not 700 - at the 0.5 max share the share cap (300) binds below.
     const { split, startPx, contentPx } = column(200, 600);
     // grow the bottom beyond what a 320 chat floor leaves: 600 - 320 = 280
     const d = dragSplitDivider(split, 1, startPx, -400, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
     assert.equal(bottom.fixed, 280, "capped by the chat floor");
-    // wall law: the divider stops at the chat's floor.
     const out = d.split as DockSplit;
     assert.deepEqual(out.sizes, (split as DockSplit).sizes, "the chat's fraction untouched");
     assert.deepEqual(
@@ -603,14 +597,12 @@ describe("persistence round-trip", () => {
 
 describe("the registry's home rulings", () => {
   it("the Logs tab and the terminal are the bottom host's defaults", () => {
-    // terminal joins the fresh bottom strip.
     assert.deepEqual(defaultHostTabs("bottom"), ["terminal", "observability"]);
   });
 
   it("the Logs tab reports its bottom home; every other component single-hosts", () => {
     assert.deepEqual([...hostsOf("observability")], ["bottom"]);
-    // canvas C1: cron is a PRIMARY-sidebar view (the seat map moved it off the
-    // inspector strip).
+    // canvas C1: cron is a PRIMARY-sidebar view.
     assert.deepEqual([...hostsOf("cron")], ["left"]);
     assert.deepEqual([...hostsOf("chat")], ["main"]);
   });

@@ -21,7 +21,7 @@ func findChecksumURL(assets []githubAsset) string {
 	return ""
 }
 
-// verifyChecksum downloads checksums.txt from the release, finds the SHA256 hash for.
+// verifyChecksum downloads checksums.txt from the release, finds the SHA256 hash.
 // Returns nil if verification succeeds, or an error if the hash doesn't match.
 func verifyChecksum(archivePath, checksumsURL, assetName string) error {
 	client := &http.Client{Timeout: 30 * time.Second}

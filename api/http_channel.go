@@ -63,7 +63,7 @@ type HTTPChannel struct {
 	// sockets is the process-wide push hub. Per-bind hubs served each bind's /ws from its
 	// own subscriber set, so a frame published on one bind never reached a client
 	// connected to another - the same multi-bind blindness the run hub above cured, one
-	// seam over.
+	// seam.
 	sockets *agentapi.SocketHub
 	canvas *sharedCanvas
 	chat *agentapi.ChatCapsule
@@ -100,7 +100,7 @@ func (c *HTTPChannel) SetAgentPromptConfig(prompt string, maxTurns int) {
 	}
 }
 
-// wire builds the channel's server and binds it to the process-wide state (hub, chat.
+// wire builds the channel's server and binds it to the process-wide state.
 func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	if deps.Ctx == nil || deps.Ctx.Services().Resolve("provider") == nil {
 		return fmt.Errorf("http_channel: no provider configured")
@@ -127,14 +127,13 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 		c.srv.BindChatCapsule(c.chat)
 		c.srv.RegisterChatPanel(deps.Ctx)
 	}
-	// Multi-bind mirror: every bind's server joins the one process-wide run registry, so.
 	if c.hub != nil {
 		c.srv.BindRunHub(c.hub)
 	}
-	// Multi-bind push mirror: every bind's /ws attaches to the ONE process-wide hub, the.
+	// Multi-bind push mirror: every bind's /ws attaches to the ONE process-wide hub,.
 	// Per-bind hubs left a client connected to one bind blind to every frame published on
 	// another - the chat frames a run on bind B emitted never reached the browser served
-	// by bind A.
+	// by bind.
 	if c.sockets != nil {
 		c.srv.BindSocketHub(c.sockets)
 	}
@@ -146,7 +145,6 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 			return fmt.Errorf("http_channel: chat-runs offer: %w", err)
 		}
 	}
-	// Canvas transport (arc 3b).
 	if c.canvas == nil {
 		c.canvas = &sharedCanvas{}
 	}
@@ -157,15 +155,12 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	c.srv.BindCanvas(canvas)
 	// Optional-module seams ride the shared rewire (v0.12 E2).
 	c.srv.rewireSeams(deps.Ctx)
-	// Inspector seams: read-only views for the /cron/jobs, /skills and /logs endpoints.
 	c.srv.SetChannelKnobs(c.runTimeout, runtimeTitleModel(c.titleModel))
-	// The default workspace knob rides its own setter (the hot apply calls it live).
 	c.srv.SetDefaultWorkspace(c.defaultWorkspace)
 	// The serving agent's live knobs. The channel builds its own agent with empty
 	// AgentOptions - the boot cfg never reached the serving agent through NewFromContext,
 	// so this pair is every surface they ride.
 	c.srv.SetAgentPrompt(c.agentPrompt, c.agentMaxTurns)
-	// The per-agent run factory.
 	c.srv.SetAgentRunFactory(c.agentRuns)
 	c.srv.SetPublicHosts(c.publicHosts)
 	c.srv.version = deps.Version

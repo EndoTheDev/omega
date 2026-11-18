@@ -56,7 +56,7 @@ func (t Tool) ActionNames() []string {
 	return names
 }
 
-// SchemaParameters returns the tool's parameter schema with the "action" property's.
+// SchemaParameters returns the tool's parameter schema with the "action".
 func (t Tool) SchemaParameters() map[string]any {
 	if t.Actions == nil {
 		return t.Parameters

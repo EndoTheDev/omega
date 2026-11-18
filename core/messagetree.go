@@ -34,7 +34,7 @@ func isConversation(msg Message) bool {
 	return false
 }
 
-// parentIDOf reads a message's tree pointer (conversation types only.
+// parentIDOf reads a message's tree pointer.
 func parentIDOf(msg Message) string {
 	switch m := msg.(type) {
 	case User:
@@ -188,7 +188,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 			})
 		}
 	}
-	// Each conversation message resolves to its run head.
 	for _, id := range idOf {
 		walked := map[string]bool{}
 		for cur := id; cur != "" && !walked[cur]; {
@@ -201,7 +200,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		}
 	}
 
-	// chain reports whether id's ancestor chain carries only active heads at every.
 	valid := func(id string) bool {
 		seen := map[string]bool{}
 		for cur := id; cur != ""; {

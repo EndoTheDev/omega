@@ -3,7 +3,7 @@ package store
 // router_test.go: session-addressed routing across agent homes. Law: the chat floor
 // holds ONE store handle and every conversation the agents roster lists lives in the
 // owning agent home's own file - reads answer from it, writes land in it, and a
-// main-store session behaves exactly as it did before.
+// main-store session behaves exactly as it did.
 
 import (
 	"context"
@@ -17,7 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// agentHomeFixture builds <home>/data/omega.db with one main session and.
+// agentHomeFixture builds <home>/data/omega.db with one main session.
 func agentHomeFixture(t *testing.T) (home, mainDSN, scoutDSN string) {
 	t.Helper()
 	home = t.TempDir()
@@ -95,7 +95,7 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 		t.Fatalf("SessionOwner(unknown) = %q, want empty", got)
 	}
 
-	// WRITE routing: a turn's writes land in the owning file, never the daemon's.
+	// WRITE routing: a turn's writes land in the owning file, never.
 	if err := router.AppendMessage(ctx, "sess-scout-2", core.NewUser("from the chat floor")); err != nil {
 		t.Fatalf("AppendMessage(scout) = %v", err)
 	}
@@ -292,7 +292,6 @@ func TestForgetHomeReleasesTheHandle(t *testing.T) {
 	if router.ForgetHome("scout") {
 		t.Error("the second ForgetHome still reported a handle")
 	}
-	// Released: the home's directory can be removed, and the router no longer answers.
 	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
 		t.Fatalf("remove released home: %v", err)
 	}

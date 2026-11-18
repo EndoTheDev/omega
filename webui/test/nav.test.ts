@@ -28,7 +28,7 @@ function pane(id: string, tabs: DockPane["tabs"]): DockPane {
   return { kind: "pane", id, tabs, active: 0, fixed: null };
 }
 
-// -- the pure push model ----------------------------------------------------
+// the pure push model --------------------------------------------------
 
 describe("nav push model", () => {
   const A: NavEntry = { paneId: "p1", tabId: "chat" };
@@ -67,7 +67,7 @@ describe("nav push model", () => {
   });
 });
 
-// -- tab identity -----------------------------------------------------------
+// tab identity ---------------------------------------------------------
 
 describe("navTabId", () => {
   it("chat keys by the instance key, viewer by its payload, singletons by component", () => {
@@ -85,7 +85,7 @@ describe("navTabId", () => {
   });
 });
 
-// -- entry resolution against a live tree -----------------------------------
+// entry resolution against a live tree ---------------------------------
 
 describe("locateEntry", () => {
   const tree = makeSplit("row", [
@@ -104,7 +104,7 @@ describe("locateEntry", () => {
   });
 });
 
-// -- the reactive shell (the production signal shape) ------------------------
+// the reactive shell (the production signal shape) ----------------------
 
 describe("createNavHistory", () => {
   it("back/forward activate the resolved entry; the dims track the ends", () => {
@@ -150,7 +150,7 @@ describe("createNavHistory", () => {
   });
 });
 
-// -- the app wiring (production-boundary assertions) ---------------------------
+// the app wiring (production-boundary assertions) -------------------------
 
 describe("nav cluster wiring", () => {
   const menubar = readFileSync(
@@ -161,7 +161,7 @@ describe("nav cluster wiring", () => {
   const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
   const iconset = readFileSync(join(here, "../app/composables/icons.ts"), "utf8");
 
-  // ONE brand far left, the nav cluster dead center on the bar's full width, the.
+  // ONE brand far left, the nav cluster dead center on the bar's full width,.
   it("the brand is ONE element; the cluster owns the absolute center", () => {
     assert.match(menubar, /<NavCluster/);
     assert.match(menubar, /:can-back="canBack"/);
@@ -176,7 +176,7 @@ describe("nav cluster wiring", () => {
       1,
       "exactly one brand element",
     );
-    // the centered wordmark ELEMENT and its CSS rule are deleted (the comment above.
+    // the centered wordmark ELEMENT and its CSS rule are deleted.
     assert.doesNotMatch(menubar, /<span class="menubar-wordmark"/);
     assert.doesNotMatch(css, /\.menubar-wordmark\s*\{/);
     // the cluster takes the absolute-middle seat the wordmark used (dead center on the
@@ -184,14 +184,14 @@ describe("nav cluster wiring", () => {
     assert.match(css, /\.nav-cluster\s*\{[^}]*position:\s*absolute/);
     assert.match(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
     assert.match(css, /\.nav-cluster\s*\{[^}]*translateX\(-50%\)/);
-    // below the drawer breakpoint the cluster HIDES (the three edge toggles stay.
+    // below the drawer breakpoint the cluster HIDES.
     assert.match(
       css,
       /@media \(max-width: 768px\) \{\s*\.nav-cluster \{ display: none; \}/,
     );
     assert.doesNotMatch(menubar, /Omega v?\d+\.\d+/);
     assert.doesNotMatch(menubar, /\/health/);
-    // the ruling: disabled attribute dimming, never a click-swallow class
+    // the rule: disabled attribute dimming, never a click-swallow class
     assert.match(css, /\.nav-btn:disabled\s*\{[^}]*opacity/);
   });
 
@@ -256,8 +256,6 @@ describe("nav cluster wiring", () => {
     assert.match(app, /window\.addEventListener\("keydown", onNavKeys\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowLeft[\s\S]{0,300}nav\.back\(\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowRight[\s\S]{0,300}nav\.forward\(\)/);
-    // Ctrl+K and the palette open both exist - ONE toggle since the outside-click
-    // rider.
     assert.match(app, /e\.key === "k"/);
     assert.match(app, /function togglePalette/);
     assert.match(app, /onNavKeys[\s\S]{0,200}togglePalette\(\)/);

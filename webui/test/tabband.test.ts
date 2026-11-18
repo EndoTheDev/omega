@@ -22,12 +22,10 @@ const TABS: Array<{
   { file: "../harness/cron/ui/CronJobs.vue", title: "Cron", scrollClass: "cron-body", actions: ["refresh cron jobs", "Search cron jobs"] },
   { file: "../harness/skills/ui/SkillsList.vue", title: "Skills", scrollClass: "skills-body", actions: ["refresh skills", "Search skills"] },
   { file: "../harness/tools/ui/ToolsList.vue", title: "Tools", scrollClass: "tools-body", actions: ["refresh tools", "Search tools"] },
-  // the raw-tail Logs pane retired.
   { file: "../harness/observability/ui/ObservabilityTab.vue", title: "Logs", scrollClass: "obs-body", actions: ["toggle errors only", "toggle raw log tail"] },
   { file: "../harness/mcp/ui/McpServers.vue", title: "MCP", scrollClass: "mcp-body", actions: ["refresh mcp servers", "Search MCP servers"] },
   // the band keeps the family shape - title + board chip + count | filter.
   { file: "../harness/kanban/ui/Board.vue", title: "Kanban", scrollClass: "board-scroll", actions: ["filter cards"] },
-  // the Modules tab retired - module toggles are configuration, so the surface moved.
   { file: "../harness/continuous/ui/AgentsPanel.vue", title: "Agents", scrollClass: "agents-body", actions: ["create an agent"] },
   { file: "../harness/store/ui/InsightsTab.vue", title: "Insights", scrollClass: "insights-scroll", actions: ["window in days, 0 = all time"] },
   // settings LEFT the band-search roster.

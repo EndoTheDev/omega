@@ -24,7 +24,7 @@ type RunStop struct {
 	next    int
 }
 
-// ErrUserStopped is the cause a user stop stamps on the work it cut (context.Cause of.
+// ErrUserStopped is the cause a user stop stamps on the work it cut.
 var ErrUserStopped = errors.New("stopped by the user")
 
 // NewRunStop returns a fresh, unstopped latch.

@@ -70,7 +70,7 @@ const scout: OmegaAgent = {
   last_report_at: "2026-11-10T11:00:00Z",
 };
 
-// -- the roster's facts ----------------------------------------------------
+// the roster's facts --------------------------------------------------
 
 test("the roster subtitle carries description, model, session count and last activity", () => {
   const now = new Date("2026-11-10T12:00:00Z");
@@ -110,13 +110,13 @@ test("last activity voice: relative age, honest absence, no negative ages", () =
   assert.equal(agentActivityText("2026-09-01T12:00:00Z", now), "2026-09-01");
 });
 
-// -- the main agent is a row like any other ---------------
+// the main agent is a row like any other -------------
 
 test("the main agent is included and marked, not filtered out", () => {
   assert.equal(DefaultAgentName, "default");
   assert.equal(agentIsMain({ name: "default" }), true);
   assert.equal(agentIsMain({ name: "scout" }), false);
-  // the panel renders every profile it gets, main first in the payload (LoadProfiles.
+  // the panel renders every profile it gets, main first in the payload.
   assert.match(panelSrc, /profiles\.value\.map\(/, "no filter drops the main row");
   assert.ok(
     !/profiles\.value\.filter\(/.test(panelSrc),
@@ -130,7 +130,7 @@ test("the main agent is included and marked, not filtered out", () => {
   assert.match(panelSrc, /\.agents-main-badge \{/, "the badge has a rule");
 });
 
-// -- + 4: the click opens THE canonical chat -----------------
+// + 4: the click opens THE canonical chat ---------------
 
 test("a roster row click opens the agent's canonical chat, minting when the home holds none", () => {
   assert.equal(CHAT_SESSION_OPEN_EVENT, "omega:open-chat-session");
@@ -159,7 +159,7 @@ test("a roster row click opens the agent's canonical chat, minting when the home
     /fetch\(`\/agents\/\$\{encodeURIComponent\(name\)\}\/canonical`, \{\s*method: "POST",/,
     "the click asks the capsule for the canonical chat",
   );
-  // ..and the dispatch carries the id the answer named, never a guess
+  // .and the dispatch carries the id the answer named, never a guess
   assert.match(
     panelSrc,
     /const id = sess\.id \?\? "";/,
@@ -247,8 +247,7 @@ test("focus-not-duplicate: openChatTab checks for a bound tab BEFORE it mints", 
 });
 
 test("a chat tab bound to the session is found wherever it lives (one tab per session)", () => {
-  // the dock's lookup is what makes true for a session opened by ANY path (sidebar,
-  // notification, agents row).
+  // the dock's lookup is what makes true for a session opened by ANY path.
   const left = makePane("chat", null, "left");
   left.tabs = [{ component: "chat", sessionRef: "sess-new", key: "k1" }];
   const tree = makeSplit("row", [left, makePane("agents")]);
@@ -273,7 +272,7 @@ test("an agent-bound tab is named by its session, never a generic chat chip", ()
   );
 });
 
-// -- full separation ---------------------------------------
+// full separation -------------------------------------
 
 test("an agent's work sessions are inspected from its expanded row, not the sessions sidebar", () => {
   // the panel loads the agent's OWN session rows when the row opens
@@ -308,7 +307,7 @@ test("an agent's work sessions are inspected from its expanded row, not the sess
   );
 });
 
-// -- /new folds an agent chat, never forks it ---------------
+// /new folds an agent chat, never forks it -------------
 
 test("/new in a machinery-owned chat folds it; the human's own chat still forks", () => {
   const at = appSrc.indexOf('case "/new": {');

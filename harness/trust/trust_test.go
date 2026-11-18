@@ -166,8 +166,7 @@ func TestBootstrapWithoutTrustFileNoop(t *testing.T) {
 	}
 }
 
-// TestResolveContextRootStore covers the (d) verify case end to end at the trust
-// boundary.
+// TestResolveContextRootStore covers the (d) verify case end to end at the trust.
 func TestResolveContextRootStore(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {

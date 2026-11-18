@@ -23,7 +23,7 @@ func getTaskTx(ctx context.Context, tx *sql.Tx, boardID int64, taskID string) (K
 	return *t, nil
 }
 
-// recordEvent appends one audit-trail entry (board_id stamped.
+// recordEvent appends one audit-trail entry.
 func recordEvent(ctx context.Context, db ExecContexter, boardID int64, taskID, kind, detail string) error {
 	_, err := db.ExecContext(ctx, `INSERT INTO task_events (task_id, kind, detail, created_at, board_id) VALUES (?, ?, ?, ?, ?)`,
 		taskID, kind, detail, now(), boardID)

@@ -109,7 +109,6 @@ func (c *dependentCapsule) MountWithAPI(ctx *core.Context, api *ExtensionAPI) er
 func (c *dependentCapsule) Toggleable() bool                                        { return c.toggle }
 
 func TestBootPanicRePanicsNamed(t *testing.T) {
-	// Sketch 1, first step: a panicking plugin at boot re-panics with the module named.
 	defer func() {
 		rec := recover()
 		if rec == nil {
@@ -421,7 +420,7 @@ type interChannel struct{ name string }
 func (interChannel) Start(context.Context, core.ChannelDeps) error { return nil }
 func (interChannel) Stop() error                                   { return nil }
 
-// interCapsule registers every additive surface the journal appends to.
+// interCapsule registers every additive surface the journal appends.
 type interCapsule struct{ name string }
 
 func (c *interCapsule) Name() string       { return c.name }

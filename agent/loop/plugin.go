@@ -18,7 +18,7 @@ func (p *Plugin) Description() string {
 	return "the agent loop: model turns, tool dispatch, retries, and streaming"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"loop"} }

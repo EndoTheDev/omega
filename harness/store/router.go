@@ -12,7 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// SetHome names the omega home this store belongs to.
+// SetHome names the omega home this store belongs.
 func (s *Store) SetHome(home string) {
 	s.home = filepath.ToSlash(home)
 }
@@ -155,8 +155,7 @@ func (s *Store) closeHomes() error {
 // Compile-time assertion for the delete verb's release face.
 var _ agent.AgentHomeForgetter = (*Store)(nil)
 
-// ForgetHome implements the agent.AgentHomeForgetter need face the roster's DELETE verb
-// reads.
+// ForgetHome implements the agent.AgentHomeForgetter need face the roster's DELETE.
 func (s *Store) ForgetHome(agentName string) bool {
 	if agentName == "" {
 		return false

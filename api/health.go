@@ -1,24 +1,8 @@
 package api
 
-// The health popover's sourced facts. The popover's
-// server / uptime rows always had a wire source; these three did not:
-//
-// provider the model endpoint's reachability - a cached probe
-// database the store seam's liveness ping - inline, bounded
-// last error the newest error the process logger recorded
-//
-// Every one of them is OPTIONAL on the wire: the field is absent when
-// there is no source (no probe yet, no store mounted, an older build, a
-// logger without the upgrade), and the webui renders "not reported"
-// rather than inventing a value. The /health body and the pushed health
-// topic share ONE body (api/ws.go healthState), so a reconnect fetch and
-// the 5s frames can never disagree.
-//
-// The provider probe deliberately does NOT run on the heartbeat: a
-// network round trip every 5s would both hammer the endpoint and hold
-// the push ticker. It runs on its own slow ladder and caches its verdict
-// with the time it was taken, so the row can say how fresh the verdict
-// is.
+// The health popover's sourced facts. The /health body and the pushed health topic
+// share ONE body (api/ws.go healthState), so a reconnect fetch and the 5s frames can
+// never disagree.
 
 import (
 	"context"
@@ -58,7 +42,7 @@ func (s *Server) monitorHealth(ctx context.Context) {
 	}
 }
 
-// probeProvider asks the provider for its model list and caches the verdict with its.
+// probeProvider asks the provider for its model list and caches the verdict.
 // ModelInfo would be the wrong probe - it 404s on every non-ollama host
 // (openai/anthropic/keypool-fronted lanes do not serve /api/show), which would paint a
 // perfectly healthy provider "not reachable".

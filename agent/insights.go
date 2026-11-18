@@ -61,7 +61,6 @@ func FormatInsights(in *core.Insights) string {
 		}
 	}
 
-	// Store on-disk shape.
 	if in.DBSizeBytes > 0 {
 		sb.WriteString("\n  Store\n")
 		sb.WriteString("  ─────────────────────────────────────\n")

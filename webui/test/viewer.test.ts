@@ -42,7 +42,7 @@ const repo = fileURLToPath(new URL("../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const readRepo = (rel: string) => readFileSync(`${repo}${rel}`, "utf8");
 
-// -- helpers ----------------------------------------------------------------
+// helpers --------------------------------------------------------------
 
 function asSplit(n: DockNode): DockNode {
   assert.equal(n.kind, "split");
@@ -62,7 +62,7 @@ const fileRef = (name = "README.md"): ViewerRef => ({ kind: "file", name });
 const skillRef = (name = "worker-onboarding"): ViewerRef => ({ kind: "skill", name });
 const dirRef = (name = "artifacts_mmo"): ViewerRef => ({ kind: "dir", name });
 
-// -- the registry contract ----------------------------------------------------
+// the registry contract --------------------------------------------------
 
 describe("the viewer dockable (t_36ceb99b)", () => {
   it("registers: multi, main-area, closable, iconset-named icon", () => {
@@ -72,7 +72,7 @@ describe("the viewer dockable (t_36ceb99b)", () => {
     assert.equal(d.policy, "multi");
     assert.equal(d.area, "main");
     assert.equal(d.closable, true);
-    // the fallback icon is a NAME in the iconset (the iconset test pins the union.
+    // the fallback icon is a NAME in the iconset.
     const icons = read("app/composables/icons.ts");
     assert.match(icons, /"file-text":/, "the fallback icon is vocabulary");
     assert.match(icons, /skills:/, "the skill-chip icon is vocabulary");
@@ -85,7 +85,7 @@ describe("the viewer dockable (t_36ceb99b)", () => {
   });
 });
 
-// -- the payload + focus-reuse --------------------------------------------------
+// the payload + focus-reuse ------------------------------------------------
 
 describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
   it("validViewerRef: the three kinds with a non-empty name; everything else invalid", () => {
@@ -148,7 +148,7 @@ describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
   });
 });
 
-// -- persistence ----------------------------------------------------------------
+// persistence --------------------------------------------------------------
 
 describe("the viewer payload persists (card 3's tab record laws)", () => {
   const viewerTree = (): DockNode => {
@@ -216,7 +216,7 @@ describe("the viewer payload persists (card 3's tab record laws)", () => {
   });
 });
 
-// -- the wiring (structural pins, no DOM - the filestoolbar recipe) -------------
+// the wiring (structural pins, no DOM - the filestoolbar recipe) -----------
 
 describe("the viewer wiring contracts", () => {
   const app = read("app/app.vue");
@@ -236,7 +236,6 @@ describe("the viewer wiring contracts", () => {
     assert.match(viewer, /viewer-skill-desc/, "the skill's description line");
   });
 
-  // the folder body - the third viewer kind.
   it("ViewerTab hosts a folder body: browse rows that open child refs", () => {
     assert.match(viewer, /fetchFilesBrowse\(/, "the folder tab lists /files/browse");
     assert.match(viewer, /class="viewer-dir"/, "the folder body");
@@ -292,7 +291,7 @@ describe("the viewer wiring contracts", () => {
   });
 });
 
-// -- the fetch wire ---------------------------------------------------------------
+// the fetch wire -------------------------------------------------------------
 
 describe("fetchSkillContent wire", () => {
   let savedFetch: typeof globalThis.fetch;

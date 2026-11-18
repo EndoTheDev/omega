@@ -34,8 +34,8 @@ type RefusalSinkFunc func(Refusal)
 // Log implements RefusalSink.
 func (f RefusalSinkFunc) Log(r Refusal) { f(r) }
 
-// ModulePanicError is the split-panic vocabulary (implementation sketch 1, settled
-// Q11). Types only in phase B - no panic wiring lands until the split-panic card.
+// ModulePanicError is the split-panic vocabulary.
+// Types only in phase B - no panic wiring lands until the split-panic card.
 type ModulePanicError struct {
 	Name       string // the module that panicked
 	Cause      string // the panic value, as text

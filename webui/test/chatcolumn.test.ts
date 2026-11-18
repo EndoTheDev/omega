@@ -16,7 +16,7 @@ const rule = (selector: string): string => {
   return m![1];
 };
 
-// the mobile block is the LAST @media (max-width.
+// the mobile block is the LAST @media.
 const mobileBlock = (): string => {
   const at = css.lastIndexOf("@media (max-width: 768px)");
   assert.ok(at > 0, "the mobile media block is missing from main.css");
@@ -66,7 +66,6 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
       within < between,
       `inside-turn ${within}px must stay below the ${between}px turn boundary or the blocks stop grouping`,
     );
-    // and the contrast has to be visible, not a hairline apart.
     assert.ok(between >= within * 2, "the turn boundary must read as a boundary, not a nudge");
     assert.ok(between - within >= 4, "the turn boundary needs at least a 4px step over the within-turn gap");
   });

@@ -46,9 +46,9 @@ func newEphRegistry() *ephRegistry {
 // a substrate-shared constant cannot drift from the capsule's guard.
 const ephemeralPrefix = agent.EphemeralIDPrefix
 
-// isEphemeralID reports whether an id belongs to the ephemeral namespace (the "eph-"
-// prefix). Store ids are base session ids from agent.NewSessionID or the sess-
-// fallback; they can never carry the prefix.
+// isEphemeralID reports whether an id belongs to the ephemeral namespace.
+// Store ids are base session ids from agent.NewSessionID or the sess- fallback; they
+// can never carry the prefix.
 func isEphemeralID(id string) bool {
 	return agent.IsEphemeralID(id)
 }
@@ -95,7 +95,7 @@ func (r *ephRegistry) drop(id string) bool {
 	return true
 }
 
-// appendUser records a send's incoming messages into the wire transcript items (the.
+// appendUser records a send's incoming messages into the wire transcript items.
 func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -118,9 +118,8 @@ func (r *ephRegistry) appendUser(id string, messages []core.Message, now time.Ti
 	s.updatedAt = now.UTC()
 }
 
-// appendHistory persists one loop-produced turn copy into the record's provider-facing
-// history. Best effort: a record that vanished (close, restart) drops the write
-// silently.
+// appendHistory persists one loop-produced turn copy into the record's. Best effort: a
+// record that vanished (close, restart) drops the write silently.
 func (r *ephRegistry) appendHistory(id string, msg core.Message, now time.Time) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -198,7 +197,7 @@ func (r *ephRegistry) history(id string) []core.Message {
 	return out
 }
 
-// snapshot copies the record's items (REPLACE semantics like the run hub's tail.
+// snapshot copies the record's items.
 func (r *ephRegistry) snapshotItems(id string) []transcriptItem {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -250,12 +249,10 @@ func (s *Server) serveEphemeralDetail(w http.ResponseWriter, r *http.Request, id
 			"ephemeral": true,
 		})
 	case http.MethodDelete:
-		// Close = gone, even mid-run.
 		s.stopRun(id)
 		s.eph.drop(id)
 		w.WriteHeader(http.StatusNoContent)
 	case http.MethodPatch:
-		// List concerns (read/pin/archive) are no-ops: there is no row.
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

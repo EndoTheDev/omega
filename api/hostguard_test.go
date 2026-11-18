@@ -15,7 +15,7 @@ import (
 // is exempt on loopback only. Driven against a real httptest server whose handler chain
 // is the guard only (the bind is faked through addr.Store) so the Host header is
 // settable per request - httptest auto-fills Host from the listener, and the guard must
-// judge the header the CLIENT sent, not the one the test process happens to listen on.
+// judge the header the CLIENT sent, not the one the test process happens to listen.
 
 func newGuard() *hostGuard {
 	return &hostGuard{next: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +71,7 @@ func doReq(t *testing.T, srv *httptest.Server, method, host, origin string) int 
 	return res.StatusCode
 }
 
-// - declared public hosts (v0.15.1) --------------------------------------
+// declared public hosts (v0.15.1) ------------------------------------
 
 // The operator declares a tunneled domain (server.public_hosts).
 func TestGuardPublicHostPassesWhenDeclared(t *testing.T) {
@@ -82,7 +82,7 @@ func TestGuardPublicHostPassesWhenDeclared(t *testing.T) {
 	if got := doReq(t, srv, http.MethodGet, "omega.endothe.dev", ""); got != http.StatusOK {
 		t.Errorf("GET via declared public host: got %d, want 200", got)
 	}
-	// the declared domain: same-origin writes pass (the SPA served through the tunnel.
+	// the declared domain: same-origin writes pass.
 	if got := doReq(t, srv, http.MethodPost, "omega.endothe.dev", "https://omega.endothe.dev"); got != http.StatusOK {
 		t.Errorf("POST via declared public host, same-origin: got %d, want 200", got)
 	}
@@ -94,7 +94,7 @@ func TestGuardPublicHostPassesWhenDeclared(t *testing.T) {
 	}
 }
 
-// - loopback mutate passes -----------------------------------------------
+// loopback mutate passes ---------------------------------------------
 
 func TestGuardLoopbackMutatePasses(t *testing.T) {
 	srv := guardServer(t, "127.0.0.1:8098")
@@ -112,7 +112,7 @@ func TestGuardLoopbackMutatePasses(t *testing.T) {
 	}
 }
 
-// - cross-origin mutate refuses ------------------------------------------
+// cross-origin mutate refuses ----------------------------------------
 
 func TestGuardCrossOriginMutateRefused(t *testing.T) {
 	srv := guardServer(t, "127.0.0.1:8098")
@@ -129,11 +129,9 @@ func TestGuardCrossOriginMutateRefused(t *testing.T) {
 	if got := doReq(t, srv, http.MethodPut, "127.0.0.1:8098", "http://127.0.0.1:9999"); got != http.StatusForbidden {
 		t.Errorf("PUT with wrong-port Origin: got %d, want 403", got)
 	}
-	// reads on a foreign host die too.
 	if got := doReq(t, srv, http.MethodGet, "evil.example:8098", ""); got != http.StatusForbidden {
 		t.Errorf("GET with rebinding Host: got %d, want 403", got)
 	}
-	// legit reads keep passing.
 	for _, host := range []string{"127.0.0.1:8098", "localhost:8098", "[::1]:8098"} {
 		if got := doReq(t, srv, http.MethodGet, host, ""); got != http.StatusOK {
 			t.Errorf("GET with Host %s: got %d, want 200", host, got)
@@ -141,11 +139,10 @@ func TestGuardCrossOriginMutateRefused(t *testing.T) {
 	}
 }
 
-// - wildcard binds: the declaration IS the identity set -----
+// wildcard binds: the declaration IS the identity set ---
 
 func TestGuardWildcardBindWithoutPublicHostsFailsClosed(t *testing.T) {
 	srv := guardServer(t, ":8098")
-	// nothing declared: the guard has no identity to trust, so every request dies.
 	if got := doReq(t, srv, http.MethodGet, "192.168.1.10:8098", ""); got != http.StatusForbidden {
 		t.Errorf("GET on an undeclared wildcard bind: got %d, want 403", got)
 	}
@@ -166,7 +163,6 @@ func TestGuardWildcardBindRequiresDeclaredIdentity(t *testing.T) {
 	if got := doReq(t, srv, http.MethodGet, "192.168.1.10:8098", ""); got != http.StatusForbidden {
 		t.Errorf("GET via the raw LAN address on a wildcard bind: got %d, want 403", got)
 	}
-	// empty Origin is not exempt off loopback.
 	if got := doReq(t, srv, http.MethodPost, "omega.endothe.dev", ""); got != http.StatusForbidden {
 		t.Errorf("POST with no Origin on a non-loopback bind: got %d, want 403", got)
 	}
@@ -179,7 +175,7 @@ func TestGuardWildcardBindRequiresDeclaredIdentity(t *testing.T) {
 	}
 }
 
-// The DNS-rebinding write: the attacker's page resolves its own domain to the host's.
+// The DNS-rebinding write: the attacker's page resolves its own domain.
 func TestGuardRebindingShapedHostOriginRefused(t *testing.T) {
 	wildcard := guardServerPublic(t, ":8098", "omega.endothe.dev")
 	if got := doReq(t, wildcard, http.MethodPost, "attacker.example:8098", "http://attacker.example:8098"); got != http.StatusForbidden {
@@ -197,7 +193,7 @@ func TestGuardRebindingShapedHostOriginRefused(t *testing.T) {
 	}
 }
 
-// - exact binds: own identity only, Origin required ---------------------
+// exact binds: own identity only, Origin required -------------------
 
 func TestGuardExactIPBindAllowsOnlyThatHost(t *testing.T) {
 	srv := guardServer(t, "192.168.1.10:8098")
@@ -205,7 +201,6 @@ func TestGuardExactIPBindAllowsOnlyThatHost(t *testing.T) {
 	if got := doReq(t, srv, http.MethodPost, "192.168.1.10:8098", "http://192.168.1.10:8098"); got != http.StatusOK {
 		t.Errorf("POST the bound host, same-origin: got %d, want 200", got)
 	}
-	// the empty-Origin exemption is loopback-only.
 	if got := doReq(t, srv, http.MethodPost, "192.168.1.10:8098", ""); got != http.StatusForbidden {
 		t.Errorf("POST no-Origin against an exact LAN bind: got %d, want 403", got)
 	}
@@ -217,7 +212,7 @@ func TestGuardExactIPBindAllowsOnlyThatHost(t *testing.T) {
 	}
 }
 
-// - fail-closed startup: a wildcard bind needs a declaration -----------
+// fail-closed startup: a wildcard bind needs a declaration ---------
 
 func TestGuardWildcardBindWithoutPublicHostsRefusesStartup(t *testing.T) {
 	for _, bind := range []string{"0.0.0.0:8099", ":8099", ":::8099", "[::]:8099"} {
@@ -274,7 +269,7 @@ func TestServerServeRefusesWildcardBindWithoutPublicHosts(t *testing.T) {
 	}
 }
 
-// - un-set guard (pre-Serve) fails open, so plain Handler consumers ---- -- and every.
+// un-set guard (pre-Serve) fails open, so plain Handler consumers ---- --.
 
 func TestGuardUnsetAddrFailsOpen(t *testing.T) {
 	srv := guardServer(t, "")
@@ -283,7 +278,7 @@ func TestGuardUnsetAddrFailsOpen(t *testing.T) {
 	}
 }
 
-// - the guard rides the real Server wiring -------------------------------
+// the guard rides the real Server wiring -----------------------------
 
 func TestServerWrapsMuxInHostGuard(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)

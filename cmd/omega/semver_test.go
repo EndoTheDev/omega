@@ -19,7 +19,7 @@ func TestCompareVersions(t *testing.T) {
 		// Nightly sorts BELOW stable with the same base version.
 		{"v0.9.1-nightly.20261021", "v0.9.1", -1, true},
 		{"v0.9.1", "v0.9.1-nightly.20261021", 1, true},
-		// A nightly user must be offer-able a newer stable..
+		// A nightly user must be offer-able a newer stable.
 		{"v0.9.1", "v0.9.0-n.b", 1, true},
 		{"v0.9.2-nightly.20261021", "v0.9.2", -1, true},
 		// Numeric core compare, not string: 0.9.2 < 0.9.10.
@@ -104,7 +104,6 @@ func TestUpdateGate(t *testing.T) {
 	if got := decide("v0.1.0", "dev", false); got != "install" {
 		t.Errorf("dev current offered older: %q, want install (no gate)", got)
 	}
-	// Short-stamped running versions: the hash is build metadata, invisible to the gate.
 	if got := decide("v0.9.1-nightly.20261022", "v0.9.1-nightly.20261022-c268097e", false); got != "skip" {
 		t.Errorf("offered the running build's own tag: %q, want skip", got)
 	}
@@ -137,7 +136,7 @@ func TestParseUpdateFlags(t *testing.T) {
 	if err != nil || opts.nightly {
 		t.Errorf("positional arg ignored: %+v, %v", opts, err)
 	}
-	// -yes: parses alone and alongside other flags; near-misses must still error so a
+	// yes: parses alone and alongside other flags; near-misses must still error so a
 	// typo'd flag does not silently skip the prompt.
 	opts, err = parseUpdateFlags([]string{"--yes"})
 	if err != nil || !opts.yes || opts.nightly || opts.rollback || opts.allowDowngrade {
@@ -183,7 +182,7 @@ func TestCountNewer(t *testing.T) {
 	}
 }
 
-// TestChannelTags pins the channel split the behind-count relies on.
+// TestChannelTags pins the channel split the behind-count relies.
 func TestChannelTags(t *testing.T) {
 	list := []githubRelease{
 		{TagName: "v0.9.2"},
@@ -331,8 +330,7 @@ func TestCmdUpdateYesSkipsPrompt(t *testing.T) {
 	}
 }
 
-// TestCmdUpdateSkipNoPrompt: already-current runs print the old "already up to date"
-// line.
+// TestCmdUpdateSkipNoPrompt: already-current runs print the old "already up to date".
 func TestCmdUpdateSkipNoPrompt(t *testing.T) {
 	stdout, _, tag, err := runUpdatePrompt(t, "v0.9.2", nil, true, "")
 	if err != nil {

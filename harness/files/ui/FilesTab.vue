@@ -127,7 +127,7 @@
   // the toolbar's glyph set (icons.ts vocabulary)
   import Icon from "~/components/ui/Icon.vue";
 
-  // `open` is the mobile drawer overlay state (desktop tabs never pass it up.
+  // `open` is the mobile drawer overlay state.
   defineProps<{
     open?: boolean;
   }>();
@@ -140,10 +140,10 @@
   const loadingRoot = ref(false);
   const rootError = ref("");
 
-  // -- root resolution law, client half --- the tab sends the focused chat tab's
-  // SESSION ID (never a root) with every request; the server resolves session workspace
-  // -> default_workspace -> cwd. The header shows exactly what the server resolved:
-  // name = basename, hidden entirely when the cwd fallback stands.
+  // root resolution law, client half --- the tab sends the focused chat tab's SESSION
+  // ID (never a root) with every request; the server resolves session workspace ->
+  // default_workspace -> cwd. The header shows exactly what the server resolved: name =
+  // basename, hidden entirely when the cwd fallback stands.
   const focusedSession = inject(FOCUSED_SESSION_KEY, null);
   const sessionId = computed(() => focusedSession?.value ?? undefined);
 
@@ -183,7 +183,6 @@
     }
   }
 
-  // re-root triggers: a different focused session, or the focused session's row.
   const chatHost = inject(CHAT_HOST_KEY, null);
   const rowWorkspace = computed(() => {
     const id = focusedSession?.value ?? null;
@@ -320,5 +319,4 @@
     color: var(--text-dim);
   }
 
-  /* narrow: the tree gets the flag passed down. */
 </style>

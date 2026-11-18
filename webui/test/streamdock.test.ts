@@ -22,7 +22,7 @@ const chatMessage = () =>
     "utf8",
   );
 
-// pull a top-level CSS rule body: selector..
+// pull a top-level CSS rule body: selector.
 const rule = (src: string, selector: string): string | null => {
   const idx = src.indexOf(selector);
   if (idx === -1) return null;
@@ -62,7 +62,6 @@ describe("messages-wrap: the scrollport spans the pane body (t_c252b9c6)", () =>
 });
 
 describe("the streaming status line rides the stream tail (t_c252b9c6)", () => {
-  // the wrap's children, in template order.
   const wrapBlock = (): string => {
     const src = chatTab();
     const start = src.indexOf('class="messages-wrap"');

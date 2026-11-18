@@ -95,8 +95,7 @@ test("board radii ride the ladder (the named band-work gaps)", () => {
     assert.equal(bare.length, 0, `no bare ${px} radii left - they ride ${token}`);
   }
 });
-// -- the KEYBOARD LAW ---------------------------------- The rows carried role="option"
-// and NOTHING else.
+// the KEYBOARD LAW ---------------------------------- The rows carried.
 const modelSelect = stripComments(
   read(webui, "app", "components", "chat", "ModelSelect.vue"),
 );
@@ -217,7 +216,7 @@ test("keyboard law: Escape and a pick hand focus back to the chip (one close pat
       `${key} stops the act keystroke - type-to-capture must not steal the focus return`,
     );
   }
-  // the SAME obligation on the other member of the roving family (ModelSelect is the.
+  // the SAME obligation on the other member of the roving family.
   const modelBodies = caseBodies(
     modelSelect.slice(modelSelect.indexOf("function onRowKey")),
   );

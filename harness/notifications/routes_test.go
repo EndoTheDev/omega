@@ -118,7 +118,7 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 	}
 }
 
-// The clear-all: DELETE /notifications drops every record (the feed empties, not just.
+// The clear-all: DELETE /notifications drops every record.
 func TestNotificationsClearAll(t *testing.T) {
 	ts, st := serveRoutes(t)
 	for i := 0; i < 3; i++ {

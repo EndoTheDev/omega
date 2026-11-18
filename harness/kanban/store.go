@@ -27,7 +27,7 @@ type Store struct {
 	// transaction, and registry work never joins a batch.
 	q stmtDB
 
-	// tx is the open batch transaction this store executes inside (non-nil on a batch.
+	// tx is the open batch transaction this store executes inside.
 	tx *sql.Tx
 
 	// batchEmits buffers finished-things emissions while a batch is open. Nil on a plain
@@ -46,14 +46,12 @@ type stmtDB interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
-// finishedThings is the consumer-side face of the finished-things store (part 3 seam
-// constitution).
+// finishedThings is the consumer-side face of the finished-things store.
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// SetNotifier wires the finished-things consumers face (the plugin calls this
-// post-mount.
+// SetNotifier wires the finished-things consumers face.
 func (s *Store) SetNotifier(n finishedThings) {
 	s.notifier = n
 }
@@ -113,7 +111,7 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// openDB is the dsn-widening + sql.Open step, shared by Open and the migration's.
+// openDB is the dsn-widening + sql.Open step, shared by Open.
 func openDB(dsn string) (*sql.DB, error) {
 	dsnParams := dsn
 	if !strings.Contains(dsn, "?") {
@@ -163,7 +161,7 @@ func (s *Store) migrate(db *sql.DB) error {
 	return err
 }
 
-// migrateTaskPositions adds the drag-order column when it is missing (any legacy or.
+// migrateTaskPositions adds the drag-order column when it is missing.
 func migrateTaskPositions(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "position") {
 		return nil
@@ -179,8 +177,7 @@ UPDATE tasks SET position = (
 	return err
 }
 
-// taskTables is the three card tables in the boards-aware shape (fresh databases are
-// born with board_id.
+// taskTables is the three card tables in the boards-aware shape.
 const taskTables = `
 CREATE TABLE IF NOT EXISTS tasks (
 	id           TEXT PRIMARY KEY,
@@ -284,8 +281,7 @@ func rebuildLegacyRows(db *sql.DB) error {
 	return tx.Commit()
 }
 
-// tableMissingColumn reports whether table lacks column (false for a table that does
-// not exist at all.
+// tableMissingColumn reports whether table lacks column.
 func tableMissingColumn(db *sql.DB, table, column string) bool {
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
@@ -378,7 +374,7 @@ func (s *Store) BeginBatch(ctx context.Context) (KanbanProvider, func() error, f
 	return &b, commit, cancel, nil
 }
 
-// migrateTaskPriority adds the urgency column when it is missing (any database from.
+// migrateTaskPriority adds the urgency column when it is missing.
 func migrateTaskPriority(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "priority") {
 		return nil
@@ -500,8 +496,7 @@ func statusFilter(status string) (string, []any, error) {
 	}
 }
 
-// ListAllTasks is the all-boards read behind the board view's "all boards" search scope
-// (0.17.3 make-over).
+// ListAllTasks is the all-boards read behind the board view's "all boards" search.
 func (s *Store) ListAllTasks(ctx context.Context, status string) ([]KanbanTask, error) {
 	where, args, err := statusFilter(status)
 	if err != nil {

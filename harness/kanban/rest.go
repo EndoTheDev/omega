@@ -84,7 +84,7 @@ func boardsHandler(store BoardLister) func(http.ResponseWriter, *http.Request) {
 	}
 }
 
-// tasksHandler serves GET /tasks and POST /tasks (create.
+// tasksHandler serves GET /tasks and POST /tasks.
 func tasksHandler(store restProvider) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -276,7 +276,7 @@ func boardCreateHandler(store boardRegistry) func(http.ResponseWriter, *http.Req
 	}
 }
 
-// boardRegistry is the slice of *Store the board routes need (the DB registry is a.
+// boardRegistry is the slice of *Store the board routes need.
 type boardRegistry interface {
 	CreateBoardRow(name string) error
 	RenameBoardRow(oldName, newName string) error
@@ -385,8 +385,7 @@ func (p *Plugin) pushAfterMutation(refresh func(), h func(http.ResponseWriter, *
 	}
 }
 
-// registerRoutes hands the capsule's REST routes to the registry (RegisterRoute, the
-// phase-D vocabulary).
+// registerRoutes hands the capsule's REST routes to the registry.
 func (p *Plugin) registerRoutes(api *agent.ExtensionAPI) error {
 	rows := []struct {
 		pattern string

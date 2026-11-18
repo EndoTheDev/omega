@@ -122,7 +122,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 	case core.TurnEnd:
 		summary := fmt.Sprintf("turn %d ended with %d tool call(s)", e.Turn, e.ToolCalls)
 		if e.PendingCalls > 0 {
-			// The async loop's yield-class calls.
 			summary += fmt.Sprintf(", %d pending", e.PendingCalls)
 		}
 		r.add(session, Event{
@@ -140,7 +139,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		call := r.takeCall(session, e.Message.ToolCallID)
 		tool := call.tool
 		if tool == "" {
-			// No matching call observed (a ring that started mid-run, or a result the loop.
 			tool = "unknown"
 		}
 		level := LevelInfo
@@ -175,7 +173,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		r.add(session, record)
 
 	case core.AssistantMessageEvent:
-		// Dropped on purpose: the stream already reports this turn's content, and the.
 		return
 	}
 }
@@ -201,7 +198,6 @@ func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Ti
 		case s.FinishReason != "":
 			record.Summary = "stream finished (" + s.FinishReason + ")"
 			if s.FinishReason == "length" {
-				// The provider cut the answer at its token ceiling.
 				record.Level = LevelWarn
 			}
 		}

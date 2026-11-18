@@ -45,7 +45,6 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	r.fold.Agents = sortedCopy(d.Agents)
 	r.mu.Unlock()
 	r.applyLive()
-	// The serving channels re-read.
 	if r.pctx == nil {
 		return
 	}
@@ -60,7 +59,7 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	}
 }
 
-// applyLive pushes the live fold state into the live registries (the skills provider.
+// applyLive pushes the live fold state into the live registries.
 func (r *omegaRegistries) applyLive() {
 	if r.pctx == nil {
 		return
@@ -89,7 +88,7 @@ type skillInventory interface {
 	SkillsEntries() (index map[string]string, contents map[string]string, err error)
 }
 
-// Disabled returns the three registry lists verbatim (sorted.
+// Disabled returns the three registry lists verbatim.
 func (r *omegaRegistries) Disabled() core.DisabledNames {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -172,7 +171,6 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	case "agents":
 		r.fold.Agents = next
 	}
-	// The modules namespace is registry truth at write time.
 	r.fold.Modules = disabledNow(r.reg)
 	if err := writeDisabled(r.configPath, *r.fold); err != nil {
 		switch kind {
@@ -188,7 +186,6 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 		}
 		return fmt.Errorf("%s %s, but the config.yaml disabled write failed: %w", kind, name, err)
 	}
-	// The live effect is second.
 	apply(next)
 	if r.logger != nil {
 		r.logger.Printf("omega: %s %q %s (config.yaml disabled fold)", kind, name, toggleWord(enabled))

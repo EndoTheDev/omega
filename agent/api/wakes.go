@@ -65,8 +65,7 @@ func (h *wakeHub) pop(sessionID string) (core.YieldResult, bool) {
 	return res, true
 }
 
-// dropQueued throws away every queued result for the home and reports how many it
-// dropped - the user-stop path.
+// dropQueued throws away every queued result for the home and reports how many it.
 func (h *wakeHub) dropQueued(sessionID string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -165,7 +164,7 @@ func (l sessionTypedLedger) All() []agent.PendingCall {
 	return append(out, l.ephemeral.All()...)
 }
 
-// wakeHome takes one settled yield result (called by the loop's dispatched executor.
+// wakeHome takes one settled yield result.
 func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
 	// A stopped home never re-enters.
 	if s.runs.userStopped(sessionID) {
@@ -174,7 +173,6 @@ func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
 		}
 		return
 	}
-	// The pending chip fills on the push channel.
 	s.publishChipFill(sessionID, res)
 	s.wakes.enqueue(sessionID, res)
 	s.drainWakes(sessionID)
@@ -196,7 +194,7 @@ func (s *Server) drainWakes(sessionID string) {
 		if s.runs.userStopped(sessionID) {
 			// The user stopped this home: the work the queued results belong to is ended. Drop
 			// them - a wake turn here would restart the conversation the human killed, which is
-			// exactly the bug this drain gate exists for.
+			// exactly the bug this drain gate exists.
 			if n := s.wakes.dropQueued(sessionID); n > 0 {
 				if lgr := s.Logger(); lgr != nil {
 					lgr.Printf("session %s stopped by the user: dropped %d queued wake results", sessionID, n+1)
@@ -205,13 +203,12 @@ func (s *Server) drainWakes(sessionID string) {
 			return
 		}
 		if s.wakes.parkedNow(sessionID) {
-			// The home is parked (guard fired earlier).
 			continue
 		}
 		if !s.wakes.allow(sessionID) {
 			// Runaway guard: park with a visible note, settle the home's outstanding pending
 			// calls (a parked home must not pin the compactor's never-fold forever) and drop the
-			// queued results - they were counted, the note says so.
+			// queued results - they were counted, the note says.
 			s.parkHome(sessionID)
 			continue
 		}
@@ -251,7 +248,7 @@ func wakeEmptyNoteText(toolName string) string {
 	return "[wake turn for " + toolName + " ended with no output - send a message to continue]"
 }
 
-// wakeToolName reads the settled result the run re-entered with (the wake launch.
+// wakeToolName reads the settled result the run re-entered with.
 func wakeToolName(ctx context.Context) string {
 	for _, m := range agent.PersistInput(ctx) {
 		if y, ok := m.(core.YieldResult); ok {
@@ -268,7 +265,6 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 			if !w.noted {
 				w.noted = true
 				if w.stoppedByUser() {
-					// The user stopped this run.
 					w.logSuppressedNote("empty")
 				} else {
 					name := wakeToolName(ctx)
@@ -291,8 +287,7 @@ func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) 
 	return w.inner.AppendTurnMessage(ctx, msg)
 }
 
-// wakeStopNoteText words the note a wake run leaves when it stops before producing a
-// turn.
+// wakeStopNoteText words the note a wake run leaves when it stops before producing.
 func wakeStopNoteText(reason, toolName string) string {
 	what := "ended on a provider error"
 	if reason == "cancelled" {
@@ -304,16 +299,15 @@ func wakeStopNoteText(reason, toolName string) string {
 	return "[wake turn for " + toolName + " " + what + " - send a message to continue]"
 }
 
-// noteStoppedEnd persists the note a wake run leaves when it ends without producing a.
+// noteStoppedEnd persists the note a wake run leaves when it ends without producing.
 // An "error" end (a provider stream error) returns from the loop BEFORE any completion
-// is persisted, so the all-empty path above never sees a message at all.
+// is persisted, so the all-empty path above never sees a message.
 func (w *wakeNoteSink) noteStoppedEnd(ctx context.Context, reason string) {
 	if w.noted || w.wrote {
 		return
 	}
 	w.noted = true
 	if w.stoppedByUser() {
-		// Same law as the empty note.
 		w.logSuppressedNote(reason)
 		return
 	}
@@ -391,7 +385,7 @@ func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 // ended), and the wake FIFO is emptied so a queued settlement cannot launch either.
 // Settling is not cosmetic - the never-fold law and the pending placeholders both read
 // this table, and a row left behind would pin the compactor's boundary on a
-// conversation that is over.
+// conversation that is.
 func (s *Server) abandonPending(sessionID string) {
 	lgr := s.Logger()
 	if l := s.yieldLedger; l != nil {
@@ -415,10 +409,9 @@ func (s *Server) recoverPendingCalls() {
 	lgr := s.Logger()
 	for _, pc := range l.All() {
 		if isEphemeralID(pc.SessionID) {
-			// Restart-loss contract: the eph lane is memory-backed, so a fresh boot holds none
-			// of its entries. Its home died with the restart (the registry is gone), so the
-			// sweep settles the row and never wakes it: a launch against the gone home would
-			// re-queue forever.
+			// Restart-loss contract: the eph lane is memory-backed, so a fresh boot holds none.
+			// Its home died with the restart (the registry is gone), so the sweep settles the
+			// row and never wakes it: a launch against the gone home would re-queue forever.
 			if lgr != nil {
 				lgr.Printf("boot recovery: pending call %s (%s) belongs to the ephemeral namespace - settled, dropped (restart ate its home)", pc.ToolName, pc.CallID)
 			}

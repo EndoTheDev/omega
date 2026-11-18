@@ -147,10 +147,6 @@
         @toggle="onToggle"
         @open="openAgentChat"
         @expand="onExpand">
-        <!--
-          the main agent rides the roster like every other home and its row says which
-          one it is.
-        -->
         <template #name-side="{ row }">
           <span
             v-if="row.name === DefaultAgentName"
@@ -158,7 +154,6 @@
             title="the main agent - the home at the daemon's root, always on, so it carries no toggle">main</span>
         </template>
         <template #detail="{ row }">
-          <!-- the expansion: the agent's details + edit. -->
           <p
             v-if="row.name === DefaultAgentName"
             class="agents-readonly-note">the default agent's config is the home config - edit it there; it is read-only here</p>
@@ -176,7 +171,6 @@
                   aria-label="agent description" />
               </label>
 
-              <!-- the inherited knobs carry their source. -->
               <div class="agents-edit-field">
                 <span class="agents-edit-label">
                   system prompt
@@ -390,7 +384,6 @@
             </div>
           </template>
 
-          <!-- the continuous strip: only for an agent with a wake home. -->
           <template v-if="rosterOf(row.name)">
             <h4 class="agents-cont-sub">wake controls</h4>
             <div class="agents-cont-actions">
@@ -532,7 +525,7 @@ const continuousAvailable = ref(false);
 // loadError covers the LIST fetch; toggleError covers a refused toggle
 const loading = ref(false);
 const loadError = ref("");
-// notice is the panel's own receipt line (a delete's outcome, "deleted
+// notice is the panel's own record line (a delete's outcome, "deleted
 // scout's home - 3 sessions went with it") - never an error lane.
 const notice = ref("");
 // `loaded` gates the empty-text beat in RegistryList.
@@ -543,7 +536,7 @@ const busy = ref<string | null>(null);
 const opening = ref<string | null>(null);
 const sessionsByAgent = reactive<Record<string, OmegaAgentSession[]>>({});
 
-// -- the ONE create door ------------------------------
+// the ONE create door ----------------------------
 const showCreate = ref(false);
 const creating = ref(false);
 const create = reactive(emptyCreateDraft());
@@ -595,20 +588,20 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-// the wake strip state, per expanded agent (records.
+// the wake strip state, per expanded agent.
 const waking = ref<string | null>(null);
 const wakeInput = reactive<Record<string, string>>({});
 const wakeMsg = reactive<Record<string, string>>({});
 const chatByAgent = reactive<Record<string, OmegaChatMessage[]>>({});
 const evidenceByAgent = reactive<Record<string, OmegaEvidenceRow[]>>({});
 
-// -- the definition layer's edit form (0.17.3 field set) -------------- description.
-// host / api_key are NOT here: the panel never carries a secret (law 2).
+// the definition layer's edit form (0.17.3 field set) -------------- description. host
+// / api_key are NOT here: the panel never carries a secret (law 2).
 const editDraft = reactive<Record<string, AgentEditDraft>>({});
 const editMsg = reactive<Record<string, string>>({});
 const saving = ref<string | null>(null);
 
-// -- the inheritance read + the host's definitions --------- GET /settings answers.
+// the inheritance read + the host's definitions --------- GET /settings answers.
 const scopes = ref<SettingsScope[]>([]);
 const providerInstances = ref<string[]>([]);
 const modules = ref<Array<{ name: string; state?: string; toggleable?: boolean }>>([]);
@@ -634,7 +627,7 @@ function chipFor(name: string, key: string) {
 }
 
 /**
- * chipInherited / chipText / chipNote are the template's three reads of that state (a.
+ * chipInherited / chipText / chipNote are the template's three reads of that state.
  */
 function chipInherited(name: string, key: string): boolean {
   return chipFor(name, key)?.inherited === true;
@@ -658,7 +651,7 @@ function sessionCountOf(name: string): number {
   return p?.session_count ?? 0;
 }
 
-// -- the delete lane --------------------------------------
+// the delete lane ------------------------------------
 const deleting = ref<string | null>(null);
 const removing = ref<string | null>(null);
 const deleteError = reactive<Record<string, string>>({});
@@ -718,7 +711,7 @@ const rows = computed<RegistryRow[]>(() => {
   });
 });
 
-// --: the row click opens the CANONICAL chat ----------- The click's target is the. The
+// the row click opens the CANONICAL chat ----------- The click's target is the. The
 // mint is a POST because it WRITES on the paths that need it, and the answer is the
 // session row the chat tab binds to - the panel never guesses an id.
 const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
@@ -787,7 +780,7 @@ function rosterOf(name: string): OmegaContinuousRow | null {
 function rowStatusVoice(name: string): { on: boolean; label: string } | undefined {
   return agentStatusFor(rosterOf(name));
 }
-// rowStatus word, raw (the wake strip's state references keep using the vocabulary.
+// rowStatus word, raw.
 function rowStatusOf(name: string): string {
   const c = rosterOf(name);
   return c ? rowStatus(c) : "";
@@ -831,8 +824,7 @@ async function loadSettings(): Promise<void> {
 }
 
 /**
- * loadModules reads the capsule names a toggle may turn on (the mounted, toggleable
- * ones.
+ * loadModules reads the capsule names a toggle may turn on.
  */
 async function loadModules(): Promise<void> {
   try {
@@ -868,7 +860,6 @@ async function load(quiet = false): Promise<void> {
     profiles.value = ((await res.json()) ?? []) as OmegaAgent[];
     const agents = await fetchDisabledAgents();
     if (agents !== null) fold.value = agents;
-    // the continuous roster rides the same load.
     await loadRoster();
     await loadSettings();
     await loadModules();
@@ -959,8 +950,7 @@ function seedEdit(name: string): void {
   deleteError[name] = "";
 }
 
-// the canonical chat + evidence refresh, split out of onExpand (a failed read keeps the
-// detail.
+// the canonical chat + evidence refresh, split out of onExpand.
 async function loadContinuousDetail(name: string): Promise<void> {
   const enc = encodeURIComponent(name);
   try {
@@ -1111,7 +1101,7 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
 </script>
 
 <style scoped>
-/* the main-agent row badge - a quiet chip on line 1, beside the name.. */
+/* the main-agent row badge - a quiet chip on line 1, beside the name. */
 .agents-main-badge {
   align-self: center;
   background: var(--z2, rgba(128, 128, 128, 0.12));
@@ -1122,10 +1112,7 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   padding: 1px 5px;
   text-transform: lowercase;
 }
-/*
- * the root is a band + scroll body; the body's inset/padding rides the CRON reference
- * (4px 12px 14px).
- */
+/* the root is a band + scroll body. */
 .pane.agents {
   flex: 1;
   min-height: 0;
@@ -1436,7 +1423,7 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   white-space: pre-wrap;
 }
 /*
- * the agent's OWN sessions, inspected from the expanded row (the sessions sidebar is.
+ * the agent's OWN sessions, inspected from the expanded row.
  */
 .agents-session-list {
   list-style: none;

@@ -9,7 +9,7 @@
 //     aux word "default" means "inherit the chat's model" and is the only
 //     value the inherit row stores.
 // Plus the composer-unchanged proof: both new props are optional and every
-// new pixel is gated on them, so the chat picker renders as before.
+// new pixel is gated on them, so the chat picker renders.
 // Run: node --test test/settingsmodelpick.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -31,7 +31,7 @@ const picker = read("app", "components", "chat", "ModelSelect.vue");
 const field = read("app", "components", "settings", "ModelField.vue");
 const css = read("app", "assets", "css", "main.css");
 
-// the live-ish catalog: one base provider, one named instance, wire flags plus the.
+// the live-ish catalog: one base provider, one named instance, wire flags plus.
 const sections = ["default", "backup"];
 
 describe("the knob's persisted value: slot vs non-slot vs inherit", () => {
@@ -41,8 +41,7 @@ describe("the knob's persisted value: slot vs non-slot vs inherit", () => {
   });
 
   it("a non-slot knob stores the BARE model name", () => {
-    // provider.vision_model / provider.title_model / provider.model_name feed a
-    // provider directly.
+    // provider.vision_model / provider.title_model / provider.model_name feed.
     assert.equal(knobModelValue("default:llama3", false, sections), "llama3");
     assert.equal(knobModelValue("backup:llama3", false, sections), "llama3");
   });
@@ -159,7 +158,7 @@ describe("ModelField: the knobs' wiring on the composer picker", () => {
       "an approval decision is deliberate - no inherit row, ever",
     );
     assert.match(field, /:inherit-row="inheritRow"/);
-    // and the row opens DOWN: a settings row sits mid-pane, not on the composer's.
+    // and the row opens DOWN: a settings row sits mid-pane, not.
     assert.match(field, /drop="down"/);
   });
 
@@ -172,9 +171,7 @@ describe("ModelField: the knobs' wiring on the composer picker", () => {
 
   it("the approval knob carries no inherit row and no 'default' hint", () => {
     assert.match(field, /return inheritRow\.value\s*\?\s*`\$\{lead\} - type "default"/);
-    // the knob inventory: approval is a decision slot, vision is the one
-    // default_option knob today (t_b403ad88 may add more - the exemption
-    // above keeps approval out regardless)
+    // the knob inventory: approval is a decision slot, vision is the one.
     const out = normalizeSettingsPayload({
       groups: [
         {

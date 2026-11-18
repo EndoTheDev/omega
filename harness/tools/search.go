@@ -1,7 +1,7 @@
 package tools
 
-// The search domain: content search (grep) and name match (glob) as one provider on.
-// Ignored trees (.git, node_modules,.cache, dist,..) are pruned at the directory entry,
+// The search domain: content search (grep) and name match (glob) as one provider.
+// Ignored trees (.git, node_modules,.cache, dist,.) are pruned at the directory entry,
 // never walked entry by entry - a home-root grep that read every.git object cost 567s
 // and spent the file cap on path noise; include_ignored: true opts back in, and an
 // explicitly named root is never pruned.
@@ -43,7 +43,7 @@ const walkErrorDetailCap = 10
 // ignoredDirNoteCap bounds the pruned-directory names in the note.
 const ignoredDirNoteCap = 10
 
-// defaultIgnoreDirs is the directory-name skip set both search tools prune at the.
+// defaultIgnoreDirs is the directory-name skip set both search tools prune.
 // These trees are never what a content search means.
 var defaultIgnoreDirs = map[string]struct{}{
 	".git":         {},
@@ -59,8 +59,7 @@ var defaultIgnoreDirs = map[string]struct{}{
 	".stversions":  {},
 }
 
-// isIgnoredDir reports whether a directory name is in the default skip set (exact
-// match.
+// isIgnoredDir reports whether a directory name is in the default skip set.
 func isIgnoredDir(name string) bool {
 	_, ok := defaultIgnoreDirs[name]
 	return ok
@@ -85,7 +84,7 @@ func emitPrunedDirs(out *strings.Builder, pruned []string) {
 	out.WriteString("]\n")
 }
 
-// relSlash is an entry's path relative to the search root, slash separated (the note.
+// relSlash is an entry's path relative to the search root, slash separated.
 func relSlash(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -164,7 +163,7 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argInt extracts an optional integer argument (JSON numbers are float64 on the.
+// argInt extracts an optional integer argument.
 func argInt(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {

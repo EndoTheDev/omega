@@ -11,7 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// toolRun runs the verdict tool in a goroutine (the request sub-action blocks on the.
+// toolRun runs the verdict tool in a goroutine.
 func toolRun(t *testing.T, p *verdictToolProvider, ctx context.Context, args map[string]any) <-chan toolResult {
 	t.Helper()
 	ch := make(chan toolResult, 1)
@@ -47,7 +47,7 @@ func interactiveCtx(session string) context.Context {
 	return ctx
 }
 
-// requestArgs is a valid verdict.request args map with the extras merged in.
+// requestArgs is a valid verdict.request args map with the extras merged.
 func requestArgs(extra map[string]any) map[string]any {
 	args := map[string]any{"title": "q"}
 	for k, v := range extra {

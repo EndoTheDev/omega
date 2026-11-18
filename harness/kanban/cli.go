@@ -1,6 +1,6 @@
 package kanban
 
-// The board registry CLI: the kanban subcommand's home (v0.12 phase D, grill Q6.
+// The board registry CLI: the kanban subcommand's home.
 
 import (
 	"context"
@@ -12,10 +12,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// kanbanSummary is the one-line entry the global `omega --help` list shows for this.
+// kanbanSummary is the one-line entry the global `omega --help` list shows.
 const kanbanSummary = "the task board registry (see: omega kanban --help)"
 
-// kanbanHelp documents the kanban subcommand tree (the module's own help.
+// kanbanHelp documents the kanban subcommand tree.
 const kanbanHelp = `omega kanban - the task board registry
 
 Usage:

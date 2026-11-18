@@ -33,7 +33,7 @@ export interface ExtensionRow {
   dependents: string[];
 }
 
-// extensionsRows merges the endpoint payload, the composition manifest and the.
+// extensionsRows merges the endpoint payload, the composition manifest.
 export function extensionsRows(
   extensions: readonly OmegaExtension[],
   panels: readonly PanelRef[],

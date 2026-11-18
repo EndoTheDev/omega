@@ -124,11 +124,10 @@ func (p *Plugin) setServerEnabledAndReload(path, name string, enabled bool) (rep
 	return rep, nil, reloadErr
 }
 
-// reloadLocked is reload's body without the lock (the caller holds reloadMu.
+// reloadLocked is reload's body without the lock.
 func (p *Plugin) reloadLocked() (StatusReport, error) {
 	cfg, source, err := loadConfig()
 	if err != nil {
-		// a broken config keeps the old bridge serving.
 		return StatusReport{}, fmt.Errorf("read config: %w", err)
 	}
 	next, connErr := NewBridge(cfg)
@@ -139,7 +138,6 @@ func (p *Plugin) reloadLocked() (StatusReport, error) {
 
 	old := p.swapBridge(next)
 	if old != nil {
-		// outside the swap lock, after the swap.
 		old.shutdown()
 	}
 	return next.Status(), nil
@@ -189,7 +187,6 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if reloadErr != nil {
-		// the file is written; the failed reload keeps the previous bridge serving (the.
 		http.Error(w, "mcp toggle: reload: "+reloadErr.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -199,7 +196,7 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// setServerEnabled flips the per-server `enabled:` flag on the named server entry in.
+// setServerEnabled flips the per-server `enabled:` flag on the named server entry.
 func setServerEnabled(path, name string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -228,7 +225,7 @@ func setServerEnabled(path, name string, enabled bool) error {
 		return fmt.Errorf("parse %s: no servers: array", path)
 	}
 	flag := enabledValue(enabled)
-	// v0.14.1 audit NOTE-tier: with duplicate names the flag previously landed on the.
+	// v0.14.1 audit NOTE-tier: with duplicate names the flag previously landed.
 	matches := 0
 	for _, item := range servers.Content {
 		if item.Kind == yaml.MappingNode && namesServer(item, name) {
@@ -245,7 +242,7 @@ func setServerEnabled(path, name string, enabled bool) error {
 		if !namesServer(item, name) {
 			continue
 		}
-		// the named entry: replace an existing `enabled:` scalar in place, or append the.
+		// the named entry: replace an existing `enabled:` scalar in place, or append.
 		for i := 0; i+1 < len(item.Content); i += 2 {
 			key, val := item.Content[i], item.Content[i+1]
 			if key.Kind == yaml.ScalarNode && key.Value == "enabled" {

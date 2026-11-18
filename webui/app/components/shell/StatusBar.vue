@@ -91,7 +91,6 @@
         <span class="build-text">{{ shortVersion(version) }}</span>
       </span>
 
-      <!-- the health detail popover. -->
       <div
         v-if="healthOpen"
         class="health-pop"
@@ -199,12 +198,9 @@
 
   const NOT_REPORTED = "not reported";
 
-  // -- the popover's sourced-vs-unsourced gates -------------------------- A boolean is
-  // the only "sourced" shape.
   const providerSourced = computed(() => typeof props.providerReachable === "boolean");
   const databaseSourced = computed(() => typeof props.databaseHealthy === "boolean");
   const lastErrorSourced = computed(() => typeof props.lastErrorMessage === "string");
-  // The footnote appears only while some row is unsourced.
   const unsourcedCount = computed(() => {
     let n = 0;
     if (!providerSourced.value) n++;
@@ -230,7 +226,6 @@
     return String(n);
   });
 
-  // uptime reads in the same voice as the elapsed meters ("2m 05s", "1h 02m").
   const formatUp = computed(() => {
     const total = Math.floor(props.upSeconds);
     if (total < 1) return "0s";

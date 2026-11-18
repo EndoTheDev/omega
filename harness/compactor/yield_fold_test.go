@@ -52,8 +52,7 @@ func pendingHistory() []core.Message {
 	}
 }
 
-// TestCompactSkipsPendingTurn: the ledger holds c2 pending; the fold boundary sits
-// before c2's assistant.
+// TestCompactSkipsPendingTurn: the ledger holds c2 pending.
 func TestCompactSkipsPendingTurn(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{
@@ -93,7 +92,6 @@ func TestCompactFoldsAfterSettle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Settled: the normal fold.
 	if len(out) != 3 {
 		t.Fatalf("expected 3 messages after settle, got %d: %s", len(out), messageDump(out))
 	}
@@ -118,8 +116,7 @@ func TestCompactPendingOtherSession(t *testing.T) {
 	}
 }
 
-// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending
-// fence.
+// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending.
 func TestCompactFullyPendingHistory(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()}); err != nil {

@@ -48,7 +48,7 @@ function rec(over: Partial<OmegaNotification> = {}): OmegaNotification {
   };
 }
 
-// -- fetch wrappers: URL + body contract --
+// fetch wrappers: URL + body contract
 
 test("fetchNotifications requests the bare endpoint, no arg", async () => {
   const seen: string[] = [];
@@ -109,7 +109,7 @@ test("markNotificationRead POSTs {id} to /notifications/read", async () => {
   }
 });
 
-// -- notificationAge --
+// notificationAge
 
 test("notificationAge renders seconds, minutes, hours, days", () => {
   const now = Date.parse("2026-10-22T12:00:00Z");
@@ -126,7 +126,7 @@ test("notificationAge is honest on garbage: empty string, no lie", () => {
   assert.equal(notificationAge("2026-10-22T12:00:01Z", Date.parse("2026-10-22T12:00:00Z")), "0s");
 });
 
-// -- upsertRecord: the live frame fold --
+// upsertRecord: the live frame fold
 
 test("upsertRecord prepends a new record and caps the list", () => {
   const a = rec({ id: 1 });
@@ -145,7 +145,7 @@ test("upsertRecord dedupes a reconnect replay instead of stacking", () => {
   assert.equal(out[0].read, true);
 });
 
-// -- toastLifetime: the failed-stays-longer asymmetry --
+// toastLifetime: the failed-stays-longer asymmetry
 
 test("failed verdicts hold the toast longer than ok ones", () => {
   assert.equal(toastLifetime("ok"), 6000);
@@ -153,7 +153,7 @@ test("failed verdicts hold the toast longer than ok ones", () => {
   assert.ok(toastLifetime("failed") > toastLifetime("ok"));
 });
 
-// -- notificationBadgeText: the tab chip's unread voice --
+// notificationBadgeText: the tab chip's unread voice
 
 test("notificationBadgeText: the count, 99+ beyond the cap, nothing at zero", () => {
   assert.equal(notificationBadgeText(0), "", "no badge at zero - the chip renders nothing");
@@ -164,11 +164,10 @@ test("notificationBadgeText: the count, 99+ beyond the cap, nothing at zero", ()
   assert.equal(notificationBadgeText(-3), "", "a nonsensical count renders no badge");
 });
 
-// -- component source pins (the shell wiring) --
+// component source pins (the shell wiring)
 
 test("the bell is GONE: the menubar hosts only the toast stack (card t_180db2cb)", () => {
   const menubar = read("webui", "app", "components", "shell", "MenuBar.vue");
-  // the durable feed is the notifications dock tab, the bell button + its popover.
   assert.ok(!menubar.includes("NotificationCenter"), "the bell popover mount is deleted, not just unused");
   assert.ok(!menubar.includes("notif-bell"), "no bell button chrome");
   assert.ok(!menubar.includes('"bell"'), "no bell icon name in the menubar");
@@ -197,7 +196,7 @@ test("app.vue routes every notified kind (task -> kanban pane, cron -> tab, chat
   );
 });
 
-// -- the board-select seam --
+// the board-select seam
 
 test("boardOfTask scans the boards in registry order", () => {
   const lists = [
@@ -273,7 +272,7 @@ test("selectBoardFor publishes the stash + the event, skips the empty pick", () 
   if (typeof window === "undefined") return; // node: the guard is the pin
   assert.equal(selectBoardFor(""), undefined);
 });
-// -- arc 4b: the toast is a canvas event --
+// arc 4b: the toast is a canvas event
 
 test("the toast stack renders from the canvas - no per-frontend SSE stream (t_180db2cb rehome)", () => {
   const store = read("webui", "app", "components", "shell", "notificationFeed.ts");

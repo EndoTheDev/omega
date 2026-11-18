@@ -84,8 +84,7 @@ func questionsFingerprint() string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// maxCommandChars caps the reviewed text (a heredoc or generated pipeline must not make
-// an unbounded body).
+// maxCommandChars caps the reviewed text.
 const maxCommandChars = 4000
 
 // Review sends one forward pass and returns the parsed six answers.

@@ -46,7 +46,7 @@ const KNOB = {
   live: true,
 };
 
-// -- the one knob normalizer -----------------------------------------
+// the one knob normalizer ---------------------------------------
 
 test("normalizeSettingKnob keeps the fields a control renders", () => {
   const knob = normalizeSettingKnob(KNOB);
@@ -83,7 +83,7 @@ test("the group walk and the one-knob read share ONE normalizer", () => {
   assert.deepEqual(viaGroup.groups[0]!.knobs[0], normalizeSettingKnob(KNOB));
 });
 
-// -- the two lazy reads -----------------------------------------------
+// the two lazy reads ---------------------------------------------
 
 test("fetchSettingKnob reads the server's one-knob door", async () => {
   const stub = stubFetch({ body: KNOB });
@@ -133,7 +133,7 @@ test("fetchSettingsScopes answers [] for a host with no agent dirs (R8)", async 
   }
 });
 
-// -- the source pins: the boot path never pays for the registry again --
+// the source pins: the boot path never pays for the registry again
 
 test("the launch reads ONE knob at boot, not the whole registry", () => {
   const app = read("app.vue");

@@ -61,8 +61,7 @@ func TestSplitSubcommandBareFlags(t *testing.T) {
 	}
 }
 
-// TestSplitSubcommandLeadingFlagsBeforePath: trust flags also survive when they sit
-// before a project path.
+// TestSplitSubcommandLeadingFlagsBeforePath: trust flags also survive when they sit.
 func TestSplitSubcommandLeadingFlagsBeforePath(t *testing.T) {
 	sub, rest := splitSubcommand([]string{"--approve", "D:/proj"})
 	if sub != "D:/proj" {

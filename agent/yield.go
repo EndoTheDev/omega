@@ -30,12 +30,9 @@ type PendingCall struct {
 // boot recovery sweep. Dispatched goroutines and turns never share sequencing, so every
 // method must be safe for concurrent calls.
 type YieldLedger interface {
-	// Register records one dispatched call.
 	Register(pc PendingCall) error
-	// Settle removes the entry - its result has been handed to the wake path.
 	Settle(sessionID, callID string) error
 	Pending(sessionID string) []PendingCall
-	// All lists every unsettled call, insertion order.
 	All() []PendingCall
 }
 
@@ -134,7 +131,7 @@ func splitLedgerKey(key string) (sessionID, callID string, ok bool) {
 // compactor's never-fold law) read the live table off the run context.
 type yieldLedgerKey struct{}
 
-// WithYieldLedger returns a child context carrying the pending-calls table for this.
+// WithYieldLedger returns a child context carrying the pending-calls table.
 func WithYieldLedger(ctx context.Context, ledger YieldLedger) context.Context {
 	if ledger == nil {
 		return ctx
@@ -148,7 +145,7 @@ func YieldLedgerFromContext(ctx context.Context) YieldLedger {
 	return ledger
 }
 
-// PendingAssistantIndex finds the message index of the EARLIEST assistant message in.
+// PendingAssistantIndex finds the message index of the EARLIEST assistant message.
 // -1 when no pending call's assistant message sits in the history (never expected: the
 // flush-before-result order guarantees the call is durable in history before the ledger
 // registration, but the caller still treats -1 as "nothing to protect").

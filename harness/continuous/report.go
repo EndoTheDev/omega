@@ -19,7 +19,7 @@ package continuous
 // backed when the run's ledger carries an ok row FOR that URL (the
 // fetch tool's own result, the HTTP outcome) and strips when the fetch
 // failed or the run never fetched it - fail closed either way. The
-// verifier string `url:..` is a locator, not a check.
+// verifier string `url:.` is a locator, not a check.
 
 import (
 	"context"
@@ -89,7 +89,7 @@ func (s *wakeReportSink) shape(ctx context.Context, content string) string {
 	return shapeReport(content, rows)
 }
 
-// claimVerbs are the action words a claim sentence leans on.
+// claimVerbs are the action words a claim sentence leans.
 var claimVerbs = regexp.MustCompile(`(?i)\b(created|wrote|updated|deleted|removed|edited|modified|renamed|moved|fetched|downloaded|uploaded|saved|read|installed|deployed)\b`)
 
 // pathTokens finds the checkable objects of a claim: a path or a URL.
@@ -201,7 +201,7 @@ func judgeSentence(sent string, ev evidence) string {
 	return "strip"
 }
 
-// matchPaths extracts the sentence's file-like tokens and resolves each onto the.
+// matchPaths extracts the sentence's file-like tokens and resolves each onto.
 func matchPaths(sent string, ev evidence) []string {
 	var out []string
 	seenAny := map[string]bool{}

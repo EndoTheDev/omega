@@ -22,7 +22,7 @@ import { ICONS } from "../app/composables/icons.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
-// -- the registry entry (the dock contract) ----------------------------
+// the registry entry (the dock contract) --------------------------
 
 test("terminal is a registered component: singleton, bottom home, unclosable", () => {
   assert.ok(
@@ -59,7 +59,7 @@ test("the registry's every entry keeps its floor law (terminal = tool family)", 
   assert.equal(d.minPx, 128, "the tool family floor");
 });
 
-// -- the source wiring (the composition-test convention) ---------------
+// the source wiring (the composition-test convention) -------------
 
 const appVue = read(root, "webui/app/app.vue");
 const tabVue = read(
@@ -164,7 +164,7 @@ test("the outlet unmount drops the SSE, never the shell", () => {
   );
 });
 
-// -- the flex shrink guard ---------------------------- The pane root renders as.
+// the flex shrink guard ---------------------------- The pane root renders.
 describe("the terminal pane can shrink under its xterm (t_5b269761)", () => {
   const rule = (name: string) => {
     const m = tabVue.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`));
@@ -175,7 +175,6 @@ describe("the terminal pane can shrink under its xterm (t_5b269761)", () => {
   it("the tab root carries min-width: 0 - no min-content floor", () => {
     const pane = rule("terminal-pane");
     assert.match(pane, /min-width:\s*0/, "the flex shrink guard");
-    // a px floor here re-creates the defect.
     assert.doesNotMatch(pane, /min-width:\s*[0-9]+px/, "no px floor on the pane");
   });
 

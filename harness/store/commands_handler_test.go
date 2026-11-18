@@ -12,9 +12,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleSessionsCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleSessionsCommandNilStore(t *testing.T) {
 	res, err := HandleSessionsCommand(context.Background(), nil, "")
@@ -88,9 +88,9 @@ func TestHandleSessionsCommandPopulated(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleTreeCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleTreeCommandNilStore(t *testing.T) {
 	res, err := HandleTreeCommand(context.Background(), nil)
@@ -161,9 +161,9 @@ func TestHandleTreeCommandWithParentChild(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleSearchCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleSearchCommandNilStore(t *testing.T) {
 	res, err := HandleSearchCommand(context.Background(), nil, "query")
@@ -231,9 +231,9 @@ func TestHandleSearchCommandMatchingWithLabel(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleInsightsCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleInsightsCommandNilStore(t *testing.T) {
 	res, err := HandleInsightsCommand(context.Background(), nil, "")
@@ -302,9 +302,9 @@ func TestHandleInsightsCommandPopulated(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleResumeCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleResumeCommandNilStore(t *testing.T) {
 	res, err := HandleResumeCommand(context.Background(), nil, "1")
@@ -405,9 +405,9 @@ func TestHandleResumeCommandNotFound(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleBranchCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleBranchCommandNilStore(t *testing.T) {
 	res, err := HandleBranchCommand(context.Background(), nil, "parent", "")
@@ -470,9 +470,9 @@ func TestHandleBranchCommandMissingParent(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleLabelCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleLabelCommandNilStore(t *testing.T) {
 	res, err := HandleLabelCommand(context.Background(), nil, "s1", "label")
@@ -548,9 +548,9 @@ func TestHandleLabelCommandClearLabel(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // HandleExportCommand
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleExportCommandNilStore(t *testing.T) {
 	res, err := HandleExportCommand(context.Background(), nil, "s1", "")
@@ -692,7 +692,7 @@ func TestHandleExportCommandEmptySession(t *testing.T) {
 	}
 }
 
-// --------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // Compile-time: *Store satisfies agent.StoreProvider.
 
 var _ agent.StoreProvider = (*Store)(nil)

@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// -- sessionDisplayName --
+// sessionDisplayName
 
 func TestSessionDisplayName(t *testing.T) {
 	cases := []struct {
@@ -36,7 +36,7 @@ func TestSessionDisplayName(t *testing.T) {
 	}
 }
 
-// -- agent.FormatNumber --
+// agent.FormatNumber
 
 func TestFormatNumber(t *testing.T) {
 	cases := []struct {
@@ -65,7 +65,7 @@ func TestFormatNumber(t *testing.T) {
 	}
 }
 
-// -- newSessionID --
+// newSessionID
 
 func TestNewSessionID(t *testing.T) {
 	id, err := agent.NewSessionID()
@@ -89,7 +89,7 @@ func TestNewSessionID(t *testing.T) {
 	}
 }
 
-// -- messageRole --
+// messageRole
 
 func TestMessageRole(t *testing.T) {
 	cases := []struct {
@@ -119,7 +119,7 @@ func TestMessageRole(t *testing.T) {
 	})
 }
 
-// -- messageContent --
+// messageContent
 
 func TestMessageContent(t *testing.T) {
 	cases := []struct {
@@ -150,7 +150,7 @@ func TestMessageContent(t *testing.T) {
 	})
 }
 
-// -- HandleNewCommand --
+// HandleNewCommand
 
 func TestHandleNewCommand(t *testing.T) {
 	t.Run("default no args", func(t *testing.T) {
@@ -208,7 +208,7 @@ func TestHandleNewCommand(t *testing.T) {
 	})
 }
 
-// -- agent.FormatInsights --
+// agent.FormatInsights
 
 func TestFormatInsightsPopulated(t *testing.T) {
 	in := &core.Insights{

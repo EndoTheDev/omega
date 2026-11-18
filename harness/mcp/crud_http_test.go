@@ -12,7 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// serveJSON serves one request with a JSON body through the named route pattern on.
+// serveJSON serves one request with a JSON body through the named route pattern.
 func serveJSON(t *testing.T, ctx *core.Context, pattern, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {

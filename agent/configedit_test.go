@@ -277,7 +277,7 @@ func TestUpdateAgentConfigLayerToggles(t *testing.T) {
 	}
 }
 
-// TestUpdateAgentConfigLayerSkillsAllowlist pins the allowlist: names must exist in.
+// TestUpdateAgentConfigLayerSkillsAllowlist pins the allowlist: names must exist.
 func TestUpdateAgentConfigLayerSkillsAllowlist(t *testing.T) {
 	home := t.TempDir()
 	homeConfig(t, home)
@@ -365,7 +365,6 @@ func TestLoadHostDefinition(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// the primary is the row named "default".
 	if strings.Join(host.ProviderInstances, ",") != "default,home,work" {
 		t.Errorf("instances = %v", host.ProviderInstances)
 	}

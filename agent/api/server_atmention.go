@@ -11,9 +11,9 @@ import (
 // inline before a send; the webui gets the same law SERVER-SIDE on /chat - the browser
 // never expands.
 
-// contextDocs snapshots the mounted skill capsule's inventory as name/content pairs for
-// the @skill. An unmounted module (or a listing failure) degrades to nil - tokens stay
-// as-is, exactly like every other unresolvable token.
+// contextDocs snapshots the mounted skill capsule's inventory as name/content pairs. An
+// unmounted module (or a listing failure) degrades to nil - tokens stay as-is, exactly
+// like every other unresolvable token.
 func (s *Server) contextDocs() []core.AtDoc {
 	sk := s.skills()
 	if sk == nil {
@@ -46,7 +46,7 @@ func (s *Server) expandAtMentions(incoming []core.Message, dir string) []core.Me
 		DetectImage:   llm.DetectImage,
 		MessageText:   agent.MessageText,
 		Dir:           dir,
-		ReferenceOnly: true, // the webui attaches PATHS (card t_7f09bd0c)
+		ReferenceOnly: true, // the webui attaches PATHS
 	}
 	prompt, images, _, err := core.ExpandAtMentions(um.Content, env)
 	if err != nil {

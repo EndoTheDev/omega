@@ -43,7 +43,7 @@ func offeredSeam(t *testing.T, ctx *core.Context) seamBoard {
 	return svc
 }
 
-// TestMountWiresSeamAndCommand: a home-backed mount opens the store, offers the.
+// TestMountWiresSeamAndCommand: a home-backed mount opens the store, offers.
 func TestMountWiresSeamAndCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)

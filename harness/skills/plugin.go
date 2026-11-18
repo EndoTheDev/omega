@@ -27,7 +27,7 @@ func (p *Plugin) Description() string {
 	return "skills: reusable procedure files agents can invoke in a sub-agent"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudger"} }
@@ -70,18 +70,15 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 
 	steps := []func() error{
 		func() error { return api.Offer("skills", sp) },
-		// The skill viewer's content route rides the capsule too.
 		func() error {
 			p.routes = newRoutes(sp)
 			return api.RegisterRoute("/skills/content", p.routes.handleSkillsContent)
 		},
-		// The tab editor's write face.
 		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
 		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
 		// The CLI face of the curator pass and of the registry editor.
 		func() error { return p.registerCuratorCLI(api, sp) },
 		func() error { return p.registerSkillsCLI(api, sp) },
-		// The learning-loop reminder seam.
 		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },
 		func() error {
 			for name, t := range sp.Tools() {

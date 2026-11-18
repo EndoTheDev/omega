@@ -85,7 +85,7 @@ function draft(over: Partial<JobDraft> = {}): JobDraft {
   return { ...emptyDraft(), name: "probe", schedule: "0 8 * * *", prompt: "p", ...over };
 }
 
-// -- the wire contract --
+// the wire contract
 
 test("saveCronJob POSTs the whole job and answers the fresh listing", async () => {
   const calls = recordFetch((call) => {
@@ -154,7 +154,7 @@ test("deleteCronJob POSTs the name and answers the fresh listing; unknown is lou
   }
 });
 
-// -- the client-side schema law (mirrors harness/cron validateJob) --
+// the client-side schema law (mirrors harness/cron validateJob)
 
 test("validateDraft mirrors the Go schema law exactly", () => {
   assert.equal(validateDraft(draft()), "");
@@ -176,7 +176,7 @@ test("validateDraft mirrors the Go schema law exactly", () => {
   }
 });
 
-// -- the scope law + round-trips --
+// the scope law + round-trips
 
 test("editableOf refuses agent-home rows, never rows that merely name an agent", () => {
   assert.equal(editableOf({ name: "x", schedule: "", enabled: true, next: "" }), true);
@@ -220,7 +220,7 @@ test("emptyDraft seeds the schema's own defaults", () => {
   assert.deepEqual(DELIVER_TARGETS, ["new-session", "continuous-agent", "append-to-file"]);
 });
 
-// -- the row voice (pure helpers the SFC renders) --
+// the row voice (pure helpers the SFC renders)
 
 test("cadenceOf speaks kind-aware cadence", () => {
   assert.equal(cadenceOf({ name: "x", kind: "cron", schedule: "0 8 * * *", enabled: true, next: "" } as never), "0 8 * * *");
@@ -242,7 +242,7 @@ test("jobMeta renders only the non-default fields", () => {
   assert.equal(jobMeta({ ...plain, skills: ["a", "b"] } as never), " - skills a, b");
 });
 
-// -- the last-fire status voice --
+// the last-fire status voice
 
 // A local RFC3339 stamp the formatter re-renders in the same (host) zone.
 function localRfc3339(y: number, mo: number, d: number, h: number, mi: number): string {
@@ -279,7 +279,7 @@ test("statusStamp renders local compact stamps, verbatim on junk", () => {
   assert.equal(statusStamp("not-a-time"), "not-a-time");
 });
 
-// -- the fire-pinned skills --
+// the fire-pinned skills
 
 test("parseSkills mirrors the Go normalizeSkills law", () => {
   assert.deepEqual(parseSkills("  omega-dev , ponytail,,grill-me  "), ["omega-dev", "ponytail", "grill-me"]);
@@ -361,7 +361,6 @@ test("fetchAgentOptions reads GET /agents and keeps the roster rows", async () =
     // the main profile is named for the home root and SAYS what it is
     assert.equal(opts[0]!.hint, "the main agent - in-process, never wakes");
     assert.equal(opts[1]!.hint, "writes code");
-    // the inheritance chain's roster facts ride the same rows.
     assert.equal(opts[0]!.continuous, false, "the home root is the main agent");
     assert.equal(opts[1]!.continuous, true, "an agents/<name> home is secondary");
     assert.equal(opts[1]!.model, "", "a layer that authors no model inherits");
@@ -469,7 +468,7 @@ test("withSkill / withoutSkill are the checkbox toggles", () => {
   assert.deepEqual(withoutSkill(["a"], "ghost"), ["a"]);
 });
 
-// -- the SFC wiring (source pins: the node suite has no DOM) --------
+// the SFC wiring (source pins: the node suite has no DOM) ------
 
 test("CronJobs.vue wires the three controls to their sources", () => {
   const src = readFileSync(

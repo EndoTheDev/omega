@@ -32,7 +32,7 @@ func catalogProvides(catalog []Plugin) map[string][]string {
 }
 
 // loneProviders returns the seams one module is the ONLY provider of across the whole
-// catalog (nil-safe.
+// catalog.
 func loneProviders(catalog []Plugin, name string) map[string]bool {
 	lone := map[string]bool{}
 	for seam, providers := range catalogProvides(catalog) {
@@ -123,7 +123,7 @@ func (r *Registry) Modules() []core.ModuleStatus {
 	return out
 }
 
-// logRefusal lands a toggle rejection in the ledger (Q12.
+// logRefusal lands a toggle rejection in the ledger.
 func (r *Registry) logRefusal(name, predicate string, err error) {
 	r.refusals.Log(core.Refusal{Module: name, Seam: "toggle", Predicate: predicate, Err: err, At: time.Now()})
 }
@@ -261,7 +261,7 @@ func (r *Registry) remountForReset(ctx *core.Context, cascade []string, deps cor
 	}
 }
 
-// censusGrew lists the surfaces after that did not exist before.
+// censusGrew lists the surfaces after that did not exist.
 func censusGrew(before, after core.CensusSnapshot) []string {
 	var out []string
 	for k := range after.Slots {
@@ -287,7 +287,7 @@ func censusGrew(before, after core.CensusSnapshot) []string {
 	return out
 }
 
-// censusShrank lists the surfaces before that are gone after.
+// censusShrank lists the surfaces before that are gone.
 func censusShrank(before, after core.CensusSnapshot) []string {
 	var out []string
 	for k := range before.Slots {

@@ -72,7 +72,7 @@ func TestInstanceResolution(t *testing.T) {
 	}
 }
 
-// mountForTest mounts through agent.MountAllAPI (the one real mount path - a nil.
+// mountForTest mounts through agent.MountAllAPI.
 func (p *Plugin) mountForTest(t *testing.T, cfg Config) agent.Provider {
 	t.Helper()
 	ctx := &core.Context{Configs: map[string]any{"provider": cfg}}

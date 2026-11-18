@@ -1,6 +1,6 @@
 package provider
 
-// The mock provider pins: deterministic streams seeded by the request, the.
+// The mock provider pins: deterministic streams seeded by the request,.
 
 import (
 	"context"

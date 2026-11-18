@@ -97,7 +97,7 @@ func (l *Ledger) append(r record) (int64, error) {
 	return res.LastInsertId()
 }
 
-// List returns the run_id's rows (the report cites these), newest order preserved by.
+// List returns the run_id's rows (the report cites these), newest order preserved.
 func (l *Ledger) List(ctx context.Context, runID string) ([]record, error) {
 	rows, err := l.db.QueryContext(ctx,
 		`SELECT id, ts, run_id, tool, args_hash, ok, verifier FROM evidence WHERE run_id = ? ORDER BY id`, runID)

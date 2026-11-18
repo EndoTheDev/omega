@@ -255,7 +255,7 @@ func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	out := ProviderConfig{ModelName: raw.ModelName, Instances: prev.Instances}
-	// An absent model_name keeps the value already held: the caller decodes over.
+	// An absent model_name keeps the value already held: the caller decodes.
 	if out.ModelName == "" {
 		out.ModelName = prev.ModelName
 	}
@@ -507,7 +507,7 @@ func legacyConfigHint(path string) string {
 	return fmt.Sprintf(" - config.yaml lives at %s now (v0.8 layout); run `omega setup` to write one", moved)
 }
 
-// foldOmegaJSON migrates the v0.12 omega.json module toggle list into config.yaml's.
+// foldOmegaJSON migrates the v0.12 omega.json module toggle list into config..
 // Entries a config.yaml that already carries the key would also name are reported in
 // the boot warning but never double-written.
 func foldOmegaJSON(configPath string) ([]string, string, error) {

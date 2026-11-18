@@ -60,7 +60,7 @@ for line in sys.stdin:
     sys.stdout.flush()
 `
 
-// writeFakeServer writes the fake MCP server script to a temp file and returns its.
+// writeFakeServer writes the fake MCP server script to a temp file and returns.
 func writeFakeServer(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -208,7 +208,7 @@ func TestStdioServerRequestRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStdioServerRequestContextCancel is the receipt for ctx threading on the
+// TestStdioServerRequestContextCancel is the record for ctx threading on the
 // stdio transport: a call the server never answers aborts on cancellation,
 // drops its pending slot, and leaves the connection usable.
 func TestStdioServerRequestContextCancel(t *testing.T) {
@@ -281,5 +281,4 @@ for line in sys.stdin:
 	if pending != 0 {
 		t.Fatalf("pending requests after cancellation: got %d, want 0", pending)
 	}
-	// No "connection is still usable" assertion here.
 }

@@ -32,10 +32,7 @@ export const EVENTS_LIMIT = 1000;
 export const RENDER_CAP = 300;
 /** the tail's line count (the route defaults to the same 200) */
 export const TAIL_LINES = 200;
-/**
- * the bounded refresh while the tab is mounted (the Logs strip's 2.5s poll is the
- * sibling precedent.
- */
+/** the bounded refresh while the tab is mounted (the Logs strip's 2.5s poll is the. */
 export const REFRESH_MS = 5000;
 
 /**
@@ -175,8 +172,7 @@ export function errorCount(events: readonly ObservatoryEvent[]): number {
 }
 
 /**
- * formatEventTime renders the record's RFC3339Nano stamp as the row's clock reading
- * (local HH:MM:SS.
+ * formatEventTime renders the record's RFC3339Nano stamp as the row's clock reading.
  */
 export function formatEventTime(iso: string): string {
   if (!iso) return "-";

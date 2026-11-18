@@ -34,7 +34,7 @@ func allowedPath(path string) bool {
 	return false
 }
 
-// checkImports parses every.go file in dir (test files included, subdirectories.
+// checkImports parses every.go file in dir.
 func checkImports(t *testing.T, dir string) []string {
 	t.Helper()
 	var offenders []string

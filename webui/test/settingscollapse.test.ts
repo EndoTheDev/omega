@@ -16,7 +16,7 @@ import {
   serializeCollapsedKeys,
 } from "../app/composables/omega.ts";
 
-// -- parseCollapsedKeys: persisted collapsed GROUP KEYS --
+// parseCollapsedKeys: persisted collapsed GROUP KEYS
 
 test("parseCollapsedKeys round-trips through serializeCollapsedKeys", () => {
   const set = new Set(["compaction", "memory"]);
@@ -50,7 +50,7 @@ test("defaults stay expanded: null storage parses empty", () => {
   assert.equal(parseCollapsedKeys(null).size, 0);
 });
 
-// -- the shared SearchInput: one component, two consumers --
+// the shared SearchInput: one component, two consumers
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 // (the shell-ring shrink wave 2).

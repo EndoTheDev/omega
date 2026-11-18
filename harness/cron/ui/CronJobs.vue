@@ -4,7 +4,7 @@
     class="cron-list"
     :class="{ narrow: narrow }">
     <!--
-      the UNIVERSAL band - the Files pattern lands on every tab..
+      the UNIVERSAL band - the Files pattern lands on every tab.
       Rendered BEFORE the scroll body: scrolling never moves it.
     -->
     <TabBand title="Cron">
@@ -23,7 +23,6 @@
           name="refresh"
           :size="13" />
       </button>
-      <!-- the job editor lives here. -->
       <button
         class="band-tool"
         title="add cron job"
@@ -151,9 +150,6 @@
               </li>
             </ul>
           </div>
-          <!--
-            the chain's own line: the source an inherited value comes from, with the.
-          -->
           <p
             v-if="chainOf(f.field).inherited"
             class="cron-field-note cron-chain-note"
@@ -164,10 +160,6 @@
             v-if="unknownNote(f.field)"
             class="cron-field-note">{{ unknownNote(f.field) }}</p>
         </div>
-        <!--
-          the fire-pinned skills - the bodies ride the fire prompt ahead of the
-          prompt., a STRICT multi-select.
-        -->
         <div class="cron-editor-field cron-editor-wide">
           <span>skills</span>
           <div
@@ -301,16 +293,12 @@
         <div class="cron-head reg-row-head">
           <div class="reg-row-main">
             <span class="cron-name reg-row-name">{{ j.name }}</span>
-            <!--
-              the row law's subtitle: the mono cadence (kind-aware), with the next.
-            -->
             <span class="reg-row-sub">
               <span class="cron-meta reg-row-sub-text">
                 {{ cadenceOf(j) }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>{{ lastMeta(j) }}{{ jobMeta(j) }}
               </span>
             </span>
           </div>
-          <!-- the row's edit affordance. -->
           <button
             v-if="editableOf(j)"
             class="band-tool cron-edit-ctrl"
@@ -320,7 +308,6 @@
               name="pencil"
               :size="13" />
           </button>
-          <!-- the "enabled"/"disabled" text dies. -->
           <TogglePill
             class="cron-toggle reg-row-ctrl"
             :state="j.enabled"
@@ -338,7 +325,6 @@
         class="panel-status">
         no matching jobs
       </p>
-      <!-- the empty state is the designed pattern, not a bare corner status line. -->
       <div
         v-else
         class="cron-empty">
@@ -363,9 +349,7 @@
     setCronJobEnabled,
     type CronJobWire,
   } from "./toggle";
-  // the band search's filter (name / schedule), pure so the node suite pins it.
   import { filterCronJobs } from "./search";
-  // the job editor chain (pure module - the toggle convention).
   import {
     DELIVER_TARGETS,
     agentChain,
@@ -403,15 +387,12 @@
   const loaded = ref(false);
   const error = ref("");
 
-  // the in-band search - CLIENT-SIDE on the loaded listing (the filter rides the
-  // already-fetched jobs.
+  // the in-band search - CLIENT-SIDE on the loaded listing.
   const query = ref("");
   const filteredJobs = computed(() => filterCronJobs(jobs.value, query.value));
 
-  // -- the fetch (shared by mount + the band's refresh tool).
   const refreshing = ref(false);
 
-  // -- the job editor ------------------------------- One editor at a time, keyed by.
   const editor = ref<{
     creating: boolean;
     draft: JobDraft;
@@ -419,13 +400,12 @@
     busy: boolean;
     armedDelete: boolean;
   } | null>(null);
-  // editorSeq invalidates an in-flight options callback when the open editor changes (a
-  // ref's value is a proxy.
+  // editorSeq invalidates an in-flight options callback when the open editor changes.
   let editorSeq = 0;
 
-  // -- the field option sources --------------------- Rulings 1-2. Each source loads
-  // once per panel mount (re-armed on a failed answer); a source that is down degrades
-  // its ONE control, never the edit.
+  // the field option sources --------------------- Rulings 1-2. Each source loads once
+  // per panel mount (re-armed on a failed answer); a source that is down degrades its
+  // ONE control, never the edit.
   type ComboField = "agent" | "model";
 
   const agentOptions = ref<FieldOption[]>([]);
@@ -498,10 +478,9 @@
     return optionsInflight;
   }
 
-  // -- the comboboxes (rulings 1-2) ----------------------------------- One open
-  // control at a time; the typed text IS the field's value, so picking is only a
-  // shortcut and a value the registry does not list still saves (the
-  // never-strand-an-edit law).
+  // the comboboxes (rulings 1-2) ----------------------------------- One open control
+  // at a time; the typed text IS the field's value, so picking is only a shortcut and a
+  // value the registry does not list still saves (the never-strand-an-edit law).
   const COMBO_FIELDS: { field: ComboField; label: string; placeholder: string }[] = [
     { field: "agent", label: "agent", placeholder: "the main agent" },
     {
@@ -608,7 +587,7 @@
     return "not in the registry - kept as typed";
   }
 
-  // -- the inheritance chain ------------------------ ONE mechanism for both surfaces.
+  // the inheritance chain ------------------------ ONE mechanism for both surfaces.
   const CHAIN_IDLE: ChainValue = {
     inherited: false,
     value: "",
@@ -630,9 +609,9 @@
       : modelChain(chain, agentOptions.value, modelCurrent.value);
   }
 
-  // -- the skills multi-select ------------------------------ STRICT. A job's pinned
-  // name the registry cannot serve is dropped from the draft and NAMED on screen -
-  // visible, never silent.
+  // the skills multi-select ------------------------------ STRICT. A job's pinned name
+  // the registry cannot serve is dropped from the draft and NAMED on screen - visible,
+  // never silent.
   const skillsOpen = ref(false);
   const skillQuery = ref("");
   const skillsDropped = ref<string[]>([]);
@@ -714,7 +693,6 @@
     closeCombo();
     skillsOpen.value = false;
     skillsDropped.value = [];
-    // the strict skills load needs the registry.
     void ensureOptions().then(() => {
       if (editorSeq === token) applyStrictSkills();
     });
@@ -793,8 +771,8 @@
     }
   }
 
-  // -- the per-job toggle ---------------------------- ONE click commits. busy holds
-  // the committing key so a stacked double-click cannot overlap writes.
+  // the per-job toggle ---------------------------- ONE click commits. busy holds the
+  // committing key so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
   function onToggle(j: CronJobWire) {
@@ -802,7 +780,7 @@
     apply(j);
   }
 
-  // the commit: POST the toggle (the `enabled:` flag write lands and the runner.
+  // the commit: POST the toggle.
   async function apply(j: CronJobWire) {
     const target = !j.enabled;
     busy.value = cronKeyOf(j);
@@ -816,7 +794,7 @@
     }
   }
 
-  // -- narrow adaptation, the module-UI recipe.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -845,8 +823,7 @@
     resizeObs = null;
   });
 
-  // shortTime renders the RFC3339 next fire as a local, compact date-time ("10/20
-  // 08:00").
+  // shortTime renders the RFC3339 next fire as a local, compact date-time.
   function shortTime(rfc3339: string): string {
     const t = new Date(rfc3339);
     if (Number.isNaN(t.getTime())) return rfc3339;
@@ -865,7 +842,6 @@
 </script>
 
 <style scoped>
-  /* the band anchors the top, the body owns the scroll. */
   .cron-list {
     flex: 1;
     min-height: 0;
@@ -889,7 +865,6 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  /* the designed empty state. */
   .cron-empty {
     flex: 1;
     display: flex;
@@ -923,7 +898,7 @@
   /*
    * the job editor panel.
    * It anchors under the band (above the scroll body, the band's own law) so edits
-   * never scroll away; the fields ride a 2-wide grid, the textarea spans both.
+   * never scroll away; the fields ride a 2-wide grid, the textarea spans.
    */
   .cron-editor {
     padding: 8px 12px;
@@ -1007,14 +982,12 @@
     flex: none;
     align-self: flex-start;
   }
-  /* the row geometry (paddings, separators, name/sub typography, the right-control. */
   .cron-row.disabled {
     opacity: 0.5;
   }
   .cron-meta {
     font-family: var(--mono, monospace);
   }
-  /* the three option controls. */
   .cron-field-note {
     margin: 2px 0 0;
     font-size: 10.5px;
@@ -1055,7 +1028,6 @@
     position: relative;
     min-width: 0;
   }
-  /* the control fills its field (a bare input keeps its intrinsic ~20ch width and. */
   .cron-combo input {
     width: 100%;
   }
@@ -1108,7 +1080,6 @@
     font-size: 10.5px;
     color: var(--text-dim, #8a8a92);
   }
-  /* the skills multi-select: a closed control carrying the chips, and a searchable. */
   .cron-skills {
     position: relative;
   }
@@ -1183,8 +1154,7 @@
     overflow-y: auto;
   }
   /*
-   * the row checkboxes are SELECTION boxes, not switches (the one-switch law covers
-   * on/off toggles).
+   * the row checkboxes are SELECTION boxes, not switches.
    */
   .cron-editor-field .cron-skill-row input {
     margin: 0;
@@ -1227,7 +1197,6 @@
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
   }
-  /* the editor's 2-wide grid collapses at the narrow threshold. */
   .cron-list.narrow .cron-editor-grid {
     grid-template-columns: 1fr;
   }

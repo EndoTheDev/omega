@@ -7,7 +7,7 @@ export type ThinkingDisplay = "expanded" | "collapsed" | "auto";
 export const THINKING_DISPLAY_KEY = "omega.thinking-display";
 export const DEFAULT_THINKING_DISPLAY: ThinkingDisplay = "auto";
 
-// Anything but the exact non-default strings (missing key, older build, tampered.
+// Anything but the exact non-default strings.
 export function parseThinkingDisplay(v: unknown): ThinkingDisplay {
   return v === "expanded" || v === "collapsed" ? v : "auto";
 }

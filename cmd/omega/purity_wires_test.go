@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// cmdGoFiles collects the non-test.go files of cmd/ (the binary's host layer.
+// cmdGoFiles collects the non-test.go files of cmd/.
 func cmdGoFiles(t *testing.T) []string {
 	t.Helper()
 	var out []string

@@ -7,7 +7,7 @@
 //     tree, mobile flips the BOTTOM DRAWER flag and never touches the
 //     dock api (routeShellToggle - pinned here behaviorally).
 //   report 2: the mobile drawer strips rendered `{{ t.title }}` text;
-//     the ruling: icons. DrawerTab now carries the registry glyph
+// the rule: icons. DrawerTab now carries the registry glyph
 //     (dockableIcon - the same vocabulary the desktop chips use).
 // Convention: the node suite never compiles the SFC (composition-test
 // law); the derivation + route are behavior, the SFC wiring is a
@@ -47,7 +47,7 @@ function pane(tabs: DockComponentName[], edge: "left" | "right" | "bottom"): Doc
   };
 }
 
-// -- report 1: the bottom drawer opens on the toggle, tree untouched -----
+// report 1: the bottom drawer opens on the toggle, tree untouched ---
 
 function stubDock(): ShellDockApi & { calls: string[] } {
   const calls: string[] = [];
@@ -123,7 +123,7 @@ test("shellToggleMobile: flips only the requested shell, closes the others", () 
   );
 });
 
-// -- report 2: the drawer tab chips carry the registry glyph ------------
+// report 2: the drawer tab chips carry the registry glyph ----------
 
 test("drawerTabsForEdge: every tab carries the dockable-registry iconset glyph", () => {
   const tabs = drawerTabsForEdge(
@@ -156,7 +156,7 @@ test("the bottom drawer's default tab set derives from the registry bottom-home 
     (id) => COMPONENT_TITLES[id],
   );
   assert.ok(tabs.length > 0, "the registry seats at least one bottom-home tab");
-  // terminal joins the fresh bottom strip (VS Code parity.
+  // terminal joins the fresh bottom strip.
   assert.deepEqual(
     tabs.map((t) => t.id),
     ["terminal", "observability"],
@@ -175,13 +175,13 @@ test("the bottom drawer reads the LIVE bottom pane's tabs when the tree holds on
   assert.deepEqual(tabs.map((t) => t.id), ["observability", "files"]);
 });
 
-// -- structural pins (no-SFC-compile convention) ------------------------
+// structural pins (no-SFC-compile convention) ----------------------
 
 test("MobileDrawer renders the icon chip, not the text title", () => {
   const sfc = read("app/components/shell/MobileDrawer.vue");
   assert.ok(sfc.includes("<Icon"), "the chip renders through the iconset wrapper");
   assert.ok(sfc.includes(":name=\"t.icon\""), "the glyph comes from the tab's registry icon");
-  // ..and the title is the accessible name + tooltip, never body text
+  // .and the title is the accessible name + tooltip, never body text
   assert.ok(sfc.includes(':aria-label="t.title"'), "the title rides the accessible name");
   assert.ok(!/\{\{\s*t\.title\s*\}\}/.test(sfc), "no text title renders inside the chip");
   assert.ok(sfc.includes('"left" | "right" | "bottom"'), "side covers bottom");
@@ -195,8 +195,7 @@ test("app.vue: the bottom drawer wiring exists and the toggle routes (not inline
     app.includes("isMobile && (drawerOpen || inspectorOpen || bottomDrawerOpen)"),
     "the scrim closes the bottom drawer too",
   );
-  // the menubar emits route through app.vue (MenuBar no longer injects the dock api
-  // itself.
+  // the menubar emits route through app.vue.
   assert.ok(app.includes("@toggle-bottom=\"toggleBottomPanel\""), "app.vue owns the bottom route");
   assert.ok(app.includes("routeShellToggle"), "the route is the pinned pure helper");
   const menubar = read("app/components/shell/MenuBar.vue");

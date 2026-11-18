@@ -7,8 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// handleModuleOrSPA is the catch-all the fixed shell handlers fall through to (v0.12
-// phase F).
+// handleModuleOrSPA is the catch-all the fixed shell handlers fall through to.
 func (s *Server) handleModuleOrSPA(w http.ResponseWriter, r *http.Request) {
 	modmux, roots := s.ModuleMux()
 	if modmux != nil {

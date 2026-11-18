@@ -56,7 +56,7 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only (the roster creations here.
+// postAny posts a JSON body and returns the status only.
 func postAny(t *testing.T, url string, payload any) (int, error) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -148,7 +148,6 @@ func TestCloneEndpoint(t *testing.T) {
 	if err := os.MkdirAll(scoutData, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// close the live store's handle-free copy.
 	src, err := store.Open(filepath.Join(scoutData, "omega.db"))
 	if err != nil {
 		t.Fatalf("open source store: %v", err)
@@ -568,7 +567,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	if minted != "scout-canonical" {
 		t.Fatalf("scout canonical = %q, want scout-canonical (the seeded stable id)", minted)
 	}
-	// ..and a second click opens the SAME conversation: no re-mint.
+	// .and a second click opens the SAME conversation: no re-mint.
 	if code, _ := mint("scout"); code != http.StatusOK {
 		t.Fatalf("second mint status %d, want 200", code)
 	}
@@ -656,8 +655,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	}
 }
 
-// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix on the path a real agent
-// takes.
+// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix on the path a real agent.
 func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 	home := t.TempDir()
 	st, err := store.Open(":memory:")
@@ -770,7 +768,7 @@ func TestAgentsDeleteRemovesTheWholeHome(t *testing.T) {
 	if strings.Contains(string(roster), `"scout"`) {
 		t.Fatalf("the deleted agent still rides the roster: %s", roster)
 	}
-	// Refusals: the main agent's home is the daemon's home (409), a second delete of the.
+	// Refusals: the main agent's home is the daemon's home (409), a second delete.
 	del := func(name string) int {
 		req, err := http.NewRequest(http.MethodDelete, srv.URL+"/agents/"+name, nil)
 		if err != nil {

@@ -1,7 +1,6 @@
 <template>
   <!--
-    ONE search input, shared by the sidebar (session search) and the settings pane
-    (filter settings).
+    ONE search input, shared by the sidebar (session search) and the settings pane.
   -->
   <span class="search-input">
     <input
@@ -28,7 +27,6 @@
 <script setup lang="ts">
   import { ref } from "vue";
 
-  // clear sends the focus back to the input.
   const inputEl = ref<HTMLInputElement | null>(null);
 
   const props = defineProps<{

@@ -17,8 +17,7 @@ import (
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
 const defaultMaxTurns = 100
 
-// maxOverflowRetries caps how many times a turn is retried after a context overflow
-// error.
+// maxOverflowRetries caps how many times a turn is retried after a context overflow.
 const maxOverflowRetries = 1
 
 // Loop is the standard turn-based conversation loop.
@@ -278,7 +277,6 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			assistant.Thinking = &text
 		}
 		assistant.ToolCalls = toolCalls
-		// Timing rides the assistant record itself.
 		if thinkMs, respMs := meter.spans(); thinkMs > 0 || respMs > 0 {
 			assistant.Timing = &core.Timing{ThinkingMs: thinkMs, ResponseMs: respMs}
 		}
@@ -473,8 +471,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed, PendingCalls: outstanding}
 		opts.Events <- turnEnd
 
-		// Nudge delivery: after the tool batch lands in the history exactly one reminder may
-		// be due.
+		// Nudge delivery: after the tool batch lands in the history exactly one reminder.
 		if opts.Nudge != nil && executed > 0 {
 			if line := opts.Nudge.NudgeLine(); line != "" {
 				messages = append(messages, core.NewUser(line))
@@ -484,7 +481,6 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		if len(loopback) == 0 {
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			if outstanding > 0 {
-				// The turn ended on outstanding calls.
 				end.FinishReason = "yielded"
 			}
 			opts.Events <- end
@@ -515,7 +511,7 @@ var inlineToolBudget = 2 * time.Second
 // ledger happens under it and the executor takes it on completion - a converted call is
 // durable in the table before any result can arrive (the flush-before-result law), and
 // the conversion never restarts or duplicates the call: the already running goroutine
-// IS the dispatched executor from that point on.
+// IS the dispatched executor from that point.
 type inlineExec struct {
 	idx          int
 	call         core.ToolCall
@@ -671,7 +667,7 @@ func (ex *inlineExec) commitInline(res core.ToolResult) {
 	ex.done <- true
 }
 
-// stopInline forwards a run stop to a still-inline call (the budgeted per-call ctx is.
+// stopInline forwards a run stop to a still-inline call.
 // Converted calls are dispatched law - a run end must not eat them.
 func (ex *inlineExec) stopInline() {
 	ex.mu.Lock()
@@ -682,7 +678,7 @@ func (ex *inlineExec) stopInline() {
 }
 
 // pendingPlaceholderContent fills the still-pending sibling slot on the provider wire.
-// The wording is unmistakable by ruling: the old "dispatched, result re-enters" line
+// The wording is unmistakable by rule: the old "dispatched, result re-enters" line
 // got a live agent to consult a skill and MANUALLY SPAWN A DUPLICATE of a call that was
 // already running - the marker now names the tool and forbids the workaround in plain
 // words.
@@ -710,7 +706,6 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 	}
 	ctx, cancel := context.WithTimeout(callCtx, timeout)
 	defer cancel()
-	// Call identity for the run output tap.
 	ctx = core.WithToolCall(ctx, call.ID, call.Name)
 	start := time.Now()
 
@@ -783,9 +778,8 @@ func deliverYieldResult(opts agent.LoopOptions, sessionID string, res core.Yield
 	opts.YieldWake(sessionID, res)
 }
 
-// pendingPlaceholders returns ephemeral tool-result rows for pending calls the context
-// still shows unanswered. Idempotent by answered-id scan, so it is safe to call every
-// turn prep.
+// pendingPlaceholders returns ephemeral tool-result rows for pending calls.
+// Idempotent by answered-id scan, so it is safe to call every turn prep.
 func appendPendingPlaceholders(messages []core.Message, pending []agent.PendingCall) []core.Message {
 	if len(pending) == 0 {
 		return messages
@@ -808,7 +802,7 @@ func appendPendingPlaceholders(messages []core.Message, pending []agent.PendingC
 	return messages
 }
 
-// indexOfToolCall finds a call's index by id (the Register-failure degradation back.
+// indexOfToolCall finds a call's index by id.
 func indexOfToolCall(calls []core.ToolCall, id string) int {
 	for i, c := range calls {
 		if c.ID == id {

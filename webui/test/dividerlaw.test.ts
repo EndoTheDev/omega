@@ -23,7 +23,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 
-// a 2-child all-flexible split (grown-root leaves.
+// a 2-child all-flexible split.
 const freshPair = (leftPx: number, rightPx: number, contentPx: number): DockSplit =>
   ({
     ...makeSplit("row", [makePane(null), makePane(null)]),
@@ -55,7 +55,6 @@ function impliedLeftPx(split: DockSplit, contentPx: number): number {
 describe("dragSplitDivider both-flexible drag law (t_f7201e02)", () => {
   it("multi-event loop: each event lands on baseline+cumulative, no runaway", () => {
     const node = feed(freshPair(498, 498, 996), 1, [498, 498], 996, [2, 5, 10, 18]);
-    // the last event's cumulative is 18: intended left = 516.
     const p = impliedLeftPx(node, 996);
     assert.ok(Math.abs(p - 516) < 0.01, `left implied ${p}, want 516`);
     assert.ok(Math.abs(node.sizes[0]! + node.sizes[1]! - 1) < 1e-9, "pair sum stays normalized");

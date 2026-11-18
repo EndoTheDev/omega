@@ -67,7 +67,6 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 		t.Fatalf("abs path ignored the workspace: %v", err)
 	}
 
-	// No workspace: relative paths behave today.
 	out, err = p.RunReadFile(plain, map[string]any{"path": "definitely/missing/nowhere.txt"})
 	// not-exist via errors.Is, never the posix "no such file" text:
 	// windows os errors word it "The system cannot find the path

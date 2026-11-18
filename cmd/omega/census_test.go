@@ -52,8 +52,7 @@ func TestCensusAllModules(t *testing.T) {
 	}
 }
 
-// captureStderr redirects os.Stderr for the duration of fn and returns what was
-// written.
+// captureStderr redirects os.Stderr for the duration of fn and returns what was.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -129,7 +128,7 @@ func TestFoldOmegaJSONMigration(t *testing.T) {
 	}
 }
 
-// Sibling-of-explicit-config.yaml is the primary sidecar location, the same order the.
+// Sibling-of-explicit-config.yaml is the primary sidecar location, the same order.
 func TestFoldOmegaJSONSiblingAndHomeSearch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -204,7 +203,6 @@ func TestDisabledPlainYAMLKey(t *testing.T) {
 	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "kanban" || cfg.Disabled.Modules[1] != "delegate" {
 		t.Fatalf("disabled: key not decoded: %+v", cfg.Disabled.Modules)
 	}
-	// And the toggle writer round-trips it.
 	if err := writeDisabled(cfgPath, DisabledNamespaces{Modules: []string{"delegate"}}); err != nil {
 		t.Fatal(err)
 	}

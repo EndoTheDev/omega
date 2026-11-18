@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-// FakeProvider implements the agent.Provider face and emits a scripted sequence of.
+// FakeProvider implements the agent.Provider face and emits a scripted sequence.
 type FakeProvider struct {
 	modelName string
 	script    []core.ProviderStreamEvent
@@ -25,13 +25,12 @@ func NewFakeProvider(model string, script ...core.ProviderStreamEvent) *FakeProv
 	return &FakeProvider{modelName: model, script: script}
 }
 
-// NewFakeProviderScripts creates a FakeProvider that replays each script in order on
-// successive Stream calls.
+// NewFakeProviderScripts creates a FakeProvider that replays each script in order.
 func NewFakeProviderScripts(model string, scripts ...[]core.ProviderStreamEvent) *FakeProvider {
 	return &FakeProvider{modelName: model, scripts: scripts}
 }
 
-// WithDelay returns a copy of the provider that sleeps delay before emitting each.
+// WithDelay returns a copy of the provider that sleeps delay before emitting.
 func (p *FakeProvider) WithDelay(delay time.Duration) *FakeProvider {
 	cp := *p
 	cp.delay = delay
@@ -69,7 +68,7 @@ func (p *FakeProvider) WithThinkingLevel(level string) Provider {
 	return &cp
 }
 
-// Instance returns the named instance fake, implementing agent.ProviderInstances for.
+// Instance returns the named instance fake, implementing agent.ProviderInstances.
 func (p *FakeProvider) Instance(name string) (Provider, bool) {
 	inst, ok := p.instances[name]
 	return inst, ok

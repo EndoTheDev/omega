@@ -62,13 +62,13 @@ func (p *multiProvider) Stream(_ context.Context, _ []core.Message, _ []llm.Tool
 
 func (p *multiProvider) send(batch ...core.ProviderStreamEvent) { p.next <- batch }
 
-// done closes the current script (run ends without a StreamEnd) and re-arms for the.
+// done closes the current script (run ends without a StreamEnd) and re-arms.
 func (p *multiProvider) done() {
 	close(p.next)
 	p.arm()
 }
 
-// newMultiServer wires agent + store over a multiProvider (the retry tests run.
+// newMultiServer wires agent + store over a multiProvider.
 func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newMultiProvider("step")
@@ -85,7 +85,7 @@ func newMultiServer(t *testing.T) (*Server, *multiProvider, *store.Store, *httpt
 	return s, prov, st, ts
 }
 
-// postRetryBody POSTs an arbitrary body to /chat and returns the response (caller.
+// postRetryBody POSTs an arbitrary body to /chat and returns the response.
 func postRetryBody(t *testing.T, ts *httptest.Server, body string) *http.Response {
 	t.Helper()
 	resp, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader([]byte(body)))
@@ -161,8 +161,7 @@ func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 	}
 }
 
-// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is taken is the
-// same 409 a normal send gets.
+// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is taken is.
 func TestChatRetryGatesOnLiveRun(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "s9")
@@ -237,8 +236,7 @@ func TestChatRetryCancelMidRunKeepsPartial(t *testing.T) {
 	}
 }
 
-// TestChatRetryGuards: a retry only makes sense for an existing session's persisted
-// history.
+// TestChatRetryGuards: a retry only makes sense for an existing session's persisted.
 func TestChatRetryGuards(t *testing.T) {
 	_, _, st, ts := newMultiServer(t)
 	if err := st.CreateSession(context.Background(), "s-empty", "", ""); err != nil {

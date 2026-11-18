@@ -3,7 +3,7 @@
 import { filterCommands } from "./commands.ts";
 import type { PaletteItem } from "./commands.ts";
 
-// -- the token model --
+// the token model
 
 export interface RefToken {
   // skill = an injected-content invocation ("/name"); file = a path reference ("@path")
@@ -107,7 +107,6 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   FILE_TOKEN.lastIndex = 0;
   for (const m of text.matchAll(FILE_TOKEN)) {
     const start = m.index + m[1].length;
-    // trailing punctuation belongs to the sentence, not the reference.
     const token = ("@" + m[2]).replace(/[.,;:!?]+$/, "");
     const name = token.slice(1);
     // the prefix rows are INJECTIONS, not paths: classify before the path branches so
@@ -125,7 +124,6 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
       });
       continue;
     }
-    // the trailing slash is the dir discriminator: a folder reference pins like a file.
     if (name.endsWith("/")) {
       const path = name.replace(/\/+$/, "");
       if (!isBasename(path)) continue; // "@" or "@//" - not a reference
@@ -185,7 +183,7 @@ export function deleteTokenAt(text: string, t: RefToken): { draft: string; caret
   };
 }
 
-// -- the chip law: a pill REPLACES the text it represents --
+// the chip law: a pill REPLACES the text it represents
 
 // The composer no longer renders pills on a strip above the textarea with the raw. The
 // editor renders chip nodes inline where the token spans were; the draft string keeps
@@ -280,7 +278,7 @@ export function editorNodes(
   return out;
 }
 
-// -- the @ autocomplete's path law --
+// the @ autocomplete's path law
 
 // mentionDirOf extracts the token's directory part. Prefix tokens never reach here (the
 // composer branches on session:/skill: first).

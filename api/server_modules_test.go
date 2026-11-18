@@ -45,7 +45,7 @@ func fakeModule(name, state string, toggleable bool) core.ModuleStatus {
 	return core.ModuleStatus{Name: name, State: state, Provides: []string{name}, Toggleable: toggleable}
 }
 
-// contains reports whether the body carries substr (the local helper.
+// contains reports whether the body carries substr.
 func contains(body, substr string) bool { return strings.Contains(body, substr) }
 
 // stringBody wraps a JSON literal in an io.Reader for httptest.
@@ -53,7 +53,7 @@ func stringBody(s string) io.Reader { return strings.NewReader(s) }
 
 func TestModulesListHidesEngineRing(t *testing.T) {
 	// http_channel is shell: never in the list. A dead module
-	// name the host still filters is proven by the never-list scan.
+	// name the host still filters is verified by the never-list scan.
 	fm := &fakeModules{mods: []core.ModuleStatus{
 		fakeModule("kanban", "mounted", true),
 		fakeModule("http_channel", "mounted", false),
@@ -78,7 +78,6 @@ func TestModulesListHidesEngineRing(t *testing.T) {
 }
 
 func TestModulesListCarriesRefusals(t *testing.T) {
-	// Q12: the toggle ledger rides the introspection, the rejection error as text (an.
 	fm := &fakeModules{
 		refusals: []core.Refusal{{Module: "kanban", Seam: "toggle", Predicate: "toggle.enable", Err: errors.New("module \"kanban\" panicked: boom"), At: time.Now()}},
 	}
@@ -278,7 +277,6 @@ func TestRewireRefreshesToolInventory(t *testing.T) {
 	}
 	assertToolsListed(t, s, "kanban.create", false)
 
-	// ..
 	ctx.ToolProviders = []core.ToolProvider{provider}
 	if err := s.rewireSeams(ctx); err != nil {
 		t.Fatalf("rewire after enable: %v", err)
@@ -290,7 +288,7 @@ type fakeToolProvider struct{ tools map[string]core.Tool }
 
 func (f *fakeToolProvider) Tools() map[string]core.Tool { return f.tools }
 
-// assertToolsListed reads the /tools inventory the webui's ToolsList renders and.
+// assertToolsListed reads the /tools inventory the webui's ToolsList renders.
 func assertToolsListed(t *testing.T, s *Server, name string, want bool) {
 	t.Helper()
 	rec := httptest.NewRecorder()

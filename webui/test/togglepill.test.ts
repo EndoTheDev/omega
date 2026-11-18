@@ -34,7 +34,7 @@ const HOSTS: { name: string; path: readonly string[]; apply: string }[] = [
   { name: "McpServers", path: ["harness", "mcp", "ui", "McpServers.vue"], apply: "apply(s" },
 ];
 
-// fnBody slices one `function <name>(..) {..
+// fnBody slices one `function <name>(.) {.
 function fnBody(src: string, name: string): string {
   const start = src.indexOf(`function ${name}(`);
   assert.notEqual(start, -1, `the host carries a ${name} handler`);
@@ -53,13 +53,12 @@ function fnBody(src: string, name: string): string {
 const count = (haystack: string, needle: string): number =>
   haystack.split(needle).length - 1;
 
-// -- the pill: ONE activation, ONE intent -------------------------------
+// the pill: ONE activation, ONE intent -----------------------------
 
 test("the pill is a native button that emits exactly one activation per click", () => {
   const src = read(...PILL);
   assert.match(src, /<button\s[^>]*type="button"/, "the switch is a native button (never a checkbox, never a div)");
   assert.match(src, /@click="emit\('click'\)"/, "the click is the single activation site");
-  // the double-click defect would be back the moment a second emit rides one.
   assert.equal(count(src, "emit('click')"), 1, "exactly one activation emit - never a double-fire");
   assert.ok(!src.includes("@dblclick"), "no dblclick affordance anywhere on the switch");
 });
@@ -69,7 +68,6 @@ test("the pill carries no armed state and no confirm label (the two-click shape 
   assert.ok(!src.includes("confirmLabel"), "no confirm-label prop: a host cannot relabel the button into a question");
   assert.ok(!/armed\s*[?:]/.test(src), "no armed prop / armed-aria branch");
   assert.ok(!src.includes("armed:"), "no armed class binding");
-  // the props that remain: the state, the accessible name, the hover hint, the host's.
   for (const prop of ["state: boolean", "label: string", "hint?: string", "disabled?: boolean"]) {
     assert.ok(src.includes(prop), `the pill declares ${prop}`);
   }
@@ -92,7 +90,7 @@ test("the consequence text rides the accessible name and the title, it is never 
   // carries the label.
   assert.match(src, /:aria-label="accessibleName"/, "the aria is the composed name, not the bare label");
   assert.match(src, /:title="accessibleName"/, "the tooltip is the same composed name (hover text unchanged)");
-  // the BUTTON tag is the wiring under pin (the header comments narrate the dead.
+  // the BUTTON tag is the wiring under pin.
   const tag = src.slice(src.indexOf("<button"), src.indexOf("</button"));
   assert.ok(!tag.includes(':aria-label="label"'), "the bare-label aria cannot come back");
   assert.match(src, /props\.hint \? `\$\{props\.label\} - \$\{props\.hint\}` : props\.label/, "the name folds the hint in when there is one");
@@ -101,12 +99,11 @@ test("the consequence text rides the accessible name and the title, it is never 
   assert.equal(count(src, "emit('click')"), 1, "one activation emit, hint or no hint");
 });
 
-// -- the hosts: one activation, one write -------------------------------
+// the hosts: one activation, one write -----------------------------
 
 for (const host of HOSTS) {
   test(`${host.name}: one activation is one write (no arm branch, no confirm gate)`, () => {
     const src = read(...host.path);
-    // comments in these handlers narrate the dead arm step.
     const body = fnBody(src, "onToggle").replace(/\/\/[^\n]*/g, "");
     assert.ok(!body.includes("armed"), "the handler carries no arm branch");
     // exactly one application site.
@@ -145,7 +142,6 @@ test("the no-toggle row still refuses: its row emits nothing, one click or two",
 });
 
 test("the consequence text is still reachable: the two informed hosts pass it as a hint", () => {
-  // registry rows (skills/tools/agents) and module rows keep their exclusion text.
   const registry = read(...["webui", "app", "components", "RegistryList.vue"]);
   assert.match(registry, /:hint="toggleHint\(r\)"/, "registry rows hint the exclusion consequence");
   assert.match(registry, /registryNote\(props\.kind/, "the hint is the pinned registryNote text");

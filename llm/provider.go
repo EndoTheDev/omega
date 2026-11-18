@@ -68,7 +68,7 @@ type (
 // ThinkingLevels is the ordered list of thinking levels the user can cycle through.
 var ThinkingLevels = []string{"none", "off", "on", "minimal", "low", "medium", "high", "extra high", "max", "ultra"}
 
-// ThinkingEnabled returns true if the level enables thinking (anything except "none".
+// ThinkingEnabled returns true if the level enables thinking.
 func ThinkingEnabled(level string) bool {
 	return level != "" && level != "none" && level != "off"
 }

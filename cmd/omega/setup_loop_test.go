@@ -214,8 +214,7 @@ func TestRequireConfigGate(t *testing.T) {
 	}
 }
 
-// TestNoConfigRefusesForCLI is the whole-surface fresh-install proof at the dispatcher
-// level.
+// TestNoConfigRefusesForCLI is the whole-surface fresh-install proof.
 func TestNoConfigRefusesForCLI(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 
@@ -258,7 +257,7 @@ func newTestLoop(t *testing.T) (*cliLoop, *bytes.Buffer) {
 	return lo, buf
 }
 
-// stripANSI strips the loop's escape codes so assertions read the text, not the.
+// stripANSI strips the loop's escape codes so assertions read the text, not.
 func stripANSI(s string) string {
 	var b strings.Builder
 	for i := 0; i < len(s); i++ {

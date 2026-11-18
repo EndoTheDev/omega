@@ -7,7 +7,7 @@ package api
 //     no store and no logger upgrade serves exactly what it served
 //     before the facts existed - the wire stays additive.
 //  2. sourced = the real value on the shared body (GET /health and the
-//     pushed health topic are one body by law, so one shape is proven
+// pushed health topic are one body by law, so one shape is verified
 //     once).
 //  3. the provider probe is CACHED: reading health never probes. Five
 //     reads after one probe leave the provider's call count at one.
@@ -58,7 +58,7 @@ type pingingStore struct {
 
 func (s pingingStore) Ping(context.Context) error { return s.err }
 
-// plainStore carries no Ping: the health body must then carry no database fact at all.
+// plainStore carries no Ping: the health body must then carry no database fact.
 type plainStore struct{ agent.StoreProvider }
 
 // lastErrLogger carries the optional LoggerLastError upgrade.
@@ -87,7 +87,7 @@ func (quietLogger) Warnf(string, ...any)  {}
 func (quietLogger) Errorf(string, ...any) {}
 func (quietLogger) Close() error          { return nil }
 
-// probeServer builds a shell server whose agent streams from stub (the newTestServer.
+// probeServer builds a shell server whose agent streams from stub.
 func probeServer(stub agent.Provider) *Server {
 	a := agent.NewAgent(stub, nil, 0)
 	a.SetLoopProvider(testLoop{})
@@ -138,7 +138,7 @@ func TestHealthUnsourcedShapeUnchanged(t *testing.T) {
 	}
 }
 
-// TestHealthProviderFact: a failed model-list probe is an unreachable provider with.
+// TestHealthProviderFact: a failed model-list probe is an unreachable provider.
 func TestHealthProviderFact(t *testing.T) {
 	stub := &probeProvider{err: errString("dial tcp: connection refused")}
 	s := probeServer(stub)

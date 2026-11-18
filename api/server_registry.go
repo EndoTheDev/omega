@@ -1,21 +1,7 @@
 package api
 
-// server_registry.go: the registry-browser toggle surface (v0.14.1).
-//
-// GET /disabled the three disabled lists (skills/tools/agents)
-// PUT /disabled/skills {"name": x, "enabled": bool} -> prompt-build exclusion
-// PUT /disabled/tools {"name": x, "enabled": bool} -> registry exclusion
-// PUT /disabled/agents {"name": x, "enabled": bool} -> roster + wake exclusion
-//
-// The settings pane renders the module seam (/modules); this is its
-// sibling for the file/folder REGISTRIES: the host owns config.yaml's
-// `disabled:` fold through core.RegistryToggles - this file renders
-// nothing but the wire (the server-toggle small law, same shape the
-// module surface rode in on). A host without the seam (nil) answers
-// 501 so the tabs can hide their toggles. The channel's own agent
-// re-reads the fresh lists in the toggle's response - the same
-// Context-stays-source-of-truth law RefreshToolProviders carries, one
-// response carries the state so no second GET is needed.
+// server_registry.go: the registry-browser toggle surface (v0.14.1). A host without the
+// seam (nil) answers 501 so the tabs can hide their toggles.
 
 import (
 	"encoding/json"
@@ -106,7 +92,6 @@ func (s *Server) handleDisabledToggle(w http.ResponseWriter, r *http.Request, to
 		http.Error(w, err.Error(), statusForToggleRefusal(err))
 		return
 	}
-	// The live half of the toggle.
 	if s.Agent() != nil {
 		s.Agent().SetDisabledTools(s.Registries().Disabled().Tools)
 	}

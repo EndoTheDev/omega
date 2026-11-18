@@ -77,7 +77,7 @@ function tabIds(tree: DockNode, paneId: string): string[] {
   return pane ? pane.tabs.map((t) => t.component) : [];
 }
 
-// -- 1.
+// 1.
 
 describe("the gate predicate: module-owned AND off", () => {
   it("hides a module-owned dockable whose module is off", () => {
@@ -103,7 +103,7 @@ describe("the gate predicate: module-owned AND off", () => {
   });
 });
 
-// -- 2.
+// 2.
 
 describe("the owned set is DERIVED from the composition manifests", () => {
   it("unions modulePanels + moduleTabs and invents no id", () => {
@@ -114,7 +114,7 @@ describe("the owned set is DERIVED from the composition manifests", () => {
   });
 
   it("the real manifests own the capsule panes and NOT the shell's", () => {
-    // the generated files on disk (nuxt prepare wrote them) - the gate must read the.
+    // the generated files on disk (nuxt prepare wrote them) - the gate must read.
     const panelsSrc = read("webui", "app", "composables", "module-panels.generated.ts");
     const tabsSrc = read("webui", "app", "composables", "module-tabs.generated.ts");
     const modulesOf = (src: string) =>
@@ -140,7 +140,7 @@ describe("the owned set is DERIVED from the composition manifests", () => {
   });
 });
 
-// -- 3.
+// 3.
 
 describe("parkGatedTabs: the chip leaves, the seat is remembered", () => {
   it("removes the gated tab and keeps the rest in order", () => {
@@ -183,7 +183,7 @@ describe("parkGatedTabs: the chip leaves, the seat is remembered", () => {
   });
 });
 
-// -- 4.
+// 4.
 
 describe("reseatParkedTabs: the chip comes back where it sat", () => {
   it("re-seats into the recorded pane and index on remount", () => {
@@ -207,7 +207,7 @@ describe("reseatParkedTabs: the chip comes back where it sat", () => {
     const tree = shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 }));
     const res = reseatParkedTabs(tree, parked, gateOf(["skills"], []));
     assert.deepEqual(tabIds(res.tree, "p-right"), ["skills", "files"]);
-    // no home pane in the tree: the seat stays parked, never minted into a pane the.
+    // no home pane in the tree: the seat stays parked, never minted into a pane.
     const noLeft = reseatParkedTabs(
       shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 })),
       [{ component: "cron", pane: "p-gone", index: 0 }],
@@ -232,7 +232,7 @@ describe("reseatParkedTabs: the chip comes back where it sat", () => {
   });
 });
 
-// -- 5.
+// 5.
 
 describe("parseParkedTabs: a lenient reader", () => {
   it("reads the seats it wrote", () => {
@@ -256,7 +256,7 @@ describe("parseParkedTabs: a lenient reader", () => {
   });
 });
 
-// -- 6.
+// 6.
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -308,7 +308,6 @@ describe("createDock: the gate is part of the store", () => {
     const second = createDock(store as unknown as Storage);
     second.setModuleGate(gateOf(["cron"], ["cron"]));
     assert.equal(findComponentTab(second.tree.value, "cron"), null);
-    // ..
     second.setModuleGate(gateOf(["cron"], []));
     assert.notEqual(findComponentTab(second.tree.value, "cron"), null);
   });
@@ -321,7 +320,7 @@ describe("createDock: the gate is part of the store", () => {
   });
 });
 
-// -- 6b.
+// 6b.
 
 describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
   it("a seat parked behind a CLOSED edge reseats on reveal", () => {
@@ -332,10 +331,8 @@ describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
     assert.ok(strip, "boot seats the inspector shell");
     const before = tabIds(dock.tree.value, strip.id);
 
-    // 1.
     dock.setModuleGate(gateOf(["skills"], ["skills"]));
     assert.equal(findComponentTab(dock.tree.value, "skills"), null);
-    // 2.
     dock.toggleEdge("inspector", "after");
     assert.equal(findEdgePane(dock.tree.value, "inspector"), null, "the edge is closed");
     // 3. skills comes back while the strip is hidden: no live pane hosts it,
@@ -380,7 +377,7 @@ describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
   });
 });
 
-// -- 7. the surfaces that must NOT be gated --------------------------------
+// 7. the surfaces that must NOT be gated ------------------------------
 
 describe("the shell's own panes stay outside the gate", () => {
   it("app.vue derives the owned set from the manifests and passes the live off set", () => {

@@ -23,7 +23,6 @@ const CAPSULE_NOUNS = [
   "mcp",
   "tools",
   "files", // card t_48eeb015: the file explorer rides out of the shell
-  // (the shell-ring shrink wave 2).
   "sessions",
   "agents",
   "insights",
@@ -75,9 +74,7 @@ describe("capsule noun law (webui)", () => {
     );
   });
 
-  // (the shell-ring shrink wave 3).
   it("agent/api/ carries no capsule-nouned production file", () => {
-    // /tools is base vocabulary here.
     const apiNouns = CAPSULE_NOUNS.filter((n) => n !== "tools");
     const goFiles = walkComponents(join(root, "..", "agent", "api"), "")
       .filter((p) => p.endsWith(".go") && !p.endsWith("_test.go"));
@@ -99,7 +96,7 @@ describe("capsule noun law (webui)", () => {
   });
 });
 
-// -- the two manifests (the codegen's panel/tab partition) --------------
+// the two manifests (the codegen's panel/tab partition) ------------
 
 // module name extraction: the generated list's `{ module: "x" }` entries
 function manifestModules(rel: string): string[] {

@@ -15,8 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newStopTestServer wires the real loop over a silent scripted provider and an
-// in-memory store.
+// newStopTestServer wires the real loop over a silent scripted provider.
 func newStopTestServer(t *testing.T) (*Server, *store.Store, *httptest.Server) {
 	t.Helper()
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("never")})
@@ -82,8 +81,6 @@ func TestUserStopAbandonsPendingAndDropsWakes(t *testing.T) {
 		t.Fatalf("queued wake results left after the stop: %d", queued)
 	}
 
-	// The killed call settles late (its result arrives after the cancel), and a drain
-	// runs.
 	s.wakeHome("s1", core.YieldResult{
 		ToolCallID: "call_71lhf7os", ToolName: "shell.run",
 		Content: "FAIL github.com/EndoTheDev/omega/agent", IsError: true, Timestamp: core.NowISO(),
@@ -92,12 +89,10 @@ func TestUserStopAbandonsPendingAndDropsWakes(t *testing.T) {
 	if n := s.wakeLaunchCount("s1"); n != 0 {
 		t.Fatalf("wake launches after the stop = %d, want 0 - the cancelled turn re-entered the loop", n)
 	}
-	// The synthetic slot is still the session's only run.
 	if cur, live := s.runs.get("s1"); !live || cur != run {
 		t.Fatal("a wake run took the stopped session's slot")
 	}
 
-	// Nothing settled into the transcript either.
 	msgs, err := st.GetMessages(context.Background(), "s1")
 	if err != nil {
 		t.Fatalf("get messages: %v", err)
@@ -141,7 +136,6 @@ func TestUserStopLeavesNoContinueNote(t *testing.T) {
 		}
 	}
 
-	// Control: the identical sink on a re-armed home still notes, so the silence above.
 	s.runs.rearm("s1")
 	if err := (&wakeNoteSink{s: s, id: "s1"}).AppendTurnMessage(ctx, core.NewAssistant("")); err != nil {
 		t.Fatalf("append after rearm: %v", err)
@@ -225,7 +219,6 @@ func TestCancelMidTurnDropsSettledResultAndKillsTheCall(t *testing.T) {
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// Run 1: dispatch the long call.
 	resp, cancel, sc := postChatStream(t, ts, "s1")
 	readFrames(t, sc, "agent_end", 1)
 	detachClient(cancel, resp)
@@ -243,7 +236,6 @@ func TestCancelMidTurnDropsSettledResultAndKillsTheCall(t *testing.T) {
 		return hangStarted
 	})
 
-	// The user presses stop - the reported intent.
 	stopResp, err := http.Post(ts.URL+"/sessions/s1/stop", "application/json", nil)
 	if err != nil {
 		t.Fatalf("stop request: %v", err)

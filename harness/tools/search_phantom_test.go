@@ -59,9 +59,9 @@ func TestGrepReadsLiveFilesystemNoIndex(t *testing.T) {
 	}
 }
 
-// TestGrepContentRowsAreOneBased: the row format is path:line: text and the line is a
-// real 1-based file line. The probe's red flag was a fabricated "line 0 / column -1"
-// table; this pins the real shape so a malformed row can never be served silently.
+// TestGrepContentRowsAreOneBased: the row format is path:line: text and the line is.
+// The probe's red flag was a fabricated "line 0 / column -1" table; this pins the real
+// shape so a malformed row can never be served silently.
 func TestGrepContentRowsAreOneBased(t *testing.T) {
 	cases := []struct {
 		name    string

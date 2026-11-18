@@ -12,7 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// mountedPanelPlugin mounts a plugin (explicit config + temp home) and returns the.
+// mountedPanelPlugin mounts a plugin (explicit config + temp home) and returns.
 func mountedPanelPlugin(t *testing.T, jobs ...Job) (*core.Context, *Plugin) {
 	t.Helper()
 	home := t.TempDir()
@@ -68,7 +68,7 @@ func TestCapsulePanelDeclaresJobs(t *testing.T) {
 	}
 }
 
-// TestHotReloadPushesPanelDelta: a crons.yaml reload (the module's one internal.
+// TestHotReloadPushesPanelDelta: a crons.yaml reload.
 func TestHotReloadPushesPanelDelta(t *testing.T) {
 	ctx, p := mountedPanelPlugin(t, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
 	var deltas []core.Panel
@@ -105,7 +105,7 @@ func TestHotReloadPushesPanelDelta(t *testing.T) {
 	if !found {
 		t.Fatalf("reload pushed no refreshed jobs panel (deltas=%d): %+v", len(deltas), deltas)
 	}
-	// the snapshot converges on the same state (applyDelta replaces in place.
+	// the snapshot converges on the same state.
 	panel, ok := findPanel(canvas.Snapshot(), jobsPanelID)
 	if !ok {
 		t.Fatal("jobs panel missing after reload")
@@ -160,7 +160,7 @@ func TestCapsuleActionsAreReadOnly(t *testing.T) {
 	}
 }
 
-// jsonOf marshals a panel payload through its wire serialization (the same law.
+// jsonOf marshals a panel payload through its wire serialization.
 func jsonOf(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {

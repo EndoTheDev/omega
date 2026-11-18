@@ -376,7 +376,6 @@ func TestCloneAgentMaterializesEverything(t *testing.T) {
 	if got := loadProfile(home, "scout").Description; got != "probe duty" {
 		t.Errorf("clone edit leaked into the source (%q)", got)
 	}
-	// Clone + delete is the rename path.
 	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
 		t.Fatal(err)
 	}
@@ -507,8 +506,7 @@ func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 	}
 }
 
-// TestCloneAgentFromMainCarriesItsSchedules pins the same completeness for a clone of
-// main.
+// TestCloneAgentFromMainCarriesItsSchedules pins the same completeness for a clone.
 func TestCloneAgentFromMainCarriesItsSchedules(t *testing.T) {
 	home := scratchHome(t)
 	installStubSnapshot(t)

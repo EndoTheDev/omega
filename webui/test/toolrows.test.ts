@@ -15,7 +15,7 @@ import {
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// -- parseToolDisplay: the localStorage round-trip --
+// parseToolDisplay: the localStorage round-trip
 
 test("parseToolDisplay accepts only the two non-default modes", () => {
   assert.equal(parseToolDisplay("expanded"), "expanded");
@@ -32,7 +32,7 @@ test("parseToolDisplay falls back to auto on missing/tampered values", () => {
   assert.equal(parseToolDisplay({ auto: true }), "auto");
 });
 
-// -- toolRowWantOpen: the auto state machine --
+// toolRowWantOpen: the auto state machine
 
 test("expanded/collapsed force one state regardless of status", () => {
   for (const status of ["running", "done", "error", "unknown-status"]) {
@@ -45,11 +45,10 @@ test("auto expands a running row, collapses a settled one", () => {
   assert.equal(toolRowWantOpen("running", "auto"), true);
   assert.equal(toolRowWantOpen("done", "auto"), false);
   assert.equal(toolRowWantOpen("error", "auto"), false);
-  // anything not literally running is settled.
   assert.equal(toolRowWantOpen("", "auto"), false);
 });
 
-// -- structural wiring: the card's must-haves in the components --
+// structural wiring: the card's must-haves in the components
 
 test("the shared mode key persists under omega.tool-display", () => {
   assert.equal(TOOL_DISPLAY_KEY, "omega.tool-display");
@@ -59,7 +58,6 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
   const t = src("components/chat/ToolCallLine.vue");
   // the element must be reachable.
   assert.match(t, /<details\s+ref="el"/);
-  // the pin: a summary click records the post-toggle state and auto recompute (mount.
   assert.match(t, /@click="onSummaryClick"/);
   assert.match(t, /pinned\.value = !el\.value\.open/);
   assert.match(t, /applyAuto\(\) \{\s*\n\s*if \(pinned\.value !== null \|\| !el\.value\) return/);
@@ -75,7 +73,6 @@ test("ChatMessage copies the RAW message content, never rendered HTML", () => {
   assert.doesNotMatch(m, /navigator\.clipboard/);
   // the copy glyph must not bubble into bubble-level handlers
   assert.match(m, /@click\.stop="copyMessage"/);
-  // the payload is the source prop.
   assert.doesNotMatch(m, /innerText|innerHTML/);
 });
 
@@ -90,7 +87,7 @@ test("the settings knob is a client chat select with the three modes", () => {
   assert.match(a, /const toolDisplay = useToolDisplay\(\)/);
   assert.match(a, /localStorage\.setItem\(TOOL_DISPLAY_KEY, mode\)/);
 });
-// -- the smart gate's decision record --
+// the smart gate's decision record
 // The gate's verdict stamp rides the tool_result; ToolCallLine renders
 // it on the call's own row, verbatim. Layers:
 // pure: both wire sources (transcript restore + canvas panel rows)
@@ -161,7 +158,6 @@ test("the canvas panel path rides the gate stamp onto the call row", async () =>
 
 test("ToolCallLine renders the gate record inside the call's entry; ChatItem passes it", () => {
   const line = src("components/chat/ToolCallLine.vue");
-  // the record renders from the stamp prop, verbatim.
   assert.match(line, /gate\?: string/);
   assert.match(line, /v-if="gate"\s+class="tool-gate">\{\{ gate \}\}/);
   assert.doesNotMatch(line, /gate.*@click|button[^\n]*gate/i);

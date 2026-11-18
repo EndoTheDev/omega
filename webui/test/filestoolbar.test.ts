@@ -247,7 +247,6 @@ describe("the band contract (structural pins, no DOM)", () => {
     // the backend error string must never become a child row - the leak Endo caught.
     assert.doesNotMatch(tree, /errorOf/, "no error-of accessor reaches the template");
     assert.ok(!/\{\{\s*error/.test(tree), "no error text interpolates in the tree");
-    // the refusal is a no-op + one fixed-phrase hint via the local toast funnel.
     const treeStore = read("app/composables/filetree.ts");
     assert.match(treeStore, /folder failed to load/, "the fixed-phrase hint");
     assert.match(treeStore, /emitLocalToast\(FAILURE_TOAST\)/, "the hint rides the local funnel");

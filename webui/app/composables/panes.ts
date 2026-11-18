@@ -1,6 +1,6 @@
 // omega webui: pure pane math shared by the divider and the app shell.
 
-// the snap ladder is every +320 from 320 (320, 640, 960, 1280,..
+// the snap ladder is every +320 from 320.
 export const SNAP_STEP = 320;
 export const SNAP_ZONE = 15;
 
@@ -24,8 +24,7 @@ export function snapCandidate(px: number): number | null {
 }
 
 /**
- * the ladder's rungs up to maxPx, inclusive - tests and callers that want the target
- * set.
+ * the ladder's rungs up to maxPx, inclusive - tests and callers that want the target.
  */
 export function snapLadder(maxPx: number): number[] {
   const rungs: number[] = [];
@@ -45,7 +44,7 @@ export function travelSnapAt(startPx: number, intended: number, step: number): n
   return rung !== null && rung !== startRung ? rung : null;
 }
 
-// -- THE PANE ZONES (canvas C1, the class law) ------------------------------- A.
+// THE PANE ZONES (canvas C1, the class law) -------------------------------.
 
 /** the four seats of the shell. */
 export type PaneZone = "left" | "right" | "main" | "bottom";
@@ -80,7 +79,7 @@ export function splitFitsZone(zone: PaneZone, direction: SplitDirection): boolea
 
 /**
  * the zone's name in the UI's voice - a refusal line names the seat it refused ("main
- * pane", "primary sidebar"), never a raw marker
+ * pane", "primary sidebar"), never a raw marker / /
  */
 export function zoneLabel(zone: PaneZone): string {
   switch (zone) {

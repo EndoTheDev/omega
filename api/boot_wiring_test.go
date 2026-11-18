@@ -70,7 +70,6 @@ func TestBootWiringKeepsEngineRingInHandlers(t *testing.T) {
 		t.Fatalf("boot dispatched into unknown module: %v (the incident)", derr)
 	}
 
-	// 2.
 	panel := core.Panel{
 		ID:      "chat",
 		Title:   "Chat",

@@ -141,7 +141,7 @@ func TestNewBridgeFromEnvBadConfig(t *testing.T) {
 	}
 }
 
-// TestNewBridgeFromEnvToolDiscovery verifies env-configured tools end up in the.
+// TestNewBridgeFromEnvToolDiscovery verifies env-configured tools end up.
 func TestNewBridgeFromEnvToolDiscovery(t *testing.T) {
 	// ponytail: connect has no injection point for test conns, so this exercises. The
 	// bridge must still be usable and the failure must be non-fatal.

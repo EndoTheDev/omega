@@ -27,7 +27,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 
-// helpers -----------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -102,7 +102,7 @@ function grownRoot(): { tree: DockNode; contentPx: number } {
   return { tree: t, contentPx };
 }
 
-// D1: the left pane's floor in the both-flexible branch ----------------------
+// D1: the left pane's floor in the both-flexible branch --------------------
 
 describe("both-flexible divider: the left pane floors at ITS contract floor (card t_8bcbe72e)", () => {
   it("a flexible chat pane on the LEFT stops at 320, never 128", () => {
@@ -140,7 +140,7 @@ describe("both-flexible divider: the left pane floors at ITS contract floor (car
   });
 });
 
-// D2: the reveal refuses when the result cannot fit ---------------------------
+// D2: the reveal refuses when the result cannot fit -------------------------
 
 describe("revealEdgePane fit-check (card t_8bcbe72e)", () => {
   it("refuses when minDockPx(after) > contentPx: the SAME tree comes back", () => {
@@ -196,7 +196,7 @@ describe("revealEdgePane fit-check (card t_8bcbe72e)", () => {
   });
 });
 
-// the store-level toggle: refusal before ANY state mutates -------------------
+// the store-level toggle: refusal before ANY state mutates -----------------
 
 describe("toggleEdge refusal - zero churn (card t_8bcbe72e)", () => {
   it("the toggle no-ops under overflow: no tree change, no record write, no hiddenEdges mutation", async () => {

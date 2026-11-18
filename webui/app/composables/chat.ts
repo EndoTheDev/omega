@@ -77,7 +77,7 @@ export interface ChatState {
   forkFrom: string | null;
   // the run that just ended (or is ending) on this state, and WHY it ended - the
   // agent_end frame's finish_reason (async agent loop phase 3): "yielded" names a run
-  // whose last call went out-of-band, and the pending watcher arms on exactly that.
+  // whose last call went out-of-band, and the pending watcher arms on exactly.
   lastFinishReason: string;
   // ephemeral chat: this tab's session is a NO-PERSIST `eph-` session. Close deletes
   // the server record (the contract: close = gone). Retry/fork/ variants never exist
@@ -93,8 +93,7 @@ export interface ChatState {
 }
 
 /**
- * EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a composer-first
- * ephemeral tab.
+ * EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a composer-first.
  * Never a real session id - the registry namespace prefix is `eph-`.
  */
 export const EPHEMERAL_DRAFT_REF = "ephemeral";
@@ -133,20 +132,15 @@ export interface CommandSend {
 // the app-level callbacks the host needs.
 export interface ChatHostDeps {
   setTabSessionRef(key: string, sessionId: string | null): void;
-  /** sidebar refresh: fetches sessions, feeds the row list + the server-active set. */
   refreshSessions(): void | Promise<void>;
-  /** the refreshed session row for an id (the durable telemetry + the label read). */
   sessionRow(sessionId: string): Session | undefined;
   markRead(sessionId: string): void;
   /**
-   * whether THIS state key is the app's focused chat tab (the stream end only unreads.
+   * whether THIS state key is the app's focused chat tab.
    */
   isFocused(key: string): boolean;
-  /** one canvas panel delta arrived on a run stream (arc 3c). */
   canvasDelta?(panel: CanvasPanel): void;
-  /** the canvas' chat panel descriptor (the renderer's one streaming source). */
   chatPanel?(): CanvasPanel | null;
-  /** the canvas snapshot refetch. */
   canvasRefresh?(): void | Promise<void>;
   /**
    * the webui shell command handler: /theme /fork /retry /variant /copy /new /sessions
@@ -171,7 +165,7 @@ export interface ChatHost {
    */
   load(key: string, sessionId: string): Promise<void>;
   /**
-   * subscribe to the session's live run for THIS tab's state (the duplicate-tab path.
+   * subscribe to the session's live run for THIS tab's state.
    */
   attach(key: string): Promise<void>;
   /**
@@ -189,7 +183,7 @@ export interface ChatHost {
   ): Promise<boolean>;
   attachFiles(key: string, images: OmegaImage[]): void;
   /**
-   * upload picked NON-IMAGE files to /attach-file and park the returned references in.
+   * upload picked NON-IMAGE files to /attach-file and park the returned references.
    * A failure lands in statusLine, never a throw.
    */
   attachFileRefs(key: string, files: File[]): Promise<void>;
@@ -198,12 +192,11 @@ export interface ChatHost {
   /** server-side fetch of an image URL into this tab's attachments */
   attachUrl(key: string, url: string): Promise<void>;
   /**
-   * set / clear the composer's FORK anchor (the view resolved the target against the.
+   * set / clear the composer's FORK anchor.
    */
   setFork(key: string, messageId: string | null): void;
   /** replay a USER-turn anchor immediately (fork of a user message reruns that turn. */
   replayFork(key: string, messageId: string, model?: string, thinking?: number): Promise<void>;
-  /** variant navigation: select the 0-based sibling at a branch point, refresh the. */
   selectVariant(key: string, messageId: string, index?: number): Promise<boolean>;
   /** stop THIS tab's bound session's live run. */
   cancel(key: string): void;
@@ -213,17 +206,14 @@ export interface ChatHost {
    * ctx.CommandHandler chain and the skill content arm - never the agent loop).
    */
   command(key: string, text: string, send?: CommandSend): Promise<boolean>;
-  /** retry: the chat panel's retry action through the pipe. */
   retry(key: string): Promise<boolean>;
-  /** the composer's busy bit for one tab. */
   composerBusy(key: string): boolean;
-  /** a tab (or an orphaned state) stopped being rendered. */
   closeState(key: string): void;
   closeSession(sessionId: string): void;
   /** refreshSessions feeds the server-reported active rows in */
   noteServerActive(ids: string[]): void;
   /**
-   * one runs-topic edge: a session's live-run truth moved (busy pulse + the pending.
+   * one runs-topic edge: a session's live-run truth moved.
    */
   noteRunState(session: string, active: boolean): void;
   /** one chat-topic frame for the tabs NOT attached to that run's stream */
@@ -231,11 +221,10 @@ export interface ChatHost {
   /** the socket came back: refetch every open pane through the GET routes */
   reconnectCatchUp(): Promise<void>;
   /**
-   * the boot backfill: seed the JUST-LOADED server.default_workspace onto the.
+   * the boot backfill: seed the JUST-LOADED server.default_workspace onto.
    * Boot-time, idempotent.
    */
   seedDefaultWorkspace(path: string): void;
-  /** the refreshed session row for an id, re-exposed from the deps. */
   sessionRow(sessionId: string): Session | undefined;
 }
 
@@ -250,7 +239,7 @@ export const FOCUSED_SESSION_EVENT = "omega:focused-session";
 /** the module->shell PULL for that same id. */
 export const FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session";
 
-// -- the ONE composer button's face --- stop and send stay in ONE morphing affordance.
+// the ONE composer button's face --- stop and send stay in ONE morphing affordance.
 
 export type ComposerFace = "stop" | "send";
 
@@ -261,26 +250,26 @@ export function composerFace(
   return "send";
 }
 
-// -- the activity line --- Phase-aware narration for the line above the composer.
+// the activity line --- Phase-aware narration for the line above the composer.
 
 export interface ActivityPhase {
   /**
    * stable identity - the component restarts its elapsed meter ONLY when this changes
-   * (content deltas recompute but never move it)
+   * (content deltas recompute but never move it) / /
    */
   key: string;
   label: string;
   /**
    * elapsed ALREADY CONSUMED at observation: a restored still-running tool counts on
    * from the server's elapsed-so-far (live-run merge), the same initialMs contract the
-   * ToolCallLine meter runs on
+   * ToolCallLine meter runs on / /
    */
   initialMs?: number;
 }
 
-// findMessageItem locates a rendered MESSAGE item by its store row id (the variants
-// surface's address. Canvas-mapped items carry ids for stored rows, live rows carry
-// none and are never found here.
+// findMessageItem locates a rendered MESSAGE item by its store row id.
+// Canvas-mapped items carry ids for stored rows, live rows carry none and are never
+// found here.
 export function findMessageItem(
   items: TranscriptItem[],
   id: string,
@@ -316,7 +305,6 @@ export function activityPhase(
       streaming = item;
     }
   }
-  // a running tool outranks the streaming items.
   if (tool) {
     const name = tool.name || "tool";
     return {
@@ -331,7 +319,6 @@ export function activityPhase(
   if (streaming) {
     return { key: "responding", label: "responding" };
   }
-  // busy with nothing narrated yet.
   return { key: "thinking", label: "thinking" };
 }
 
@@ -357,13 +344,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     () => busyAll.value.size > 0 || busyKeys.value.size > 0,
   );
 
-  // the loaded server.default_workspace (live getter.
+  // the loaded server.default_workspace.
   const defaultWorkspace = () => deps.defaultWorkspace?.() ?? "";
 
   function seedDefaultWorkspace(path: string) {
     if (!path) return;
     for (const st of states.values()) {
-      // unbound, non-ephemeral, still blank.
       if (!st.sessionId && !st.ephemeral && st.workspaceIntent === "")
         st.workspaceIntent = path;
     }
@@ -415,8 +401,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     serverBusy.value = new Set(ids);
   }
 
-  // -- the push channel's chat-host surface ----------- noteRunState is the runs
-  // topic's edge.
+  // the push channel's chat-host surface ----------- noteRunState is the runs.
   function noteRunState(session: string, active: boolean) {
     if (!session) return;
     serverBusy.value = withBusy(serverBusy.value, session, active);
@@ -459,10 +444,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     await Promise.all(loads);
   }
 
-  // makeTransportHandlers builds the SSE handler set one stream runs with.
+  // makeTransportHandlers builds the SSE handler set one stream runs.
   function makeTransportHandlers(st: ChatState): StreamHandlers {
     const sentAt = Date.now();
-    // a fresh stream takes the meters over.
     st.tokens = 0;
     st.tokensPerSecond = 0;
     st.liveDeltasPerSecond = 0;
@@ -471,7 +455,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // each run states its own ending (async agent loop phase 3): the yielded flag from
     // a PREVIOUS run must not arm the pending watcher off this one's streams
     st.lastFinishReason = "";
-    // the delta rate meter: arrival times of the panel repaints (the canvas cadence.
     const deltaTimes: number[] = [];
     const meter = (payload: ChatPayloadWire | null) => {
       const now = Date.now();
@@ -479,7 +462,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       while (deltaTimes.length && now - (deltaTimes[0] ?? now) > 1000) deltaTimes.shift();
       st.liveDeltasPerSecond = deltaTimes.length;
       if (payload) {
-        // the streaming token estimate rides the panel content the deltas carry.
         st.tokens = Math.ceil(chatPanelContent(payload) / 4);
       }
     };
@@ -517,12 +499,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     }
   }
 
-  // -- the pending watcher (async agent loop phase 3, rulings 6/7) --- A yielded run
-  // ENDED. The origin /chat stream is over, so without a subscriber the wake's
-  // view_model_delta frames land on nobody and the pending chip never fills. One arming
-  // probe per wait covers the edge that fired in the gap between the view's fetch and
-  // the arming; one budget deadline retires a waiter whose wake never comes (a parked
-  // home, a page that lost the socket) and the next reconnect catch-up re-arms it.
+  // the pending watcher (async agent loop phase 3, rulings 6/7) --- A yielded run. The
+  // origin /chat stream is over, so without a subscriber the wake's view_model_delta
+  // frames land on nobody and the pending chip never fills. One arming probe per wait
+  // covers the edge that fired in the gap between the view's fetch and the arming; one
+  // budget deadline retires a waiter whose wake never comes (a parked home, a page that
+  // lost the socket) and the next reconnect catch-up re-arms it.
   const PENDING_WATCH_MS = 30 * 60 * 1000; // cap: the server's run timeout budget
 
   const pendingWaiters = new Map<string, string>(); // state key -> session id
@@ -599,8 +581,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     })();
   }
 
-  // runStream drives one transport interaction (the send's POST /chat or the attach GET
-  // /sessions/<id>/events).
+  // runStream drives one transport interaction.
   async function runStream(st: ChatState, start: (handlers: StreamHandlers) => Promise<unknown>) {
     busyKeys.value = withBusy(busyKeys.value, st.key, true);
     const handlers = makeTransportHandlers(st);
@@ -609,7 +590,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       await start(handlers);
     } catch (e) {
       if (e instanceof StreamInterruptedError) {
-        // transport death mid-stream.
         st.statusLine = "stream interrupted";
       } else if (e instanceof SessionBusyError) {
         // the runHub 409: nothing was run, nothing persisted
@@ -624,11 +604,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.liveDeltasPerSecond = 0;
       // A stream ending on the FOCUSED tab never unreads itself.
       if (st.sessionId && !st.ephemeral && deps.isFocused(st.key)) deps.markRead(st.sessionId);
-      // refresh once the row carries the run's persisted numbers.
       await deps.refreshSessions();
       const row = st.sessionId ? deps.sessionRow(st.sessionId) : undefined;
       if (row) {
-        // the run's persisted totals become the state's idle telemetry.
         const durable = persistedTelemetry(row);
         st.tokens = durable.tokens;
         st.tokensPerSecond = durable.tps;
@@ -641,10 +619,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
           deps.refreshSessions();
         }, TITLE_REFRESH_MS);
       }
-      // variants may have moved (a retry's fresh sibling, a fork's new sub-branch, a
-      // cancel's partial).
       const pendingStill = await refreshVariants(st);
-      // async agent loop phase 3.
       if (!st.orphan && (st.lastFinishReason === "yielded" || pendingStill)) {
         watchPending(st);
       }
@@ -661,7 +636,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     if (busyKeys.value.has(key) || st.attached) return;
     try {
       const detail = await fetchTranscript(sessionId);
-      // durable telemetry straight from the persisted row.
       const durable = persistedTelemetry(detail.session);
       st.tokens = durable.tokens;
       st.tokensPerSecond = durable.tps;
@@ -670,20 +644,16 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // cover: wire-order transcript items rendered onto the same
       // component contract the canvas rows paint through
       st.restored = renderTranscriptItems(detail.items);
-      // the branch points ride the restore.
       st.variants = detail.variants ?? [];
       st.loaded = true;
-      // Reattach: a session mid-generation reports running=true on its transcript.
       if (detail.running && !busyKeys.value.has(key)) {
         st.attached = true;
         await runStream(st, (handlers) => attachSession(sessionId, handlers));
       }
-      // async agent loop phase 3.
       if (!detail.running && transcriptHasPending(st.restored)) {
         watchPending(st);
       }
     } catch {
-      // empty or missing session.
     }
   }
 
@@ -725,7 +695,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // the draft workspace intent rides ONLY the bare create.
     const ws = !st.sessionId && !st.ephemeral ? st.workspaceIntent : "";
     st.workspaceIntent = "";
-    // the anchor is consumed by the send that carries it (cleared only when this.
     if (fork && st.forkFrom === fork) st.forkFrom = null;
     await runStream(st, (handlers) =>
       streamChat(
@@ -768,7 +737,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return false;
     }
     st.statusLine = "";
-    // the replay runs detached.
     if (!st.attached) {
       st.attached = true;
       await runStream(st, (handlers) => attachSession(sessionId, handlers));
@@ -781,7 +749,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.attachments = st.attachments.concat(images);
   }
 
-  // attachFileRefs uploads each picked non-image file to /attach-file and parks the.
+  // attachFileRefs uploads each picked non-image file to /attach-file and parks.
   async function attachFileRefs(key: string, files: File[]): Promise<void> {
     const st = ensureState(key);
     for (const file of files) {
@@ -823,12 +791,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return true;
     }
     try {
-      // the tab's own session rides the dispatch.
       const res = await dispatchCommand(name, args, st.sessionId || "");
       if (res.kind === "skill") {
         st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
         if (send) {
-          // the send: the message posts with the pill'd token.
           await submit(key, text, send.model, send.thinking, send.fork);
           return true;
         }
@@ -992,7 +958,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   };
 }
 
-// -- the canvas transcript (chat-last 2a) --------------------------------
+// the canvas transcript (chat-last 2a) --------------------------------
 // createCanvasTranscript is the pane's render source for the chat panel: it maps the
 // payload's rows onto the components' item shapes, KEEPING ITEM IDENTITY across deltas
 // (a 250ms repaint must not remount every bubble - the tool elapsed meters, the verdict
@@ -1065,7 +1031,6 @@ export function createCanvasTranscript(): CanvasTranscript {
   const slots = new Map<string, TranscriptItem>();
   // the verdict countdowns anchor at MODULE scope on the call id, never here.
 
-  // paint is one apply's working set.
   interface Paint {
     resultIds: ReadonlySet<string>;
     ordinals: Map<string, number>;
@@ -1126,7 +1091,7 @@ export function createCanvasTranscript(): CanvasTranscript {
     return fresh;
   }
 
-  // peek/put: the tool, verdict and result rows are addressed by the same law (a call.
+  // peek/put: the tool, verdict and result rows are addressed by the same law.
   // A persisted item sits in the cache; an ID-LESS one sits in `slots`, so the sweep
   // below retires it with the payload that stopped carrying its row - an id-less row
   // must not hand its object to a later row of its shape either. `live` is passed
@@ -1155,7 +1120,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.role = "user";
       it.content = block.content ?? "";
       it.images = block.images;
-      // the non-image references ride the row's text block.
       it.attachments = block.attachments;
       it.id = row.id;
       // the row's wall clock: the persisted user row's stamp is the turn's START.
@@ -1176,8 +1140,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       return it;
     }
     if (row.role === "tool") {
-      // a result row: merge onto its call item (matched by call id, chronologically
-      // adjacent.
       const target = (block.tool_call_id ? cache.get(`tc:${block.tool_call_id}`) : undefined) ??
         (block.tool_call_id ? cache.get(`verdict:${block.tool_call_id}`) : undefined);
       if (target?.kind === "tool") {
@@ -1186,7 +1148,6 @@ export function createCanvasTranscript(): CanvasTranscript {
         if (block.gate) target.gate = block.gate;
         if (!blockRunning) target.elapsedMs = undefined;
         target.finalMs = block.elapsed_ms;
-        // the response-return window rides the result beside the call duration.
         target.answerMs = block.answer_ms;
         return target;
       }
@@ -1199,7 +1160,6 @@ export function createCanvasTranscript(): CanvasTranscript {
         target.issuedAt = undefined;
         return target;
       }
-      // orphan result (the call row left the newest-40 window).
       const rkey = `result:${rowAddress(row, block, ctx)}`;
       const live = !row.id;
       const it = peek<ToolItem>(rkey, live, ctx) ?? (reactive({ kind: "tool", name: "tool", status: "done" }) as ToolItem);
@@ -1215,9 +1175,7 @@ export function createCanvasTranscript(): CanvasTranscript {
     }
     if (block.type === "tool_call") {
       const callId = block.tool_call?.id;
-      // verdict calls render as cards.
       if (isVerdictTool(block.tool_call?.name)) {
-        // a card without a call id has nothing to settle it.
         const live = !callId && !row.id;
         const vsig = callId ? `verdict:${callId}` : `verdict:${rowAddress(row, block, ctx)}`;
         const cached = peek<VerdictItem>(vsig, live, ctx);
@@ -1249,7 +1207,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       const it = peek<ToolItem>(csig, live, ctx) ?? (reactive({ kind: "tool", name: "tool" }) as ToolItem);
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
-      // the chips topic's join key.
       it.callId = callId;
       // the store id rides the CALL row.
       it.id = row.id;
@@ -1257,7 +1214,7 @@ export function createCanvasTranscript(): CanvasTranscript {
         block.tool_call?.arguments != null ?
           JSON.stringify(block.tool_call.arguments, null, 2)
         : undefined;
-      // async agent loop phase 3: an unanswered call is the PENDING chip, never a.
+      // async agent loop phase 3: an unanswered call is the PENDING chip, never.
       it.status =
         blockRunning ? "running"
         : callId && !resultIds.has(callId) ? "pending"
@@ -1295,7 +1252,6 @@ export function createCanvasTranscript(): CanvasTranscript {
     // key
     const pushed = new Set<TranscriptItem>();
     const rows = payload.rows ?? [];
-    // async agent loop phase 3.
     const resultIds = new Set<string>();
     for (const r of rows) {
       if (r?.role !== "tool") continue;
@@ -1312,9 +1268,8 @@ export function createCanvasTranscript(): CanvasTranscript {
       cache.clear();
       slots.clear();
     }
-    // the shape's LAST ID-BEARING row is the only row that may adopt a live slot (see
-    // lookup). An earlier row of that shape is a different row and must never take the
-    // object.
+    // the shape's LAST ID-BEARING row is the only row that may adopt a live slot.
+    // An earlier row of that shape is a different row and must never take the object.
     const lastIdOfShape = new Map<string, number>();
     rows.forEach((row, i) => {
       const b = row.blocks?.[0];

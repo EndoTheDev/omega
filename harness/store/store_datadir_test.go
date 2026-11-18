@@ -34,7 +34,6 @@ func TestOpenMigratesLegacyHome(t *testing.T) {
 	home := t.TempDir()
 	legacy := filepath.Join(home, "omega.db")
 
-	// Real legacy db at the root (created by a normal open.
 	s0, err := Open(legacy)
 	if err != nil {
 		t.Fatalf("create legacy db: %v", err)

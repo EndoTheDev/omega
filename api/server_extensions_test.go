@@ -45,7 +45,7 @@ func mountRealRegistry(t *testing.T) *agent.Agent {
 	if l, ok := ctx.Services().Resolve("logger").(interface{ Close() error }); ok {
 		t.Cleanup(func() { l.Close() })
 	}
-	// The way the host builds it (agent.NewFromContext does SetExtensionInfos(ctx.Infos).
+	// The way the host builds it.
 	return agent.NewFromContext(ctx, agent.AgentOptions{})
 }
 
@@ -96,13 +96,12 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 			t.Errorf("%s: empty description (module misses agent.Describer?)", row.Name)
 		}
 	}
-	// The skills module mounts a real skills-provider tool: its row must count it, and.
+	// The skills module mounts a real skills-provider tool: its row must count it,.
 	for _, row := range got {
 		if row.Seams == nil {
 			t.Errorf("%s: seams must be an array on the wire, not null", row.Name)
 		}
-		// Expansion detail: the name arrays ride the same wire and must agree with the
-		// counts.
+		// Expansion detail: the name arrays ride the same wire and must agree.
 		if row.ToolNames == nil || len(row.ToolNames) != row.Tools {
 			t.Errorf("%s: tool_names %v, want %d names", row.Name, row.ToolNames, row.Tools)
 		}
@@ -110,7 +109,6 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 			t.Errorf("%s: command_names %v, want %d names", row.Name, row.CommandNames, row.Commands)
 		}
 	}
-	// Skill inventory names ride verbatim.
 	for _, row := range got {
 		if row.Name != "skills" {
 			continue
@@ -263,7 +261,6 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 		t.Fatalf("toggle-on: cron row counts tools=%d commands=%d, want 1/1", cronRow.Tools, cronRow.Commands)
 	}
 
-	// The inventory matches the Context verbatim after every toggle.
 	if got := a.ExtensionInfos(); len(got) != len(ctx.Infos) {
 		t.Fatalf("agent inventory %d rows, ctx.Infos has %d", len(got), len(ctx.Infos))
 	}

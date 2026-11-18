@@ -40,7 +40,7 @@ test("every narrow copy agrees with the shell threshold (shell + all modules)", 
   assert.equal(NARROW_MAX_PX, 360);
 });
 
-// -- component wiring: the contract's shape, per component -----------
+// component wiring: the contract's shape, per component ---------
 
 // [component path, module ("null" = shell-owned), scoped narrow rules that must ship.
 const RETROFIT: Array<{
@@ -98,7 +98,6 @@ for (const entry of RETROFIT) {
     const src = read(modules, ...entry.rel.split("/"));
     assert.match(src, /narrow: narrow/, "the root class binding");
     assert.match(src, /ref="rootEl"/, "the root carries the observe target");
-    // the observer (module-owned copy of the Board's inline block, or the shell.
     if (entry.module === null) {
       assert.match(src, /from "\~\/composables\/narrow"/, "shell-owned: the shell composable");
       assert.match(src, /useNarrow\(rootEl\)/, "the shell composable drives the flip");
@@ -111,7 +110,7 @@ for (const entry of RETROFIT) {
       assert.ok(!src.includes("composables/omega"), "no shell client dependency");
       assert.ok(!src.includes("composables/narrow"), "no shell composable import");
     }
-    // both paths guard the ancient-host + zero-width + rAF lessons (the shell.
+    // both paths guard the ancient-host + zero-width + rAF lessons.
     if (entry.module !== null) {
       assert.match(src, /w > 0/, "zero-width measure noise is never narrow");
       // mount measures NOW: a remount-in-place tab gets no further

@@ -13,7 +13,7 @@ export interface TabDragInfo {
 
 let current: TabDragInfo | null = null;
 
-// -- gesture ownership ------------------------------------ The gesture record is.
+// gesture ownership ------------------------------------ The gesture record is.
 type GestureEndHandler = () => void;
 const gestureEndHandlers = new Set<GestureEndHandler>();
 
@@ -26,7 +26,7 @@ export function onGestureEnd(handler: GestureEndHandler): () => void {
 }
 
 /**
- * the ONE global clear: the gesture record dies and every subscriber (the ghost.
+ * the ONE global clear: the gesture record dies and every subscriber.
  * Idempotent - running with nothing armed still rings the subscribers so a stale
  * highlight never outlives its gesture.
  */
@@ -79,7 +79,7 @@ export const tabDrag = {
   /**
    * a gesture begins: ANY stale record dies first - a new gesture never inherits a
    * poisoned hit-test (the record must never outlive its event, and the first act of
-   * the next event is this overwrite)
+   * the next event is this overwrite) / /
    */
   start(info: TabDragInfo): void {
     endGesture();
@@ -105,7 +105,7 @@ export function dropAllowedFor(
   return seatAllowsIn(drag.component, zoneOfEdge(targetEdge));
 }
 
-// -- docking zones ----------------------------------------- A tab dragged over a.
+// docking zones ----------------------------------------- A tab dragged.
 
 export type DragZone = "left" | "right" | "top" | "bottom" | "center";
 
@@ -123,7 +123,6 @@ export const ZONE_CENTER_BAND = 0.25;
 /** PURE pointer -> zone. */
 export function zoneForPoint(x: number, y: number, rect: ZoneRect): DragZone {
   if (!(rect.w > 0) || !(rect.h > 0)) return "center";
-  // clamp: a pointer marginally outside the measured box (dragleave races) still.
   const rx = Math.min(1, Math.max(0, (x - rect.x) / rect.w));
   const ry = Math.min(1, Math.max(0, (y - rect.y) / rect.h));
   const inX = rx >= ZONE_CENTER_BAND && rx <= 1 - ZONE_CENTER_BAND;
@@ -147,8 +146,7 @@ export function zoneForPoint(x: number, y: number, rect: ZoneRect): DragZone {
 }
 
 /**
- * the overlay rect of a zone as FRACTIONS of the pane body (left/top + width/height,
- * 0.1).
+ * the overlay rect of a zone as FRACTIONS of the pane body.
  */
 export function zoneRectFractions(zone: DragZone): ZoneRect {
   switch (zone) {
@@ -166,8 +164,7 @@ export function zoneRectFractions(zone: DragZone): ZoneRect {
 }
 
 /**
- * PURE pointer -> zone, BOUNDED by the target pane's own zone (canvas C2, the shape
- * law).
+ * PURE pointer -> zone, BOUNDED by the target pane's own zone.
  * Its x axis is not part of the gesture at all, so the left/right halves that would
  * split it into side-by-side columns cannot be entered - the split-sidebar gesture is
  * gone, not refused.

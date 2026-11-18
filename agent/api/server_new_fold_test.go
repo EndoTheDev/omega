@@ -1,6 +1,6 @@
 package api
 
-// server_new_fold_test.go: /new on a conversation the MACHINERY owns. The ruling is one
+// server_new_fold_test.go: /new on a conversation the MACHINERY owns. The rule is one
 // line long - "/new in an agent chat compacts, never forks the relationship" - and it
 // has two halves: the wire answers the fold (fork vs compacted), and the
 // provider-facing history starts at the fold's boundary with the summary heading it.
@@ -92,7 +92,6 @@ func TestSessionNewFoldsMachineryOwned(t *testing.T) {
 		t.Fatal("no context boundary written - the fold did nothing")
 	}
 
-	// The boundary is the tail of the active path.
 	view, err := st.GetActiveView(ctx, "scout-canonical")
 	if err != nil {
 		t.Fatalf("active view: %v", err)
@@ -116,7 +115,7 @@ func TestSessionNewFoldsMachineryOwned(t *testing.T) {
 	}
 }
 
-// TestSessionNewUnknownIs404 pins the miss: an id no store owns is a 404, never a.
+// TestSessionNewUnknownIs404 pins the miss: an id no store owns is a 404, never.
 func TestSessionNewUnknownIs404(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	if code, _ := newFoldCall(t, s, "ghost"); code != http.StatusNotFound {

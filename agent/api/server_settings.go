@@ -13,7 +13,7 @@ import (
 // Config-knob surface for the webui settings pane. A host without the seam (nil
 // settings) answers 501 so the pane can fall back to its client-side settings only.
 
-// handleSettings dispatches GET (read the schema + values, or one knob by ?key=) and.
+// handleSettings dispatches GET (read the schema + values, or one knob by ?key=).
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -64,8 +64,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		payload, err := s.settings.Save(body.Values)
 		if err != nil {
-			// both user-input validation failures and write failures surface as a bad request
-			// with the host's message.
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}

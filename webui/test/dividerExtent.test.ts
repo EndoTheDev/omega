@@ -1,10 +1,10 @@
 // omega webui: unit tests for the divider law
-// ruling: structural dividers run THROUGH;
-// Endo ruling: the COLUMN divider's resting line died - it
+// rule: structural dividers run THROUGH;
+// the COLUMN divider's resting line died - it
 // stacked with the chat card's bottom edge and the tab strip's border-top
 // into three hairlines that read as "lines going through the divider",
 // with the Logs chip sitting on the topmost seam; Endo
-// ruling follow-up: the law is UNIFORM - BOTH orientations
+// rule follow-up: the law is UNIFORM - BOTH orientations
 // rest invisible, the row splits' verticals included). The render-free
 // suite can't measure boxes, so it pins the sheet instead - the family
 // maxheight.test.ts established: parse main.css + bottompanel.css and
@@ -18,7 +18,7 @@
 //   3. no border-radius on the handle (the hover band runs edge-to-edge)
 //   4. hover/snap keep their full-band backgrounds (they ARE the line
 //      while the pointer is on the handle)
-// 5. the gutter bridge is GONE (, Endo stroke-cleanup ruling
+// 5. the gutter bridge is GONE (, Endo stroke-cleanup rule
 // ): the ROW divider's:before/:after top/bottom strokes
 // read as dashes at the divider's ends - zero rules for
 //      them in the sheet; the cards' own borders carry the seams alone.
@@ -29,7 +29,7 @@
 //   7. the root column divider reaches 2px past its insets (T-junctions
 //      land on the vertical lines' columns), fallback clean in full mode
 // 8. the pane header's seam is GONE -.dock-tabbar carries THREE sides
-// and no bottom stroke (, Endo ruling: the
+// and no bottom stroke (, the
 //      strip and the content read as one surface, the fill tone shift
 // carries the boundary; supersedes 's real border-bottom
 // seam and 's where-chrome-shows inset-shadow before it)
@@ -67,13 +67,11 @@ function rulesOf(sheet: string): Rule[] {
   for (let i = 0; i < sheet.length; i++) {
     const ch = sheet[i]!;
     if (ch === "{") {
-      // comments ride inside selector text.
       const sel = sheet
         .slice(selStart, i)
         .replace(/\/\*[\s\S]*?\*\//g, "")
         .trim();
       const isAt = sel.startsWith("@");
-      // a rule's at = the innermost enclosing at-rule (at-rules store themselves.
       const at = isAt
         ? sel
         : (open.findLast((e) => e.isAt)?.sel ?? null);
@@ -102,8 +100,7 @@ function find(
 ): Rule {
   const norm = (s: string) => s.replace(/\s+/g, " ").trim();
   const all = sheet.filter((r) => r.at === at);
-  // exact selector text wins (an offset rule like `.pane-area::before {
-  // top: 0 }` must not be shadowed by the grouped rule naming it too)
+  // exact selector text wins.
   const exact = all.filter((r) => norm(r.raw) === norm(selector));
   const hit = exact.length > 0 ? exact : all.filter((r) => r.selectors.includes(selector));
   assert.equal(hit.length, 1, `exactly one rule for ${selector} (at ${at})`);
@@ -113,7 +110,7 @@ function find(
 const MAIN = rulesOf(css);
 const BOTTOM = rulesOf(bottom);
 
-// the two resting-line gradients, both orientations (1px centered column / row over.
+// the two resting-line gradients, both orientations.
 function gradientOf(orientation: "to right" | "to bottom"): string {
   return `linear-gradient(${orientation}, transparent 0 1.5px, var(--stroke) 1.5px 2.5px, transparent 2.5px)`.replace(/\s+/g, " ");
 }
@@ -141,7 +138,6 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
       ".dock-divider:not(:hover):not(.active):not(.snap)",
     ).body.replace(/\s+/g, " ");
     assert.match(guard, /background:\s*none/);
-    // a scoped kill is a regression.
     assert.ok(
       !guard.includes(".dock-split"),
       "the rest-guard is generic - it must not be re-scoped to one orientation",
@@ -175,7 +171,6 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
       0,
       "no pane-area ::before/::after rail rule left anywhere in the sheet",
     );
-    // the no-gap case pinned structurally.
     const split = readFileSync(
       join(here, "../app/components/DockSplit.vue"),
       "utf8",
@@ -261,7 +256,6 @@ describe("divider law (t_bc321318 through-lines; t_e539ba29 + t_4e2ceca1 BOTH or
       !/(?:^|[\s;])border:/.test(bar),
       "no border shorthand - its bottom edge would re-draw the hairline",
     );
-    // only the lower edge went.
     assert.match(bar, /border-top:\s*1px solid var\(--stroke\)/);
     assert.match(bar, /border-left:\s*1px solid var\(--stroke\)/);
     assert.match(bar, /border-right:\s*1px solid var\(--stroke\)/);

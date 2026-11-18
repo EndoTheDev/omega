@@ -36,7 +36,7 @@ func recvFrame(t *testing.T, sub *SocketSub) SocketMessage {
 	}
 }
 
-// expectNoFrame asserts the subscriber receives nothing for a short window (the.
+// expectNoFrame asserts the subscriber receives nothing for a short window.
 func expectNoFrame(t *testing.T, sub *SocketSub) {
 	t.Helper()
 	select {
@@ -46,7 +46,7 @@ func expectNoFrame(t *testing.T, sub *SocketSub) {
 	}
 }
 
-// TestSocketHubFanOutToConnections: one publish reaches EVERY attached connection, in.
+// TestSocketHubFanOutToConnections: one publish reaches EVERY attached connection,.
 func TestSocketHubFanOutToConnections(t *testing.T) {
 	hub := NewSocketHub()
 	subs := []*SocketSub{hub.Attach(), hub.Attach(), hub.Attach()}
@@ -81,8 +81,7 @@ func TestSocketHubFanOutToConnections(t *testing.T) {
 	}
 }
 
-// TestSocketHubTopicTyping: the envelope carries the topic, the session scope and the
-// chat event name.
+// TestSocketHubTopicTyping: the envelope carries the topic, the session scope.
 func TestSocketHubTopicTyping(t *testing.T) {
 	hub := NewSocketHub()
 	narrow := hub.Attach()
@@ -199,7 +198,7 @@ func TestRunFramesRideChatTopic(t *testing.T) {
 	}
 }
 
-// TestCanvasEmitPublishesCanvasTopic: a panel delta (notifications toast, board.
+// TestCanvasEmitPublishesCanvasTopic: a panel delta.
 func TestCanvasEmitPublishesCanvasTopic(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -257,7 +256,7 @@ func TestChipTapStreamsToolOutput(t *testing.T) {
 	expectNoFrame(t, sub)
 }
 
-// TestWakeFillPublishesChipFrame: wakeHome is the one settle entry point, so the.
+// TestWakeFillPublishesChipFrame: wakeHome is the one settle entry point,.
 func TestWakeFillPublishesChipFrame(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -279,7 +278,7 @@ func TestWakeFillPublishesChipFrame(t *testing.T) {
 		t.Fatalf("fill = %+v, want a filled call-2 with its content and elapsed", fill)
 	}
 
-	// The hook itself: wakeHome is the settle entry point, and it publishes before.
+	// The hook itself: wakeHome is the settle entry point, and it publishes.
 	s.wakeHome("eph-gone", core.YieldResult{ToolCallID: "call-3", ToolName: "shell.run", Content: "tail"})
 	fromWake := recvFrame(t, sub)
 	var wakeFill ChipFrame
@@ -291,8 +290,7 @@ func TestWakeFillPublishesChipFrame(t *testing.T) {
 	}
 }
 
-// TestRunStateEdges: taking and releasing a run slot publishes the runs topic's two
-// edges.
+// TestRunStateEdges: taking and releasing a run slot publishes the runs topic's two.
 func TestRunStateEdges(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	sub := s.Sockets().Attach()
@@ -357,7 +355,6 @@ func TestReleaseEdgePublishesAfterTheSlotFrees(t *testing.T) {
 	}
 	s.launchRun(context.Background(), run, prov, []core.Message{core.User{Content: "hi"}}, nil, chatRequest{SessionID: sid})
 
-	// The run is parked on its persist step.
 	select {
 	case <-pause.entered:
 	case <-time.After(testWaitTimeout):

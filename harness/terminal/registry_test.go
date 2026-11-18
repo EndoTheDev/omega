@@ -20,7 +20,7 @@ func skipOnWindows(t *testing.T) {
 	}
 }
 
-// testRegistry builds a registry over a fresh temp home with a fast kill grace for.
+// testRegistry builds a registry over a fresh temp home with a fast kill grace.
 // Close is registered AFTER t.TempDir's cleanup, so LIFO runs the fence first: every
 // reaper is joined and no child survives before the TempDir's RemoveAll - the CI fence
 // for the cleanup race.
@@ -31,7 +31,7 @@ func testRegistry(t *testing.T) *Registry {
 	return r
 }
 
-// ownedReapers counts the registry's live reaper goroutines (the reaper map shrinks.
+// ownedReapers counts the registry's live reaper goroutines.
 func ownedReapers(r *Registry) int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -285,7 +285,7 @@ func TestCloseJoinsReapers(t *testing.T) {
 	}
 	r.Close() // the fence the TempDir cleanup would otherwise race
 	// Terminal state, whichever way it landed. Either way the reaper recorded before Close
-	// returned - the invariant TempDir cleanup relies on.
+	// returned - the invariant TempDir cleanup relies.
 	e := stateEntry(t, r, "fast")
 	if !e.Exited || e.ExitCode == nil || (*e.ExitCode != 0 && *e.ExitCode != -1) {
 		t.Fatalf("fast exit must be terminal after the fence: %+v", e)
@@ -305,10 +305,9 @@ func TestSpawnReturnsBeforeExit(t *testing.T) {
 	if _, err := r.Spawn(context.Background(), "echo left-behind; sleep 120", "leaver", ""); err != nil {
 		t.Fatalf("spawn: %v", err)
 	}
-	// Returns immediately with the child still running - the fence is the whole point.
 }
 
-// TestCorruptStateIgnored proves a corrupt state file starts empty instead of.
+// TestCorruptStateIgnored proves a corrupt state file starts empty instead.
 func TestCorruptStateIgnored(t *testing.T) {
 	skipOnWindows(t)
 	r := testRegistry(t)
@@ -391,9 +390,9 @@ func TestBuildShellPowerShellQuotedScript(t *testing.T) {
 	}
 }
 
-// TestBuildShellChainRedirectTiming pins the `>` chain behavior with its only honest
-// witness. The delay segment must actually run (the pre-fix report claimed the redirect
-// segment died instantly and silently).
+// TestBuildShellChainRedirectTiming pins the `>` chain behavior with its only honest.
+// The delay segment must actually run (the pre-fix report claimed the redirect segment
+// died instantly and silently).
 func TestBuildShellChainRedirectTiming(t *testing.T) {
 	if runtime.GOOS != "windows" {
 		t.Skip("ping -n timing is the windows delay idiom")

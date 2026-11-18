@@ -150,7 +150,6 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 		t.Fatalf("mount: %v", err)
 	}
 	ctx.ApplyOffer("provider", "test", prov)
-	// The loop seam's floor (no loop mounted) answers nothing.
 	ctx.ApplyOffer("loop", "test", testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -264,7 +263,6 @@ func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
 		return chA.srv.Sockets().SubscriberCount() == 2
 	})
 
-	// The trigger: a chat run started on bind A over bind A's listener.
 	sbody, _ := json.Marshal(map[string]any{"id": "mb-ws"})
 	sresp, err := http.Post(fmt.Sprintf("http://%s:%d/sessions", binds[0], port), "application/json", bytes.NewReader(sbody))
 	if err != nil {

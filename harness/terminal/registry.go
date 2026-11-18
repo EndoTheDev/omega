@@ -43,7 +43,7 @@ const MaxTailLines = 2000
 // DefaultTailLines is the read default.
 const DefaultTailLines = 100
 
-// maxTailBytes additionally caps a read's byte size (long JSON lines must not.
+// maxTailBytes additionally caps a read's byte size.
 const maxTailBytes = 128 * 1024
 
 // idMaxLen caps a handle name.
@@ -79,7 +79,7 @@ type Entry struct {
 	FinishedAt int64  `json:"finished_at"` // unix seconds, 0 while running
 	LogPath    string `json:"log_path"`
 	Exited     bool   `json:"exited"`
-	// ExitCode is nil for an exited-unknown shell (it died while omega was down, so.
+	// ExitCode is nil for an exited-unknown shell.
 	ExitCode *int `json:"exit_code"`
 
 	// done closes when this lifetime's reaper has recorded the exit. Never serialized: an
@@ -143,7 +143,6 @@ func (r *Registry) load() {
 	}
 	for i := range entries {
 		if entries[i].ID == "" {
-			// Pre-unification rows carried "name" instead of "id".
 			continue
 		}
 		r.entries[entries[i].ID] = &entries[i]
@@ -234,7 +233,7 @@ func (r *Registry) capExited(e *Entry) {
 	}
 }
 
-// trimLogTail rewrites path to its last keep bytes (no-op when the file is already.
+// trimLogTail rewrites path to its last keep bytes.
 func trimLogTail(path string, keep int64) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -339,7 +338,6 @@ func (r *Registry) Spawn(ctx context.Context, command, id, dir string) (*Entry, 
 	tree := detachChild(cmd)
 	cmd.Dir = core.RunWorkspace(ctx)
 	if dir != "" {
-		// A relative override roots at the run's workspace, else the process cwd.
 		if !filepath.IsAbs(dir) {
 			if root := core.RunWorkspace(ctx); root != "" {
 				dir = filepath.Join(root, dir)
@@ -382,7 +380,6 @@ func (r *Registry) Spawn(ctx context.Context, command, id, dir string) (*Entry, 
 		// behind, so the log trim below never races a live handle.
 		tree.close()
 		r.mu.Lock()
-		// The reaper owns the entry only while it still holds the id.
 		live, ok := r.entries[id]
 		if ok && live == e {
 			code := exitCodeOf(waitErr)
@@ -585,7 +582,7 @@ func stateOf(e *Entry) string {
 	}
 }
 
-// exitCodeOf extracts the exit code from a Wait error (-1 on signal death, Go's.
+// exitCodeOf extracts the exit code from a Wait error.
 func exitCodeOf(err error) int {
 	if err == nil {
 		return 0

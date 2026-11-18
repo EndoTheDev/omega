@@ -184,7 +184,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 		opts.Events <- core.StreamEvent{Event: event}
 		if end, ok := event.(core.StreamEnd); ok && end.FinishReason == "stop" {
-			// Persist BEFORE the event, like the real loop: a reload mid-run must find the.
+			// Persist BEFORE the event, like the real loop: a reload mid-run must find.
 			assistant := core.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
@@ -200,7 +200,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	return nil
 }
 
-// newTestServerWithStore returns a server with an in-memory store and a handle to the.
+// newTestServerWithStore returns a server with an in-memory store and a handle.
 func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	s := newTestServer()
@@ -236,7 +236,6 @@ func TestModels(t *testing.T) {
 	if len(body.Models) != 2 || body.Models[0] != "test-model" || body.Models[1] != "other-model" {
 		t.Fatalf("models = %v, want [test-model, other-model]", body.Models)
 	}
-	// a name-only provider (the interface, un-upgraded) carries no capabilities map.
 	if len(body.Capabilities) != 0 {
 		t.Fatalf("capabilities = %v, want absent for a name-only provider", body.Capabilities)
 	}
@@ -327,8 +326,7 @@ func TestChatSSE(t *testing.T) {
 	}
 }
 
-// chatThinking is a /chat POST body with one user message and the given thinking_level
-// (-1 = omitted.
+// chatThinking is a /chat POST body with one user message and the given.
 func chatThinking(t *testing.T, level int) []byte {
 	t.Helper()
 	msg := map[string]any{
@@ -366,8 +364,7 @@ func TestChatThinkingLevel(t *testing.T) {
 	}
 }
 
-// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field both leave the
-// provider untouched.
+// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field both leave.
 func TestChatThinkingLevelDefault(t *testing.T) {
 	s := newTestServer()
 	base := s.agent.Provider().(*mockProvider)
@@ -470,8 +467,7 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("created id = %q, want s1", created.ID)
 	}
 
-	// GET /sessions lists it (the sessions list rode the store capsule out with the
-	// shell-ring shrink wave 2.
+	// GET /sessions lists it.
 
 	// GET /sessions/s1 returns session + empty messages.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
@@ -491,7 +487,6 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("detail = %+v, want s1 with no messages", detail)
 	}
 
-	// Delegate lineage rides the detail wire.
 	if err := st.CreateDelegateSession(context.Background(), "kid", "s1", "delegate:task-1"); err != nil {
 		t.Fatalf("create delegate child: %v", err)
 	}
@@ -636,8 +631,7 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 		t.Fatalf("turn 2 totals = %d/%d, want 140/25 (accumulated)", sess.PromptTokens, sess.CompletionTokens)
 	}
 
-	// The totals land on the row the session store serves (the list payload rides the
-	// store capsule now.
+	// The totals land on the row the session store serves.
 	sess, err = st.GetSession(ctx, "s1")
 	if err != nil {
 		t.Fatalf("reget totals: %v", err)
@@ -931,7 +925,6 @@ func TestSessionPatchPinned(t *testing.T) {
 		t.Fatalf("patch response pinned = false, want true")
 	}
 
-	// the flag survives the row read (the list payload rides the store capsule now.
 	if pinned, _ := st.GetSession(ctx, "s1"); !pinned.Pinned {
 		t.Fatalf("row pinned = false after the pin PATCH, want true")
 	}
@@ -986,8 +979,6 @@ func TestSessionPatchArchived(t *testing.T) {
 	}
 	updatedAt := sess.UpdatedAt
 
-	// the exclude/restore law rides the store capsule's list (ported to
-	// harness/store/routes_test.go).
 	if archived, _ := st.GetSession(ctx, "s1"); !archived.Archived {
 		t.Fatalf("row archived = false after the archive PATCH, want true")
 	}
@@ -1020,7 +1011,6 @@ func TestSessionPatchRead(t *testing.T) {
 	if err := st.CreateSession(ctx, "s1", "", "label"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// Output lands after birth.
 	if err := st.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
@@ -1289,7 +1279,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 		t.Fatalf("title calls = %d, want 2 (blocked at final)", prov.streamPromptCount())
 	}
 
-	// A manually set label blocks generated titles even at state 0.
 	if err := st.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
@@ -1324,7 +1313,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 // TestChatFiresProvisionalThenFinalOnce exercises the full /chat flow.
 func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 	ctx := context.Background()
-	// Every stream returns the same content, so both title calls produce "hello".
 	s, st := newTestServerWithStore(t)
 	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -1413,7 +1401,6 @@ func TestTools(t *testing.T) {
 		t.Fatalf("tools = %+v, want provider tools in the sorted union", got4)
 	}
 
-	// domain tool with actions + alias.
 	a.SetToolProviders([]core.ToolProvider{testToolProvider{tools: map[string]core.Tool{
 		"memory": {
 			Description: "domain tool",
@@ -1461,9 +1448,9 @@ func TestTools(t *testing.T) {
 	}
 }
 
-// -- named provider instances --
+// named provider instances
 
-// instancesProvider wraps an agent.Provider with the named-instance resolver the.
+// instancesProvider wraps an agent.Provider with the named-instance resolver.
 type instancesProvider struct {
 	agent.Provider
 	instances map[string]agent.Provider
@@ -1492,7 +1479,7 @@ func scriptOne() []core.ProviderStreamEvent {
 	)
 }
 
-// newInstanceTestServer builds a server whose base provider resolves "backup" (model.
+// newInstanceTestServer builds a server whose base provider resolves "backup".
 func newInstanceTestServer(t *testing.T) (*Server, *store.Store, *mockProvider, map[string]agent.Provider) {
 	t.Helper()
 	base := newMockProvider("mock", scriptOne())
@@ -1638,7 +1625,7 @@ func TestChatProviderSessionPin(t *testing.T) {
 	}
 }
 
-// -- the grouped model catalog --
+// the grouped model catalog
 
 // TestModelsGroupedSections: the /models payload carries one section per provider - the
 // default first with its own listing, then the named instances (sorted, the config map
@@ -1716,7 +1703,6 @@ func TestChatModelSlotPickerGrammar(t *testing.T) {
 		t.Fatalf("instance served %v, want slot-model among the served names", names)
 	}
 
-	// "default:" cancels the pin.
 	if pin := send("default:plain"); pin != "" {
 		t.Fatalf("provider pin after default pick = %q, want empty (the sticky pin must not survive)", pin)
 	}
@@ -1725,7 +1711,7 @@ func TestChatModelSlotPickerGrammar(t *testing.T) {
 		t.Fatalf("base served %v, want plain among the served names", names)
 	}
 
-	// a bare model with a colon that names no configured instance stays a bare model on.
+	// a bare model with a colon that names no configured instance stays a bare model.
 	if pin := send("qwen2.5:7b"); pin != "" {
 		t.Fatalf("provider pin = %q, want empty (family:tag names stay bare)", pin)
 	}

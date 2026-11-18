@@ -25,7 +25,7 @@ servers:
       - hi
 `
 
-// seedHome writes the named config file into a temp home and returns it (with.
+// seedHome writes the named config file into a temp home and returns it.
 func seedHome(t *testing.T, name, content string) (home, path string) {
 	t.Helper()
 	home = t.TempDir()

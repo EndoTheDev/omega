@@ -16,7 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// writeHome writes a temp OMEGA_HOME with an mcp.yaml at the config/ subdir and.
+// writeHome writes a temp OMEGA_HOME with an mcp.yaml at the config/ subdir.
 func writeHome(t *testing.T, yaml string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -32,7 +32,7 @@ func writeHome(t *testing.T, yaml string) string {
 	return path
 }
 
-// TestServerConfigEnabledFlag: the yaml flag parses, an absent key reads as on.
+// TestServerConfigEnabledFlag: the yaml flag parses, an absent key reads.
 func TestServerConfigEnabledFlag(t *testing.T) {
 	cfg, err := parseConfig([]byte(`
 servers:
@@ -119,7 +119,7 @@ servers:
 	}
 }
 
-// serveToggleRoute finds the module's POST /mcp/toggle route on the context and.
+// serveToggleRoute finds the module's POST /mcp/toggle route on the context.
 func serveToggleRoute(t *testing.T, ctx *core.Context, name string, enabled bool) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(toggleRequest{Name: name, Enabled: enabled})

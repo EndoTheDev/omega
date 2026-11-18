@@ -28,7 +28,7 @@ const cronStateFileName = "cronstate.json"
 // stateFileName is the job source watched for hot reload.
 const stateFileName = "crons.yaml"
 
-// runOriginScheduled tags fires as background runs (the launch value the verdict tool.
+// runOriginScheduled tags fires as background runs.
 const runOriginScheduled = "cron"
 
 // cronState is the on-disk shape of cronstate.json. Jobs keys the
@@ -118,15 +118,14 @@ func NewRunner(cfg *Config, home string) *Runner {
 	return r
 }
 
-// runnerDeps carries what the Start arms the runner with.
+// runnerDeps carries what the Start arms the runner.
 type runnerDeps struct {
 	Ctx   *core.Context
 	Agent *agent.Agent
 	Store agent.StoreProvider
 }
 
-// memoryStore is the consumer-side face of the memory capsule (part 3 seam
-// constitution).
+// memoryStore is the consumer-side face of the memory capsule.
 type memoryStore interface {
 	Add(target, content string) (usage string, err error)
 }
@@ -136,8 +135,7 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// skillReader is the consumer-side face of the skills capsule (part 3, the seam
-// constitution).
+// skillReader is the consumer-side face of the skills capsule.
 type skillReader interface {
 	SkillRead(name string) (description, content string, err error)
 }
@@ -178,7 +176,6 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 		r.sched.Start()
 	}
 
-	// Watcher exits on ctx cancellation or Stop.
 	var watcher sync.WaitGroup
 	watcher.Add(1)
 	go func() {
@@ -221,7 +218,7 @@ func (r *Runner) errorf(format string, args ...any) {
 	}
 }
 
-// -- firing --
+// firing
 
 // tryAcquire performs the single-instance-per-job check-and-set.
 func (r *Runner) tryAcquire(key string) bool {
@@ -318,7 +315,6 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		return
 	}
 
-	// Session labeled cron:<name>.
 	if r.store != nil {
 		if err := r.store.CreateSession(ctx, sessionID, "", "cron:"+job.Name); err != nil {
 			r.errorf("job %s: create session: %v", job.Name, err)
@@ -330,7 +326,6 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	// running", and the job's journal/memory delivery stops until a process restart.
 	turnCtx, cancel := context.WithTimeout(ctx, r.turnCap())
 	defer cancel()
-	// Verdict cards v1: a cron fire is a background turn.
 	turnCtx = core.WithRunOrigin(turnCtx, runOriginScheduled)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job, promptText)
@@ -607,7 +602,7 @@ func appendDeliverFile(home string, job Job, when time.Time, final string) error
 	return err
 }
 
-// -- catch-up --
+// catch-up
 
 // catchUp fires missed jobs at startup. A job with no recorded last fire (new or never
 // fired) gets no catch-up.
@@ -638,7 +633,7 @@ func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 	}
 }
 
-// schedulePrev returns the most recent scheduled occurrence at or before `now` by.
+// schedulePrev returns the most recent scheduled occurrence at or before `now`.
 func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	start := now.Add(-7 * 24 * time.Hour).Truncate(time.Minute)
 	prev := time.Time{}
@@ -654,7 +649,7 @@ func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	return prev
 }
 
-// scheduleFor returns the cron.Schedule a job fires on.
+// scheduleFor returns the cron.Schedule a job fires.
 func scheduleFor(job Job) (cron.Schedule, error) {
 	if job.KindResolved() == kindInterval {
 		return everySchedule{minutes: job.Minutes}, nil
@@ -674,7 +669,7 @@ func (s everySchedule) Next(t time.Time) time.Time {
 	return t.Truncate(dur).Add(dur)
 }
 
-// -- scheduling --
+// scheduling
 
 // scheduleEnabled rebuilds the scheduler from the current job set, scheduling enabled.
 func (r *Runner) scheduleEnabled(ctx context.Context) {
@@ -687,7 +682,7 @@ func (r *Runner) scheduleEnabled(ctx context.Context) {
 		}
 		run := cron.FuncJob(func() { r.fire(ctx, job, time.Now()) })
 		if job.KindResolved() == kindInterval {
-			// Interval jobs are their own cron.Schedule: the live scheduler cannot tell the.
+			// Interval jobs are their own cron.Schedule: the live scheduler cannot tell.
 			c.Schedule(everySchedule{minutes: job.Minutes}, run)
 		} else {
 			if _, err := c.AddJob(job.Schedule, run); err != nil {
@@ -754,7 +749,6 @@ func (r *Runner) Jobs() []JobInfo {
 			Skills:     j.Skills,
 			Enabled:    j.IsEnabled(),
 		}
-		// The last-status fields ride the same snapshot.
 		if last, ok := r.outcomeOf(j.StateKey()); ok {
 			row.Last = time.Unix(last.At, 0).Local().Format(time.RFC3339)
 			if last.Ok {
@@ -782,7 +776,7 @@ func (r *Runner) Jobs() []JobInfo {
 	return out
 }
 
-// -- state (cronstate.json) --
+// state (cronstate.json)
 
 // sweepStaleState is the cronstate.json GC rule. The sweep is conservative by
 // construction: a job that still declares itself keeps its state whatever its
@@ -902,7 +896,7 @@ func (r *Runner) outcomeOf(key string) (fireOutcome, bool) {
 	return o, ok
 }
 
-// -- hot reload --
+// hot reload
 
 // cronFiles returns every crons.yaml this runner owns.
 func (r *Runner) cronFiles() map[string]string {
@@ -1019,7 +1013,7 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	r.panels.push()
 }
 
-// -- helpers --
+// helpers
 
 // sinceStart formats a duration for fire logs.
 func sinceStart(start, end time.Time) string {

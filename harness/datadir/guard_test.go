@@ -91,7 +91,7 @@ func TestDBGuardDenyShellResolvedPath(t *testing.T) {
 	}
 }
 
-// TestDBGuardSymlinkLeaf: a symlink AT the db path (not through it) is denied by the.
+// TestDBGuardSymlinkLeaf: a symlink AT the db path (not through it) is denied.
 func TestDBGuardSymlinkLeaf(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "omega.db")

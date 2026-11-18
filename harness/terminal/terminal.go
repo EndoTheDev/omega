@@ -21,13 +21,11 @@ const (
 	// bounded tail of the retained history (never the whole thing; the
 	// client may show less than the server keeps).
 	replayTail = 256 * 1024
-	// noOrphanTTL: a session no pane is attached to dies this long after its last
-	// activity.
+	// noOrphanTTL: a session no pane is attached to dies this long after its last.
 	noOrphanTTL = 15 * time.Minute
 	// pruneEvery: the orphan prune's tick.
 	pruneEvery = time.Minute
-	// subBuffer: SSE frames buffered per attached pane before the pane counts as stalled
-	// (the session keeps running.
+	// subBuffer: SSE frames buffered per attached pane before the pane counts as stalled.
 	subBuffer = 512
 	// maxInput: the input route's body ceiling (a paste, not a file dump).
 	maxInput = 64 * 1024
@@ -36,7 +34,6 @@ const (
 // process is the live shell seam a session drives. The handlers never know which side
 // they hold.
 type process interface {
-	// Read/Write/Close: the master.
 	Read([]byte) (int, error)
 	Write([]byte) (int, error)
 	Close() error
@@ -252,7 +249,7 @@ func (s *Session) remove() {
 	_ = s.proc.Close()
 }
 
-// write moves one input frame into the shell (an exited shell refuses.
+// write moves one input frame into the shell.
 func (s *Session) write(b []byte) (int, error) {
 	s.mu.Lock()
 	if s.removed {
@@ -316,7 +313,7 @@ func NewStore(spawn spawnFunc, workdir string, now func() time.Time) *Store {
 	}
 }
 
-// Start arms the orphan prune (the lifecycle handle's start.
+// Start arms the orphan prune.
 func (st *Store) Start() {
 	go func() {
 		t := time.NewTicker(pruneEvery)
@@ -332,7 +329,7 @@ func (st *Store) Start() {
 	}()
 }
 
-// Stop ends the prune and kills every session (the lifecycle fence.
+// Stop ends the prune and kills every session.
 func (st *Store) Stop() error {
 	select {
 	case <-st.stop:
@@ -530,8 +527,7 @@ func (st *Store) prune() {
 	}
 }
 
-// capError is the spawn refusal past the cap with nothing reapable (four live attached
-// sessions.
+// capError is the spawn refusal past the cap with nothing reapable.
 type capError struct{ live int }
 
 func (e *capError) Error() string {

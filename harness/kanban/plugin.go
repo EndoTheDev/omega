@@ -37,7 +37,7 @@ func (p *Plugin) Description() string {
 	return "kanban: the durable task board agents and workers coordinate through"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "kanban" }
 
 // Provides stays the declared data the census reads.
@@ -84,13 +84,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return err
 	}
-	// A same-instance re-mount (the double-mount removal proofs) opens a second store.
 	if p.store != nil {
 		_ = p.store.Close()
 	}
 	p.store = s
 	p.tools = &ToolProvider{board: s}
-	// Capsule law: the module ships its view-model with its store.
 	p.capsule = newCapsule(s, p.tools.sessionBoard, p.setSessionBoard)
 	p.tools.capsule = p.capsule
 	for _, step := range []func() error{
@@ -126,8 +124,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// registerCommands registers the /board and /boards slash commands through the API
-// chain.
+// registerCommands registers the /board and /boards slash commands through the API.
 func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 	if err := api.RegisterCommand("/board", "show the active board, or switch it (/board [name])", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
@@ -147,7 +144,7 @@ func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 		})
 }
 
-// handleCommand answers /boards (list + pointer) and /board (show or switch the.
+// handleCommand answers /boards (list + pointer) and /board.
 func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/boards":
@@ -190,7 +187,7 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	return core.CommandResult{}, core.CommandMiss(name)
 }
 
-// -- session-scoped active board (small, mutexed.
+// session-scoped active board.
 
 func (p *Plugin) sessionBoard() string {
 	if p.tools == nil {
@@ -227,7 +224,7 @@ func (p *ToolProvider) sessionBoard() string {
 }
 
 // taskVerbs is the kanban verb set: the batch contract's per-op action enum derives.
-// The registry unification B ruling split the flat action-protocol tool into
+// The registry unification B rule split the flat action-protocol tool into
 // kanban.<verb> wire tools - dotted names are the norm on this registry (process.*,
 // delegate.*, web.*); kanban.batch keeps the per-op action contract for the operations
 // array.
@@ -388,7 +385,7 @@ func (p *ToolProvider) verbRunner(action string) func(context.Context, map[strin
 	}
 }
 
-// refreshCapsule pushes the task panel through the module's canvas surface after a.
+// refreshCapsule pushes the task panel through the module's canvas surface.
 // Nil-safe: the capsule is nil only when Mount was never reached - and then nothing
 // pushed.
 func (p *ToolProvider) refreshCapsule() {
@@ -398,7 +395,7 @@ func (p *ToolProvider) refreshCapsule() {
 	p.capsule.refreshTasks()
 }
 
-// runTaskOp executes one task operation by its action on the provider b (the plain.
+// runTaskOp executes one task operation by its action on the provider b.
 func (p *ToolProvider) runTaskOp(ctx context.Context, b KanbanProvider, args map[string]any) (string, string, error) {
 	action, _ := args["action"].(string)
 	board := str(args["board"])

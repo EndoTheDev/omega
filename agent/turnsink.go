@@ -29,9 +29,9 @@ func RunTurnSink(ctx context.Context) TurnSink {
 	return sink
 }
 
-// WithPersistInput tags the run context with the messages the caller is adding with
-// this send. The loop persists them through the TurnSink before the first turn; the
-// already persisted history in Messages is never rewritten.
+// WithPersistInput tags the run context with the messages the caller is adding.
+// The loop persists them through the TurnSink before the first turn; the already
+// persisted history in Messages is never rewritten.
 func WithPersistInput(ctx context.Context, messages []core.Message) context.Context {
 	if len(messages) == 0 {
 		return ctx
@@ -69,7 +69,7 @@ type storeTurnSink struct {
 	headPinned   bool
 }
 
-// IsEmptyAssistant reports whether a completion carries nothing at all.
+// IsEmptyAssistant reports whether a completion carries nothing.
 func IsEmptyAssistant(a core.Assistant) bool {
 	return a.Content == "" &&
 		(a.Thinking == nil || *a.Thinking == "") &&

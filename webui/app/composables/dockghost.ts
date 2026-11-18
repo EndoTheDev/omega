@@ -46,7 +46,7 @@ export function ghostPreview(
   return { targetPaneId: toPaneId, zone, direction, refused: null, halves };
 }
 
-// -- the gesture rect registry ---------- One page-lifetime record per gesture.
+// the gesture rect registry ---------- One page-lifetime record per gesture.
 
 interface GhostRectEntry {
   source: { paneId: string; index: number } | null;
@@ -66,7 +66,6 @@ export const ghostRegistry = {
   begin(paneId: string, index: number): void {
     registry = { source: { paneId, index }, rects: new Map() };
   },
-  /** stamp one pane's body rect (lazily at first touch. */
   record(paneId: string, rect: { x: number; y: number; w: number; h: number }): void {
     if (!registry) return;
     if (!registry.rects.has(paneId)) registry.rects.set(paneId, rect);

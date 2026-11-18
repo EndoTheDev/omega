@@ -27,7 +27,7 @@ const maincss = src("app/assets/css/main.css");
 const tools = src("../harness/tools/ui/ToolsList.vue");
 const insights = src("../harness/store/ui/InsightsTab.vue");
 
-// ..a rule block: selector..
+// .a rule block: selector.
 function ruleBlock(css: string, selector: string): string {
   const start = css.indexOf(selector);
   assert.ok(start >= 0, `the ${selector.trim()} rule exists`);

@@ -11,8 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// offerServices offers the fake supplies into a fresh Context and rewires the server
-// against it (part 3.
+// offerServices offers the fake supplies into a fresh Context and rewires the server.
 func offerServices(t *testing.T, s *Server, offers map[string]any) {
 	t.Helper()
 	ctx := &core.Context{}
@@ -38,7 +37,7 @@ func serveInspector(t *testing.T, s *Server) *httptest.Server {
 
 var _ = http.StatusOK
 
-// mustJSON is the shared JSON serializer for wire assertions (the shell inspector.
+// mustJSON is the shared JSON serializer for wire assertions.
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)

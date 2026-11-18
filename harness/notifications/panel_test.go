@@ -8,7 +8,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// newTestCapsule builds a memory-backed store wrapped in the capsule seam exactly the.
+// newTestCapsule builds a memory-backed store wrapped in the capsule seam exactly.
 func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 	t.Helper()
 	s, err := Open(":memory:")
@@ -85,9 +85,9 @@ func TestCapsulePanelsShape(t *testing.T) {
 	}
 }
 
-// TestEmitPushesToastAndList: the mounted seam implementation pushes both panels on
-// every emit. Before registration installs the sink the pushes stay silent (no nil
-// dereference), after it they land.
+// TestEmitPushesToastAndList: the mounted seam implementation pushes both panels.
+// Before registration installs the sink the pushes stay silent (no nil dereference),
+// after it they land.
 func TestEmitPushesToastAndList(t *testing.T) {
 	_, c, e := newTestCapsule(t)
 	var updates []core.Panel
@@ -118,8 +118,7 @@ func TestEmitPushesToastAndList(t *testing.T) {
 	}
 }
 
-// TestHandleActionMarksRead: the action pipe mutates the store and refreshes the list
-// panel through the sink.
+// TestHandleActionMarksRead: the action pipe mutates the store and refreshes the list.
 func TestHandleActionMarksRead(t *testing.T) {
 	_, c, e := newTestCapsule(t)
 	got, err := e.Emit(core.Notice{Kind: "task", SourceID: "t9", Title: "task t9 done"})

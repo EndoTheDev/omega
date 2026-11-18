@@ -47,7 +47,7 @@ func spawnProcess(workdir string) (process, error) {
 	return &ptyProcess{master: master, cmd: cmd}, nil
 }
 
-// openpty allocates a pty pair (open /dev/ptmx, unlock, resolve the slave) and.
+// openpty allocates a pty pair (open /dev/ptmx, unlock, resolve the slave).
 func openpty() (int, *os.File, error) {
 	m, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -56,8 +56,7 @@ func openpty() (int, *os.File, error) {
 	cleanup := func() {
 		unix.Close(m)
 	}
-	// grantpt/unlockpt: clear the TIOCSPTLCK lock flag on the master (the ioctl reads a
-	// POINTER to the int.
+	// grantpt/unlockpt: clear the TIOCSPTLCK lock flag on the master.
 	if err := unix.IoctlSetPointerInt(m, unix.TIOCSPTLCK, 0); err != nil {
 		cleanup()
 		return -1, nil, fmt.Errorf("unlock pty: %w", err)
@@ -181,8 +180,7 @@ func (p *ptyProcess) closeMaster() error {
 func (p *ptyProcess) start() {
 	p.done = make(chan struct{})
 	go func() {
-		// ProcessState.ExitCode: -1 when the child was killed by a signal (Kill's SIGKILL
-		// included).
+		// ProcessState.ExitCode: -1 when the child was killed by a signal.
 		p.cmd.Wait()
 		p.code = p.cmd.ProcessState.ExitCode()
 		close(p.done)
@@ -196,7 +194,7 @@ func (p *ptyProcess) Done() <-chan struct{} {
 	return p.done
 }
 
-// Kill signals the child's process group (the child leads its own session, so -pid is.
+// Kill signals the child's process group.
 func (p *ptyProcess) Kill() error {
 	if p.cmd.Process == nil {
 		return nil

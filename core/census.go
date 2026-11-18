@@ -40,7 +40,6 @@ func Census(ctx *Context) CensusSnapshot {
 		s.Routes = append(s.Routes, rt.Pattern)
 	}
 	for _, slot := range []string{
-		// The universal registry reads presence (part 3, the seam constitution).
 		"provider",
 		"store",
 		"loop",

@@ -46,7 +46,6 @@ func TestBudgetExplicitWindowAndReserve(t *testing.T) {
 func TestBudgetReserveLargerThanHalfWindow(t *testing.T) {
 	c := CompactionConfig{ContextWindow: 20000, ReserveTokens: 16384, Threshold: 0.6}
 	got := c.Budget()
-	// effective = 20000 - 16384 = 3616 < 10000 (half), so effective = 10000.
 	if got != 6000 {
 		t.Fatalf("Budget() = %d, want 6000", got)
 	}

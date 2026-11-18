@@ -45,8 +45,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// productionSizedTools builds a tools block sized like omega's real registry (~25KB
-// rendered).
+// productionSizedTools builds a tools block sized like omega's real registry.
 func productionSizedTools() []llm.ToolSchema {
 	domains := []string{
 		"shell", "files", "memory", "skills", "cron", "kanban", "delegate",
@@ -91,7 +90,7 @@ func productionSizedTools() []llm.ToolSchema {
 	return tools
 }
 
-// TestLiveToolBlockPromptCache reports the cache economics of a stable tools block on.
+// TestLiveToolBlockPromptCache reports the cache economics of a stable tools block.
 func TestLiveToolBlockPromptCache(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live tool-block cache probe skipped")

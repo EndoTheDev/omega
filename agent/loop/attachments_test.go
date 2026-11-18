@@ -26,7 +26,7 @@ func attachmentFixture(t *testing.T, name string, content []byte) core.Attachmen
 	return core.Attachment{Kind: kind, Name: name, Size: int64(len(content)), Path: path}
 }
 
-// TestAttachmentContextRendersReference: a non-text attachment surfaces as a.
+// TestAttachmentContextRendersReference: a non-text attachment surfaces.
 func TestAttachmentContextRendersReference(t *testing.T) {
 	att := attachmentFixture(t, "invoice.pdf", []byte("%PDF-1.7\n\x00\x01binary-ish"))
 	msgs := []core.Message{core.User{Content: "what is this?", Attachments: []core.Attachment{att}}}
@@ -115,8 +115,7 @@ func TestAttachmentContextDoesNotMutate(t *testing.T) {
 	}
 }
 
-// TestAttachmentContextNoAttachments: a run with no attachments hands the very same
-// slice through.
+// TestAttachmentContextNoAttachments: a run with no attachments hands the very same.
 func TestAttachmentContextNoAttachments(t *testing.T) {
 	msgs := []core.Message{core.NewSystem("sys"), core.NewUser("hi")}
 	out := AttachmentContext(msgs)

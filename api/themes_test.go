@@ -33,7 +33,7 @@ tokens:
 // seedFile is the file name the registry seeds on construction.
 const seedFile = defaultThemeFileName
 
-// -- the default.yaml seed (fresh boot fills an absence, never clobbers) --
+// the default.yaml seed (fresh boot fills an absence, never clobbers)
 
 func TestSeedDefaultThemeCopiesWhenMissing(t *testing.T) {
 	dir := t.TempDir()
@@ -184,7 +184,6 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 	defer cancel()
 	go reg.watch(ctx)
 
-	// construction seeds the example theme first.
 	if n := len(reg.snapshot()); n != 1 {
 		t.Fatalf("fresh dir has %d themes, want 1 (the seed)", n)
 	}
@@ -202,7 +201,6 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 		return false
 	})
 
-	// (d) a file that now fails validation.
 	writeTheme(t, dir, "junk.yaml", "tokens:\n  nonsense: value\n")
 	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 3 })
 	s := reg.snapshot()

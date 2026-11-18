@@ -16,8 +16,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// -------------------------------------------------------------------------- Ladder
-// table tests (Q9.
+// ------------------------------------------------------------------------ Ladder table
+// tests.
 
 func ladderAnswers(v string, conf, pol, blast, advoc, reads, sends float64, hasPolicy bool) Answers {
 	return Answers{
@@ -59,7 +59,7 @@ func TestLadderTable(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------------------- The eval
+// ------------------------------------------------------------------------ The eval
 // corpus (Q9). The REAL rows are mined from omega's own store history (the factory
 // commands this repo's sessions ran); the GOLDEN rows include canaries - commands that
 // MUST escalate.
@@ -146,8 +146,7 @@ func TestCanaryLadderOutcomes(t *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------------------- Parser
-// (Q7).
+// ------------------------------------------------------------------------ Parser (Q7).
 
 func TestParseStatic(t *testing.T) {
 	t.Setenv("OMEGA_TEST_X", "")
@@ -420,7 +419,7 @@ func TestCronEscalationNeverBlocks(t *testing.T) {
 		t.Fatal("card-less interactive escalation must fail closed")
 	}
 	// A failed-close escalation settles cancelled: nothing ran, no
-	// answer landed - the record says so.
+	// answer landed - the record says.
 	if line2 != GateEscCancelled {
 		t.Fatalf("card-less fail-closed must stamp %q, got %q", GateEscCancelled, line2)
 	}
@@ -431,7 +430,7 @@ func TestAuditRows(t *testing.T) {
 	home := g.config().Home
 	g.verdicts = func() verdictHub { return nil }
 	// The cron fire's session rides the run context (cody card
-	// t_e203c2f6): the row must name it - a background origin's
+	//): the row must name it - a background origin's
 	// decision is evidence about a session, not an anonymous one.
 	ctx := agent.WithSessionID(core.WithRunOrigin(context.Background(), "cron"), "sess-cron-gate")
 	_, _ = g.Gate(ctx, "shell.run", map[string]any{"command": "rm x.txt"})
@@ -470,7 +469,7 @@ func TestAuditRows(t *testing.T) {
 }
 
 // TestEveryDecisionLandsARow pins the audit ledger's completeness
-// (card t_e203c2f6): every gate decision - a card approval, a cache
+//: every gate decision - a card approval, a cache
 // replay, a card denial - appends exactly one decision row, each with
 // its verdict, its decided-by rule and the session. Benign traffic is
 // not a decision (TestBenignTrafficPaysNothing) and stays rowless.
@@ -560,7 +559,7 @@ func TestModeOffMountsNothing(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Gate verdict stamps (card t_1b3e2a8b): every smart-mode decision
+// Gate verdict stamps: every smart-mode decision
 // lands as a transcript line on the guarded call's record; the card's
 // RESOLUTION is the line; manual mode and unresolved escalations
 // stamps nothing.
@@ -694,7 +693,7 @@ func TestManualModeStampsNothing(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// The follow-up surface (card t_63204dfd): a typed answer resolves the
+// The follow-up surface: a typed answer resolves the
 // question - deny + guidance; empty guidance = the plain deny.
 // ---------------------------------------------------------------------------
 
@@ -748,7 +747,7 @@ func TestCardTypedTextAloneIsTheFollowUp(t *testing.T) {
 
 func TestTypedGuidanceBeatsAnOptionPick(t *testing.T) {
 	// a rogue client sending approve AND guidance: the text wins, the
-	// command never runs (the follow-up ruling is a safety ruling)
+	// command never runs (the follow-up rule is a safety rule)
 	g, _ := followUpGate(t, core.QuestionAnswer{OptionIndex: 1, Option: "approve", Text: "do not run anything"})
 	line, err := g.Gate(context.Background(), "shell.run", map[string]any{"command": "rm note.md"})
 	if err == nil || line != GateEscAnswered+": do not run anything" {
@@ -773,7 +772,7 @@ func TestEmptyGuidanceIsThePlainDeny(t *testing.T) {
 }
 
 func TestManualFollowUpStampsNothingButKeepsTheGuidance(t *testing.T) {
-	// manual mode makes no machine decision (t_1b3e2a8b) - even an
+	// manual mode makes no machine decision - even an
 	// answered card; the guidance still reaches the agent
 	g := newTestGate(t, ModeManual)
 	fv := &fakeVerdicts{answers: core.QuestionAnswer{OptionIndex: 2, Option: "deny", Text: "archive it instead"}}
@@ -812,7 +811,7 @@ func TestFollowUpGuidanceCapped(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Approvals goes live (card t_34cd1921): the gate re-reads its config
+// Approvals goes live: the gate re-reads its config
 // PER DECISION; the host's hot-apply path replaces it (SetConfig). A
 // mode, policy or model flip answers with the new behavior at the next
 // ask - no restart, no re-mount.
@@ -903,7 +902,7 @@ func TestSetConfigGoesLive(t *testing.T) {
 	}
 }
 
-// TestOutcomeErrorExpiredDistinct (card t_304afb4e): an expired
+// TestOutcomeErrorExpiredDistinct: an expired
 // approval card surfaces with its OWN prefix - "approval card
 // expired", fail-closed named, re-run guidance included - instead of
 // drowning in the flat "approval escalated" vocabulary. Fail-closed

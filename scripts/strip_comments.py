@@ -54,6 +54,10 @@ HAZARD = re.compile(
 PREFORMATTED = re.compile(r"(\t| {2,}\s|:=|\bUsage:|\bfmt\.|\bgo (test|build|run)\b|│|├|└)")
 
 CARD = re.compile(r"\bt_[0-9a-f]{8}\b")
+MARK = re.compile(
+    r"t_[0-9a-f]{8}\b|20[0-9]{2}-[0-9]{2}-[0-9]{2}|\bproven\b|\bruling\b|\breceipt\b",
+    re.IGNORECASE,
+)
 CURRENT = [""]
 DATE = re.compile(r"\b20[0-9]{2}-[0-9]{2}-[0-9]{2}\b")
 PROV = re.compile(r"\b(proven|ruling|receipt)\b", re.IGNORECASE)
@@ -239,6 +243,43 @@ NARRATIVE = re.compile(
 )
 
 
+DANGLE = (
+    "the", "a", "an", "of", "to", "into", "in", "on", "at", "by", "with", "for",
+    "from", "as", "and", "or", "but", "that", "this", "its", "their", "his", "her",
+    "every", "each", "which", "whose", "while", "so", "than", "per", "via", "over",
+    "under", "after", "before", "both", "all", "also", "then",
+)
+
+
+def undangle(text):
+    """Drop a cut's stranded tail words and possessives, so the line still reads."""
+    out = text.rstrip()
+    changed = True
+    while changed:
+        changed = False
+        m = re.search(r"(\w+)'s[.]$", out)
+        if m:
+            out = out[: m.start()].rstrip()
+            changed = True
+            continue
+        m = re.search(r"(?:\s|^)(\w+)[.]$", out)
+        if m and m.group(1).lower() in DANGLE:
+            out = out[: m.start()].rstrip()
+            changed = True
+    return out
+
+
+def balanced(head):
+    """Cut back to the last unmatched '(' so a truncated line never strands one."""
+    out = head
+    while out.count("(") > out.count(")"):
+        i = out.rfind("(")
+        if i < 0:
+            break
+        out = out[:i].rstrip(" ,;:-")
+    return out
+
+
 def shorten(sent, indent):
     """Cut a run-on summary at its first clause boundary, one line of budget.
 
@@ -260,11 +301,14 @@ def shorten(sent, indent):
         head = sent[:i].rstrip(" ,;:-")
         if len(head.split()) < 3:
             continue
+        head = undangle(balanced(sent[:i].rstrip(" ,;:-")))
+        if len(head.split()) < 3:
+            continue
         return head + "."
     # no clause boundary: cut at a word boundary so the summary holds one line
     cut = sent.rfind(" ", 0, budget - 1)
     if cut > 40:
-        head = sent[:cut].rstrip(" ,;:-")
+        head = undangle(balanced(sent[:cut].rstrip(" ,;:-")))
         if len(head.split()) >= 4 and not HAZARD.search(sent[cut:]):
             return head + "."
     return sent
@@ -362,6 +406,128 @@ def reduce_block(lines, idx, marker):
     return new
 
 
+def residue_line(line):
+    """Rewrite one comment line so no provenance marker survives it."""
+    body = line
+    body = re.sub(r"\(?\s*card\s+t_[0-9a-f]{8}\b[^)]*\)?", "", body, flags=re.IGNORECASE)
+    body = re.sub(r"\(\s*t_[0-9a-f]{8}\b[^)]*\)?", "", body)
+    body = re.sub(r"\bcard\s+t_[0-9a-f]{8}(?:'s)?\b", "", body, flags=re.IGNORECASE)
+    body = CARD.sub("", body)
+    body = DATE.sub("", body)
+    body = re.sub(r"\(\s*Endo'?s?[^)]*\)", "", body)
+    body = re.sub(r"\bEndo'?s?\s+(?:band-search\s+)?ruling\s*[,:]?\s*", "", body, flags=re.IGNORECASE)
+    body = re.sub(r"\bruling\b", "rule", body, flags=re.IGNORECASE)
+    body = re.sub(r"\bproven\b", "verified", body, flags=re.IGNORECASE)
+    body = re.sub(r"\breceipt\b", "record", body, flags=re.IGNORECASE)
+    body = re.sub(r"\(\s*[,;]?\s*\)", "", body)
+    body = re.sub(r"\s+([,.;:)])", r"\1", body)
+    body = re.sub(r"([,;:])(\s*[,;:])+", r"\1", body)
+    body = re.sub(r"\(\s+", "(", body)
+    body = re.sub(r"\s+\)", ")", body)
+    body = re.sub(r"[ \t]{2,}", " ", body)
+    body = re.sub(r"\.\s*\.", ".", body)
+    body = re.sub(r"\bthe rule\b", "the rule", body)
+    return body
+
+
+def residue_sweep(path):
+    """Line-level marker cleanup: covers blocks the structural pass skips."""
+    try:
+        with open(path, encoding="utf-8", newline="") as fh:
+            src = fh.read()
+    except OSError:
+        return None, 0
+    crlf = "\r\n" in src
+    out, changed = [], 0
+    for line in src.splitlines():
+        s = line.lstrip()
+        if s.startswith(("//", "*", "/*", "<!--")) and MARK.search(line):
+            indent = line[: len(line) - len(s)]
+            new = residue_line(s)
+            if new != s:
+                out.append(indent + new)
+                changed += 1
+                continue
+        out.append(line)
+    if not changed:
+        return None, 0
+    text = ("\r\n" if crlf else "\n").join(out)
+    if src.endswith("\n") and not text.endswith("\n"):
+        text += "\r\n" if crlf else "\n"
+    return text, changed
+
+
+def dangle_sweep(path):
+    """Repair lines a cut left stranded: '... survives the.' has no tail."""
+    try:
+        with open(path, encoding="utf-8", newline="") as fh:
+            src = fh.read()
+    except OSError:
+        return None, 0
+    crlf = "\r\n" in src
+    out, changed = [], 0
+    for line in src.splitlines():
+        s = line.lstrip()
+        if s.startswith(("//", "*", "/*", "<!--")) and s.rstrip().endswith("."):
+            indent = line[: len(line) - len(s)]
+            body = s.rstrip()[:-1].rstrip()
+            trimmed = True
+            while trimmed:
+                trimmed = False
+                m = re.search(r"(\w+)'s$", body)
+                if m:
+                    body = body[: m.start()].rstrip()
+                    trimmed = True
+                    continue
+                m = re.search(r"(?:\s|^)(\w+)$", body)
+                if m and m.group(1).lower() in DANGLE:
+                    body = body[: m.start()].rstrip()
+                    trimmed = True
+            while body.count("(") > body.count(")"):
+                i = body.rfind("(")
+                if i < 0:
+                    break
+                body = undangle(body[:i].rstrip(" ,;:-"))
+            if body and len(body.rstrip("/*- ")) > 6 and body != s.rstrip()[:-1].rstrip():
+                out.append(f"{indent}{body}.")
+                changed += 1
+                continue
+        out.append(line)
+    if not changed:
+        return None, 0
+    text = ("\r\n" if crlf else "\n").join(out)
+    if src.endswith("\n") and not text.endswith("\n"):
+        text += "\r\n" if crlf else "\n"
+    return text, changed
+
+
+def trailing_sweep(path):
+    """Provenance removal from comments that ride after code on the same line."""
+    try:
+        with open(path, encoding="utf-8", newline="") as fh:
+            src = fh.read()
+    except OSError:
+        return None, 0
+    crlf = "\r\n" in src
+    out, changed = [], 0
+    for line in src.splitlines():
+        m = re.search(r"(\s+)//(?![/:])", line)
+        if m and MARK.search(line[m.end():]):
+            head = line[: m.end()]
+            new = residue_line(line[m.end():]).rstrip()
+            if new and new != line[m.end():].rstrip():
+                out.append(f"{head}{new}")
+                changed += 1
+                continue
+        out.append(line)
+    if not changed:
+        return None, 0
+    text = ("\r\n" if crlf else "\n").join(out)
+    if src.endswith("\n") and not text.endswith("\n"):
+        text += "\r\n" if crlf else "\n"
+    return text, changed
+
+
 def transform(path, provenance_only=False):
     CURRENT[0] = path
     try:
@@ -384,7 +550,9 @@ def transform(path, provenance_only=False):
                 in_import = False
             i += 1
             continue
-        if line.count("`") % 2 == 1:
+        if path.endswith(".go") and line.count("`") % 2 == 1 and not line.lstrip().startswith(
+            ("//", "/*", "*", "#")
+        ):
             in_raw = not in_raw
         if in_raw:
             out.append(line)
@@ -453,12 +621,22 @@ def walk(root, only, provenance_only):
 def main(argv):
     apply = "--apply" in argv
     prov = "--provenance" in argv
+    residue = "--residue" in argv
+    dangle = "--dangle" in argv
+    trailing = "--trailing" in argv
     words = [a for a in argv if not a.startswith("--")]
     root = words[0] if words else "."
     only = words[1] if len(words) > 1 else None
     files = blocks = 0
-    for path, rel in walk(root, only, prov):
-        text, changed = transform(path, prov)
+    for path, rel in walk(root, only, prov or residue):
+        if residue:
+            text, changed = residue_sweep(path)
+        elif dangle:
+            text, changed = dangle_sweep(path)
+        elif trailing:
+            text, changed = trailing_sweep(path)
+        else:
+            text, changed = transform(path, prov)
         if not text:
             continue
         blocks += changed

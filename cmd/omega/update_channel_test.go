@@ -89,7 +89,7 @@ func TestFetchNightlyNoNightlies(t *testing.T) {
 	}
 }
 
-// TestCompareTagNewer pins that unparseable tags can never win the nightly pick over.
+// TestCompareTagNewer pins that unparseable tags can never win the nightly pick.
 func TestCompareTagNewer(t *testing.T) {
 	if compareTagNewer("dev", "v0.9.1") || compareTagNewer("zzz-unknown", "v0.1.0") {
 		t.Error("unparseable tags must never sort newer")

@@ -10,7 +10,7 @@ import (
 // ErrCommandMiss is the chain's miss sentinel. A handler returns it
 // (through CommandMiss) for a name it does not own; the chain-on-miss
 // wrapper in agent.RegisterCommand is the only caller that inspects it
-// and the only error it falls through on.
+// and the only error it falls through.
 var ErrCommandMiss = errors.New("command miss")
 
 // commandMiss is the miss answer.

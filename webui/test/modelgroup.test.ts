@@ -27,7 +27,6 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
       /<div class="model-group">/,
       "AppComposer must wrap the model + effort chips in one .model-group",
     );
-    // ..
     const group = src.match(
       /<div class="model-group">[\s\S]*?<\/div>/,
     );

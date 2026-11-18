@@ -79,7 +79,7 @@ test("the boot group carries every read the poller window grades", () => {
   for (const member of [
     "notificationFeedSettled()", // /notifications + /verdicts
     "refreshModels()", // /models
-    "fetchSettingKnob(DEFAULT_WORKSPACE_KNOB)", // /settings?key= (card t_0a9edc72: the one knob, not the registry)
+    "fetchSettingKnob(DEFAULT_WORKSPACE_KNOB)", // /settings?key=
     "refreshSessions()", // /sessions
     "canvas.refresh()", // /ui/canvas
   ]) {

@@ -209,7 +209,7 @@ func TestReorderPersistsAcrossReopen(t *testing.T) {
 	titlesEqual(t, titlesOf(t, s1, "", "triage"), []string{"p3", "p1", "p2"}, "reopened order")
 }
 
-// TestMigrationBackfillOrdersAsRendered: a pre-position database (the column is.
+// TestMigrationBackfillOrdersAsRendered: a pre-position database.
 func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "kanban.db")
 	s0, err := Open(dsn)
@@ -264,7 +264,7 @@ func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	positionsDense(t, readPositions(t, s1))
 }
 
-// readPositions dumps (title, position) pairs straight from the table (id order.
+// readPositions dumps (title, position) pairs straight from the table.
 func readPositions(t *testing.T, s *Store) map[string]int {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT title, position FROM tasks`)

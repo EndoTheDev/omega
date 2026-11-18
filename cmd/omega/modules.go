@@ -52,15 +52,13 @@ func (m *omegaModules) Toggle(ctx context.Context, name string, enabled bool) er
 	if err := m.reg.Toggle(m.pctx, name, enabled, m.deps); err != nil {
 		return err
 	}
-	// The serving channels re-read the Context.
 	for _, ch := range m.pctx.Channels {
 		rewire, ok := ch.(core.LiveSeams)
 		if !ok {
 			continue
 		}
 		if err := rewire.RewireSeams(m.pctx); err != nil {
-			// The toggle applied and config.yaml will record it, but a served surface failed to
-			// re-read.
+			// The toggle applied and config.yaml will record it, but a served surface failed.
 			err = fmt.Errorf("module %s applied, but the channel re-wire failed: %w", toggleWord(enabled), err)
 			if m.logger != nil {
 				m.logger.Errorf("omega: %v", err)

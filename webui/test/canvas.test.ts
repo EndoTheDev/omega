@@ -7,7 +7,7 @@
 //   production paths (no ref unwrapping - the test law);
 // handlePayload's view_model_delta dispatch: the exact wire frame
 //   the arc 3b server serialization sends;
-// source pins: the app.vue stream wiring + the v0.14.3 fold ruling
+// source pins: the app.vue stream wiring + the v0.14.3 fold rule
 //   the standalone canvas host tab is DELETED (its content reduced to
 //   duplicates; v0.14.2's module rows own every module panel), so the
 //   pins prove the ABSENCE as hard as the wiring's presence: no
@@ -60,7 +60,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-// -- wire wrappers: URL + body contract --
+// wire wrappers: URL + body contract
 
 test("fetchCanvas GETs /ui/canvas and normalizes the descriptor array", async () => {
   const seen: string[] = [];
@@ -86,7 +86,6 @@ test("fetchCanvas GETs /ui/canvas and normalizes the descriptor array", async ()
       payload: { cards: 3 },
       actions: [{ id: "refresh", label: "Refresh", module: "kanban" }],
     });
-    // defaults: title falls back to the id, kind to the plain render, label-less.
     assert.deepEqual(panels[1], {
       id: "ghost.panel",
       title: "ghost.panel",
@@ -139,7 +138,6 @@ test("postCanvasAction POSTs the module-qualified call; 4xx/5xx throw the server
   } finally {
     globalThis.fetch = realFetch;
   }
-  // route failure: the sentinel text is the error message (the panel's error state.
   globalThis.fetch = (async () =>
     new Response('canvas: unknown module: "ghost"', { status: 404 })) as typeof fetch;
   try {
@@ -156,7 +154,7 @@ test("postCanvasAction POSTs the module-qualified call; 4xx/5xx throw the server
   }
 });
 
-// -- the canvas store: snapshot-render + delta-update + action states --
+// the canvas store: snapshot-render + delta-update + action states
 
 test("applySnapshot replaces the list, order preserved, junk dropped", () => {
   const store = createCanvasStore();
@@ -213,14 +211,12 @@ test("invoke: optimistic pending observed synchronously, error state on 4xx/5xx,
     assert.equal(store.actionState(panel.id, action.id).status, "pending");
     release!(json({ result: "done" }));
     await call;
-    // reactive proxy: compare fields (an own 'error.
     const done = store.actionState(panel.id, action.id);
     assert.equal(done.status, "idle");
     assert.equal(done.error, undefined);
   } finally {
     globalThis.fetch = realFetch;
   }
-  // route failure: the sentinel text is the error message (the panel's error state.
   globalThis.fetch = (async () =>
     new Response('canvas: unknown action: "refresh" on "kanban"', { status: 404 })) as typeof fetch;
   await store.invoke(panel, action);
@@ -249,7 +245,7 @@ test("refresh keeps the previous view on a failed snapshot fetch", async () => {
   }
 });
 
-// -- handlePayload: the delta frame dispatches like every event --
+// handlePayload: the delta frame dispatches like every event
 
 function deltaFrame(panel: unknown): Record<string, unknown> {
   return { type: "view_model_delta", panel };
@@ -296,7 +292,7 @@ test("absent onViewModelDelta: the frame is a no-op (no canvas, snapshot is the 
 
 // (the dockables pins live in the fold block above.
 
-// -- the v0.14.3 fold: the tab's absence is the pinned contract --
+// the v0.14.3 fold: the tab's absence is the pinned contract
 
 test("the canvas host tab is deleted (deletability, source + registry)", () => {
   assert.ok(
@@ -322,7 +318,6 @@ test("the canvas host tab is deleted (deletability, source + registry)", () => {
 
 test("/panels folds into the settings MODULES section (the palette keeps its name)", () => {
   const app = read("webui", "app", "app.vue");
-  // the modules cockpit tab retired.
   assert.match(app, /case "\/panels":/, "/panels stays a dispatching command");
   assert.match(
     app,
@@ -334,7 +329,7 @@ test("/panels folds into the settings MODULES section (the palette keeps its nam
   assert.ok(!/openModuleTab\("extensions"\)/.test(app), "no dispatch to the retired cockpit tab");
 });
 
-// v0.14.3: the contract's stream + boot wiring stayed (the store feeds the transcript.
+// v0.14.3: the contract's stream + boot wiring stayed.
 test("app.vue: the boot snapshot and the delta wiring stay (the contract endures)", () => {
   const app = read("webui", "app", "app.vue");
   assert.match(app, /canvas\.refresh\(\)/, "the snapshot loads at boot (Q3b)");
@@ -353,7 +348,7 @@ test("normalizeCanvasPanel guards the descriptor", () => {
   assert.equal(p!.id, "kanban.board");
 });
 
-// -- source pins: the production boundary the node runner cannot import --
+// source pins: the production boundary the node runner cannot import
 
 test("chat.ts: canvas deltas forward from every stream handler set", () => {
   const chat = read("webui", "app", "composables", "chat.ts");
@@ -362,7 +357,6 @@ test("chat.ts: canvas deltas forward from every stream handler set", () => {
     /onViewModelDelta[^\n]*deps\.canvasDelta\?\.\(panel\)/,
     "the transport handlers forward the delta to the app's canvas",
   );
-  // chat-last 2a: the chat panel is also the chat pane's render source.
   assert.match(chat, /chatPanel\(\): CanvasPanel \| null/, "the host exposes the panel descriptor");
   assert.match(chat, /normalizeChatPayload\(panel\.payload\)/, "the payload guards at the paint site");
 });

@@ -6,8 +6,8 @@
 
 import { ref, type InjectionKey, type Ref } from "vue";
 
-// -- the focus signal ------------------------------------------------------- app.vue.
-// seq ticks on every request - a re-request of an ALREADY-focused tab (a second
+// the focus signal ------------------------------------------------------- app.vue. seq
+// ticks on every request - a re-request of an ALREADY-focused tab (a second
 // type-to-capture burst after a click blurred the textarea) must still deliver, so the
 // consumers watch [focusKey, seq] and check the key.
 
@@ -44,7 +44,7 @@ export function focusDelivers(
   return stateKey !== "" && req.focusKey.value === stateKey;
 }
 
-// -- the selectors ---------------------------------------------------------
+// the selectors -------------------------------------------------------
 
 // a printable, un-modified key: exactly one character in `key` (space included. The
 // composer's own Enter-to-send keydown is untouched - it fires on the focused textarea,

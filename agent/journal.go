@@ -39,7 +39,7 @@ func (j *journal) add(c contribution) {
 	j.entries = append(j.entries, c)
 }
 
-// commit replays every contribution whose Context write is not yet live onto live, in.
+// commit replays every contribution whose Context write is not yet live onto live,.
 func (j *journal) commit(live *core.Context) {
 	for i := range j.entries {
 		e := &j.entries[i]

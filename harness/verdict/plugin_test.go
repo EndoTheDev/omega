@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// stubLogger is the minimal agent.LoggerProvider (the mount reads the logging seam to.
+// stubLogger is the minimal agent.LoggerProvider.
 type stubLogger struct{}
 
 func (stubLogger) Printf(format string, args ...any) {}

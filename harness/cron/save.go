@@ -19,7 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cronSaver is the write face the job editor rides, separate from the reader (the.
+// cronSaver is the write face the job editor rides, separate from the reader.
 type cronSaver interface {
 	SaveJob(job Job) ([]JobInfo, error)
 	DeleteJob(name string) ([]JobInfo, error)
@@ -73,7 +73,7 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 		return nil, fmt.Errorf("marshal job: %w", err)
 	}
 	// The one validation law: the editor-authored yaml re-parses like any operator yaml,
-	// rejections name the field (a bad kind, a schedule on an interval job..) and never
+	// rejections name the field (a bad kind, a schedule on an interval job.) and never
 	// reach the disk.
 	cfg, err := ParseConfig(data)
 	if err != nil {
@@ -202,8 +202,7 @@ func removeJobNode(path, name string) error {
 	return UnknownJobError{Key: name}
 }
 
-// jobsDocument reads the crons.yaml at path and returns its document node plus the
-// jobs.
+// jobsDocument reads the crons.yaml at path and returns its document node plus.
 func jobsDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

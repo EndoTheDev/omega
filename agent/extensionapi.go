@@ -57,11 +57,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ExtensionAPI tier: whether the mounting capsule ships built-in vocabulary
-// (machine-critical, not toggleable. Module registrations must carry the capsule's own
-// namespace (Q10); built-in registrations are the machine's vocabulary and keep their
-// natural names - both land on the same one-tenant ledger, so the collision law holds
-// across the boundary.
+// ExtensionAPI tier: whether the mounting capsule ships built-in vocabulary. Module
+// registrations must carry the capsule's own namespace (Q10); built-in registrations
+// are the machine's vocabulary and keep their natural names - both land on the same
+// one-tenant ledger, so the collision law holds across the boundary.
 func isBuiltin(p Plugin) bool {
 	_, toggleable := p.(Toggleable)
 	return !toggleable
@@ -144,9 +143,9 @@ func (r *Registry) Routes() []Route {
 }
 
 // Subcommand is one module-owned CLI subcommand (v0.12 phase D, grill Q6 - CLI
-// homecoming): the binary routes `omega <name>..` to the handler with the untouched
-// argv after the name; the module parses its own argv (core never grows a flag
-// framework) and prints its own help.
+// homecoming): the binary routes `omega <name>.` to the handler with the untouched argv
+// after the name; the module parses its own argv (core never grows a flag framework)
+// and prints its own help.
 type Subcommand struct {
 	Module  string
 	Name    string
@@ -216,8 +215,7 @@ func (r *Registry) isActive(name string) bool {
 	return r.active[name]
 }
 
-// recordJournal lands a successfully mounted module's contributions in the ledger (boot
-// path.
+// recordJournal lands a successfully mounted module's contributions in the ledger.
 func (r *Registry) recordJournal(j *journal) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -305,7 +303,7 @@ func (r *Registry) deliverModuleEmitters(ctx *Context, module string) {
 	}
 }
 
-// ExtensionAPI is one capsule's namespaced view of the mount surface, created by the.
+// ExtensionAPI is one capsule's namespaced view of the mount surface, created.
 type ExtensionAPI struct {
 	module  string
 	ctx     *core.Context
@@ -318,9 +316,9 @@ type ExtensionAPI struct {
 	panelProviders []core.PanelProvider
 }
 
-// writeSlot records the mount's write into the journal and applies it to the mounting
-// Context (boot. apply runs immediately; undo plays backward at dismount time and
-// removes exactly the captured element (removeOne) - never a slice truncation.
+// writeSlot records the mount's write into the journal and applies it to the mounting.
+// apply runs immediately; undo plays backward at dismount time and removes exactly the
+// captured element (removeOne) - never a slice truncation.
 func (api *ExtensionAPI) writeSlot(apply func(*core.Context), undo func(*core.Context)) {
 	applied := api.live
 	if apply != nil {
@@ -376,7 +374,6 @@ func (api *ExtensionAPI) claim(name string) error {
 // payload contract is unchanged raw JSON (core.Tool.Run takes map[string]any, Q9).
 func (api *ExtensionAPI) RegisterTool(name string, t core.Tool) error {
 	if api.builtin {
-		// Built-in tier: the one-tenant ledger holds the name itself, no namespace pairing.
 		if err := api.claimRecorded("tool:" + name); err != nil {
 			return err
 		}
@@ -404,7 +401,7 @@ func (api *ExtensionAPI) RegisterBuiltinTool(name string, t core.Tool) error {
 	return nil
 }
 
-// landTool assembles one registration into the provider the loop reads and arms the.
+// landTool assembles one registration into the provider the loop reads and arms.
 func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	if api.tools == nil {
 		api.tools = make(map[string]core.Tool)
@@ -493,7 +490,7 @@ func (api *ExtensionAPI) commit() error {
 	return nil
 }
 
-// RegisterRoute registers one module REST route (the phase-D vocabulary.
+// RegisterRoute registers one module REST route.
 func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWriter, *http.Request)) error {
 	if pattern == "" {
 		return fmt.Errorf("route %q: a registered route carries its pattern", api.module)
@@ -554,8 +551,7 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 	return nil
 }
 
-// RegisterSubcommand registers the capsule's CLI subcommand (v0.12 phase D, Q6 - module
-// owns its argv).
+// RegisterSubcommand registers the capsule's CLI subcommand.
 func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(argv []string) error) error {
 	if name == "" || name != strings.TrimSpace(name) {
 		return fmt.Errorf("subcommand %q: a registration carries its bare-word name", name)
@@ -684,7 +680,6 @@ func (api *ExtensionAPI) RegisterCommand(name, description string, args []string
 			c.CommandHandler = func(ctx context.Context, n, a string) (core.CommandResult, error) {
 				out, err := h(ctx, n, a)
 				if err == nil || !errors.Is(err, core.ErrCommandMiss) {
-					// an answer, or this owner's own refusal.
 					return out, err
 				}
 				if inner != nil {
@@ -732,17 +727,16 @@ func (api *ExtensionAPI) mountSeam(seam string, apply func(*core.Context), undo 
 	return nil
 }
 
-// Offer mounts one service under a stringly-keyed seam (restructure part 3, the seam
-// constitution). One owner per key: a foreign offer on a held key fails the mount loud
-// (Q5), a same-tenant re-offer replaces (the clean-idempotent remount, Q7). Consumers
-// resolve by key from ctx.Services and type-assert to their OWN interfaces; the key
-// string is data, never a shared type.
+// Offer mounts one service under a stringly-keyed seam.
+// One owner per key: a foreign offer on a held key fails the mount loud (Q5), a
+// same-tenant re-offer replaces (the clean-idempotent remount, Q7). Consumers resolve
+// by key from ctx.Services and type-assert to their OWN interfaces; the key string is
+// data, never a shared type.
 func (api *ExtensionAPI) Offer(key string, svc any) error {
 	if svc == nil {
 		return fmt.Errorf("service %q: a registration carries its service", key)
 	}
 	module := api.module
-	// The ledger claims the key first (the same one-tenant slot the provides sweep.
 	if err := api.claimRecorded(key); err != nil {
 		return err
 	}

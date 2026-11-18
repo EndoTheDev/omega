@@ -18,7 +18,7 @@ const serverFiles = readRepo("harness/files/routes.go");
 // the /files/raw registration lives in the files capsule
 const filesPlugin = readRepo("harness/files/plugin.go");
 
-// -- the viewer's image branch ------------------------------------------------
+// the viewer's image branch ----------------------------------------------
 
 describe("ViewerTab's image branch (t_08d822bb)", () => {
   it("binds the <img> to GET /files/raw, gated on the sniffed mime", () => {
@@ -49,7 +49,7 @@ describe("ViewerTab's image branch (t_08d822bb)", () => {
   });
 });
 
-// -- the raw route, backend shape -----------------------------------------------
+// the raw route, backend shape ---------------------------------------------
 
 describe("GET /files/raw (t_08d822bb)", () => {
   it("is registered; images only; the sniff is stdlib", () => {
@@ -85,7 +85,7 @@ describe("GET /files/raw (t_08d822bb)", () => {
   });
 });
 
-// -- the raw-url wire ------------------------------------------------------------
+// the raw-url wire ----------------------------------------------------------
 
 describe("filesRawUrl wire", () => {
   it("builds /files/raw with the encoded path + session", () => {

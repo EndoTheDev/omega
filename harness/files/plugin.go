@@ -18,7 +18,7 @@ type Plugin struct {
 	routes *Routes
 }
 
-// Name returns the capsule name (the modules registry row, every "files"-owned.
+// Name returns the capsule name.
 func (p *Plugin) Name() string { return "files" }
 
 // Description implements agent.Describer.
@@ -26,7 +26,7 @@ func (p *Plugin) Description() string {
 	return "Files: the consolidated file tool (read/write/edit, atomic batch) and the webui's file explorer"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "files" }
 
 // Provides lists seam names this plugin mounts: the additive tools rail.
@@ -66,13 +66,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			}
 			return nil
 		},
-		// The explorer routes are the file tools wearing a second face.
 		func() error { return api.RegisterRoute("/files/browse", p.routes.handleFilesBrowse) },
 		func() error { return api.RegisterRoute("/files/read", p.routes.handleFilesRead) },
 		func() error { return api.RegisterRoute("/files/raw", p.routes.handleFilesRaw) },
 		func() error { return api.RegisterRoute("POST /files/write", p.routes.handleFilesWrite) },
 		func() error { return api.RegisterRoute("POST /files/mkdir", p.routes.handleFilesMkdir) },
-		// The session workspace picker face.
 		func() error { return api.RegisterRoute("/workspaces/browse", p.routes.handleWorkspacesBrowse) },
 		func() error { return api.RegisterRoute("/workspaces/files", p.routes.handleWorkspaceFiles) },
 		// The default_workspace knob lands at mount.

@@ -3,13 +3,11 @@
     ref="el"
     class="toolcall">
     <summary @click="onSummaryClick">
-      <!-- the status dot became the tools-tab wrench. -->
       <Icon
         name="tools"
         class="tool-ic"
         :class="status" />
       <span class="tool-name">{{ name }}</span>
-      <!-- the smart gate's decision record. -->
       <span
         v-if="gate"
         class="tool-gate">{{ gate }}</span
@@ -20,7 +18,6 @@
         :title="answerLabel ? 'call duration + response return' : undefined"
         >{{ elapsedLabel }}<template v-if="answerLabel"> + {{ answerLabel }}</template></span
       >
-      <!-- async agent loop phase 3: the pending chip's word. -->
       <span
         v-if="status === 'pending'"
         class="tool-elapsed">pending</span
@@ -42,7 +39,6 @@
         >{{ result }}</pre
       >
     </div>
-    <!-- live chip tail: the chips topic's streamed output while the call runs. -->
     <div
       v-else-if="liveText"
       class="tool-section">
@@ -50,8 +46,7 @@
       <pre class="tool-output tool-live">{{ liveText }}</pre>
     </div>
     <!--
-      variant anchor: a tool CALL row can be a branch's active head (a text-less
-      multi-row replay).
+      variant anchor: a tool CALL row can be a branch's active head (a text-less.
     -->
     <VariantSwitcher
       v-if="variant"
@@ -98,8 +93,7 @@
   const elapsedLabel = useElapsed(
     () => props.finalMs,
     () => isLive(props.status),
-    // a restored STILL-RUNNING call counts on from the server's elapsed-so-far
-    // (live-run merge).
+    // a restored STILL-RUNNING call counts on from the server's elapsed-so-far.
     () => props.elapsedMs ?? 0,
   );
 
@@ -108,10 +102,9 @@
     props.answerMs != null ? formatDurationMs(props.answerMs) : "",
   );
 
-  // -- auto open/close --- The settings knob (auto | expanded | collapsed) decides what
-  // a row does on its own. A manual summary click PINS the row - its open state is the
-  // user's for the session, and mode flips and status transitions recompute around it,
-  // never over it.
+  // auto open/close --- The settings knob (auto | expanded | collapsed) decides. A
+  // manual summary click PINS the row - its open state is the user's for the session,
+  // and mode flips and status transitions recompute around it, never over it.
   const el = ref<HTMLDetailsElement | null>(null);
   const display = useToolDisplay();
   const pinned = ref<boolean | null>(null);

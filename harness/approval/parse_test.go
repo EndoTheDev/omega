@@ -27,7 +27,7 @@ func TestFDRedirectParsePins(t *testing.T) {
 		{in: "cmd 1>out.log", want: []string{"cmd", "1>out.log"}},
 		{in: "cmd 2>err.log >out.log", want: []string{"cmd", "2>err.log", ">out.log"}},
 		{in: "cmd 2>>err.log", want: []string{"cmd", "2>>err.log"}},
-		// file-dup: the operand is not a digit, so it is a file (the word continues past.
+		// file-dup: the operand is not a digit, so it is a file.
 		{in: "cmd 2>&log.txt", want: []string{"cmd", "2>&log.txt"}},
 		{in: "cmd >& f.log", want: []string{"cmd", ">&", "f.log"}},
 		{in: "cmd 2>&", want: []string{"cmd", "2>&"}},

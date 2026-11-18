@@ -1,6 +1,6 @@
 <template>
   <!--
-    the nav cluster - back / forward / command palette..
+    the nav cluster - back / forward / command palette.
     VS Code states: the ends DIM via the disabled attribute - a real disabled button,
     never a click-swallowing lookalike.
   -->
@@ -88,9 +88,9 @@
     (e: "open-palette"): void;
   }>();
 
-  // -- the fake input's placeholder. The timer re-arms on the NEXT minute boundary, so
-  // the label is never more than a minute stale and the bar re-renders once a minute -
-  // not once a second, and never at all once the component is gone.
+  // the fake input's placeholder. The timer re-arms on the NEXT minute boundary, so the
+  // label is never more than a minute stale and the bar re-renders once a minute - not
+  // once a second, and never at all once the component is gone.
   function formatClock(d: Date): string {
     const pad = (n: number) => String(n).padStart(2, "0");
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`;

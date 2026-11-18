@@ -15,18 +15,16 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// sessionListedReader/Writer are the store surface the visibility backfill needs,
-// declared by the consumer.
+// sessionListedReader/Writer are the store surface the visibility backfill needs.
 type sessionListedReader interface {
 	agent.AgentSessionStore
 	SetSessionListed(ctx context.Context, id string, listed bool) error
 }
 
-// MigrateCanonicalVisibility hides every canonical chat that an older build seeded as.
+// MigrateCanonicalVisibility hides every canonical chat that an older build seeded.
 // Boot-time and idempotent: a row already machine-owned is skipped, so every mount may
 // run it.
 func (m *Machine) MigrateCanonicalVisibility() error {
-	// main's canonical chat lives in the daemon's own store.
 	if st := m.mountStore(); st != nil {
 		if w, ok := st.(sessionListedReader); ok {
 			if err := hideCanonicalRows(w, agent.DefaultAgentName); err != nil {
@@ -88,7 +86,7 @@ func hideCanonicalRows(w sessionListedReader, agentName string) error {
 	return nil
 }
 
-// MigrateCanonicalIDs renames each agent home's bare-id canonical chat to its.
+// MigrateCanonicalIDs renames each agent home's bare-id canonical chat.
 func (m *Machine) MigrateCanonicalIDs() error {
 	entries, err := os.ReadDir(filepath.Join(m.home, "agents"))
 	if err != nil {

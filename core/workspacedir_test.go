@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// The workspace-path validator's self-check (the wire guard the session create/PATCH.
+// The workspace-path validator's self-check.
 // Pinned: refusal shapes (empty, relative, not-a-dir), the accepted happy path, and
 // hidden-directory tolerance (a dot directory is a legal workspace root - the browse
 // LISTING filters, the validator never does).

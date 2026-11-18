@@ -1,8 +1,8 @@
 package tools
 
-// Regression pins for: a directory that failed the walk used to vanish as "[skipped N
-// walk errors]". Tests restore walkDirFn via defer and never leave it swapped (no test
-// in the package uses t.Parallel).
+// Regression pins for: a directory that failed the walk used to vanish as "[skipped N.
+// Tests restore walkDirFn via defer and never leave it swapped (no test in the package
+// uses t.Parallel).
 
 import (
 	"context"
@@ -38,7 +38,7 @@ func withInjectedDeniedDir(names ...string) func() {
 	return func() { walkDirFn = orig }
 }
 
-// TestGlobWalkErrorsListPathAndCause: a denied directory appears in the result with.
+// TestGlobWalkErrorsListPathAndCause: a denied directory appears in the result.
 func TestGlobWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "hit.txt"), []byte("x\n"), 0o644); err != nil {
@@ -83,8 +83,7 @@ func TestGlobWalkErrorSurvivesNoMatches(t *testing.T) {
 	}
 }
 
-// TestGrepWalkErrorsListPathAndCause: the grep walk carries the same detail (one
-// fixture, two tools.
+// TestGrepWalkErrorsListPathAndCause: the grep walk carries the same detail.
 func TestGrepWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "quiet.txt"), []byte("nothing here\n"), 0o644); err != nil {
@@ -103,7 +102,7 @@ func TestGrepWalkErrorsListPathAndCause(t *testing.T) {
 	}
 }
 
-// TestGlobWalkErrorDetailCap: the detail lines are capped with an honest "..and N more"
+// TestGlobWalkErrorDetailCap: the detail lines are capped with an honest ".and N more"
 // tail, so a pathological tree cannot flood the result.
 func TestGlobWalkErrorDetailCap(t *testing.T) {
 	dir := t.TempDir()

@@ -34,7 +34,7 @@ func newFileStore(t *testing.T) *Store {
 	return s
 }
 
-// ageSession backdates a session's updated_at (migrate never backfills the summary.
+// ageSession backdates a session's updated_at.
 func ageSession(t *testing.T, s *Store, id string, daysAgo int) {
 	t.Helper()
 	if _, err := s.db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
@@ -89,7 +89,7 @@ func TestSummarizerWritesRowAndFTS(t *testing.T) {
 		t.Errorf("updated_at %q moved by the summary write (was %q)", sess.UpdatedAt, base.UpdatedAt)
 	}
 
-	// ..and the FTS index answers for the SUMMARY text (content never contained the word.
+	// .and the FTS index answers for the SUMMARY text.
 	res, err := s.SearchSessions(ctx, "asked for fibonacci")
 	if err != nil {
 		t.Fatal(err)
@@ -333,7 +333,6 @@ func TestHygieneToolActions(t *testing.T) {
 		t.Error("unknown action accepted")
 	}
 
-	// The summarize-only action answers a second run.
 	out, err = tool.Run(ctx, map[string]any{"action": "summarize"})
 	if err != nil {
 		t.Fatalf("summarize action: %v", err)
@@ -356,8 +355,8 @@ func TestInsightsCarriesFileSizes(t *testing.T) {
 	// A WAL that exists after the migrate writes shows up too; do not pin the value.
 }
 
-// -------------------------------------------------------------------------- Hygiene
-// goes live.
+// ------------------------------------------------------------------------ Hygiene goes
+// live.
 
 // spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {

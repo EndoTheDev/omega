@@ -11,10 +11,6 @@
         aria-label="browser back"
         title="back"
         @click="step(-1)">
-        <!--
-          the band tool rides the icon law (a lucide glyph through the shared wrapper
-          at the band-tool size 13).
-        -->
         <Icon
           name="nav-back"
           :size="13" />
@@ -57,7 +53,6 @@
       <p class="browser-blank-hint">Type an address above and press Enter. Sites that refuse embedding fall back below with an open-in-new-tab path.</p>
     </div>
 
-    <!-- the refused/failed embed fallback (the known ceiling, built honestly). -->
     <div
       v-if="refused"
       class="browser-refused">
@@ -81,7 +76,6 @@
       </div>
     </div>
 
-    <!-- the frame. -->
     <iframe
       v-show="address !== '' && !refused"
       ref="frameEl"
@@ -109,14 +103,12 @@
     stepNav,
     type NavHistory,
   } from "./browserLogic";
-  // this view is the browser capsule's own now (harness/browser/ui/).
   import { isNarrowWidth } from "./narrow";
   // the ONE copy path - insecure-context-proof
   import { copyText } from "~/composables/clipboard";
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   const rootEl = ref<HTMLElement | null>(null);
-  // inline narrow adaptation (the Board pattern).
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
   onMounted(() => {
@@ -147,13 +139,11 @@
   const frameSrc = ref("");
   const frameKey = ref(0);
   const nav = ref<NavHistory>(emptyNav());
-  // the embed-load state machine.
   const pending = ref(false);
   const refused = ref(false);
   const probeRefused = ref(false);
   const copied = ref(false);
   let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
-  // the probe run's generation.
   let probeGen = 0;
 
 
@@ -161,7 +151,6 @@
     navigate(normalizeUrl(urlInput.value));
   }
 
-  // navigate commits an address.
   function navigate(u: string) {
     if (u === "") return;
     urlInput.value = u;
@@ -172,7 +161,7 @@
     beginEmbed(u);
   }
 
-  // step is the history belt: the buttons never lie (canStep's disabled edge), the.
+  // step is the history belt: the buttons never lie (canStep's disabled edge),.
   function step(delta: number) {
     const next = stepNav(nav.value, delta);
     if (!next || !canStep(nav.value, delta)) return;
@@ -193,7 +182,6 @@
 
   function reload() {
     if (address.value === "") return;
-    // a:key bump remounts the frame.
     frameSrc.value = address.value;
     frameKey.value++;
     beginEmbed(address.value);
@@ -241,7 +229,6 @@
 
   function onFrameLoad() {
     if (probeRefused.value) {
-      // a load event fires for a refused embed in Chromium too.
       return;
     }
     pending.value = false;
@@ -261,7 +248,7 @@
     }, PERSIST_GRACE_MS);
   }
 
-  // -- the capsule route (GET/PUT /browser/last) --
+  // the capsule route (GET/PUT /browser/last)
 
   interface LastReply {
     last?: string;

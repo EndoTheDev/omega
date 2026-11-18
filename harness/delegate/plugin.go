@@ -22,7 +22,7 @@ func (p *Plugin) Description() string {
 	return "delegate: spawns subagents to run subtasks in isolated sessions"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs (see.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"tools"} }

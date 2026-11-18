@@ -20,7 +20,7 @@ var imageMagic = []struct {
 	{"image/bmp", []byte{'B', 'M'}},               // BM
 }
 
-// MaxImageBytes is the maximum image file size accepted by DetectImage and.
+// MaxImageBytes is the maximum image file size accepted by DetectImage.
 const MaxImageBytes = 20 * 1024 * 1024 // 20 MB
 
 // DetectImage reads a file and returns core.ImageContent if it's a supported image

@@ -48,7 +48,7 @@ type LoopOptions struct {
 	// unchanged. Non-nil, the loop consults it before every tool run and turns a non-nil
 	// error into the tool result (the command never executes).
 	Approvals ApprovalProvider
-	Nudge     TurnNudger     // learning-loop reminder seam (t_9972dfd0; nil = off)
+	Nudge     TurnNudger     // learning-loop reminder seam
 	Logger    LoggerProvider // optional logging; nil = no logging
 
 	// The yield harness. EITHER nil = the whole harness is off: every tool blocks to
@@ -115,10 +115,10 @@ type StoreProvider interface {
 	// SessionCounts computes per-session message and tool-result counts at read time.
 	SessionCounts(ctx context.Context) (map[string]core.SessionCounts, error)
 
-	// AddSessionTokens adds a turn's real provider-reported usage to the session's.
+	// AddSessionTokens adds a turn's real provider-reported usage.
 	AddSessionTokens(ctx context.Context, sessionID string, prompt, completion int) error
 
-	// SetSessionLastRun writes the last-run stats block (or clears it with nil) on the.
+	// SetSessionLastRun writes the last-run stats block (or clears it with nil).
 	SetSessionLastRun(ctx context.Context, sessionID string, stats *core.LastRunStats) error
 
 	// SetSessionPinned sets the pinned flag on a session.
@@ -135,7 +135,7 @@ type StoreProvider interface {
 	// never touched.
 	SetSessionTitle(ctx context.Context, sessionID string, title string, final bool) error
 
-	// SessionModels returns the last recorded model per session, derived from the.
+	// SessionModels returns the last recorded model per session, derived.
 	SessionModels(ctx context.Context) (map[string]string, error)
 }
 
@@ -155,7 +155,7 @@ type SessionOwnerStore interface {
 	SessionOwner(sessionID string) string
 }
 
-// AgentHomeForgetter is the optional release surface the roster's DELETE verb asks for.
+// AgentHomeForgetter is the optional release surface the roster's DELETE verb asks.
 // A store with no routing answers false and the delete behaves exactly as it did.
 type AgentHomeForgetter interface {
 	// ForgetHome closes and evicts the cached store handle for one agent home, reporting.
@@ -165,28 +165,26 @@ type AgentHomeForgetter interface {
 // SessionContextStore is the optional session-context surface. Both setters are
 // user-list concerns - they do not touch updated_at.
 type SessionContextStore interface {
-	// SetSessionModel pins the model_name the session remembers (the name the picker
-	// wrote.
+	// SetSessionModel pins the model_name the session remembers.
 	SetSessionModel(ctx context.Context, sessionID, model string) error
 	// SetSessionProvider pins the provider INSTANCE name the session remembers.
 	SetSessionProvider(ctx context.Context, sessionID, provider string) error
-	// SetSessionWorkspace sets the session's working folder (absolute, existing directory.
+	// SetSessionWorkspace sets the session's working folder.
 	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
 	// SetSessionContextStart moves the provider-facing context boundary.
 	SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error
 }
 
 // DelegateSessionStore is the optional delegate-lineage surface. Delegate children
-// NEVER inherit their caller's context: the ruling splits the two lineage kinds, so a
+// NEVER inherit their caller's context: the rule splits the two lineage kinds, so a
 // delegate child's row records its spawner in delegate_parent while parent_id stays
 // NULL (parent_id is the FORK lineage - the ancestor merge reads only that).
 type DelegateSessionStore interface {
-	// CreateDelegateSession creates a session whose delegate_parent is the calling
-	// session.
+	// CreateDelegateSession creates a session whose delegate_parent is the calling.
 	CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error
 }
 
-// StorePinger is the optional store health surface (the health popover's "database".
+// StorePinger is the optional store health surface.
 type StorePinger interface {
 	// Ping answers whether the store's backing database answers a round
 	// trip right now. The caller bounds it with ctx; a healthy store
@@ -204,11 +202,9 @@ type LoggerProvider interface {
 	Close() error
 }
 
-// LoggerLastError is the optional logger upgrade behind the health popover's "last
-// error" row.
+// LoggerLastError is the optional logger upgrade behind the health popover's "last.
 type LoggerLastError interface {
-	// LastError returns the newest error entry's message (the formatted text, without the
-	// in-band "ERROR.
+	// LastError returns the newest error entry's message.
 	LastError() (message string, at time.Time, ok bool)
 }
 
@@ -245,13 +241,12 @@ type ProviderInstances interface {
 	Instance(name string) (Provider, bool)
 }
 
-// ModelCapabilitiesProvider is an optional interface upgrade for providers whose.
+// ModelCapabilitiesProvider is an optional interface upgrade for providers.
 type ModelCapabilitiesProvider interface {
 	ListModelEntries() ([]core.ModelEntry, error)
 }
 
-// ProviderInstanceNames is the optional upgrade for providers that carry NAMED
-// instances.
+// ProviderInstanceNames is the optional upgrade for providers that carry NAMED.
 type ProviderInstanceNames interface {
 	InstanceNames() []string
 }

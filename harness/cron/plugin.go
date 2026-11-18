@@ -24,7 +24,7 @@ var _ agent.Plugin = (*Plugin)(nil)
 // NewPlugin creates the cron plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-// NewPluginWithConfig creates the plugin from an explicit config and home (tests.
+// NewPluginWithConfig creates the plugin from an explicit config and home.
 func NewPluginWithConfig(cfg *Config, home string) *Plugin {
 	return &Plugin{cfg: cfg, home: home}
 }
@@ -57,7 +57,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	cfg := p.cfg
 	if cfg == nil {
 		var err error
-		// One cron module for every home.
 		cfg, err = LoadAllConfigs(home)
 		if err != nil {
 			return err
@@ -100,13 +99,13 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterSubcommand("crons", cronsSummary, cmdCrons(p)); err != nil {
 		return err
 	}
-	// The per-job toggle route rides the mcp toggle route's reasoning
-	// (harness/mcp/plugin.go). The route always mounts - the empty tab's toggle is refused
-	// at the wire (501), never a module-rooted miss.
+	// The per-job toggle route rides the mcp toggle route's reasoning. The route always
+	// mounts - the empty tab's toggle is refused at the wire (501), never a module-rooted
+	// miss.
 	if err := api.RegisterRoute("POST /cron/toggle", p.handleToggle); err != nil {
 		return err
 	}
-	// The job editor routes: POST /cron/save upserts one full job definition into the.
+	// The job editor routes: POST /cron/save upserts one full job definition.
 	// Both answer the fresh job set - the one-response contract the toggle carries.
 	if err := api.RegisterRoute("POST /cron/save", p.handleSaveJob); err != nil {
 		return err
@@ -114,7 +113,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRoute("POST /cron/delete", p.handleDeleteJob); err != nil {
 		return err
 	}
-	// Capsule law: the module ships its view-model with its scheduler.
 	p.capsule = newCapsule(r)
 	r.panels = p.capsule
 	return api.RegisterPanelProvider(p.capsule)
