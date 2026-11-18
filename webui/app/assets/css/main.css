@@ -174,7 +174,14 @@ body {
   color: var(--text-dim);
   font-family: var(--mono);
   font-size: 12px;
-  text-align: left;
+  /* the closed seat's text is the centered clock. The seat is a flex box,
+     so the clock is a flex ITEM: text-align alone cannot move it -
+     justify-content is what centers it. text-align stays centered as the
+     closed state's declared alignment; `.is-live` restores left (a typed
+     query reads left-aligned). Geometry untouched: no width, padding or
+     position change. */
+  justify-content: center;
+  text-align: center;
   cursor: pointer;
 }
 .nav-palette-input:hover { color: var(--text); border-color: var(--accent); }
@@ -190,6 +197,10 @@ body {
   border-color: var(--accent);
   color: var(--text);
   line-height: 22px;
+  /* the live field is where a TYPED query lives: left-aligned, unlike the
+     centered clock it replaced. The base rule's centering must not reach
+     it. */
+  text-align: left;
   cursor: text;
   outline: none;
 }
