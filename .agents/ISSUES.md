@@ -15,7 +15,7 @@ One issue per problem. If you found two problems, file two.
 
 The more of this you give, the faster the fix:
 
-- omega version: run `omega version` and paste the line.
+- omega version: run `omega --version` and paste the line.
 - OS and terminal (for example: Debian 12, zsh inside tmux).
 - What you did, step by step.
 - What you expected to happen.
