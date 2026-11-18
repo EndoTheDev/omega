@@ -38,6 +38,7 @@
     :output="item.output"
     :result="item.result"
     :call-id="item.callId"
+    :fold-key="foldKey"
     :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
@@ -71,6 +72,10 @@
     // card t_63204dfd: the pending gate question bound to THIS tool
     // row (ChatTab's binding) - the three-option card rides the row
     gateCard?: PendingVerdictCard | null;
+    // card t_15572849: this row's durable fold address (toolGroup.ts
+    // foldAddress) - the tool line keys its manual open/close pin by it on
+    // the tab's view record, so the pin survives the pane's unmount
+    foldKey?: string;
   }>();
   const emit = defineEmits<{
     (e: "select", messageId: string, index: number): void;

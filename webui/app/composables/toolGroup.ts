@@ -65,6 +65,22 @@ export function groupToolRuns(
   return out;
 }
 
+// foldAddress is a tool row's DURABLE address for its manual fold pin
+// (card t_15572849): the same identity ladder the child key rides, with
+// NO slot floor. The fold pin is the READER's state and it now lives on
+// the tab's view record so a dock-tab switch (which unmounts the whole
+// pane) cannot drop it - which means the address must survive a remount
+// too. A slot is stable only within ONE payload/instance: after a
+// remount the same slot renders a different row, so a slot pin would
+// close/open a call the reader never touched (the F1 mis-assignment, one
+// level up). undefined = the row is not pinnable; it keeps an
+// instance-local pin, exactly like before. Pure.
+export function foldAddress(item: { callId?: string; id?: string }): string | undefined {
+  if (item.callId) return `call:${item.callId}`;
+  if (item.id) return `row:${item.id}`;
+  return undefined;
+}
+
 // toolChildKey: the v-for key for a group's CHILD rows (card
 // t_64212867). The container is keyed by its head item, so a container
 // can survive while its membership shifts - a variant anchor split, or
@@ -78,11 +94,11 @@ export function groupToolRuns(
 //   t_0df4efd8; the REST restore path carries call ids only);
 // - else the slot. An item with NO identity has nothing stable to key
 //   on, so the slot is the honest floor - and the prefixes keep that
-//   floor from ever colliding with a real call id. Pure.
+//   floor from ever colliding with a real call id. The ladder IS
+//   foldAddress (one spelling of the durable half); the slot is only
+//   the key's floor, never a fold pin's. Pure.
 export function toolChildKey(item: ToolItem, index: number): string {
-  if (item.callId) return `call:${item.callId}`;
-  if (item.id) return `row:${item.id}`;
-  return `slot:${index}`;
+  return foldAddress(item) ?? `slot:${index}`;
 }
 
 // toolGroupWantOpen: the pure mode+state -> open mapping for a group

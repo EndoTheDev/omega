@@ -70,6 +70,63 @@ import { isLive, isStreaming } from "./toolStatus.ts";
 // the chat panel's stop/retry handlers (the pipe checks module + id).
 const CHAT_MODULE = "http_channel";
 
+/** ChatViewState is the tab's VIEW record (card t_15572849): the values a
+    dock-tab switch destroys. DockPane renders ONE outlet for the ACTIVE tab
+    and there is no KeepAlive anywhere in the tree, so every switch unmounts
+    the pane and takes the scrollport, the follow latch, the fold pins and
+    the activity clock with it - the "unmounts and remounts but the values
+    are not stored" family.
+
+    The settled design is THIS RECORD, not `<KeepAlive>` on the outlet:
+    keep-alive would keep every closed tab's whole DOM alive (every
+    ResizeObserver target, every `<details>`, every elapsed interval) and it
+    still cannot survive a reload, a session rebind, or the DnD move that
+    deliberately re-keys the instance (app.vue). The record is the smaller
+    runtime and the honest one for a 40-row window
+    (agent/api/chat_panel.go), and it is keyed by the tab because this state
+    IS the tab. */
+export interface ChatViewState {
+  /** the reader's place in the scrollport (px, this tab's own element) */
+  scrollTop: number;
+  /** the follow latch: true = new content lands the reader at the tail */
+  followPinned: boolean;
+  /** manual fold pins, keyed by the row's DURABLE address (toolGroup.ts
+      foldAddress: `call:<call id>`, else `row:<store row id>`; a group pin
+      keys `group:<head address>`). No slot floor on purpose - a slot is
+      stable only within one payload, so a slot pin would land on a
+      different call after a remount. */
+  folds: Map<string, boolean>;
+  /** the activity line's open phase stretch: which run, which phase, and
+      the wall clock it started at. Resumed only for the SAME run and the
+      SAME phase key, so a remount keeps counting and a stale anchor can
+      never be resumed onto a new stretch. */
+  activity: { run: number; key: string; startedAt: number } | null;
+  /** the loaded-view witness: the session row's `updated_at` as of the last
+      restore ("" = never loaded). load() re-uses an already-loaded view
+      while the row still carries this stamp and no run is live; anything
+      that ran since moves the stamp and the refetch happens. */
+  stamp: string;
+}
+
+/** emptyChatViewState mints one tab's view record. A function, never a
+    shared literal: the fold map and the anchor are per tab. */
+export function emptyChatViewState(): ChatViewState {
+  return { scrollTop: 0, followPinned: true, folds: new Map(), activity: null, stamp: "" };
+}
+
+/** ChatFoldPins is the fold-pin face a chat pane PROVIDES to its rows: the
+    reader's manual open/close, stored on the tab's ChatViewState so it
+    survives the pane's unmount. A row rendered outside a chat pane (no
+    provider) keeps its pin in its own instance, exactly as before. */
+export interface ChatFoldPins {
+  get(key: string): boolean | undefined;
+  set(key: string, open: boolean): void;
+}
+
+/** the pane -> row seam for fold pins (provide/inject, so a row three
+    component layers down reaches it without prop-drilling the whole map) */
+export const CHAT_FOLD_PINS_KEY: InjectionKey<ChatFoldPins> = Symbol("omega-chat-fold-pins");
+
 export interface ChatState {
   key: string;
   // the bound session id; null while the tab's chat is unsaved
@@ -155,6 +212,17 @@ export interface ChatState {
   // same /settings payload SettingsTab renders) - no default, no seed;
   // an explicit clear in the chip wins over the seed.
   workspaceIntent: string;
+  // the tab's VIEW record (card t_15572849): scroll place + follow
+  // latch, fold pins, the activity phase anchor, the loaded-view
+  // witness. A dock-tab switch unmounts the pane, so the view state
+  // cannot live in the instance - it lives here, keyed by the tab.
+  view: ChatViewState;
+  // monotone per-state counter: every transport interaction this state
+  // starts (a send, an attach, a wake ride) bumps it, so the activity
+  // line's phase anchor can name the run it belongs to. The phase key
+  // alone repeats across runs ("thinking"), which is exactly how a
+  // stale anchor would resume onto the wrong stretch.
+  runSeq: number;
 }
 
 /** EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a
@@ -182,6 +250,8 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   lastFinishReason: "",
   pendingSkill: null,
   workspaceIntent: "",
+  view: emptyChatViewState(),
+  runSeq: 0,
 };
 
 /** a "/" command send's context (t_7f09bd0c): marks the dispatch as a
@@ -251,8 +321,12 @@ export interface ChatHost {
   /** mount-time restore of one tab's view: persisted history rebuild +
       telemetry, reading the detail's live-run flag to attach. Refetch
       is skipped while this state itself is attached/busy (a refetch
-      would clobber the live view with a mid-flight snapshot). */
-  load(key: string, sessionId: string): Promise<void>;
+      would clobber the live view with a mid-flight snapshot), and - card
+      t_15572849 - while the state already holds this session's content
+      and no run has moved the session row since it was restored (the
+      dock-tab switch's remount is exactly that case). force = the truth
+      moved for a reason the row stamp cannot see yet. */
+  load(key: string, sessionId: string, force?: boolean): Promise<void>;
   /** subscribe to the session's live run for THIS tab's state (the
       duplicate-tab path: the other tab already streams locally) */
   attach(key: string): Promise<void>;
@@ -542,6 +616,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // non-ephemeral draft pins; no default -> "" (today's blank).
         workspaceIntent: !sessionId && !ephemeral ? defaultWorkspace() : "",
         pendingSkill: null,
+        view: emptyChatViewState(),
+        runSeq: 0,
       };
       states.set(key, fresh);
       st = states.get(key) as ChatState;
@@ -613,11 +689,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   // reconnectCatchUp is the socket's catch-up half: nothing replayed, so
   // every open pane refetches through the ordinary GET routes (events are
   // hints, state is truth). The restore also re-arms a pending waiter.
+  // Every call is forced: a socket gap is exactly the window in which the
+  // local view may have missed a run whose row stamp never reached us.
   async function reconnectCatchUp(): Promise<void> {
     const loads: Promise<void>[] = [];
     for (const [key, st] of states) {
       if (!st.sessionId || busyKeys.value.has(key) || st.attached) continue;
-      loads.push(load(key, st.sessionId));
+      loads.push(load(key, st.sessionId, true));
     }
     await Promise.all(loads);
   }
@@ -639,6 +717,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // yielded flag from a PREVIOUS run must not arm the pending
     // watcher off this one's streams
     st.lastFinishReason = "";
+    // a fresh transport interaction is a fresh RUN (card t_15572849):
+    // the activity line's phase anchor records this number, so a pane
+    // that mounts into the same phase key ("thinking") can tell "the
+    // same stretch, keep counting" from "an earlier run's clock"
+    st.runSeq += 1;
     // the delta rate meter: arrival times of the panel repaints (the
     // canvas cadence, batched server-side) make the statusbar a visible
     // proof that the frontend receives the stream as it comes
@@ -900,12 +983,42 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     return cache;
   }
 
-  async function load(key: string, sessionId: string): Promise<void> {
+  // viewIsStale answers the ONE question load()'s reuse guard needs: does
+  // this state's rendered view still match the session's truth? Two
+  // witnesses, both cheap and both owned elsewhere:
+  //  - a live run on the session (the runHub truth, through busyAll) makes
+  //    any local view a mid-flight picture;
+  //  - the session row's updated_at moved since this state restored it.
+  //    Reading the row is right: every writer of conversation content
+  //    (a run's persist, a variant select, a fork, a background cron run
+  //    the sidebar refreshed) moves that stamp, while the list-row
+  //    concerns (pinned / read / archived) deliberately do not.
+  // An UNKNOWN row is not a "no change" - the guard refetches rather than
+  // guess (a session the list has not loaded yet still renders correctly).
+  function viewIsStale(st: ChatState, sessionId: string): boolean {
+    if (busyAll.value.has(sessionId)) return true;
+    const row = deps.sessionRow(sessionId);
+    if (!row) return true;
+    return (row.updated_at ?? "") !== st.view.stamp;
+  }
+
+  async function load(key: string, sessionId: string, force = false): Promise<void> {
     const st = ensureState(key, sessionId);
     // a stream live on THIS state owns its feed - the panel repaints
     // (local deltas) are current; refetching now would trade them for
     // a mid-flight snapshot
     if (busyKeys.value.has(key) || st.attached) return;
+    // the loaded-view reuse (card t_15572849): a dock-tab switch unmounts
+    // the pane and the mount calls load() again. The state already carries
+    // this session's content - refetching it costs a REST round trip and
+    // re-renders the view for nothing. The refusal is EVIDENCE-BASED, never
+    // sticky: the session row must still carry the updated_at this state
+    // restored, and no run may be live on it. A run since then (this tab,
+    // another tab, a detached run seen through the row) is exactly what
+    // makes the local view stale - then the refetch happens as before.
+    // force = the callers that KNOW the truth moved (the socket catch-up,
+    // a variant select); they must never be skipped.
+    if (!force && st.loaded && !viewIsStale(st, sessionId)) return;
     try {
       const detail = await fetchTranscript(sessionId);
       // durable telemetry straight from the persisted row: the token
@@ -926,6 +1039,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // session, an empty list keeps the shape total.
       st.variants = detail.variants ?? [];
       st.loaded = true;
+      // the reuse witness: this restore now stands for the session AT this
+      // row stamp. A later mount compares against it (viewIsStale).
+      st.view.stamp = detail.session?.updated_at ?? "";
       // Reattach: a session mid-generation reports running=true on its
       // transcript - this tab auto-subscribes to the live events stream
       // and feeds the canvas store from it (multi-subscriber is fine).
@@ -1204,7 +1320,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.statusLine = `variant select failed: ${e}`;
       return false;
     }
-    await Promise.all([deps.canvasRefresh?.() ?? Promise.resolve(), load(key, st.sessionId)]);
+    await Promise.all([deps.canvasRefresh?.() ?? Promise.resolve(), load(key, st.sessionId, true)]);
     return true;
   }
 

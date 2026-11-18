@@ -51,6 +51,7 @@
                 :items="entry.items"
                 :gate-cards="entry.items.map(gateCardForItem)"
                 :session-id="sessionId"
+                :fold-key="groupFoldKey(entry.items)"
                 :live="busy" />
               <!-- the live pin (card t_5bb319f6): the streaming turn's user
                    row rides a sticky slot - it holds the scrollport top
@@ -63,6 +64,7 @@
                   :item="entry"
                   :gate-card="gateCardForItem(entry)"
                   :session-id="sessionId"
+                  :fold-key="rowFoldKey(entry)"
                   :show-thinking="showThinking"
                   @select="onSelect"
                   @fork="onFork" />
@@ -74,6 +76,7 @@
                 :retryable="retryableOfItem(entry)"
                 :gate-card="gateCardForItem(entry)"
                 :session-id="sessionId"
+                :fold-key="rowFoldKey(entry)"
                 :show-thinking="showThinking"
                 @select="onSelect"
                 @fork="onFork"
@@ -90,6 +93,7 @@
               :items="entry.items"
               :gate-cards="entry.items.map(gateCardForItem)"
               :session-id="sessionId"
+              :fold-key="groupFoldKey(entry.items)"
               :live="busy" />
             <ChatItem
               v-else
@@ -98,6 +102,7 @@
               :retryable="retryableOfItem(entry)"
               :gate-card="gateCardForItem(entry)"
               :session-id="sessionId"
+              :fold-key="rowFoldKey(entry)"
               :show-thinking="showThinking"
               @select="onSelect"
               @fork="onFork"
@@ -163,13 +168,16 @@
   // and the SSE-composed live view are gone; the state keeps the
   // composer transport side (draft, attach chips, the REST restore's
   // fallback for sessions the single panel does not cover, variants).
-  import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+  import { computed, inject, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from "vue";
   import {
+    CHAT_FOLD_PINS_KEY,
     CHAT_HOST_KEY,
     EPHEMERAL_DRAFT_REF,
     activityPhase,
     createCanvasTranscript,
     findMessageItem,
+    type ChatFoldPins,
+    type ChatViewState,
   } from "../composables/chat";
   import {
     COMPOSER_FOCUS_KEY,
@@ -195,11 +203,12 @@
     type TranscriptItem,
     type VariantBlock,
     type ModelProviderSection,
+    type ToolItem,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
   // card t_e4280de7: consecutive tool rows collapse into ONE group
   // block (render-site view, the transcript itself stays flat)
-  import { groupToolRuns, isToolRun, type ChatEntry } from "../composables/toolGroup";
+  import { groupToolRuns, isToolRun, foldAddress, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
@@ -256,6 +265,49 @@
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   // the reactive read through the wrapped map is the view
   const state = computed(() => host.states.get(stateKey));
+
+  // --- the tab's VIEW record (card t_15572849) -------------------------
+  //
+  // DESIGN, settled: the view state lives on the store record keyed by the
+  // tab (ChatState.view), never in this instance and never behind
+  // <KeepAlive>. DockPane renders ONE outlet for the ACTIVE tab and the tree
+  // holds no KeepAlive on purpose (a closed Files/Settings tab must not keep
+  // its DOM alive); a keep-alive cache also cannot survive a reload, a
+  // session rebind or the DnD move that deliberately re-keys this instance.
+  // The record is small by construction - the chat panel's honest window is
+  // 40 rows (agent/api/chat_panel.go) - and it is keyed by the tab because
+  // this state IS the tab.
+  //
+  // Three faces of it are wired here: the scroll place + follow latch, the
+  // fold pins (provided to the rows below through CHAT_FOLD_PINS_KEY) and
+  // the activity line's phase anchor.
+  function viewRecord(): ChatViewState | null {
+    return state.value?.view ?? null;
+  }
+  // the fold-pin face the tool rows reach through inject: the reader's
+  // manual open/close, keyed by the row's durable address (toolGroup.ts
+  // foldAddress). Reads go through state.value on every call, so the rows
+  // track the reactive record like any other store read.
+  const foldPins: ChatFoldPins = {
+    get: (key) => viewRecord()?.folds.get(key),
+    set: (key, open) => {
+      const view = viewRecord();
+      if (view) view.folds.set(key, open);
+    },
+  };
+  provide(CHAT_FOLD_PINS_KEY, foldPins);
+  // the row address a tool line pins under (its own call/row identity)
+  function rowFoldKey(item: TranscriptItem): string | undefined {
+    return item.kind === "tool" ? foldAddress(item) : undefined;
+  }
+  // the group address: the container is keyed by its HEAD row (entryKey
+  // below), so the pin rides that same head - a growing run keeps both the
+  // element and the reader's pin
+  function groupFoldKey(items: ToolItem[]): string | undefined {
+    const head = items[0];
+    const address = head ? foldAddress(head) : undefined;
+    return address ? `group:${address}` : undefined;
+  }
 
   // --- the session's remembered context (card t_9de5b009) ---
   //
@@ -466,24 +518,47 @@
     return tickLabel.value ? `${a.label} · ${tickLabel.value}` : a.label;
   });
   let tick: ElapsedMeter | null = null;
+
+  // THE PHASE ANCHOR IS STORED (card t_15572849): the activity line is
+  // narration of the RUN, so a dock-tab switch - which unmounts this pane -
+  // must not restart its clock. The anchor (which run, which phase, when it
+  // started) lives on the tab's view record; a mount into the SAME run's
+  // SAME phase resumes from it (the label keeps counting), and anything
+  // else mints a fresh one. Two guards make a stale resume impossible: the
+  // run counter (ChatState.runSeq bumps at every transport start, so an
+  // earlier run's "thinking" can never be read as this one's) and the phase
+  // key itself (the watcher below re-anchors on every phase move and clears
+  // the anchor when the run idles).
+  function startActivityMeter(a: ReturnType<typeof activityPhase>): void {
+    if (tick) {
+      tick.stop();
+      tick = null;
+    }
+    tickLabel.value = "";
+    const view = viewRecord();
+    if (!a) {
+      if (view) view.activity = null;
+      return;
+    }
+    const st = state.value;
+    let consumed = a.initialMs ?? 0;
+    const stored = view?.activity;
+    if (view && stored && st && stored.run === st.runSeq && stored.key === a.key) {
+      // the same stretch, seen by a pane that had unmounted: count on
+      consumed = Math.max(0, Date.now() - stored.startedAt);
+    }
+    if (view && st) view.activity = { run: st.runSeq, key: a.key, startedAt: Date.now() - consumed };
+    tick = createElapsedMeter(
+      (label) => (tickLabel.value = label),
+      undefined,
+      undefined,
+      consumed,
+    );
+    tick.start();
+  }
   watch(
     () => activity.value?.key ?? "",
-    () => {
-      if (tick) {
-        tick.stop();
-        tick = null;
-      }
-      tickLabel.value = "";
-      const a = activity.value;
-      if (!a) return;
-      tick = createElapsedMeter(
-        (label) => (tickLabel.value = label),
-        undefined,
-        undefined,
-        a.initialMs ?? 0,
-      );
-      tick.start();
-    },
+    () => startActivityMeter(activity.value),
     { immediate: true },
   );
   onBeforeUnmount(() => tick?.stop());
@@ -562,6 +637,9 @@
   }
 
   onBeforeUnmount(() => {
+    // the reader's place leaves with the pane; write it back one last time
+    // (a switch can land between the last scroll event and the unmount)
+    recordScroll();
     contentRO?.disconnect();
     contentRO = null;
   });
@@ -575,6 +653,7 @@
       followWrite = -1;
       lastScrollHeight = el.scrollHeight;
       jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+      recordScroll();
       return;
     }
     followWrite = -1;
@@ -586,6 +665,51 @@
       el.scrollHeight,
     );
     lastScrollHeight = el.scrollHeight;
+    jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+    recordScroll();
+  }
+
+  // --- the view record's scroll half (card t_15572849) -----------------
+  //
+  // The scrollport is per INSTANCE (two panes may render the same session),
+  // but the reader's PLACE is per TAB: a dock-tab switch unmounts this
+  // component and the remount used to land at the tail, yanking a reader
+  // who was reading history. The values live on the tab's view record:
+  // every scroll event writes the position and the follow latch, and the
+  // mount after a switch reads them back.
+  function recordScroll(): void {
+    const el = messagesEl.value;
+    const view = viewRecord();
+    if (!el || !view) return;
+    view.scrollTop = el.scrollTop;
+    view.followPinned = pinned.value;
+  }
+
+  function restoreScroll(): void {
+    const el = messagesEl.value;
+    const view = viewRecord();
+    if (!el || !view) return;
+    // the shrink-clamp guard's fuel (resumesFollow) is the height BEFORE the
+    // restore write: without this priming the restore's own scroll event
+    // would compare against a stale height and could read as a reader
+    // decision (the followWrite law, card t_31c64042)
+    lastScrollHeight = el.scrollHeight;
+    pinned.value = view.followPinned;
+    jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
+    if (view.followPinned) {
+      // a followed pane LIVES at the tail: the stored offset is stale the
+      // moment content grew while the tab was away, and the latch's promise
+      // is "new content lands on screen"
+      scrollDown();
+      return;
+    }
+    const max = Math.max(el.scrollHeight - el.clientHeight, 0);
+    const target = Math.min(Math.max(view.scrollTop, 0), max);
+    if (Math.abs(el.scrollTop - target) < 1) return;
+    el.scrollTop = target;
+    // OUR write, not a reader scroll: the event it raises must not be read
+    // as "the reader moved" (exactly what followWrite exists for)
+    followWrite = el.scrollTop;
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
   }
 
@@ -776,8 +900,14 @@
     // with the first swap and leave the settled column deaf)
     // the RO targets start observing after the first paint batch - a
     // registration fire rides the pinned gate, so priming this way never
-    // forces a mount-time jump (card t_bef3f45e)
-    nextTick(resizeContentRO);
+    // forces a mount-time jump (card t_bef3f45e). The restored view comes
+    // FIRST: the latch it sets is what the registration fire reads (card
+    // t_15572849 - a reader parked in the history is not yanked to the tail
+    // by their own return to the tab).
+    nextTick(() => {
+      restoreScroll();
+      resizeContentRO();
+    });
     // pending selection focus for a tab minted after the request (the
     // new-chat / fresh-session open path)
     if (focusSignal && focusSignal.focusKey.value !== null) deliverFocus();
