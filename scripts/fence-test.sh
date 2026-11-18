@@ -23,12 +23,34 @@ FIX="$(mktemp -d)" \
 	|| { echo "fence-test: mktemp -d failed under '${TMPDIR:-/tmp}' - refusing to continue (fixture git would run inside the repo the suite was launched from)" >&2; exit 1; }
 [ -n "$FIX" ] && [ -d "$FIX" ] \
 	|| { echo "fence-test: mktemp -d returned '$FIX', which is not a directory" >&2; exit 1; }
+
+# The fixture must be reachable by NATIVE git too, not only by this shell.
+# Under the Hermes cron bash (MSYS_NO_PATHCONV=1, MSYS2_ARG_CONV_EXCL='*')
+# argv is never translated, so a Windows git handed mktemp's virtual /tmp
+# path answers `cannot change to '/tmp/...'` and the suite reds at the first
+# G() - 27 of 49 cases - while CI's Linux runners stay green (t_5fbbdc9a).
+# Resolve once, where a path mapper exists; on POSIX cygpath is absent and
+# the path passes through untouched.
+native_path() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
+FIX="$(native_path "$FIX")"
 trap 'rm -rf "$FIX"' EXIT
 git -C "$FIX" -c init.defaultBranch=master init -q repo
 R="$FIX/repo"
+# A fixture that did not materialize must say so in one line, not cascade
+# into 27 identical reds that read like fence failures.
+[ -d "$R/.git" ] \
+	|| { echo "fence-test: fixture repo did not materialize at '$R' - native git cannot resolve that path (MSYS path conversion off?)" >&2; exit 1; }
 G() { git -C "$R" -c user.name=fence -c user.email=fence@local "$@"; }  # real git, setup + asserts
-S() { env -C "$R" "$SHIM" "$@"; }                 # shim, unstamped
-F() { env -C "$R" OMEGA_WORKER=1 "$SHIM" "$@"; }  # shim, fenced
+
+# cwd isolation without coreutils `env -C`: the shim must observe the FIXTURE
+# repo, never the launch repo. A subshell cd is the portable spelling (env -C
+# needs coreutils 8.28+ and is the half of t_5fbbdc9a that surfaced as
+# `env: cannot change directory to ...`). A failed cd exits 125 - loud, never
+# a silent fall-through that would fence the wrong repo.
+cd_fixture() { cd "$R" || { echo "fence-test: cannot enter fixture $R" >&2; exit 125; }; }
+S() { ( cd_fixture; "$SHIM" "$@" ); }                 # shim, unstamped
+F() { ( cd_fixture; OMEGA_WORKER=1 "$SHIM" "$@" ); }  # shim, fenced
+Z() { ( cd_fixture; OMEGA_WORKER=0 "$SHIM" "$@" ); }  # shim, stamp '0' - fences too
 
 # Repo-local identity: the unstamped passthrough runs bare git with no -c
 # flags (the `merge dev` below is a real merge commit), and a CI runner has
@@ -67,7 +89,9 @@ must_block "push"                F push origin pushless:refs/heads/attpush
 O rev-parse --verify --quiet refs/heads/attpush >/dev/null 2>&1 && \
   bad "push: the attempt LANDED on origin - the fence lied" || ok
 must_block "push --dry-run"      F push --dry-run origin HEAD
-must_block "push -C (global opt)" env -C "$FIX" OMEGA_WORKER=1 "$SHIM" -C "$R" push origin pushless
+# the shim's own global -C, launched from the fixture PARENT: -C is not an escape
+push_via_global_C() { ( cd "$FIX" || exit 125; OMEGA_WORKER=1 "$SHIM" -C "$R" push origin pushless ); }
+must_block "push -C (global opt)" push_via_global_C
 must_block "merge dev"           F merge dev
 must_block "merge --ff-only master" F merge --ff-only master
 must_block "merge origin/master" F merge origin/master
@@ -93,7 +117,9 @@ F checkout -q feat
 must_pass "status"      F status --porcelain
 must_pass "log"         F log -1 --oneline
 must_pass "tag"         F tag fence-t1
-must_pass "add+commit"  sh -c 'echo more >> "'"$R"'/feat.txt" && env -C "'"$R"'" OMEGA_WORKER=1 "'"$SHIM"'" add feat.txt && env -C "'"$R"'" OMEGA_WORKER=1 "'"$SHIM"'" -c user.name=fence -c user.email=fence@local commit -q -m more'
+# add+commit through the shim, twice in one shell (the fixture file grows)
+add_then_commit() { ( cd_fixture; echo more >> feat.txt && OMEGA_WORKER=1 "$SHIM" add feat.txt && OMEGA_WORKER=1 "$SHIM" -c user.name=fence -c user.email=fence@local commit -q -m more ); }
+must_pass "add+commit"  add_then_commit
 F checkout -q dev; F checkout -q feat   # unstamped-dev checkout/switch forwards
 
 # --- unstamped: byte-for-byte passthrough, push really lands ---
@@ -105,7 +131,7 @@ must_pass "unstamped reset master" S reset --hard master
 must_pass "unstamped work on dev" sh -c 'cd "'"$R"'" && git checkout -q master && git -c user.name=fence -c user.email=fence@local commit -q --allow-empty -m land && git checkout -q feat'
 
 # a stamp of ANY value fences (fail-closed); only absence passes through
-must_block "stamp '0' fences too" env -C "$R" OMEGA_WORKER=0 "$SHIM" push origin pushless
+must_block "stamp '0' fences too" Z push origin pushless
 
 # --- the live spawn path: the gateway builds the session env (t_2d53d4fa) ------------------
 # Root cause this card closed: the stamp on the `hermes kanban dispatch` invocation dies at
