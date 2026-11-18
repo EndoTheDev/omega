@@ -49,6 +49,23 @@ later audit.)
 - Flag the CLASS, not the instance: a repeated defect becomes a law
   line in this file or a lint check. Fixes land at the source.
 
+## Comment lens
+
+Source comments obey the comment law in `docs/release-gate.md` (A
+comment earns its line; history never lives in source comments). Two
+findings fall out of it, both cheap to check and both real:
+
+- A new comment that only narrates the next line, restates a
+  self-describing struct field or yaml key, or divides sections with a
+  banner is a `NIT`. Say it once; do not relitigate style.
+- A new comment carrying a card id (`t_xxxxxxxx`), a date, an incident
+  narrative, or a "proven"/"ruling"/"receipt" citation is `IMPORTANT`.
+  That record belongs in the commit message, the card body or the vault
+  Log - never in the file every future refactor has to drag along.
+
+The test for keeping one: would a competent reader plausibly break this
+code without the comment? If not, it does not earn its line.
+
 ## Reviewer scope
 
 Skip in review: generated bundles, `.worktrees/`, `bin/` (tracked
