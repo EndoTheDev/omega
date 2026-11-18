@@ -22,12 +22,29 @@ gate + soak automation.
    scripts/review-at-close.sh <task_id>
    ```
 
-   That builds `.worktrees/review-<task-id>`, computes the merge-base
+   That builds `.worktrees/review-<task_id>`, computes the merge-base
    with dev, and hands over the commit list + full cold diff. Review is
-   read-only (see CONTRIBUTING.md). Approval closes the card: done.
+   read-only **except the merge**: an APPROVED verdict lands the card in
+   the same session (merger shape A, below) - the reviewer runs no other
+   write.
 
-3. **Train** picks the oldest done card whose branch still carries
-   commits not on dev:
+3. **The merge follows the review seat.** An approval that stops at
+   "done" waits up to a tick interval for the next merge pass, and the
+   wait grows with throughput. So the APPROVED verdict includes the
+   landing:
+
+   ```
+   bash scripts/factory-merge.sh <task_id>     # the review seat's merge entry
+   ```
+
+   Same cycle as the tick's, for one named card (branch merge, gates
+   green ON THAT TREE, push, then `bash scripts/factory-prune.sh <id>`).
+   A CHANGES REQUESTED verdict, a held pipeline lock or a failed landing
+   leaves the card exactly where the previous flow left it.
+
+4. **Train (the fallback sweep)** picks the oldest done card whose branch
+   still carries commits not on dev - which is to say, **it merges only
+   what the review seat left behind**:
 
    ```
    scripts/train-pass.sh          # one landing per pass
@@ -39,6 +56,48 @@ gate + soak automation.
    `merge --no-ff`, push `origin dev`, marker ref
    `refs/train/<seq>-<task_id>` at the merge commit. Green or red, the
    state machine is the same for every card.
+
+## The review-seat merge (merger shape A)
+
+Ruled 2026-11-17 (card t_5b61405b): the merge follows the review seat.
+An APPROVED verdict lands the card in the same session instead of waiting
+for the next tick's merge pass; with 3+1 capacity the old gap grew with
+throughput.
+
+```
+bash scripts/factory-merge.sh <task_id>      # the review seat's entry
+```
+
+- **It is the same cycle, not a second one.** The script pins
+  `scripts/train-pass.sh` to the named card (`TRAIN_CARD`) and lets it
+  land: rebase onto the dev tip, the full gate list green ON THAT TREE,
+  `merge --no-ff`, push, marker ref, then `scripts/factory-prune.sh
+  <id>`. Strike, demote and un-land laws are the train's own, because the
+  code is the train's own.
+- **The approval proof is mechanical.** The pin only lands a card the
+  board shows as `done` with a live branch, so an unreviewed or running
+  card refuses.
+- **One author per checkout.** The merge takes the tick's pipeline lock
+  (`~/.hermes/cache/scratch/omega-pipeline.lock`). A live tick pass
+  defers the review-seat merge (`DEFERRED`, exit 3) rather than authoring
+  beside it, and the tick's next merge pass sweeps the card.
+- **Idempotent.** A card already in dev answers `ALREADY-MERGED` and still
+  runs the prune: the board can never show a double merge, and a second
+  attempt is a clean refusal.
+- **The rebuild booking is booked, never run.** The script prints
+  `REBUILD-DUE` / `REBUILD-NOT-DUE` from the landing's changed files
+  against the runtime roots (`cmd/`, `core/`, `agent/`, `harness/`,
+  `llm/`, `api/*.go`, `webui/app/`, `_test.go` excluded), and
+  `EYEBALL` when UI is in range (the imagery receipt is owed). The lane
+  rebuild stays with the tick: product bytes only, batching law untouched.
+- **The tick's merge pass is the FALLBACK sweep.** It merges only what
+  the review seat left behind - a deferred lock, a failed landing, a
+  session that ended early - which is exactly what its queue (oldest done
+  card whose branch is not yet in dev) already means.
+- Greppable lines and exit codes are documented in the script header;
+  they follow `factory-prune.sh` conventions (`REFUSED`, `NOTE`,
+  `<VERB> <id> ...`).
+
 
 ## The machine fence (worker sessions)
 
@@ -62,6 +121,12 @@ bare `git` in a worker shell is the fence shim.
 - A refusal prints the law line and exits non-zero: the transcript
   records it. The refusal is mechanical - no card body, memory note or
   prompt unblocks it.
+- **The ONE sanctioned door: `scripts/factory-merge.sh`, run by the review
+  seat on an APPROVED verdict.** It re-execs once without the stamp and
+  without the shim dir on PATH, after the board has proven the card is a
+  queued (approved) landing - then the train lands under the review gate's
+  authority. Every worker shell outside that door stays fenced: the
+  exception is the review seat's landing, not a worker's ambition.
 - The stamp is scoped to the dispatch invocation in
   `scripts/factory-dispatch.sh` (kanban workers; a missing shim aborts
   the pass loudly instead of dispatching unfenced) and to the delegate
@@ -268,6 +333,7 @@ stable channel from ever seeing a nightly.
 | `docs/release-gate.md`          | the gate's operating law: round cap, noise tags, lens brief, regression set |
 | `scripts/embed-lane.sh`         | the ONE owner of committed `api/static/`                                    |
 | `scripts/train-pass.sh`         | one mechanical landing per pass + marker refs + strikes                     |
+| `scripts/factory-merge.sh`      | the review seat's merge entry: train pinned to one APPROVED card, then prune |
 | `scripts/train-bisect.sh`       | the marker-chain walk: --list, or bisect by check                           |
 | `scripts/review-at-close.sh`    | fresh review worktree + cold diff vs merge-base                             |
 | `scripts/train-dry-run.sh`      | stale wt/\* sweep preview (stage 1, report/apply)                           |
