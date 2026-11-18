@@ -36,12 +36,41 @@ test("the editor opens with the visible row explainer", () => {
 
 // --- a fresh row shows what to type ---
 
-test("a blank row carries placeholders for name and host - and NO model column", () => {
+test("a blank row carries a name placeholder - and NO model column", () => {
   assert.match(field, /placeholder="my-ollama"/, "the name cell shows a sample id");
-  assert.match(field, /placeholder="http:\/\/localhost:11434"/,
-    "the host cell shows the ollama default");
   assert.doesNotMatch(field, /placeholder="llama3"/,
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
+});
+
+// --- card t_4924df4c: the add flow only invites a LEGAL add ------------
+//
+// A new row is legal with its name and type alone: applyProviderInstances
+// answers "config.yaml is the only door" for a host or api_key on a name
+// the stored list does not carry. The pane therefore renders those two
+// cells DISABLED on a new row, with the door named at the field, and the
+// host placeholder is a hint - never the http://localhost:11434 example
+// that was itself an illegal value for a fresh row.
+
+test("a NEW row disables the cells the API refuses and names the door at the field", () => {
+  assert.match(field, /const isNew = \(row: ProviderInstanceRow\): boolean =>/,
+    "the editor knows which rows the server would treat as new");
+  // the predicate reads the STORED list off the knob, not the draft
+  assert.match(field, /const stored = props\.knob\.value;/,
+    "new-ness is measured against the last payload the server sent");
+  // both gated cells carry the same gate and the same visible marker
+  const gated = field.match(/:disabled="isNew\(inst\)"/g) ?? [];
+  assert.equal(gated.length, 2,
+    "base url and api key are disabled on a new row (name + type stay live)");
+  const doors = field.match(/<em v-if="isNew\(inst\)" class="provider-door"/g) ?? [];
+  assert.equal(doors.length, 2,
+    "each gated cell names config.yaml in its own label");
+  assert.match(field, />config\.yaml-only</,
+    "the marker says the door: config.yaml-only");
+  // the host placeholder is a hint, never an example endpoint
+  assert.doesNotMatch(field, /placeholder="http:\/\/localhost:11434"/,
+    "an example host on a new row invites the exact value the API refuses");
+  assert.match(field, /:placeholder="isNew\(inst\) \? 'config\.yaml-only' : 'provider default'"/,
+    "the host placeholder states the door on a new row and the default on a stored one");
 });
 
 // --- the knob help and the editor copy agree ---
