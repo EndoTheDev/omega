@@ -81,8 +81,13 @@
   // answering posts to /sessions/{id}/verdicts (no card_id - this
   // session's oldest pending card, one run per session), the run's
   // tool_result frame then settles the card from the server's side.
-  // The countdown is a CLIENT approximation (frame arrival +
-  // timeout_s): the server owns the deadline.
+  //
+  // The ANCHOR is not this component's and not the pane's: `item.issuedAt`
+  // is the call's own issue instant, resolved by the render source
+  // (composables/chat.ts, verdictAnchorMs) from the server's start stamp
+  // or from the call id's first sight at module scope. So a card that
+  // remounts mid-deadline keeps counting down from where it was - the
+  // label is `issuedAt + timeout_s - now`, and only `now` restarts.
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 
   import type { VerdictItem } from "../../composables/omega";
@@ -111,9 +116,11 @@
     if (ticker) clearInterval(ticker);
   });
 
-  // countdown: mm:ss until the client's approximation of the deadline.
-  // Past zero renders "expiring" - the server may have fired the safe
-  // answer already; the incoming tool_result renders the truth.
+  // countdown: mm:ss until the deadline the anchor implies. No anchor
+  // (an id-less card, a payload served without a clock) renders NO label
+  // rather than a fabricated full one - a wrong deadline is worse than
+  // none. Past zero renders "expiring" - the server may have fired the
+  // safe answer already; the incoming tool_result renders the truth.
   const countdown = computed(() => {
     if (!props.item.issuedAt) return "";
     const timeoutS = props.item.timeoutS && props.item.timeoutS > 0 ? props.item.timeoutS : 1200;

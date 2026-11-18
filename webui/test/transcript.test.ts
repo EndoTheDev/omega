@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElapsedMeter, renderTranscriptItems } from "../app/composables/omega.ts";
+import { createCanvasTranscript } from "../app/composables/chat.ts";
 import { syncConsumedSpan } from "../app/composables/useElapsed.ts";
 
 import type { RenderTimers, TranscriptWireItem } from "../app/composables/omega.ts";
@@ -362,5 +363,164 @@ describe("useElapsed late anchor (the consumed span arrives after mount)", () =>
     assert.match(source, /watch\(initialMs, \(\) => syncConsumedSpan\(meter, initialMs\)\)/, "the setup capture is not the last word - the getter is watched");
     const helper = source.slice(source.indexOf("export function syncConsumedSpan"));
     assert.match(helper, /meter\.reanchor\(initialMs\(\)\)/, "the watched value reaches the meter's reanchor");
+  });
+});
+
+// --- the verdict countdown anchor (card t_f13642bc) -------------------
+//
+// The card's acceptance is a live one ("switch tabs mid-countdown, the
+// label continues") and its mechanism is provable here. A dock-tab switch
+// remounts the pane (DockPane renders one outlet, no KeepAlive), so the
+// second look at a card comes from a SECOND createCanvasTranscript over
+// the same wire. The anchor belongs to the call id at module scope, so the
+// second pane reads what the first one resolved: the label continues
+// instead of restarting at full time (the retired behaviour: the anchor
+// was a Map inside the per-mount transcript, so a card four minutes into
+// a five-minute deadline read 5:00 again).
+describe("verdict countdown anchor", () => {
+  const VERDICT_TIMEOUT_S = 300;
+
+  function verdictCallRow(callId: string, startedAt?: string): unknown {
+    return {
+      role: "assistant",
+      status: "streaming",
+      blocks: [
+        {
+          type: "tool_call",
+          running: true,
+          ...(startedAt ? { started_at: startedAt } : {}),
+          tool_call: {
+            id: callId,
+            name: "verdict",
+            arguments: {
+              title: "ship it?",
+              options: [{ label: "yes" }, { label: "no" }],
+              timeout_s: VERDICT_TIMEOUT_S,
+            },
+          },
+        },
+      ],
+    };
+  }
+
+  interface AnchorCard {
+    kind: string;
+    status: string;
+    issuedAt?: number;
+  }
+
+  function paneAnchor(
+    pane: ReturnType<typeof createCanvasTranscript>,
+    row: unknown,
+    session = "s1",
+  ): AnchorCard {
+    const items = pane.apply({ session, running: true, rows: [row] } as never);
+    return items[0] as unknown as AnchorCard;
+  }
+
+  it("a remount mid-deadline continues: the server's start stamp is the anchor", () => {
+    // four minutes into a five-minute card - the case from the audit
+    const startedAt = new Date(Date.now() - 4 * 60_000).toISOString();
+    const row = verdictCallRow("v-remount-stamp", startedAt);
+    const first = paneAnchor(createCanvasTranscript(), row);
+    assert.equal(first.kind, "verdict");
+    assert.equal(
+      first.issuedAt,
+      Date.parse(startedAt),
+      "the anchor is the call's server clock, not the paint's arrival",
+    );
+    // the dock-tab switch: a fresh pane, the same wire
+    const remounted = paneAnchor(createCanvasTranscript(), row);
+    assert.equal(remounted.issuedAt, first.issuedAt, "the label continues on the call, never on the mount");
+    const left = (first.issuedAt ?? 0) + VERDICT_TIMEOUT_S * 1000 - Date.now();
+    assert.ok(left > 30_000 && left <= 60_000, `about a minute of the five left, got ${left}ms`);
+  });
+
+  it("no server stamp: the call id's first sight holds across panes", () => {
+    const row = verdictCallRow("v-remount-sight");
+    // The two panes are four minutes apart. Without a server stamp the
+    // ONLY thing that can carry the instant across the mount is module
+    // scope keyed by the call id: the retired per-pane Map minted a fresh
+    // Date.now() on the second sight, so the label read full time again.
+    const realNow = Date.now;
+    const first = (() => {
+      Date.now = () => realNow() - 4 * 60_000;
+      try {
+        return paneAnchor(createCanvasTranscript(), row);
+      } finally {
+        Date.now = realNow;
+      }
+    })();
+    assert.ok(first.issuedAt, "a card the wire serves without a clock still anchors");
+    const second = paneAnchor(createCanvasTranscript(), row);
+    assert.equal(second.issuedAt, first.issuedAt, "the anchor is the call id's fact, not the pane's");
+    assert.ok(
+      realNow() - (second.issuedAt ?? 0) > 3 * 60_000,
+      "the second pane reads the FIRST pane's instant, four minutes back",
+    );
+  });
+
+  it("a start stamp arriving on a later delta moves the anchor once, onto the truth", () => {
+    const pane = createCanvasTranscript();
+    const bare = paneAnchor(pane, verdictCallRow("v-late-stamp"));
+    // the item is mutated in place, so snapshot the first-sight instant
+    const bareAt = bare.issuedAt ?? Date.now();
+    const startedAt = new Date(bareAt - 4 * 60_000).toISOString();
+    const stamped = paneAnchor(pane, verdictCallRow("v-late-stamp", startedAt));
+    assert.equal(stamped, bare, "same card object: the paint moves the field, never the identity");
+    assert.equal(stamped.issuedAt, Date.parse(startedAt), "the server's clock outranks first sight");
+    assert.ok(stamped.issuedAt! < bareAt, "and it moves the deadline EARLIER, not later");
+    const again = paneAnchor(pane, verdictCallRow("v-late-stamp", startedAt));
+    assert.equal(again.issuedAt, Date.parse(startedAt), "a fixed instant never drifts on a repaint");
+  });
+
+  it("a session switch never resets a card's anchor", () => {
+    const pane = createCanvasTranscript();
+    const card = paneAnchor(pane, verdictCallRow("v-cross-session"), "s1");
+    // another conversation takes the panel over, then this one returns
+    pane.apply({
+      session: "s2",
+      rows: [{ role: "user", status: "complete", blocks: [{ type: "text", content: "other" }] }],
+    } as never);
+    const back = paneAnchor(pane, verdictCallRow("v-cross-session"), "s1");
+    assert.equal(back.issuedAt, card.issuedAt, "the call's instant survives a panel retarget");
+  });
+
+  it("a settled card keeps no anchor, and a later paint never re-mints one", () => {
+    const pane = createCanvasTranscript();
+    paneAnchor(pane, verdictCallRow("v-settles"));
+    const settled = pane.apply({
+      session: "s1",
+      rows: [
+        verdictCallRow("v-settles"),
+        {
+          role: "tool",
+          status: "complete",
+          blocks: [{ type: "tool_result", tool_call_id: "v-settles", content: '{"verdict":"skip"}' }],
+        },
+      ],
+    } as never)[0] as unknown as AnchorCard;
+    assert.equal(settled.status, "settled");
+    assert.equal(settled.issuedAt, undefined, "a settled card has no countdown to anchor");
+    // the server drops started_at once the result lands: the bare call row
+    // must not resurrect an anchor on the dead card
+    const repaint = paneAnchor(pane, verdictCallRow("v-settles"));
+    assert.equal(repaint.status, "settled");
+    assert.equal(repaint.issuedAt, undefined, "the spent anchor stays spent");
+  });
+
+  it("the card's label subtracts a live clock from that fixed anchor", () => {
+    const here = dirname(fileURLToPath(import.meta.url));
+    const source = readFileSync(join(here, "..", "app", "components", "chat", "VerdictCard.vue"), "utf8");
+    assert.match(
+      source,
+      /props\.item\.issuedAt\s*\+\s*timeoutS\s*\*\s*1000\s*-\s*now\.value/,
+      "the label is anchor + timeout - now: only `now` restarts when the card remounts",
+    );
+    assert.match(
+      source,
+      /if \(!props\.item\.issuedAt\) return ""/,
+      "no anchor renders no label - never a fabricated full countdown",
+    );
   });
 });

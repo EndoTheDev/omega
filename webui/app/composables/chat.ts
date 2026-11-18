@@ -1322,6 +1322,54 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // wrote one variant's id onto the other's item is what this card
 // retired).
 
+// VERDICT COUNTDOWN ANCHOR (card t_f13642bc). A card's deadline is a
+// fact about the CALL, not about the pane that happens to render it.
+// The anchor used to be a Map inside createCanvasTranscript - one per
+// ChatTab instance - so every dock-tab switch re-anchored the card at
+// Date.now() (DockPane renders only the active tab, no KeepAlive: the
+// pane remounts, and a card four minutes into a five-minute deadline
+// read 5:00 again - the remaining time misreported in the one surface
+// where it is the point).
+//
+// Two anchors, most honest first:
+//   1. the SERVER's stamp. An UNANSWERED tool_call block carries
+//      `started_at` (RFC 3339, core.ChatBlock.StartedAt - the call's own
+//      open wall clock, recorded at the tool_call event and dropped when
+//      the result lands, agent/api/server.go). A verdict call blocks
+//      until its card settles, so a pending card carries one, and it is
+//      right on the FIRST sight too: a tab opened four minutes in reads
+//      1:00, not 5:00. A fixed instant, so re-deriving it at every paint
+//      never drifts.
+//   2. first sight at MODULE scope, keyed by the call id - for a payload
+//      served without a clock. The call id is the anchor's address: it
+//      survives the mount, the pane, a session switch and the sliding
+//      window, so a remount reads the anchor the first pane wrote.
+//      Bounded (oldest insertion leaves when full): a card that old is
+//      settled or gone.
+const verdictAnchors = new Map<string, number>();
+const VERDICT_ANCHOR_MAX = 256;
+
+// verdictAnchorMs resolves one card's countdown anchor: the wire's start
+// stamp when it carries one, else this page's first sight of the call id
+// (minted on the spot, once). No call id and no stamp = no anchor: the
+// card renders without a countdown rather than a fabricated one.
+function verdictAnchorMs(callId: string | undefined, startedAt?: string): number | undefined {
+  if (startedAt) {
+    const start = Date.parse(startedAt);
+    if (!Number.isNaN(start)) return start;
+  }
+  if (!callId) return undefined;
+  const seen = verdictAnchors.get(callId);
+  if (seen !== undefined) return seen;
+  const now = Date.now();
+  verdictAnchors.set(callId, now);
+  if (verdictAnchors.size > VERDICT_ANCHOR_MAX) {
+    const oldest = verdictAnchors.keys().next();
+    if (!oldest.done) verdictAnchors.delete(oldest.value);
+  }
+  return now;
+}
+
 export interface CanvasTranscript {
   apply(payload: ChatPayloadWire): TranscriptItem[];
 }
@@ -1335,10 +1383,9 @@ export function createCanvasTranscript(): CanvasTranscript {
   // swept at the end of every paint (an id-less row's object dies with the
   // payload that stopped carrying its row)
   const slots = new Map<string, TranscriptItem>();
-  // the verdict countdowns anchor on first sight of the card (a live
-  // card repaints every delta; issuedAt = first paint, the countdown
-  // ticks once, settled by the result row's later delta)
-  const issuedAt = new Map<string, number>();
+  // the verdict countdowns anchor at MODULE scope on the call id, never
+  // here: a per-pane Map re-anchored every card on a remount (see
+  // verdictAnchorMs above)
 
   // paint is one apply()'s working set: the panel's own flags plus the
   // per-payload slot bookkeeping (an ordinal counts what THIS payload
@@ -1534,16 +1581,26 @@ export function createCanvasTranscript(): CanvasTranscript {
           // persisted, closed copy of its own call row) - staleness is
           // the panel's running flag, not the row's.
           cached.stale = !panelRunning;
+          // the anchor is re-derived at every paint (the elapsed-meter
+          // law): a payload that carries the server's start stamp only
+          // on a later delta moves the countdown onto the true clock,
+          // once - a stamp is a fixed instant, so a re-derivation never
+          // drifts. A SETTLED card keeps its spent anchor undefined (the
+          // result row cleared it; nothing re-mints one).
+          if (cached.status === "pending") {
+            cached.issuedAt = verdictAnchorMs(callId, block.started_at) ?? cached.issuedAt;
+          }
           return cached;
         }
         const card = reactive(verdictCardFromToolArgs(block.tool_call?.arguments));
         card.callId = callId;
         card.status = "pending";
         card.stale = !panelRunning;
-        if (callId && (blockRunning || running || panelRunning)) {
-          card.issuedAt = issuedAt.get(callId) ?? Date.now();
-          issuedAt.set(callId, card.issuedAt);
-        }
+        // anchored whether or not a stream is live: a yielded run's card
+        // is still pending, and its remaining time is the call's truth,
+        // never the panel's running flag (the old gate here is why a
+        // card under a quiet panel showed no countdown at all)
+        card.issuedAt = verdictAnchorMs(callId, block.started_at);
         put(vsig, live, card);
         return card;
       }
@@ -1636,11 +1693,14 @@ export function createCanvasTranscript(): CanvasTranscript {
     }
     if ((payload.session ?? "") !== session) {
       // another conversation took the panel over: identities are
-      // worthless across sessions - the cache resets
+      // worthless across sessions - the cache resets. The verdict
+      // anchors do NOT: they are keyed by call id at module scope, and
+      // a card's remaining time is its call's fact - clearing them here
+      // is what made a tab switch (or a pane retarget) restart a
+      // countdown mid-deadline
       session = payload.session ?? "";
       cache.clear();
       slots.clear();
-      issuedAt.clear();
     }
     // the shape's LAST ID-BEARING row is the only row that may adopt a
     // live slot (see lookup): the store persists the open tail last, so a
