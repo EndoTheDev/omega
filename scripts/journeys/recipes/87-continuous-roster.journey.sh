@@ -220,25 +220,44 @@ step "ok: wake strip opened for $CONT_NAME"
 # chats carried the BARE id "canonical": the roster row handed that id to
 # the shell, the shell's opener deduped the second click onto the first
 # agent's tab (one session, one tab), the store router answered the first
-# home that held the id, and the accent's match (last_session_id ===
+# home that held the id, and the accent's match (canonical_session_id ===
 # focused id) always found the first agent. The id is agent-qualified at
 # the source now, so this pass proves the whole operator path: click A,
 # then B - the URL, the tab census and the accent all follow B, and A's
 # chat stays open beside it.
+#
+# The row's id is the agent's CANONICAL chat, never the most-recent one
+# (card t_10ac04f0, R2): a click's target must not move when a worker
+# run lands, so last_session_id left the wire as a rule - an absent
+# canonical means the click mints one, and the retired field must never
+# come back (the negative assertion below pins that).
 agents=$(curl -s "${JOURNEY_BASE_URL}/agents")
 chat_ref() {
   printf '%s' "$agents" | python3 -c '
 import json,sys
 rows = json.load(sys.stdin)
-print(next((r.get("last_session_id") or "" for r in rows if r.get("name") == sys.argv[1]), ""))' "$1" 2>/dev/null
+print(next((r.get("canonical_session_id") or "" for r in rows if r.get("name") == sys.argv[1]), ""))' "$1" 2>/dev/null
 }
 ID_A=$(chat_ref "$CONT_NAME")
 ID_B=$(chat_ref "$CONT_NAME2")
-[ -n "$ID_A" ] && [ -n "$ID_B" ] || die "a roster row lost its last_session_id (A=[$ID_A] B=[$ID_B]): $agents"
-case "$ID_A" in "$CONT_NAME"-*) ;; *) die "A's chat id [$ID_A] is not agent-qualified" ;; esac
-case "$ID_B" in "$CONT_NAME2"-*) ;; *) die "B's chat id [$ID_B] is not agent-qualified" ;; esac
+[ -n "$ID_A" ] && [ -n "$ID_B" ] || die "a roster row lost its canonical_session_id (A=[$ID_A] B=[$ID_B]): $agents"
+case "$ID_A" in "$CONT_NAME"-*) ;; *) die "A's canonical chat id [$ID_A] is not agent-qualified" ;; esac
+case "$ID_B" in "$CONT_NAME2"-*) ;; *) die "B's canonical chat id [$ID_B] is not agent-qualified" ;; esac
 assert_ne "$ID_A" "$ID_B" "two agents' permanent chats are two session ids"
-step "ok: both agent chats are openable and their ids are agent-qualified"
+
+# THE R2 negative law: the most-recent bind is retired. A row that carried
+# last_session_id again would point every click at a moving target (the
+# newest session, usually the human's own conversation), so assert the
+# FIELD's absence on every row - a reintroduction REDs the nightly here.
+# "-" is the parsed-and-clean answer; an unparsed payload is a loud fail,
+# never a silent pass.
+stale=$(printf '%s' "$agents" | python3 -c '
+import json,sys
+rows = json.load(sys.stdin)
+bad = [str(r.get("name")) for r in rows if "last_session_id" in r]
+print(",".join(bad) if bad else "-")' 2>/dev/null)
+assert_eq "${stale:-unparsed}" "-" "no roster row carries the retired last_session_id field (the most-recent bind stays dead)"
+step "ok: both agent chats are openable, their ids are agent-qualified, and last_session_id is gone"
 
 # active_row: the roster row wearing the accent ("the open agent's row"),
 # "" when none does.
