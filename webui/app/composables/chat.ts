@@ -29,6 +29,8 @@ import {
   postVariantSelect,
   isVerdictTool,
   renderTranscriptItems,
+  createRestoreTranscript,
+  transcriptAddress,
   applyTurnTotals,
   streamChat,
   verdictCardFromToolArgs,
@@ -59,6 +61,7 @@ import {
   toolCallAnchorMs,
   transcriptHasPending,
   type OmegaMessage,
+  type RestoreTranscript,
 } from "./omega.ts";
 import { SHELL_COMMAND_NAMES, dispatchCommand } from "./commands.ts";
 import { isLive, isStreaming } from "./toolStatus.ts";
@@ -873,6 +876,30 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     }
   }
 
+  // --- the restore path's identity (card t_a20fbad7) ------------------
+  //
+  // st.restored used to be rebuilt from scratch by every load(): a
+  // remount, a tab switch, a variant select each refetched the
+  // transcript and every rendered row became a NEW object, so the keyed
+  // v-for destroyed and re-created every row - the fold pins, the
+  // elapsed meters and the selection died, and the whole session the
+  // canvas panel does not cover (a second tab, any session after a
+  // reload) paid it. The cache lives with the STATE that renders it
+  // (one per chat state, collected with it) and applies the same
+  // address rule the canvas paint uses (omega.ts transcriptAddress), so
+  // both paths keep one identity: the row that streamed on the canvas
+  // keeps its object after the REST restore adopts it, and a refetch
+  // updates rows in place instead of remounting them.
+  const restoreCaches = new WeakMap<ChatState, RestoreTranscript>();
+  function restoreFor(st: ChatState): RestoreTranscript {
+    let cache = restoreCaches.get(st);
+    if (!cache) {
+      cache = createRestoreTranscript();
+      restoreCaches.set(st, cache);
+    }
+    return cache;
+  }
+
   async function load(key: string, sessionId: string): Promise<void> {
     const st = ensureState(key, sessionId);
     // a stream live on THIS state owns its feed - the panel repaints
@@ -890,8 +917,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.lastChunksPerSecond = durable.cps;
       // restore IS rendering for the sessions the canvas panel does not
       // cover: wire-order transcript items rendered onto the same
-      // component contract the canvas rows paint through
-      st.restored = renderTranscriptItems(detail.items);
+      // component contract the canvas rows paint through. Through the
+      // state's cache, so a refetch re-uses the object of every row it
+      // already rendered (unchanged rows keep their component instance).
+      st.restored = restoreFor(st).apply(detail.items, sessionId);
       // the branch points ride the restore (t_a62eeb43): the switcher
       // and the fork affordance read this block. Absent key = plain
       // session, an empty list keeps the shape total.
@@ -1289,7 +1318,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // place, reused in the rebuilt array.
 //
 // IDENTITY LAW (card t_494639c8). A prose row's address is its STORE
-// ROW ID, never its position. The payload is a sliding window - the
+// ROW ID, never its position. The rule itself lives in ONE place -
+// omega.ts transcriptAddress - because the REST restore path
+// (createRestoreTranscript) paints the same rows from the same wire and
+// must resolve the same address (card t_a20fbad7). The payload is a
+// sliding window - the
 // newest 40 rows (agent/api/chat_panel.go) - so one append past the
 // window shifts every surviving index by one. A positional key missed
 // on every surviving row (each one re-minted, each one a fresh key to
@@ -1402,22 +1435,19 @@ export function createCanvasTranscript(): CanvasTranscript {
     lastIdOfShape: ReadonlyMap<string, number>;
   }
 
-  // liveAddress is an id-less row's slot address. consume=true hands
-  // out the next ordinal for the shape (a row being painted);
-  // consume=false PEEKS at the ordinal such a row would get - the
-  // adoption path, where a just-persisted row looks for the slot its own
-  // live object sits in.
+  // liveAddress is an id-less row's slot address - resolved by the SAME
+  // rule the REST restore path uses (omega.ts transcriptAddress), never a
+  // local spelling. consume=true hands out the next ordinal for the shape
+  // (a row being painted); consume=false PEEKS at the ordinal such a row
+  // would get - the adoption path, where a just-persisted row looks for
+  // the slot its own live object sits in.
   function liveAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint, consume: boolean): string {
-    const shape = `${row.role}:${block.type}`;
-    const ordinal = ctx.ordinals.get(shape) ?? 0;
-    if (consume) ctx.ordinals.set(shape, ordinal + 1);
-    return `live:${shape}:${ordinal}`;
+    return transcriptAddress(undefined, `${row.role}:${block.type}`, ctx.ordinals, consume);
   }
 
   // rowAddress: the store id when the row is persisted, else its slot
   function rowAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint): string {
-    if (row.id) return `row:${row.id}`;
-    return liveAddress(row, block, ctx, true);
+    return transcriptAddress(row.id, `${row.role}:${block.type}`, ctx.ordinals);
   }
 
   // lookup returns the item a prose row paints into: its own cached
