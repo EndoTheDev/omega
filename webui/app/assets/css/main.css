@@ -3401,6 +3401,18 @@ labels stopped short of the right edge. */
      composer insets 8px, so the transcript's side padding is the same 8px
      instead of standing 4px inside it */
   .messages { padding: 8px; }
+  /* card t_c9b65376: the live pin's full-bleed inset is the transcript's own
+     side padding (the base rule derives -12px from the desktop 16px/12px
+     column). THIS breakpoint insets 8px, so the authored -12px left the pin
+     4px past the scrollport's right edge on every frame of a live run (live
+     probe, 753px window: pin 758 inside clientWidth 750, .msg-block
+     scrollWidth 746 vs 734) - the transcript stayed out of a horizontal
+     scroller only because overflow-x: hidden clipped it. Deriving the pair
+     here keeps the causal overflow at ZERO instead of trusting the clip. */
+  .live-pin {
+    margin: 0 -8px;
+    padding: 14px 8px 12px;
+  }
   .bubble, .thinking, .toolcall, .toolgroup { max-width: 88%; }
   /* the tuned stacked answer (2026-11-15 chat-spacing spec) survives the
      breakpoint: the 88% family cap above is the classic-chat shape. The

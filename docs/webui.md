@@ -422,8 +422,9 @@ every edge shell becomes an
   ticking elapsed; the card face (border + raised background) belongs to
   the collapsed artifact the phase leaves behind. Order never changes -
   live-pin is scroll + sticky layout, not render order, and its
-  full-bleed inset IS the transcript's own side padding (a hardcoded
-  column number turns the scrollport horizontal mid-stream).
+  full-bleed inset IS the transcript's own side padding, per breakpoint
+  (12px, 8px under the mobile inset - a hardcoded column number turns the
+  scrollport horizontal mid-stream).
 - Statusbar telemetry is honest: the token counter ticks per chunk
   (chars/4 estimate, corrected by real usage at stream end); live
   chunks/s comes from real arrival times.

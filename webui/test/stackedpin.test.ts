@@ -279,6 +279,34 @@ describe("one scrollport, sticky pin: the shipped wiring", () => {
     assert.match(msgs, /overflow-x:\s*hidden/, "the transcript is a vertical scroller only");
   });
 
+  it("the pin's inset follows the MOBILE column's own padding (card t_c9b65376)", () => {
+    // the base rule's -12px is the DESKTOP column. Under the 768px
+    // breakpoint the transcript insets 8px, so the authored pair left the
+    // pin 4px past the scrollport's right edge on every live frame (probe,
+    // 753px window: pin 758 inside clientWidth 750) and only the
+    // overflow-x: hidden clip kept the transcript vertical. The pair must
+    // be derived from THIS breakpoint's padding, not trusted to the clip.
+    const c = css();
+    const mobile = c.slice(c.lastIndexOf("@media (max-width: 768px)"));
+    assert.ok(mobile.length > 0, "the mobile breakpoint block not found");
+    const msgsStart = mobile.indexOf(".messages {");
+    assert.ok(msgsStart !== -1, ".messages not re-declared under the breakpoint");
+    const msgs = mobile.slice(msgsStart, mobile.indexOf("}", msgsStart));
+    const column = msgs.match(/padding:\s*(\d+)px/);
+    assert.ok(column, "the mobile column padding not found");
+    const side = Number(column[1]);
+    const pinStart = mobile.indexOf(".live-pin {");
+    assert.ok(pinStart !== -1, "the pin's inset is not re-derived under the breakpoint");
+    const rule = mobile.slice(pinStart, mobile.indexOf("}", pinStart));
+    assert.match(
+      rule,
+      new RegExp(`margin:\\s*0 -${side}px`),
+      `the mobile pin inset must be the column's own ${side}px side padding`,
+    );
+    assert.match(rule, new RegExp(`padding:\\s*14px ${side}px 12px`), "the pin's inner inset mirrors it");
+    assert.doesNotMatch(rule, /border-bottom/, "no rule under the pinned question at any width");
+  });
+
   it("the pin's CSS sticks inside the scrollport, not to a fixed header band", () => {
     const c = css();
     const start = c.indexOf(".live-pin {");
