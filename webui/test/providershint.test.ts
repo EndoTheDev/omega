@@ -42,35 +42,56 @@ test("a blank row carries a name placeholder - and NO model column", () => {
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
 });
 
-// --- card t_4924df4c: the add flow only invites a LEGAL add ------------
+// --- card t_4924df4c (new-row half) / t_0346201c (stored-row half) ------
 //
-// A new row is legal with its name and type alone: applyProviderInstances
-// answers "config.yaml is the only door" for a host or api_key on a name
-// the stored list does not carry. The pane therefore renders those two
-// cells DISABLED on a new row, with the door named at the field, and the
-// host placeholder is a hint - never the http://localhost:11434 example
-// that was itself an illegal value for a fresh row.
+// A submitted host is accepted only when it ECHOES the stored host of the
+// row the list already names: applyProviderInstances answers "config.yaml
+// is the only door" for `inst.Host != existing.Host` on a stored row, and
+// a row the stored list does not name has no stored host to echo at all.
+// So the base url cell is a STATIC gate - disabled with the door named at
+// the field on every row, no input handler, no predicate that could ever
+// re-open it after the save. The api key cell stays on the new-row
+// predicate: a stored row's masked key round-trips legally.
+//
+// A new row is legal with its name and type alone, so its key cell is
+// disabled too - and the host placeholder is a hint, never the
+// http://localhost:11434 example that was itself an illegal value.
 
-test("a NEW row disables the cells the API refuses and names the door at the field", () => {
+test("the base url cell is config.yaml's on EVERY row - stored or new", () => {
+  const at = field.indexOf("provider-cell provider-host");
+  assert.ok(at > 0, "the host cell renders");
+  const hostCell = field.slice(at, field.indexOf("api key", at));
+  assert.match(hostCell, /\sdisabled\s/,
+    "the host input is gated unconditionally");
+  assert.doesNotMatch(hostCell, /:disabled="isNew\(inst\)"/,
+    "the gate cannot be the new-row predicate - a STORED row's host must echo the stored one, so a live cell there only ever produces a save error");
+  assert.doesNotMatch(hostCell, /@input=/,
+    "a gated cell carries no write path");
+  assert.match(hostCell, /<em class="provider-door">config\.yaml-only<\/em>/,
+    "the host cell always names the door, before any save click");
+  assert.match(hostCell, /placeholder="config\.yaml-only"/,
+    "the host placeholder states the door - 'provider default' invited an edit");
+  assert.match(hostCell, /:value="inst\.host"/,
+    "the stored host still renders (read-only)");
+});
+
+test("a NEW row disables the api key cell and names the door at the field", () => {
   assert.match(field, /const isNew = \(row: ProviderInstanceRow\): boolean =>/,
     "the editor knows which rows the server would treat as new");
   // the predicate reads the STORED list off the knob, not the draft
   assert.match(field, /const stored = props\.knob\.value;/,
     "new-ness is measured against the last payload the server sent");
-  // both gated cells carry the same gate and the same visible marker
   const gated = field.match(/:disabled="isNew\(inst\)"/g) ?? [];
-  assert.equal(gated.length, 2,
-    "base url and api key are disabled on a new row (name + type stay live)");
+  assert.equal(gated.length, 1,
+    "the api key is disabled on a new row (name + type stay live; the host cell is a static gate)");
   const doors = field.match(/<em v-if="isNew\(inst\)" class="provider-door"/g) ?? [];
-  assert.equal(doors.length, 2,
-    "each gated cell names config.yaml in its own label");
+  assert.equal(doors.length, 1,
+    "the api key cell names config.yaml in its label on a new row");
   assert.match(field, />config\.yaml-only</,
     "the marker says the door: config.yaml-only");
   // the host placeholder is a hint, never an example endpoint
   assert.doesNotMatch(field, /placeholder="http:\/\/localhost:11434"/,
     "an example host on a new row invites the exact value the API refuses");
-  assert.match(field, /:placeholder="isNew\(inst\) \? 'config\.yaml-only' : 'provider default'"/,
-    "the host placeholder states the door on a new row and the default on a stored one");
 });
 
 // --- the knob help and the editor copy agree ---

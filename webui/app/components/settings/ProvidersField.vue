@@ -56,22 +56,26 @@
             drop="down"
             @update:model-value="setRow(i, 'type', $event)" />
         </label>
+        <!-- card t_0346201c (the post-save half of t_4924df4c): the host
+             cell is config.yaml's on EVERY row, not just a new one.
+             applyProviderInstances accepts a submitted host only when it
+             ECHOES the stored host of the row the list already names
+             (`inst.Host != existing.Host` answers the door), and a row
+             the stored list does not name has no stored host to echo -
+             so any live edit here could only ever fail the save. -->
         <label class="provider-cell provider-host">
           <span
-            >base url<em v-if="isNew(inst)" class="provider-door"
-              >config.yaml-only</em
-            ></span
+            >base url<em class="provider-door">config.yaml-only</em></span
           >
           <input
             class="setting-input"
             type="text"
             autocomplete="off"
             spellcheck="false"
-            :disabled="isNew(inst)"
-            :placeholder="isNew(inst) ? 'config.yaml-only' : 'provider default'"
+            disabled
+            placeholder="config.yaml-only"
             :value="inst.host"
-            :aria-label="`instance ${i + 1} base url`"
-            @input="setRow(i, 'host', ($event.target as HTMLInputElement).value)" />
+            :aria-label="`instance ${i + 1} base url`" />
         </label>
         <label class="provider-cell">
           <span
@@ -156,8 +160,10 @@
   // submitted name against. A new row is legal with its name and type
   // ALONE - a host or api key on one answers "config.yaml is the only
   // door" (cmd/omega/settings.go), so the pane must not offer those
-  // inputs. A row named like a stored one is a rename/retype, whose host
-  // and masked key round-trip legally, so its inputs stay live.
+  // inputs. A row named like a stored one is a rename/retype, whose
+  // masked key round-trips legally, so its key input stays live; its
+  // HOST does not (card t_0346201c): a stored row's host must echo the
+  // stored value, so the base url cell is gated on every row up top.
   const isNew = (row: ProviderInstanceRow): boolean => {
     const stored = props.knob.value;
     if (!Array.isArray(stored)) return true;
