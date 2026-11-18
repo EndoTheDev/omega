@@ -187,7 +187,10 @@ func (g *Gate) GateWithConversation(ctx context.Context, toolName string, args m
 
 // decide is the one decision path: the legacy shell lane (parse,
 // reviewer, ladder) plus the safeagents lane (request-only detectors,
-// severity tiers). Both feed the same escalation machinery.
+// severity tiers). The tiered lane decides first when it fires - its
+// severity rulings are the newer contract - and the legacy lane decides
+// everything it does not claim. Both end in the same escalation
+// machinery: a card, a background refusal, or a stamped record.
 func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error) {
 	start := time.Now()
 	if g.mode() == ModeOff {
