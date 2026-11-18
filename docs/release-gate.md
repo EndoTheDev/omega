@@ -86,8 +86,10 @@ runs forever: `scripts/journeys/regression.list` names the recipes and
 the pins that each past red must never trip again.
 
 - **Gate time** (every train pass, the lane SHA):
-  `scripts/journeys/run.sh --regression` - the named set is the
-  minimum; the full suite usually runs over it.
+  `scripts/journeys/run.sh --regression` - the named set IS the train's
+  journeys gate. The full suite is the nightly's (it builds the lane from
+  the tree it tests); see `docs/pipeline.md`, "The train's journeys gate
+  is the regression set".
 - **Nightly**: the full suite includes the set.
 - **Pin tests** (compile-time shapes a browser cannot witness) run in
   `go test ./...` and in the train gate list. The set's current pins:

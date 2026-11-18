@@ -53,11 +53,15 @@ set -euo pipefail
 #                              remapped host and red every review-seat merge
 #                              rc 2 before the queue)
 #   TRAIN_GATES_CMD            test override - replaces the whole gate list
-#   TRAIN_JOURNEYS_CMD         the validation-journeys suite
-#                              (default: scripts/journeys/run.sh; missing
-#                              = skipped loudly until the companion card
-#                              lands). Flags allowed - the gate runs it
-#                              through bash -c
+#   TRAIN_JOURNEYS_CMD         the validation-journeys suite (default:
+#                              scripts/journeys/run.sh --regression - the
+#                              NAMED REGRESSION SET, regression.list's own
+#                              gate-time minimum. The full suite belongs to
+#                              the nightly, which builds the lane from the
+#                              tree it tests; docs/pipeline.md carries the
+#                              ruling. Missing = skipped loudly until the
+#                              companion card lands). Flags allowed - the
+#                              gate runs it through bash -c
 #   OMEGA_HOME / OMEGA_BIN     the SERVING lane home the journey recipes seed
 #                              into. Unset, the train derives <checkout>/bin
 #                              (a serving home: config/config.yaml + the omega
@@ -87,7 +91,19 @@ BASE="dev"
 PUSH=1
 [ "${TRAIN_NO_PUSH:-}" = "1" ] && PUSH=0
 HERMES_BIN="${HERMES:-hermes}"
-JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh}"
+# The train-time journeys gate is the NAMED REGRESSION SET, not the full
+# suite. regression.list is the gate-time minimum (every entry there burned
+# a lane once and must never fail again); the full suite belongs to the
+# nightly, which builds the lane from the tree it tests. The narrowing is
+# not a coverage trade: the tick's fallback merge carries NO journeys gate,
+# so a full-suite train gate vetoes nothing it would not already land - it
+# only converts any standing product red into an un-land + demote + resweep
+# cycle. Ruling 2026-11-19 on this card: the set ran 12/12 green while
+# 92-registry-toggles - NOT in the set - red on the same lane, and the
+# 75-divider-resize red the earlier rejection rested on was green. Widen
+# the gate by adding a recipe to regression.list, never by asking the train
+# for the full suite.
+JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh --regression}"
 RECONCILER_ASSIGNEE="${TRAIN_RECONCILER_ASSIGNEE:-default}"
 PIN="${TRAIN_CARD:-}"
 
@@ -225,7 +241,23 @@ for line in sql.splitlines(True):
         buf = ""
 if buf.strip():
     stmts.append(buf)
-con = sqlite3.connect(db, timeout=30)
+try:
+    con = sqlite3.connect(db, timeout=30)
+except sqlite3.OperationalError:
+    # A native python cannot open an MSYS path (/tmp/...): the caller may
+    # have handed us the shell spelling. Convert once and retry; when
+    # cygpath is absent or refuses, the original error stands.
+    import subprocess
+    fixed = ""
+    try:
+        conv = subprocess.run(["cygpath", "-m", db], capture_output=True, text=True)
+        if conv.returncode == 0:
+            fixed = conv.stdout.strip()
+    except OSError:
+        fixed = ""
+    if not fixed:
+        raise
+    con = sqlite3.connect(fixed, timeout=30)
 # Windows text streams translate \n to \r\n; the callers parse LF records.
 sys.stdout.reconfigure(newline="\n")
 try:
@@ -403,7 +435,10 @@ fi
 # card was demoted on it. A gate that cannot run green is a PRECONDITION:
 # it refuses HERE, before anything is rebased or merged, and the card keeps
 # its status, its branch and its verdict.
-journeys_path="${JOURNEYS_CMD%% *}"
+journeys_path="$JOURNEYS_CMD"
+# A command may carry flags, and a path may carry spaces: the WHOLE value is
+# the path when it names a real file, else the first token is.
+[ -f "$journeys_path" ] || journeys_path="${JOURNEYS_CMD%% *}"
 journeys_will_run() { [ -z "${TRAIN_GATES_CMD:-}" ] && [ -f "$journeys_path" ]; }
 
 lane_home_usable() {  # <dir>: a serving lane home - its config + serve binary
@@ -620,12 +655,18 @@ gates_pass() {
   if [ -f "$journeys_path" ]; then
     echo "==> validation journeys"
     echo "    lane env: OMEGA_HOME=${OMEGA_HOME:-<unset>} OMEGA_BIN=${OMEGA_BIN:-<unset>} base ${JOURNEY_BASE_URL:-<run.sh default>}"
-    bash -c "$JOURNEYS_CMD" || exit 1
+    # An override whose WHOLE value is a path (spaces allowed) runs as one
+    # argument; anything else is a command line, flags included.
+    if [ "$JOURNEYS_CMD" = "$journeys_path" ]; then
+      bash "$journeys_path" || exit 1
+    else
+      bash -c "$JOURNEYS_CMD" || exit 1
+    fi
   elif [ -n "${TRAIN_JOURNEYS_CMD:-}" ]; then
     echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
     exit 1
   else
-    echo "==> validation journeys: SKIPPED - $JOURNEYS_CMD not present yet (the companion card wires it in)"
+    echo "==> validation journeys: SKIPPED - $journeys_path not present yet (the companion card wires it in)"
   fi
   echo "FIN"
 }

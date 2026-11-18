@@ -144,12 +144,30 @@ there can be a pre-existing lane defect that no landing can clear.
   lane from the tree it tests. Train-time gates stay: build/vet/test,
   `-race` on touched packages, dep law, the fence eval, the webui node
   suite, the embed lane, then the journeys.
-- Narrowing the train-time journeys to `--regression` was considered and
-  rejected: the regression set itself carries the standing
-  `75-divider-resize` red on wider-sidebar trees, so narrowing removes no
-  false demote while silently shrinking train-time coverage. The
-  preconditions above are what make the harness-gap class impossible; the
-  lane-lag class stays a reading rule.
+
+### The train's journeys gate is the regression set (ruling 2026-11-19)
+
+The train runs `scripts/journeys/run.sh --regression`, not the full suite.
+`regression.list` is the set a recipe enters only after it burned a lane
+once, so it is the gate-time minimum; the full suite is the nightly's job
+and the nightly alone exports the lane env for it.
+
+- **A full-suite train gate vetoes nothing.** The tick's fallback merge
+  carries no journeys gate at all (cron receipt 2026-11-18: two landings
+  recorded `go vet/build/test + guard suite` and nothing else). So the
+  full suite in the train does not close a door - it adds an
+  un-land/demote/resweep cycle to every landing while any standing product
+  red persists.
+- **Receipts for the narrowing** (2026-11-19, dev lane serving `9f77f768`):
+  the whole regression set ran 12/12 green in 706s, and
+  `75-divider-resize` - the red the earlier rejection of narrowing rested
+  on - was green on the current lane. The standing red of that week,
+  `92-registry-toggles`, is NOT in the set; it is carded as its own product
+  finding (t_a68f59b1).
+- **`TRAIN_JOURNEYS_CMD` still replaces the whole command** (flags
+  allowed), and the lane-home and lane-health preconditions above apply to
+  whatever it runs. Widen the train gate by adding a recipe to
+  `regression.list`, never by asking the train for the full suite.
 
 ## The machine fence (worker sessions)
 
