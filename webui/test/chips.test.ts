@@ -109,19 +109,52 @@ test("an unknown call id reads nothing (a row with no live tail)", () => {
 
 // --- the render wiring (a dead store passes every pure test) --------------
 
-test("the chat pane merges the live tail onto the row that owns the call", () => {
-  const chatTab = src("components/ChatTab.vue");
-  assert.ok(chatTab.includes("chipOf(it.callId)"), "the merge keys on the tool call id");
-  assert.ok(chatTab.includes("chipDisplay(chip)"), "the truncation marker rides the merge");
-  assert.ok(chatTab.includes("it.liveText ="), "the tail lands on the item");
+// derivationSource is the transcript derivation's own source: from the
+// computed's declaration to the next computed. The purity pin reads it.
+function derivationSource(source: string): string {
+  const start = source.indexOf("const transcript = computed(");
+  assert.ok(start >= 0, "the transcript derivation exists");
+  const end = source.indexOf("const statusLine", start);
+  assert.ok(end > start, "the derivation sits ahead of the status line");
+  return source.slice(start, end);
+}
+
+test("the row reads its own live tail from the store, keyed by the call id", () => {
   const chatItem = src("components/ChatItem.vue");
-  assert.ok(chatItem.includes(':live-text="item.liveText"'), "ChatItem forwards the tail");
+  assert.ok(chatItem.includes(':call-id="item.callId"'), "ChatItem forwards the call id");
   const line = src("components/chat/ToolCallLine.vue");
+  assert.ok(line.includes("chipOf(props.callId)"), "the row reads its own chip by call id");
+  assert.ok(line.includes("chipDisplay("), "the truncation marker rides the row's read");
   assert.ok(line.includes('v-else-if="liveText"'), "the row renders the tail while it streams");
   assert.ok(line.includes('liveSettled ? "output" : "live output"'), "the label names the live half");
   assert.ok(
     line.includes('v-if="result"') && line.indexOf('v-if="result"') < line.indexOf('v-else-if="liveText"'),
     "the settled result wins over the tail",
+  );
+});
+
+// card t_64d14d2b: the derivation is PURE. It used to write
+// it.liveText/it.liveSettled while reading the chip store, so every landed
+// chunk re-derived the transcript, the blocks and the activity line - and a
+// write inside a getter can re-arm the effects that read it (t_a356fcc7's
+// spin class). The tail is read at the row instead.
+test("the transcript derivation is a pure projection - no writes, no chip read", () => {
+  const chatTab = src("components/ChatTab.vue");
+  const body = derivationSource(chatTab);
+  assert.equal(body.includes("chipOf"), false, "the derivation does not read the chip store");
+  assert.equal(body.includes("chipDisplay"), false, "the derivation does not merge a tail");
+  const writes = body
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith("//"))
+    .filter((l) => !/^(const|let|var)\b/.test(l))
+    .filter((l) => /(^|[^=!<>+\-*/%&|^])=(?![=>])/.test(l) || /\+\+|--/.test(l));
+  assert.deepEqual(writes, [], "an assignment inside a computed re-arms its own readers");
+  assert.equal(chatTab.includes("it.liveText"), false, "the retired merge target is gone");
+  assert.equal(
+    src("composables/omega.ts").includes("liveText"),
+    false,
+    "the item carries no live-tail field",
   );
 });
 

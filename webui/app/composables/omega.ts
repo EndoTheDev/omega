@@ -224,11 +224,6 @@ export interface ToolItem {
   id?: string;
   output?: string;
   result?: string;
-  // the chips topic's live tail (card t_896cf5a8): the pending chip's
-  // streamed output as it lands. Rendering wins only while the row has
-  // no settled result - the fill/transcript are the truth.
-  liveText?: string;
-  liveSettled?: boolean;
   // the smart gate's decision record (card t_1b3e2a8b): the verdict
   // line stamped on the call's result, rendered on this row. Absent =
   // no machine decision (benign, manual mode, unresolved escalation).
@@ -838,8 +833,8 @@ export function awaitsWake(it: TranscriptItem | undefined): boolean {
 // badge degrades to what it always showed, never to a fabricated number.
 //
 // Mutates in place (the transcript's item objects are the render identity -
-// a canvas paint rewrites its cached rows, exactly like liveText) and is
-// idempotent. Pure otherwise.
+// a canvas paint rewrites its cached rows) and is idempotent. Pure
+// otherwise.
 export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
   let from = 0;
   for (let i = 0; i <= items.length; i++) {

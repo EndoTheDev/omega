@@ -77,6 +77,7 @@
   import Icon from "../ui/Icon.vue";
   import { toolRowWantOpen, useToolDisplay } from "../../composables/toolDisplay";
   import { formatDurationMs } from "../../composables/omega";
+  import { chipDisplay, chipOf } from "../../composables/chips";
   import { isLive } from "../../composables/toolStatus";
   import { useElapsed } from "../../composables/useElapsed";
   import VariantSwitcher from "./VariantSwitcher.vue";
@@ -107,12 +108,11 @@
     // this row's branch block when the call row is the branch's active
     // head (a text-less multi-row replay) - resolved by ChatTab
     variant?: VariantBlock | null;
-    // the chips topic's live tail (card t_896cf5a8): the pending chip's
-    // streamed output as it lands, truncation marker included. Rendered
-    // only while the row has no settled result (the fill/transcript are
-    // the truth).
-    liveText?: string;
-    liveSettled?: boolean;
+    // the TOOL CALL id (card t_64d14d2b): the row reads its own live
+    // tail from the chips store by this key - a landed chunk repaints
+    // exactly this row, and the transcript derivation stays pure.
+    // Absent on an id-less call (nothing to attach to) - no tail.
+    callId?: string;
   }>();
 
   const emit = defineEmits<{
@@ -143,6 +143,16 @@
   const answerLabel = computed(() =>
     props.answerMs != null ? formatDurationMs(props.answerMs) : "",
   );
+
+  // the live chip tail (cards t_896cf5a8 + t_64d14d2b): the chips topic's
+  // streamed output for THIS row's call, read from the store here instead
+  // of merged onto the item by the transcript derivation. The store is
+  // reactive per call id, so a landed chunk repaints exactly the row that
+  // owns the call. Rendered only while the row has no settled result (the
+  // fill/transcript are the truth); the truncation marker rides the tail.
+  const liveChip = computed(() => chipOf(props.callId));
+  const liveText = computed(() => chipDisplay(liveChip.value) || undefined);
+  const liveSettled = computed(() => liveChip.value?.settled === true);
 
   // --- auto open/close (/tools auto parity, card t_868633b3) ---
   // The settings knob (auto | expanded | collapsed) decides what a row
