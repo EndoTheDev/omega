@@ -50,7 +50,16 @@
         :aria-disabled="c.dimmed || undefined"
         @mouseenter="active = i"
         @click="run(c)">
-        <span class="command-title">{{ c.title }}</span>
+        <span class="command-text">
+          <span class="command-title">{{ c.title }}</span>
+          <!-- card t_8ad7ab33: the reference set carries a one-line
+               description under the title. The rows that have none (the
+               openable dockables, the shell toggles) render title-only,
+               exactly as before. -->
+          <span
+            v-if="c.description"
+            class="command-desc">{{ c.description }}</span>
+        </span>
         <!-- the keybinding-hint column: present where a binding exists
              (none in v1 - the keybindings card owns them), the layout is
              still VS Code's two-column row so hints land without churn -->

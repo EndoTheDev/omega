@@ -280,11 +280,29 @@ body {
 }
 .command-palette-list li:hover,
 .command-palette-list li.active { background: var(--z1-raised); color: var(--text); }
+/* card t_8ad7ab33: the row's text column - title over description. The
+   column owns the shrink (min-width: 0) so a long description ellipsizes
+   inside the 420px band instead of pushing the hint column out; a
+   title-only row lays out exactly as before (one line, baseline-aligned). */
+.command-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
 .command-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+.command-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-dim);
 }
 .command-hint {
   flex-shrink: 0;
@@ -302,6 +320,7 @@ body {
    still rides the active/hover background (the picker never skips a row);
    only its voice dims. */
 .command-palette-list li.dimmed .command-title,
+.command-palette-list li.dimmed .command-desc,
 .command-palette-list li.dimmed .command-hint { opacity: 0.4; }
 .command-palette-list li.dimmed { cursor: default; }
 

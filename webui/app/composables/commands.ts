@@ -44,7 +44,11 @@ export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
   { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
   { name: "/fork", description: "aim the next send to continue from the newest response", kind: "shell" },
-  { name: "/help", description: "list the commands", kind: "shell" },
+  // card t_8ad7ab33: /help is a REFERENCE, not a notice - it opens the
+  // command palette (the shell's searchable command list) and answers
+  // with one line. The description points there, so the reference and
+  // the row never disagree.
+  { name: "/help", description: "open the command palette - every command, searchable", kind: "shell" },
   { name: "/new", description: "start a new chat tab", kind: "shell" },
   { name: "/panels", description: "open the canvas panels tab", kind: "shell" },
   { name: "/retry", description: "re-run the last user turn as a new response variant", kind: "shell" },

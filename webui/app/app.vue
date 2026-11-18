@@ -1162,9 +1162,14 @@
     };
     switch (name) {
       case "/help": {
-        note(
-          "commands: /copy /modules /fork /help /new /panels /retry /sessions /theme /variant - plus module commands and /<skill-name>; @file @session:<id> @skill:<name> on any send",
-        );
+        // card t_8ad7ab33: /help is a REFERENCE, and a reference belongs
+        // in the reference surface - the command palette (Ctrl+K), whose
+        // list carries every shell command with its description. The
+        // status line answers with the pointer, one line, like every other
+        // notice; the wall of text is gone. Opening (never toggling): /help
+        // always leaves the reference UP, even when it is already open.
+        paletteOpen.value = true;
+        note("the palette is the command reference - it is open");
         return true;
       }
       case "/theme": {
@@ -2390,6 +2395,17 @@
     window.location.reload();
   }
 
+  // card t_8ad7ab33: the palette's "/" rows execute the shell verb on the
+  // ACTIVE chat tab - the same host.command path a typed "/theme" takes
+  // (one router, one status line). No chat tab anywhere means no status
+  // line to answer on, so the verb runs unbound rather than silently
+  // doing nothing - the palette is shell-wide, not chat-scoped.
+  function runSlashCommand(name: string): void {
+    const key = dock.activeChatTab()?.tab.key ?? focusedKey.value ?? "";
+    if (key) void host.command(key, name);
+    else void runCommand("", name);
+  }
+
   const paletteCommands = computed<readonly PaletteCommand[]>(() =>
     buildPaletteCommands({
       openDockable: paletteOpenDockable,
@@ -2404,6 +2420,10 @@
       openRecentSession: openRecentSessionTab,
       reloadLayout: () => window.location.reload(),
       clearSavedLayout,
+      // card t_8ad7ab33: the palette IS the command reference - /help
+      // opens it, so the "/" verbs (name + description, from commands.ts)
+      // ride the same list and run through the shell's own executor.
+      runSlashCommand,
       // card t_0a9edc72: the "New chat" command dims under the draft
       // focus - the same fact every other new-conversation door reads
       draftFocused: draftConversationFocused.value,

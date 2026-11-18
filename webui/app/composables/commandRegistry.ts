@@ -14,7 +14,7 @@ import {
   DOCKABLES,
   type DockComponentName,
 } from "./dockables.ts";
-import { clampIndex } from "./commands.ts";
+import { WEBUI_SHELL_COMMANDS, clampIndex } from "./commands.ts";
 
 export interface PaletteCommand {
   /** stable id ("open:browser") - the list key, never shown */
@@ -24,6 +24,11 @@ export interface PaletteCommand {
   /** the keybinding-hint column; absent = no binding (the keybindings
       card t_d9eebf08 owns the real ones - never fake a hint here) */
   hint?: string;
+  /** card t_8ad7ab33: the row's one-line what-it-does, rendered under the
+      title. The / reference set carries it (a command list is a reference:
+      a name alone does not say what the verb does) - never the hint column,
+      which stays keybindings-only. */
+  description?: string;
   /** extra filter fuel ("browser" finds "open Browser" the same either
       way; keywords rescue odd voice titles like the modules cockpit) */
   keywords?: string;
@@ -60,6 +65,12 @@ export interface PaletteCommandDeps {
       "New chat" would only focus it again. The row renders dimmed +
       aria-disabled (never removed) and the action stays the honest one. */
   draftFocused?: boolean;
+  /** card t_8ad7ab33: the "/" verb executor. The palette carries the shell
+      command REFERENCE (name + description per command, from commands.ts -
+      one list, never a copy), and a picked row runs that verb against the
+      active chat tab. Absent = the rows render but picking one is a no-op
+      (the composer's own slash palette is still the executor). */
+  runSlashCommand?: (name: string) => void;
 }
 
 // the openable dockable set: sidebar is the locked tab (the toggle owns
@@ -149,11 +160,28 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
       run: () => deps.clearSavedLayout(),
     },
   );
+  // card t_8ad7ab33: the "/" shell command reference closes the list -
+  // name + description per command, straight from commands.ts (the ONE
+  // shell set: the composer's slash palette and this list can never
+  // drift). /help opens this palette, so the list it opens must BE the
+  // reference it claims to be. Titles stay the literal tokens (never
+  // Title Case): a slash verb is a thing you type, not a phrase.
+  for (const c of WEBUI_SHELL_COMMANDS) {
+    cmds.push({
+      id: "slash:" + c.name.slice(1),
+      title: c.name,
+      description: c.description,
+      keywords: "command slash " + c.description,
+      run: () => deps.runSlashCommand?.(c.name),
+    });
+  }
   return cmds;
 }
 
 /** substring filter (the settled lazy default; subsequence later if it
-    ever annoys): case-insensitive over title + id + keywords. */
+    ever annoys): case-insensitive over title + id + description +
+    keywords. The description is reference fuel, not filler - "theme" finds
+    /theme either way, "clipboard" finds it only through the description. */
 export function filterPaletteCommands(
   query: string,
   cmds: readonly PaletteCommand[],
@@ -163,6 +191,7 @@ export function filterPaletteCommands(
   return cmds.filter((c) =>
     c.title.toLowerCase().includes(q) ||
     c.id.toLowerCase().includes(q) ||
+    (c.description ?? "").toLowerCase().includes(q) ||
     (c.keywords ?? "").toLowerCase().includes(q),
   );
 }

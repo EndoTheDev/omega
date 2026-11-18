@@ -496,6 +496,20 @@ resolution mirror the one command law every surface follows:
   returns its result text; a skill returns content the NEXT send arms
   as a system preamble). api.md's "Commands" section documents the
   wire.
+- **`/help` is the one REFERENCE-shaped output** (card t_8ad7ab33). It
+  opens the Ctrl+K command palette and answers with a single status
+  note ("the palette is the command reference - it is open"). Every
+  other shell command keeps the status line: that surface is for
+  notices, not reference - a command list crammed into one transient
+  line is unreadable and unactionable.
+- **The Ctrl+K palette IS the command reference**, so the surface
+  `/help` opens cannot drift from the commands that exist. After the
+  dockable rows and the shell actions it lists the `/` shell set
+  straight from `WEBUI_SHELL_COMMANDS` - name plus description (title
+  over description, the hint column stays keybindings-only) - and its
+  filter searches names AND descriptions. Picking a `/` row runs that
+  verb on the active chat tab through the same host path a typed
+  command takes.
 - **`@` opens the mention picker.** A bare `@` (or a non-prefixed
   token) lists workspace files plus the two prefix rows;
   `@session:` lists sessions, `@skill:` lists skills. Picking inserts
