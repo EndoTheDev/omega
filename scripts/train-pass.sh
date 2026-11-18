@@ -51,11 +51,17 @@ set -euo pipefail
 #   TRAIN_RECONCILER_ASSIGNEE  profile that takes third-strike cards
 #                              (default: default)
 #   TRAIN_NO_PUSH=1            same as --no-push
+#   TRAIN_CARD                 land THIS card only, not the oldest queued
+#                              one. The pin is the review seat's entry
+#                              (scripts/factory-merge.sh): a pinned card
+#                              that is not a queued landing refuses loudly
+#                              instead of landing a neighbour.
 #
 # Exit codes: 0 landed (or empty queue), 2 usage/precondition, 3 rebase
 # strike (card stays queued), 4 demoted to ready (rebase strikes, replay
 # anomalies, no-op merges), 5 third strike -> reconciler card, 6 red gate
-# -> card back to ready.
+# -> card back to ready, 7 the pinned card has nothing to land (already
+# merged, or no branch).
 
 BASE="dev"
 PUSH=1
@@ -63,6 +69,8 @@ PUSH=1
 HERMES_BIN="${HERMES:-hermes}"
 JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh}"
 RECONCILER_ASSIGNEE="${TRAIN_RECONCILER_ASSIGNEE:-default}"
+PIN="${TRAIN_CARD:-}"
+
 
 die() { echo "FATAL: train-pass: $*" >&2; exit 2; }
 note() { echo "==> train: $*"; }
@@ -106,6 +114,49 @@ now() { date +%s; }
 
 KANBAN_DB="${KANBAN_DB:-${HERMES_KANBAN_DB:-$HOME/.hermes/kanban/boards/project-omega/kanban.db}}"
 [ -f "$KANBAN_DB" ] || die "board db not found at $KANBAN_DB (set KANBAN_DB)"
+
+# The sqlite3 CLI is absent on fleet Windows hosts (the same gap
+# scripts/tick-pending.sh documents: boards are read through the python
+# sqlite3 module there). Every call site in this script passes its SQL as
+# ONE argument in the CLI's own shapes - [-readonly] [-separator S] <db>
+# <sql>, or a heredoc as stdin - so a shell function stands in for the CLI
+# without touching a call. Without either reader the pass dies loudly: an
+# unreadable board must never look like "queue empty, nothing to land".
+if ! command -v sqlite3 >/dev/null 2>&1; then
+  TRAIN_PY="$(command -v python || command -v python3 || true)"
+  [ -n "$TRAIN_PY" ] || die "no board reader: the sqlite3 CLI and python are both missing"
+  sqlite3() { "$TRAIN_PY" -c '
+import sqlite3, sys
+args, sep = sys.argv[1:], "|"
+while args and args[0].startswith("-"):
+    a = args.pop(0)
+    if a == "-separator":
+        sep = args.pop(0)
+db = args[0]
+sql = " ".join(args[1:]) if len(args) > 1 else sys.stdin.read()
+stmts, buf = [], ""
+for line in sql.splitlines(True):
+    buf += line
+    if sqlite3.complete_statement(buf):
+        stmts.append(buf)
+        buf = ""
+if buf.strip():
+    stmts.append(buf)
+con = sqlite3.connect(db, timeout=30)
+# Windows text streams translate \n to \r\n; the callers parse LF records.
+sys.stdout.reconfigure(newline="\n")
+try:
+    for stmt in stmts:
+        cur = con.execute(stmt)
+        if cur.description:
+            for row in cur.fetchall():
+                print(sep.join("" if v is None else str(v) for v in row))
+    con.commit()
+finally:
+    con.close()
+' "$@"; }
+fi
+
 
 # sqlq <text>: escape single quotes for a SQL literal.
 sqlq() { sed "s/'/''/g" <<<"$1"; }
@@ -205,12 +256,26 @@ EOF
 
 # Oldest first: done cards whose wt branch still exists and still carries
 # commits that are not on dev (a landed branch is an ancestor and gets
-# swept at the end of its own landing).
-mapfile -t CANDIDATES < <(sqlite3 -readonly -separator ' ' "$KANBAN_DB" "
-  SELECT id, branch_name FROM tasks
-   WHERE status = 'done'
-     AND branch_name IS NOT NULL AND branch_name != ''
-   ORDER BY completed_at ASC, id ASC;")
+# swept at the end of its own landing). TRAIN_CARD pins the queue to one
+# card - the review seat's single-card landing, where "the oldest queued
+# card" may well be somebody else's.
+if [ -n "$PIN" ]; then
+  mapfile -t CANDIDATES < <(sqlite3 -readonly -separator ' ' "$KANBAN_DB" "
+    SELECT id, branch_name FROM tasks
+     WHERE status = 'done'
+       AND id = '$(sqlq "$PIN")'
+       AND branch_name IS NOT NULL AND branch_name != ''
+     ORDER BY completed_at ASC, id ASC;")
+  [ "${#CANDIDATES[@]}" -gt 0 ] \
+    || die "pinned card $PIN is not a queued landing (status must be 'done' with a branch_name)"
+else
+  mapfile -t CANDIDATES < <(sqlite3 -readonly -separator ' ' "$KANBAN_DB" "
+    SELECT id, branch_name FROM tasks
+     WHERE status = 'done'
+       AND branch_name IS NOT NULL AND branch_name != ''
+     ORDER BY completed_at ASC, id ASC;")
+fi
+
 
 pick=""
 for cand in "${CANDIDATES[@]}"; do
@@ -224,6 +289,12 @@ for cand in "${CANDIDATES[@]}"; do
 done
 
 if [ -z "$pick" ]; then
+  if [ -n "$PIN" ]; then
+    # The pin's card is done but its branch is already in dev (or gone).
+    # "queue empty" would read as a landing to the caller - refuse instead.
+    echo "train: pinned card $PIN has nothing to land (branch already merged into $BASE, or no live branch)." >&2
+    exit 7
+  fi
   echo "train: queue empty."
   exit 0
 fi
@@ -233,7 +304,11 @@ bra="${pick#*|}"
 title="$(task_field "$tid" "title" || true)"
 who="$(task_field "$tid" "assignee" || true)"
 [ -n "$who" ] || who="?"
-note "oldest queued card: $tid ($title), branch $bra"
+if [ -n "$PIN" ]; then
+  note "pinned card: $tid ($title), branch $bra"
+else
+  note "oldest queued card: $tid ($title), branch $bra"
+fi
 
 # ---- free the branch ---------------------------------------------------
 
