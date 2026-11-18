@@ -306,6 +306,7 @@ flake, because the debugging run always passes. Use the package's
 - `harness/README.md` - extension authoring guide
 - `.agents/COMMIT.md` - commit convention and voice
 - `.agents/REVIEW.md` - the reviewer lens law (the single authority): per-area failure definitions, finding tags, the security lens
+- `.agents/DESIGN.md` - the design system: colors, icons, components, composer, accessibility, architecture
 
 ## Style
 

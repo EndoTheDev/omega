@@ -50,6 +50,13 @@ block is a review finding.
   dependents) rides the pill's title, where it informs without gating.
 - Panel band: `webui/app/components/ui/TabBand.vue` + `.band-tool`.
 
+An interactive component is specified before it is built. The
+spec names its ARIA roles, states and keys; where focus lands when it
+opens and on Tab; who owns Escape; every dismissal path. A card that
+ships an interactive component states this spec in its verification -
+a card that cannot state it has not designed the component yet.
+(Adapted from vercel-labs/ui's spec-before-code law.)
+
 ## Composer
 
 - One composer, no modes: no display-mode setting, no mode classes,
@@ -61,6 +68,9 @@ block is a review finding.
   around - never edge-to-edge.
 - Stored display-mode values are ignored orphans - never read again,
   no migration written.
+- A label fits whole or is deliberately absent - never a mid-word
+  ellipsis. Squeeze degrades in measured rungs: full label, then
+  icon-only, then stacked rows - one rung per width band.
 
 ## Accessibility
 
@@ -69,6 +79,9 @@ block is a review finding.
   the glyph itself is aria-hidden.
 - Pointer paths have keyboard parity: focus + Enter toggles the
   chevronless tree row.
+- `aria-disabled` over `disabled` on any control that may hold focus
+  when it deactivates: `disabled` drops focus to the page,
+  `aria-disabled` keeps it. (vercel-labs/ui)
 
 ## Architecture
 
