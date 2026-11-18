@@ -156,6 +156,13 @@
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
+    // the TURN's wall-clock total from prompt arrival to this answer
+    // landing (card t_3a857a2d): thinking, tool runs and smart-gate waits
+    // all bill into it. The answer row's badge shows THIS instead of the
+    // segment's own generation span - the last badge is the turn's honest
+    // bottom line, derived from the transcript's two timestamps so a
+    // restored turn reads the same number the live one did.
+    turnMs?: number;
     // elapsed-so-far of a segment that is STILL streaming here: a
     // restored/remounted running answer counts on from the server's
     // measurement instead of restarting its meter at the mount moment
@@ -235,8 +242,15 @@
   // A bubble that remounts MID-STREAM (tab switch, reload) starts its
   // meter at the segment's elapsed-so-far (card t_95385aba): the
   // duration keeps counting on instead of snapping back to zero.
+  //
+  // The frozen label prefers the TURN TOTAL (card t_3a857a2d): on the
+  // turn's answer row the badge is the whole span from the prompt
+  // arriving to this answer landing, not the last segment's share of it.
+  // The segment's own finalMs is the fallback for the rows that are not
+  // an answer (a mid-turn prose phase) and for a turn whose timestamps
+  // the wire has not handed over yet.
   const elapsedLabel = useElapsed(
-    () => props.finalMs,
+    () => props.turnMs ?? props.finalMs,
     () => props.streaming ?? false,
     () => props.elapsedMs ?? 0,
   );

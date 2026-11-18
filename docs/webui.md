@@ -438,6 +438,15 @@ every edge shell becomes an
   response appends below. The chip renders only on the NEWEST assistant
   response while the run is idle. Client-side `dropLastExchange`
   transcript surgery is RETIRED - never reintroduce it.
+- The answer row's elapsed badge is the TURN TOTAL (card t_3a857a2d):
+  prompt arrival to answer completion, subtracted from the two row
+  timestamps the transcript already carries (`time` on the user row and
+  on the answer row), so thinking, tool runs, smart-gate waits and the
+  user's own answer latency all bill into it. Thinking blocks and tool
+  rows keep their own segment spans - the per-phase anatomy is unchanged
+  and the last badge is the bottom line. Computed on every paint, never
+  tracked: the live canvas and a restored transcript render the same
+  number. `webui/test/turntotal.test.ts` pins the law.
 - Vue reactivity trap (bit once, live-proven): after pushing an item
   into the reactive transcript, re-capture the reactive proxy
   (`st.transcript[len-1]`) before mutating it - raw-ref mutations

@@ -174,9 +174,17 @@ type ChatBlock struct {
 // persisted (the branch-point address variants address); a live
 // stream's in-flight rows carry none.
 type ChatRow struct {
-	ID     string      `json:"id,omitempty"`
-	Role   string      `json:"role"`
-	Status string      `json:"status"`
+	ID     string `json:"id,omitempty"`
+	Role   string `json:"role"`
+	Status string `json:"status"`
+	// Time is the row's wall clock, RFC 3339 (the transcript wire's
+	// `time` verbatim): the store's created_at on a persisted row, empty
+	// on the in-flight rows a run has not persisted yet. The webui reads
+	// a turn's TWO stamps off it - the user message arriving and the
+	// answer landing - to render the turn-total badge (card t_3a857a2d),
+	// so the live canvas and the restored transcript compute the same
+	// number instead of the live pane tracking its own clock.
+	Time   string      `json:"time,omitempty"`
 	Blocks []ChatBlock `json:"blocks,omitempty"`
 }
 

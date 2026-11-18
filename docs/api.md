@@ -933,7 +933,11 @@ streams: its payload is the focus session's message rows (`session`,
 `running`, `rows` - role, content block, status per row), snapshots
 cover the newest 40 rows, streaming tokens batch onto
 `view_model_delta` at the cadence and structural stream events flush
-immediately. A running tool call re-pushes on the cadence on its own
+immediately. A persisted row also carries its wall clock (`time`, the
+store's `created_at`; absent on the in-flight rows a run has not landed
+yet) - the same stamp the transcript wire serves, so a renderer computes
+a turn's total from its two ends and the live pane and a reload agree on
+the number. A running tool call re-pushes on the cadence on its own
 (the call emits no event until its result): its row carries a fresh
 `elapsed_ms` throughout, so a remounted pane anchors at the call's true
 elapsed. That repaint answers only for the session that owns the panel -

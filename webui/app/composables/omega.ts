@@ -181,6 +181,14 @@ export interface MessageItem {
   time?: string;
   // server-measured response duration (restored history)
   finalMs?: number;
+  // the TURN's wall-clock total (card t_3a857a2d): prompt arrival -> this
+  // answer landing, computed from the turn's two row timestamps
+  // (applyTurnTotals). The answer row's badge renders it IN PLACE OF
+  // finalMs - the answer's own generation span is a phase, the total is
+  // the turn's bottom line. Absent on a segment that is not its turn's
+  // answer, and wherever the stamps are missing (an ephemeral session, a
+  // canvas window whose head row the store does not carry).
+  turnMs?: number;
   // elapsed-so-far of a STILL-STREAMING segment (the restore/merge
   // anchor, card t_95385aba): the bubble's meter counts on from here
   // instead of restarting at zero on a tab switch or reload. Absent on
@@ -511,7 +519,84 @@ export function renderTranscriptItems(
       }
     }
   }
+  applyTurnTotals(out);
   return out;
+}
+
+// applyTurnTotals stamps each turn's ANSWER row with the turn's wall-clock
+// total (card t_3a857a2d): the span from the user message ARRIVING to the
+// final answer LANDING, subtracted from the two timestamps the transcript
+// already carries (the store's created_at on both rows). Endo's ruling
+// (2026-11-15): wall-clock truth - thinking, tool runs, smart-gate waits
+// and his own answer latency all bill into the total, so the badge is the
+// turn's honest bottom line (his sleep-30 turn reads ~51s, not the last
+// segment's 841ms).
+//
+// ONLY the answer row: a turn's earlier prose segments are PHASES and keep
+// their own measured span, and thinking/tool rows are never touched - the
+// per-phase anatomy is unchanged, the last badge becomes the sum. "Answer"
+// is the turn's LAST assistant message, and only while nothing continues
+// the turn after it: a tool call (or a verdict card, which IS a call)
+// sitting below it means that segment was a phase, not the answer.
+//
+// Computed, not tracked: every paint recomputes from the same two stamps,
+// so the live canvas and a restored transcript render the SAME total and no
+// ticker survives the stream end. Where the stamps are missing (an
+// ephemeral session, a canvas window whose head row it does not carry, an
+// answer the store has not landed yet) the row keeps its own span - the
+// badge degrades to what it always showed, never to a fabricated number.
+//
+// Mutates in place (the transcript's item objects are the render identity -
+// a canvas paint rewrites its cached rows, exactly like liveText) and is
+// idempotent. Pure otherwise.
+export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
+  let from = 0;
+  for (let i = 0; i <= items.length; i++) {
+    const it = items[i];
+    const boundary = i === items.length || (it?.kind === "message" && it.role === "user");
+    if (!boundary) continue;
+    stampTurnTotal(items, from, i);
+    from = i;
+  }
+  return items;
+}
+
+// stampTurnTotal resolves ONE turn's slice (head user row at `from`, items
+// [from, to)): clears every assistant segment's turn total, then sets the
+// answer's. Split out of the walk so the boundary law reads as data.
+function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void {
+  const head = items[from];
+  if (!head || head.kind !== "message" || head.role !== "user") return;
+  const start = stampMs(head.time);
+  let answer: MessageItem | null = null;
+  let answerAt = -1;
+  for (let i = from + 1; i < to; i++) {
+    const it = items[i];
+    if (it?.kind !== "message" || it.role !== "assistant") continue;
+    // every segment starts cleared: a row that was the turn's last answer
+    // on an earlier paint stops being one the moment a phase lands below
+    // it (the live canvas rewrites these objects across deltas)
+    it.turnMs = undefined;
+    answer = it;
+    answerAt = i;
+  }
+  if (!answer) return;
+  // the answer only stands while the turn does not continue past it
+  for (let i = answerAt + 1; i < to; i++) {
+    const kind = items[i]?.kind;
+    if (kind === "tool" || kind === "verdict") return;
+  }
+  const end = stampMs(answer.time);
+  answer.turnMs = start !== null && end !== null && end >= start ? end - start : undefined;
+}
+
+// stampMs parses a row stamp (RFC 3339 / ISO 8601 from the store) into
+// epoch milliseconds. null for anything unparseable - a malformed stamp is
+// a missing stamp, never NaN arithmetic in the label.
+function stampMs(stamp: string | undefined): number | null {
+  if (!stamp) return null;
+  const ms = Date.parse(stamp);
+  return Number.isNaN(ms) ? null : ms;
 }
 
 // transcriptHasPending: does this rendered transcript carry at least
@@ -573,11 +658,15 @@ export interface ChatBlockWire {
 
 // ChatRowWire mirrors core.ChatRow: one message row (role + its blocks
 // + the row status). Status streaming while any block is still in
-// flight, complete otherwise.
+// flight, complete otherwise. Time is the row's wall clock (RFC 3339,
+// the store's created_at - the transcript wire's `time` verbatim): the
+// answer row's turn total is computed from the turn's two row stamps
+// (card t_3a857a2d), which is why the LIVE canvas serves them too.
 export interface ChatRowWire {
   id?: string; // store row id when persisted; live rows carry none
   role: string; // user | assistant | tool
   status: string; // streaming | complete
+  time?: string; // persisted row's created_at (absent on in-flight rows)
   blocks?: ChatBlockWire[];
 }
 
@@ -662,6 +751,7 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
         id: typeof r.id === "string" && r.id ? r.id : undefined,
         role: r.role,
         status: r.status,
+        time: typeof r.time === "string" && r.time ? r.time : undefined,
         blocks,
       });
     }

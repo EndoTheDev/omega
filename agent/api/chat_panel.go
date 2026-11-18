@@ -653,7 +653,10 @@ func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 func chatRows(items []transcriptItem) []core.ChatRow {
 	rows := make([]core.ChatRow, 0, len(items))
 	for _, it := range items {
-		row := core.ChatRow{ID: it.ID, Status: core.ChatStatusComplete}
+		// the row's wall clock rides it (card t_3a857a2d): the SAME stamp
+		// the transcript wire serves, so a live canvas turn and its
+		// restored twin compute one turn total
+		row := core.ChatRow{ID: it.ID, Time: it.Time, Status: core.ChatStatusComplete}
 		if it.Running {
 			row.Status = core.ChatStatusStreaming
 		}
