@@ -14,20 +14,28 @@ label_journey_session "$SID" "(journey) refresh-midrun $TAG"
 open_app
 open_journey_row "(journey) refresh-midrun $TAG"
 ab find placeholder "message omega" click >/dev/null
-ab keyboard type "Write 15 numbered lines. Each line is exactly: journey line N (N is 1 to 15)"
+ab keyboard type "Reply in this chat with 40 numbered lines. Each line is exactly: journey line N (N is 1 to 40). Do not use any tools - the answer must be the chat message itself."
 wait_js '(()=>{return [...document.querySelectorAll("textarea,[contenteditable=true]")].some(e=>(e.value||e.textContent||"").includes("numbered lines"))})()' 10 \
   || die "the typed prompt never landed in the composer draft"
+
+# the cursor witness is stamped INSIDE the page (100ms tick), not read by a
+# shell poll: a shell round trip costs two `ab eval` calls plus a 0.5s sleep,
+# and the dev lane's model streams the answer text for only ~1.5s - a shell
+# cadence can miss that window entirely while the cursor was plainly there.
+jsq '(()=>{window.__cursorSeen=false;clearInterval(window.__cursorTimer);
+  window.__cursorTimer=setInterval(()=>{if(document.querySelector(".msg .cursor"))window.__cursorSeen=true;},100);
+  return true})()' >/dev/null 2>&1
 ab press Enter
 ab press Enter
 step "sent long prompt"
 
-# mid-stream: wait for a streaming cursor with a real poll - TTFT is
+# mid-stream: wait for the streaming cursor with a real poll - TTFT is
 # seconds, so a one-shot check right after send always lost the race.
 # (The old `ab wait --text "journey line"` matched the USER bubble -
 # the prompt itself contains the token - and a one-shot cursor check
 # 0.3s after send always read false, so the fallback fired on a
 # cancel-faced composer and the wider send never left the draft.)
-if poll_js '!!document.querySelector(".msg .cursor")' 15; then
+if poll_js '!!window.__cursorSeen' 15; then
   :
 else
   # no cursor inside 15s: the run finished ultra fast (or returned
@@ -37,12 +45,13 @@ else
     || die "first run never finished (composer still cancel-faced after 90s)"
   step "stream finished too fast to catch - restarting wider"
   ab find placeholder "message omega" click >/dev/null
-  ab keyboard type "Write 30 numbered lines. Each line is exactly: journey line N (N is 1 to 30)"
+  ab keyboard type "Reply in this chat with 80 numbered lines. Each line is exactly: journey line N (N is 1 to 80). Do not use any tools - the answer must be the chat message itself."
   wait_js '(()=>{return [...document.querySelectorAll("textarea,[contenteditable=true]")].some(e=>(e.value||e.textContent||"").includes("numbered lines"))})()' 10 \
     || die "the wider prompt never landed in the composer draft"
+  jsq 'window.__cursorSeen=false, true' >/dev/null 2>&1
   ab press Enter
   ab press Enter
-  poll_js '!!document.querySelector(".msg .cursor")' 15 \
+  poll_js '!!window.__cursorSeen' 15 \
     || die "no streaming cursor seen; cannot test mid-run refresh (stream finished or never started)"
 fi
 step "mid-stream confirmed (cursor blinking)"

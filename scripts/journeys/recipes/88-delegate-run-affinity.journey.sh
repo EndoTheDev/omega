@@ -1,21 +1,22 @@
 #!/bin/bash
 # 88-delegate-run-affinity - the customer-level pin for per-run affinity
-# of injected delegate results (t_f3fb7c52).
+# of delegate results (t_f3fb7c52).
 #
-# The bug this fails on: the serve-wide injected channel was drained by
+# The bug this fails on: the serve-wide result channel was drained by
 # ANY agent loop holding the seam - a concurrent run (the session title
 # turn, a sibling /chat) stole another run's child result and that run
 # never received it. The customer-visible proof of the fix: two
 # concurrent /chat runs, each spawning a delegate task, each sees only
-# ITS OWN child's answer as the injected user turn - never a foreign
-# run's.
+# ITS OWN child's answer on its own call - never a foreign run's.
 #
 # Curl-only (no browser): /chat twice concurrently, then read both
-# session transcripts - a user row after the caller prompt is an
-# injected delegate result turn. The expected tokens are read from
-# each run's OWN delegate.task calls (the model transcription of the
-# instructed token is the parent's actual spawn, mangled or not), so
-# the pin is exact against the wire, not against the prompt text.
+# session transcripts. The wake shape is a tool_result ON the delegate
+# call the run issued (async agent loop phase 3, agent/api/wakes.go:
+# the settled core.YieldResult re-enters the run and fills its call
+# row) - it is NOT an injected user turn. The expected tokens are read
+# from each run's OWN delegate.task calls (the model transcription of
+# the instructed token is the parent's actual spawn, mangled or not),
+# so the pin is exact against the wire, not against the prompt text.
 #
 # Requires a lane whose provider can answer (probes are glm-5.3) and
 # the delegate module mountable - the child runs the lane's own binary
@@ -52,31 +53,58 @@ spawn_run "${JRN_B}" "${sentB}" "$JOURNEY_WORKTMP/omega-jrn-affB.sse" &
 wait
 step "both /chat streams settled"
 
-# --- transcripts: wait until each carries the injected user turn ---
-for i in $(seq 1 60); do
-  A_has=$(curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}" | python3 -c \
-    'import json,sys; d=json.load(sys.stdin); m=[x for x in (d.get("messages") or [])[1:] if x.get("role")=="user"]; sys.exit(0 if m else 1)' \
-    >/dev/null 2>&1 && echo yes || echo no)
-  B_has=$(curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}" | python3 -c \
-    'import json,sys; d=json.load(sys.stdin); m=[x for x in (d.get("messages") or [])[1:] if x.get("role")=="user"]; sys.exit(0 if m else 1)' \
-    >/dev/null 2>&1 && echo yes || echo no)
-  [ "$A_has" = yes ] && [ "$B_has" = yes ] && break
-  [ "$i" = 60 ] && die "an injected user turn never landed in the transcripts ($i polls)"
+# --- transcripts: wait until each run's delegate call carries its RESULT ---
+# The wake lands as the CALL's own tool_result row (see the header), so the
+# affinity witness is that row matched to the call the run itself issued.
+# Budget: 24 polls x 5s = 120s, so a lost wake dies BY NAME here instead of
+# burning the suite's 300s wall cap with no verdict (the previous 60-poll
+# budget could never finish before the cap, so every failure of this shape
+# surfaced as a bare timeout with no diagnosis).
+TXA="$JOURNEY_WORKTMP/omega-jrn-affA-tx.json"
+TXB="$JOURNEY_WORKTMP/omega-jrn-affB-tx.json"
+settled=no
+for i in $(seq 1 24); do
+  curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}/transcript" > "$TXA"
+  curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}/transcript" > "$TXB"
+  settled=$(python3 - "$TXA" "$TXB" <<'PYEOF'
+import json, sys
+
+
+def state(path):
+    d = json.load(open(path, encoding="utf-8"))
+    items = d.get("items") or []
+    calls = [i for i in items
+             if i.get("kind") == "tool_call"
+             and (i.get("tool_call") or {}).get("name") == "delegate.task"]
+    answered = {i.get("tool_call_id") for i in items if i.get("kind") == "tool_result"}
+    if not calls:
+        return "nocall"
+    pending = [c for c in calls if (c.get("tool_call") or {}).get("id") not in answered]
+    return "done" if not pending else "waiting"
+
+
+a, b = state(sys.argv[1]), state(sys.argv[2])
+print("yes" if a == "done" and b == "done" else "no:%s/%s" % (a, b))
+PYEOF
+)
+  [ "$settled" = yes ] && break
+  [ "$i" = 24 ] && die "a delegate result never filled its run's call row within 120s ($settled) - the wake was lost, see the transcripts in the evidence dir"
   sleep 5
 done
-step "ok: both transcripts carry an injected user turn"
+step "ok: both runs' delegate calls carry their result"
 
 # --- the affinity assertion ---
 # tokens spawned by run X: the prompt exactly as X typed it into
 # delegate.task (the SSE wire), not the instructed string
-curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}" > "$JOURNEY_WORKTMP/omega-jrn-affA-tx.json"
-curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}" > "$JOURNEY_WORKTMP/omega-jrn-affB-tx.json"
+curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_A}/transcript" > "$TXA"
+curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_B}/transcript" > "$TXB"
 python3 - \
   "$JOURNEY_WORKTMP/omega-jrn-affA.sse" "$JOURNEY_WORKTMP/omega-jrn-affB.sse" \
-  "$JOURNEY_WORKTMP/omega-jrn-affA-tx.json" "$JOURNEY_WORKTMP/omega-jrn-affB-tx.json" \
+  "$TXA" "$TXB" \
   "${sentA}" "${sentB}" <<'PYEOF' \
   || die "run affinity broken (t_f3fb7c52 regression): see the assertion output above"
 import json, re, sys
+
 
 def spawned(sse_path):
     toks = set()
@@ -95,25 +123,45 @@ def spawned(sse_path):
                 toks.add(m.group(1))
     return toks
 
-def injected(path):
+
+def results(path):
+    """each delegate.task call paired with the result row it was given"""
     d = json.load(open(path))
-    return [m.get("content", "") for m in (d.get("messages") or [])[1:] if m.get("role") == "user"]
+    items = d.get("items") or []
+    answered = {i.get("tool_call_id"): i for i in items if i.get("kind") == "tool_result"}
+    rows = []
+    for it in items:
+        call = it.get("tool_call") or {}
+        if it.get("kind") != "tool_call" or call.get("name") != "delegate.task":
+            continue
+        r = answered.get(call.get("id")) or {}
+        rows.append({
+            "call": call.get("id") or "",
+            "content": str(r.get("content") or ""),
+            "is_error": bool(r.get("is_error")),
+            "answered": bool(r),
+        })
+    return rows
+
 
 sseA, sseB, txA, txB, sentA, sentB = sys.argv[1:7]
 ownA, ownB = spawned(sseA), spawned(sseB)
+rowsA, rowsB = results(txA), results(txB)
 print(f"run A spawned  : {sorted(ownA)}")
 print(f"run B spawned  : {sorted(ownB)}")
-print(f"injected A     : {[t[:60] for t in injected(txA)]}")
-print(f"injected B     : {[t[:60] for t in injected(txB)]}")
+print(f"run A results  : {[(r['call'], r['content'][:60], r['is_error']) for r in rowsA]}")
+print(f"run B results  : {[(r['call'], r['content'][:60], r['is_error']) for r in rowsB]}")
 assert ownA and ownB, "each run must have spawned a delegate task - the prompt did not reach the tool"
-injA, injB = injected(txA), injected(txB)
-assert injA, f"run A received NO injected result - its child's answer was drained by someone else (sentinel {sentA})"
-assert injB, f"run B received NO injected result - its child's answer was drained by someone else (sentinel {sentB})"
-for row in injA:
-    assert any(t in row for t in ownA), f"run A injected row {row[:80]!r} matches no token A spawned - run affinity broken"
-    assert not any(t in row for t in ownB), f"run A injected row {row[:80]!r} carries a token B spawned - the steal still happens"
-for row in injB:
-    assert any(t in row for t in ownB), f"run B injected row {row[:80]!r} matches no token B spawned - run affinity broken"
-    assert not any(t in row for t in ownA), f"run B injected row {row[:80]!r} carries a token A spawned - the steal still happens"
-print("ok: each concurrent run's injected turns carry only its own delegate results")
+assert rowsA and rowsB, "each run must have a delegate.task call in its transcript"
+for row in rowsA:
+    assert row["answered"], f"run A's delegate call {row['call']} never got a result back - its child's answer never woke this run (sentinel {sentA})"
+    assert not row["is_error"], f"run A's delegate call failed: {row['content'][:120]}"
+    assert any(t in row["content"] for t in ownA), f"run A result {row['content'][:80]!r} matches no token A spawned - run affinity broken"
+    assert not any(t in row["content"] for t in ownB), f"run A result {row['content'][:80]!r} carries a token B spawned - the steal still happens"
+for row in rowsB:
+    assert row["answered"], f"run B's delegate call {row['call']} never got a result back - its child's answer never woke this run (sentinel {sentB})"
+    assert not row["is_error"], f"run B's delegate call failed: {row['content'][:120]}"
+    assert any(t in row["content"] for t in ownB), f"run B result {row['content'][:80]!r} matches no token B spawned - run affinity broken"
+    assert not any(t in row["content"] for t in ownA), f"run B result {row['content'][:80]!r} carries a token A spawned - the steal still happens"
+print("ok: each concurrent run's delegate result carries only its own child's answer")
 PYEOF
