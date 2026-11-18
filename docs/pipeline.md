@@ -219,16 +219,32 @@ check, and names the culprit with its marker ref. A landing tree includes
 its embed-lane regen commit, so a "correct source, broken bundle" case
 bisects to the landing that shipped it.
 
-## Cap raise (workers per profile)
+## Capacity per profile (2+1)
 
-`kanban.max_in_progress_per_profile` moved 2 -> 3 with the 3+1 capacity
-ruling (2026-11-15): 3 cody implementation seats + 1 vera review lane = 4
-concurrent runs max, enforced by the dispatch guard (`t_ce6eea14`, merged
-`60cb462a`) - the per-profile config knob alone cannot express the 3+1
-asymmetry, so the invariant lives guard-side. Both original gates were
-met before the flip: (a) two parallel webui cards landed back-to-back
-clean via the embed lane (pipeline v2 proof A + proof B); (b) the worker
-onboarding skill went live.
+`kanban.max_in_progress_per_profile` is 2 with the 2+1 capacity ruling
+(2026-11-17 evening): 2 cody implementation seats + 1 vera review lane = 3
+concurrent runs max, enforced by the dispatch guard - the per-profile
+config knob alone cannot express the 2+1 asymmetry, so the invariant lives
+guard-side. The guard clamps the implementation seats to 2 whatever the
+knob says (a knob of 3 or 4 cannot buy a third implementation run; the
+clamp is loud in the `seats:` line and, on a `--max` pass, in a `clamp:`
+line naming the seats arithmetic), and a third legal candidate that finds
+no seat is refused by name in the `impl lane over-cap:` readout.
+
+History, because the number moved twice: the knob went 2 -> 3 with the
+3+1 ruling (2026-11-15, guard card `t_ce6eea14`, merged `60cb462a`; the
+gates for that flip were two parallel webui cards landing back-to-back
+clean via the embed lane plus the worker onboarding skill going live).
+It came back to 2 with the 2+1 narrowing after three persist-seam waves
+in one evening (20:46, 21:11, 21:46 - the third with ZERO tick-side
+load) proved that three concurrent workers running gate suites stall the
+gateway's worker.persist receipts. Serializing one seat trades an
+implementation seat for a seam that never sees its failure shape. The
+`trio:` verdict the 3+1 guard carried is gone with the third seat: a
+would-be trio is an over-cap shape now, and the head set is a pair at
+most (`scripts/factory-dispatch.sh`, guard card `t_4707b735`). Pairs stay
+legal on the same disjointness proof; the review lane's cap of 1 is
+untouched.
 
 The dispatch guard (`scripts/factory-dispatch.sh`, `config_cap`) treats
 the knob as a guard number, never as a hint: a pass whose cap cannot be
