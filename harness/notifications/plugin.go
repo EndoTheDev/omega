@@ -22,9 +22,9 @@ func Default() Config { return Config{} }
 
 // Plugin adapts the notifications Store into omega's plugin system. It
 // owns the exclusive "notifications" seam; kanban, cron and delegate
-// emit through ctx.Notifications, the HTTP channel serves the bell,
-// and the capsule's canvas surface carries the list panel and the
-// toast event (arc 4b).
+// emit through ctx.Notifications, the dock's Notifications tab chip
+// reads it, and the capsule's canvas surface carries the list panel and
+// the toast event (arc 4b).
 type Plugin struct {
 	store   *Store
 	capsule *capsule
@@ -102,9 +102,9 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		return err
 	}
 	// The REST face over the same service handle (shell-ring shrink
-	// wave 3, card t_b75df168): the bell's list/read + the toast SSE
-	// ride the capsule - they register and die with the mount, exactly
-	// like the panel surface above them.
+	// wave 3, card t_b75df168): the tab chip's list/read + the toast
+	// SSE ride the capsule - they register and die with the mount,
+	// exactly like the panel surface above them.
 	for _, r := range []struct {
 		pattern string
 		h       func(http.ResponseWriter, *http.Request)
