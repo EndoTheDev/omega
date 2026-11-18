@@ -290,6 +290,32 @@ describe("command registry build (t_6215474b)", () => {
     const cmds = buildPaletteCommands(fakeDeps([]));
     assert.ok(cmds.every((c) => !c.hint));
   });
+
+  // card t_8ad7ab33: /help opens the palette, so the palette must BE the
+  // reference it claims to be - every shell command, name + description,
+  // straight from commands.ts (ONE list; a copy here would drift).
+  it("carries the / shell reference set - the literal token + its description", () => {
+    const rec: string[] = [];
+    const cmds = buildPaletteCommands({
+      ...fakeDeps(rec),
+      runSlashCommand: (n) => rec.push("slash:" + n),
+    });
+    for (const c of WEBUI_SHELL_COMMANDS) {
+      const row = cmds.find((x) => x.id === "slash:" + c.name.slice(1));
+      assert.ok(row, `the palette lists ${c.name}`);
+      assert.equal(row!.title, c.name, "the row is the literal token you type");
+      assert.equal(row!.description, c.description, "the description is the one shell set's");
+      assert.ok(!row!.hint, "the description never rides the keybinding column");
+    }
+    const help = cmds.find((x) => x.title === "/help");
+    assert.ok(help, "the palette lists /help itself - the reference is self-describing");
+    assert.match(help!.description!, /palette/, "/help's description points at the palette");
+    cmds.find((c) => c.id === "slash:theme")!.run();
+    assert.deepEqual(rec, ["slash:/theme"], "a picked row runs the shell verb");
+    // no executor wired (a fake, or a shell with no chat tab): the rows
+    // still list, picking one is the only quiet part
+    assert.ok(buildPaletteCommands(fakeDeps([])).some((c) => c.id === "slash:help"));
+  });
 });
 
 describe("command registry filter (substring, the settled lazy default)", () => {
@@ -308,6 +334,13 @@ describe("command registry filter (substring, the settled lazy default)", () => 
     assert.deepEqual(filterPaletteCommands("", cmds), [...cmds]);
     assert.equal(filterPaletteCommands("   ", cmds).length, cmds.length);
     assert.equal(filterPaletteCommands("zzz-none", cmds).length, 0);
+  });
+
+  // card t_8ad7ab33: a reference is searchable by what a command DOES, not
+  // only by its name - "clipboard" finds /copy through its description.
+  it("matches the description too (the reference fuel)", () => {
+    assert.ok(filterPaletteCommands("clipboard", cmds).some((c) => c.title === "/copy"));
+    assert.ok(filterPaletteCommands("THEME", cmds).some((c) => c.title === "/theme"));
   });
 });
 
@@ -336,6 +369,30 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(app.includes(':open="paletteOpen"'));
     assert.ok(app.includes('@close="paletteOpen = false"'));
     assert.ok(app.includes("buildPaletteCommands"), "the registry builds from app deps");
+    assert.ok(app.includes("runSlashCommand,"), "the / rows execute through the shell's own handler");
+  });
+
+  // card t_8ad7ab33: /help is a REFERENCE wearing NOTICE clothes - the
+  // palette is the reference surface, so /help opens it and answers with
+  // ONE line. Every other command keeps the status line (the notice class
+  // is untouched).
+  it("/help opens the palette and answers with one line", () => {
+    const help = app.slice(app.indexOf('case "/help"'), app.indexOf('case "/theme"'));
+    assert.ok(help.length > 0, "the /help case exists");
+    assert.match(help, /paletteOpen\.value = true/, "the reference surface opens");
+    assert.match(help, /note\("the palette is the command reference - it is open"\)/);
+    assert.doesNotMatch(help, /commands: \/copy/, "the wall of text is gone");
+    assert.doesNotMatch(help, /@session:<id>/, "the @-mention shapes are not crammed into a notice");
+    // the notice class itself is untouched: /theme still notes its own line
+    const theme = app.slice(app.indexOf('case "/theme"'), app.indexOf('case "/fork"'));
+    assert.match(theme, /note\(`theme: \$\{arg\}`\)/, "notice-shaped outputs keep the status line");
+  });
+
+  it("the reference description renders under the title", () => {
+    assert.ok(overlay.includes('class="command-desc"'), "the description has a row");
+    assert.match(overlay, /v-if="c\.description"/, "a title-only row renders as it did");
+    assert.match(css, /\.command-desc\s*\{/, "the description has real CSS");
+    assert.match(css, /\.command-text\s*\{[^}]*flex-direction:\s*column/, "title over description, one column");
   });
 
   // Endo rider 2026-11-12: the palette had Escape but no outside-click
