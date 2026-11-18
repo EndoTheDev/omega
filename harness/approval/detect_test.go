@@ -8,7 +8,7 @@ import "testing"
 // (2>&1, >&2) write no file and must read clean.
 func TestFDRedirectWritesPins(t *testing.T) {
 	cases := []struct {
-		in  string
+		in   string
 		want bool // writesThrough verdict (via assess -> redirect-writes)
 	}{
 		{in: "echo hi 2> f.txt", want: true},

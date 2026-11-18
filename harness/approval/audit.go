@@ -45,10 +45,10 @@ type AuditRow struct {
 	SendsOutbound  float64  `json:"sends_outbound"`
 	Model          string   `json:"model,omitempty"`
 	HasPolicy      bool     `json:"has_policy"`
-	PolicyHash     string   `json:"policy_hash,omitempty"` // the operator policy fingerprint
-	PolicyFP       string   `json:"policy_fp,omitempty"`   // the questions fingerprint
+	PolicyHash     string   `json:"policy_hash,omitempty"`    // the operator policy fingerprint
+	PolicyFP       string   `json:"policy_fp,omitempty"`      // the questions fingerprint
 	LadderVersion  string   `json:"ladder_version,omitempty"` // the threshold set that decided
-	DecidedBy      string   `json:"decided_by"`            // reviewer | human_card | manual | cache
+	DecidedBy      string   `json:"decided_by"`               // reviewer | human_card | manual | cache
 	CacheKey       string   `json:"cache_key,omitempty"`
 	Cached         bool     `json:"cached"`
 	CachedIn       string   `json:"cached_in,omitempty"` // the model that decided the cached original
@@ -57,6 +57,18 @@ type AuditRow struct {
 	Executed       bool     `json:"executed"` // false for deny/escalate/unreachable
 	Error          string   `json:"error,omitempty"`
 	LatencyMs      int64    `json:"latency_ms"`
+
+	// The safeagents lane (card t_e3cd4381). Findings carries every
+	// structured detector hit with its severity tier - the legacy shell
+	// rules (tiered=false) and the request-only set (tiered=true).
+	// Monitor marks a log-only dry run: the row is a WOULD-BLOCK
+	// measurement, nothing about the call changed. Judge and JudgeBlock
+	// record the evidence-only judge's state (blocked | cleared |
+	// unavailable | not-consulted) and its probability.
+	Findings   []Finding `json:"findings,omitempty"`
+	Monitor    bool      `json:"monitor,omitempty"`
+	Judge      string    `json:"judge,omitempty"`
+	JudgeBlock float64   `json:"judge_block,omitempty"`
 }
 
 // Audit writes the log. path is resolved once at mount; Append never

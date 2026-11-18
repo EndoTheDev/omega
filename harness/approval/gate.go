@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -168,21 +169,66 @@ func (g *Gate) stamp(o Outcome, fromCard bool) string {
 // Gate implements agent.ApprovalProvider. Contract: nil error =
 // execute, non-nil = the tool result refusing execution; the line is
 // the decision record stamped onto the call's tool result (empty =
-// no machine decision). Concurrency-safe: the loop runs a turn's
-// tool calls in parallel.
+// no machine decision). Concurrency-safe: the loop runs a turn's tool
+// calls in parallel.
 func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (string, error) {
+	return g.decide(ctx, toolName, args, nil)
+}
+
+// GateWithConversation is the agent.GateProvenance upgrade (card
+// t_e3cd4381): the loop hands the run's conversation so the safeagents
+// detectors can ask the provenance question - does the host this call
+// reaches appear in the HUMAN's own words? A gate consulted the plain
+// way sees no conversation, so nothing is sourced and every
+// non-allowlisted host reads as novel (the documented floor).
+func (g *Gate) GateWithConversation(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error) {
+	return g.decide(ctx, toolName, args, conversation)
+}
+
+// decide is the one decision path: the legacy shell lane (parse,
+// reviewer, ladder) plus the safeagents lane (request-only detectors,
+// severity tiers). Both feed the same escalation machinery.
+func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error) {
 	start := time.Now()
-	if toolName != "shell.run" {
-		return "", nil // Q1: only shell commands, ever
+	if g.mode() == ModeOff {
+		return "", nil // Q10: an off gate decides nothing, logs nothing
 	}
+	live := g.config()
+	origin := core.RunOriginFromContext(ctx)
+	session := agent.SessionIDFromContext(ctx)
+
+	// The legacy lane (Q1/Q7): shell commands only - parse + static
+	// expansion, then the would-interrupt rule set.
 	command, _ := args["command"].(string)
-	if strings.TrimSpace(command) == "" {
-		return "", nil // the tool itself refuses an empty command; not ours
+	var (
+		p    Parsed
+		risk Risk
+	)
+	if toolName == "shell.run" && strings.TrimSpace(command) != "" {
+		p = Parse(command)
+		risk = Assess(p)
 	}
 
-	// Q7: parse + static expansion. The raw string never travels.
-	p := Parse(command)
-	risk := Assess(p)
+	// The safeagents lane (card t_e3cd4381): request-only detectors over
+	// EVERY tool call. In the log-only soak a hit is recorded as a
+	// WOULD-BLOCK and the call proceeds exactly as it would have.
+	call := Call{Tool: toolName, Args: args}
+	prov := NewProvenance(conversation)
+	findings := DetectCall(call, prov)
+	if len(findings) > 0 {
+		if !live.DetectorsEnforce() {
+			g.audit.Append(g.row(rowInput{
+				mode: g.mode(), origin: origin, session: session, tool: toolName,
+				command: callText(call), rules: reasonsOf(findings),
+				findings: findings, monitor: true, judge: JudgeNotConsulted,
+				outcome:   Outcome{Verdict: MonitorVerdict, Step: MonitorStep, Reason: detectorSummary(findings)},
+				decidedBy: "monitor", latency: time.Since(start),
+			}))
+		} else {
+			return g.detectorLane(ctx, live, prov, call, findings, risk, start)
+		}
+	}
+
 	if !risk.WouldInterrupt {
 		return "", nil // benign traffic: no review, no calls, no rows
 	}
@@ -193,10 +239,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		// hygiene; the parse failure is itself a risk reason
 		sanitized, redacted = sanitize(command)
 	}
-	live := g.config()
 	key := g.cache.Key(sanitized, targets, live.SmartPolicy)
-	origin := core.RunOriginFromContext(ctx)
-	session := agent.SessionIDFromContext(ctx)
 	background := origin == originScheduled || origin == originSubagent
 
 	if rec, ok := g.cache.Lookup(key); ok {
@@ -209,7 +252,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		// "escalated -> approved", never as an auto verdict.
 		g.audit.Append(g.row(rowInput{
 			mode: g.mode(), origin: origin, session: session,
-			command: sanitized, rules: risk.Reasons, rec: rec,
+			command: sanitized, rules: risk.Reasons, findings: risk.Findings, rec: rec,
 			key: key, cached: true, redacted: redacted,
 			executed: rec.outcome.Verdict == VerdictApprove,
 			latency:  time.Since(start),
@@ -259,7 +302,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 			g.notifyEscalation(session, origin, sanitized, outcome)
 			g.audit.Append(g.row(rowInput{
 				mode: g.mode(), origin: origin, session: session,
-				command: sanitized, rules: risk.Reasons, answers: answers,
+				command: sanitized, rules: risk.Reasons, findings: risk.Findings, answers: answers,
 				rawVerdict: answers.Verdict, outcome: outcome, key: key,
 				redacted: redacted, recErr: reviewErr,
 				latency: time.Since(start),
@@ -280,7 +323,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 		if cardErr != nil {
 			g.audit.Append(g.row(rowInput{
 				mode: g.mode(), origin: origin, session: session,
-				command: sanitized, rules: risk.Reasons, answers: answers,
+				command: sanitized, rules: risk.Reasons, findings: risk.Findings, answers: answers,
 				rawVerdict: answers.Verdict, outcome: outcome, key: key,
 				redacted: redacted, recErr: reviewErr, cardErr: cardErr,
 				latency: time.Since(start),
@@ -301,7 +344,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 	}
 	g.audit.Append(g.row(rowInput{
 		mode: g.mode(), origin: origin, session: session,
-		command: sanitized, rules: risk.Reasons, answers: answers,
+		command: sanitized, rules: risk.Reasons, findings: risk.Findings, answers: answers,
 		rawVerdict: answers.Verdict, outcome: outcome, key: key,
 		redacted: redacted, recErr: reviewErr, fromCard: fromCard,
 		executed: outcome.Verdict == VerdictApprove,
@@ -428,11 +471,213 @@ func truncTo(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
+// detectorLane is the safeagents lane's escalation path (card
+// t_e3cd4381): a HIGH finding blocks on its own (the cheap regex
+// catches the obvious), a suspicious one passes the evidence-only
+// judge and then the human - the judge/human see only the gray zone.
+// The judge can only ADD a block: its finding rides the record and the
+// card, never lifts a deterministic one. The legacy shell rules ride
+// along as EVIDENCE (the card and the row name them) but their routing
+// stays theirs: this lane was reached because a tiered finding fired.
+//
+// Nothing here is cached: the lane is deterministic and costs no model
+// call on the block path, and a judge-augmented escalation is
+// situational (the legacy lane's cache law, unchanged).
+func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, call Call, findings []Finding, legacy Risk, start time.Time) (string, error) {
+	origin := core.RunOriginFromContext(ctx)
+	session := agent.SessionIDFromContext(ctx)
+	sanitized, redacted := sanitize(callText(call))
+	background := origin == originScheduled || origin == originSubagent
+
+	var (
+		outcome    Outcome
+		judge      = JudgeNotConsulted
+		judgeBlock float64
+		reviewErr  error
+		noTask     bool
+	)
+
+	// every deterministic finding is evidence; only the TIERED ones route
+	evidence := append(append([]Finding(nil), findings...), legacy.Findings...)
+	judged := evidence
+	blockers := tieredAtLeast(evidence, SeverityHigh)
+	if len(blockers) == 0 {
+		// SUSPICIOUS: the evidence-only judge reads the human's task,
+		// the call and the findings - never the agent's reasoning.
+		// A run with no human turn at all (a wake, a synthetic fire)
+		// has nothing to judge accountability AGAINST: the judge stays
+		// unconsulted rather than answering from half the record.
+		task := prov.Task()
+		switch {
+		case task == "":
+			noTask = true
+		default:
+			answer, err := Judge{Host: live.HTTPHost, APIKey: live.APIKey, Model: live.Model}.
+				Judge(ctx, task, call, evidence)
+			judge = answer.State(err)
+			judgeBlock = answer.Block
+			switch {
+			case err == nil:
+				judged = ratchet(evidence, answer)
+			case live.JudgeFailClosed:
+				// configured closed: an unreachable judge is a block
+				judged = ratchetFailure(evidence, err)
+				blockers = tieredAtLeast(judged, SeverityHigh)
+				reviewErr = err
+			default:
+				// the default failure law: fail OPEN - the judge adds
+				// nothing and the human still decides
+				reviewErr = err
+			}
+		}
+	}
+
+	if len(blockers) > 0 {
+		outcome = Outcome{VerdictDeny, DetectorBlockStep, detectorSummary(blockers)}
+	} else {
+		reason := detectorSummary(evidence)
+		switch {
+		case judge == JudgeBlocked:
+			reason += "; the evidence-only judge also blocked it (block " + trimFloat(judgeBlock) + ")"
+		case judge == JudgeUnavailable:
+			reason += "; the evidence-only judge was unreachable (fail-open: this card decides)"
+		case noTask:
+			reason += "; no human task in this run, so the evidence-only judge had nothing to judge accountability against"
+		}
+		if len(legacy.Reasons) > 0 {
+			reason += "; the shell rule set also flagged: " + strings.Join(legacy.Reasons, ", ")
+		}
+		outcome = Outcome{VerdictEscalate, DetectorSuspectStep, reason}
+	}
+
+	if outcome.Verdict == VerdictDeny {
+		g.audit.Append(g.row(rowInput{
+			mode: g.mode(), origin: origin, session: session, tool: call.Tool,
+			command: sanitized, rules: reasonsOf(judged), findings: judged,
+			judge: judge, judgeBlock: judgeBlock, recErr: reviewErr,
+			outcome: outcome, redacted: redacted, decidedBy: "detector",
+			latency: time.Since(start),
+		}))
+		return "", outcomeError(outcome)
+	}
+	if background {
+		// Q11: workers never block on a human - the refusal rides the
+		// tool error, the notification reaches the operator
+		g.notifyEscalation(session, origin, sanitized, outcome)
+		g.audit.Append(g.row(rowInput{
+			mode: g.mode(), origin: origin, session: session, tool: call.Tool,
+			command: sanitized, rules: reasonsOf(judged), findings: judged,
+			judge: judge, judgeBlock: judgeBlock, recErr: reviewErr,
+			outcome: outcome, redacted: redacted, decidedBy: "detector",
+			latency: time.Since(start),
+		}))
+		return "", fmt.Errorf("approval escalated, command not executed (%s): %s", outcome.Step, outcome.Reason)
+	}
+	resolved, followUp, cardErr := g.humanCard(ctx, sanitized, outcome)
+	if cardErr != nil {
+		g.audit.Append(g.row(rowInput{
+			mode: g.mode(), origin: origin, session: session, tool: call.Tool,
+			command: sanitized, rules: reasonsOf(judged), findings: judged,
+			judge: judge, judgeBlock: judgeBlock, recErr: reviewErr, cardErr: cardErr,
+			outcome: resolved, redacted: redacted, decidedBy: "human_card",
+			latency: time.Since(start),
+		}))
+		return g.stamp(resolved, true), fmt.Errorf("approval escalated, command not executed (%s): %s", resolved.Step, resolved.Reason)
+	}
+	stamp := g.stamp(resolved, true)
+	if followUp != "" && g.mode() == ModeSmart {
+		stamp = GateEscAnswered + ": " + truncTo(followUp, stampGuidanceMax)
+	}
+	g.audit.Append(g.row(rowInput{
+		mode: g.mode(), origin: origin, session: session, tool: call.Tool,
+		command: sanitized, rules: reasonsOf(judged), findings: judged,
+		judge: judge, judgeBlock: judgeBlock, recErr: reviewErr,
+		outcome: resolved, redacted: redacted, decidedBy: "human_card", fromCard: true,
+		executed: resolved.Verdict == VerdictApprove,
+		latency:  time.Since(start),
+	}))
+	return stamp, outcomeError(resolved)
+}
+
+// Step names the safeagents lane stamps on its outcomes (the audit
+// row's step column and the escalation card's body).
+const (
+	DetectorBlockStep   = "detector_high_severity"
+	DetectorSuspectStep = "detector_suspicious"
+	// MonitorVerdict / MonitorStep are the log-only dry run's record: a
+	// WOULD-BLOCK measurement, never a decision (nothing about the call
+	// changed, the row exists for the soak's false-positive count).
+	MonitorVerdict = "FLAG"
+	MonitorStep    = "monitor_would_block"
+)
+
+// tieredAtLeast returns the findings of the safeagents set at or above
+// one tier (the legacy lane's findings never route here: Tiered=false).
+func tieredAtLeast(findings []Finding, min Severity) []Finding {
+	var out []Finding
+	for _, f := range findings {
+		if f.Tiered && severityRank(f.Severity) >= severityRank(min) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// reasonsOf lists the detector names (the audit row's rules column,
+// deduped and sorted: the legacy row shape, extended to the new set).
+func reasonsOf(findings []Finding) []string {
+	seen := make(map[string]bool, len(findings))
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		if seen[f.Detector] {
+			continue
+		}
+		seen[f.Detector] = true
+		out = append(out, f.Detector)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// detectorSummary renders the findings as one line for the audit row
+// and the escalation card (the human reads the evidence, not a code).
+// Each part carries its SEVERITY first: the card is the approval
+// surface, so the tier renders as plain text - no chip redesign needed.
+func detectorSummary(findings []Finding) string {
+	var parts []string
+	for _, f := range findings {
+		part := string(f.Severity) + " " + f.Detector
+		if f.Detail != "" {
+			part += ": " + f.Detail
+		}
+		parts = append(parts, part)
+	}
+	return truncTo(strings.Join(parts, "; "), 300)
+}
+
+// callText renders a call for the audit row and the escalation card:
+// the tool and its decoded arguments, capped like a command.
+func callText(call Call) string {
+	return truncTo(call.Tool+" "+call.Text(), maxCommandChars)
+}
+
+// trimFloat renders a probability with two decimals (the audit row and
+// the card carry a readable number, never a float noise tail).
+func trimFloat(v float64) string {
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
+}
+
 // rowInput assembles the audit row; each pass fills what it has.
 type rowInput struct {
 	mode, origin, session string
+	tool                  string // empty = shell.run (the legacy lane's only tool)
 	command               string
 	rules                 []string
+	findings              []Finding
+	monitor               bool
+	judge                 string
+	judgeBlock            float64
+	decidedBy             string
 	cached                bool
 	redacted              bool
 	key                   string
@@ -457,8 +702,14 @@ func (g *Gate) row(in rowInput) AuditRow {
 		answers, outcome = in.rec.answers, in.rec.outcome
 	}
 	live := g.config()
+	tool := in.tool
+	if tool == "" {
+		tool = "shell.run"
+	}
 	decidedBy := "reviewer"
 	switch {
+	case in.decidedBy != "":
+		decidedBy = in.decidedBy
 	case in.cached:
 		decidedBy = "cache"
 	case in.fromCard:
@@ -470,9 +721,13 @@ func (g *Gate) row(in rowInput) AuditRow {
 		Mode:           in.mode,
 		Origin:         in.origin,
 		Session:        in.session,
-		Tool:           "shell.run",
+		Tool:           tool,
 		Command:        truncTo(in.command, 600),
 		Rules:          in.rules,
+		Findings:       in.findings,
+		Monitor:        in.monitor,
+		Judge:          in.judge,
+		JudgeBlock:     in.judgeBlock,
 		Verdict:        outcome.Verdict,
 		RawVerdict:     rawVerdict,
 		Step:           outcome.Step,

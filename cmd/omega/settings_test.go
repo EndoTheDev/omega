@@ -61,6 +61,8 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"logging.file":                   true,
 		"approvals.mode":                 true,
 		"approvals.smart_policy":         true,
+		"approvals.monitor":              true,
+		"approvals.judge_fail_closed":    true,
 	}
 }
 
