@@ -24,6 +24,11 @@ set -euo pipefail
 # - red gate: un-land (reset to the pre-pass tip), failure evidence
 #   comment, card back to ready. The rebased branch is KEPT - the red is
 #   the work's problem against dev, not the rebase's.
+# - race leg: -race needs a cgo toolchain. A host without one SKIPS the
+#   leg with one loud receipt and keeps gating (Endo 2026-11-10 ruling,
+#   card t_7cc44bf1: the signal stays on nightly/CI, where cgo exists) -
+#   never a red gate for an environment the host can never satisfy. The
+#   hard-fail stays exactly as-is where the toolchain exists.
 # - one landing per pass. Run it again for the next card.
 #
 # Board interaction: comments and result updates go through the hermes CLI
@@ -53,6 +58,10 @@ set -euo pipefail
 #                              remapped host and red every review-seat merge
 #                              rc 2 before the queue)
 #   TRAIN_GATES_CMD            test override - replaces the whole gate list
+#   TRAIN_CGO_PROBE_CMD        test override - its exit status IS the cgo
+#                              toolchain verdict the -race leg skips on
+#                              (0 = toolchain present). Unset in real passes:
+#                              they probe by compiling a trivial cgo file.
 #   TRAIN_JOURNEYS_CMD         the validation-journeys suite (default:
 #                              scripts/journeys/run.sh --regression - the
 #                              NAMED REGRESSION SET, regression.list's own
@@ -656,6 +665,36 @@ note "merge commit $mergesha"
 
 gates_log="$(mktemp "${TMPDIR:-/tmp}"/train-gates.XXXXXX.log)"
 
+# Does this host have a cgo toolchain, i.e. can `go test -race` run at all?
+# `go env CGO_ENABLED` alone is not the answer (0 is also what a cgo file
+# reports as "no Go source files", and a CGO_ENABLED=1 host can still have an
+# unresolved CC), so the probe COMPILES a trivial cgo file - the same thing
+# -race needs. Verified both ways 2026-11-19: this host answers 1 ("no Go
+# source files" / "cgo: C compiler gcc not found"), a gcc host answers 0.
+# TRAIN_CGO_PROBE_CMD is the fixture seam: its exit status IS the verdict.
+cgo_toolchain_ok() {
+  if [ -n "${TRAIN_CGO_PROBE_CMD:-}" ]; then
+    bash -c "$TRAIN_CGO_PROBE_CMD" >/dev/null 2>&1
+    return $?
+  fi
+  local dir rc
+  # GOCACHE is a NATIVE absolute path (train-pass also runs from an MSYS
+  # shell on winbtw, where the native go exe cannot open a /tmp dir) and go
+  # guarantees it exists.
+  dir="$(go env GOCACHE 2>/dev/null || true)"
+  [ -n "$dir" ] || return 1
+  dir="$dir/omega-cgo-probe.$$"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  printf 'package main\n\nimport "C"\n\nfunc main() {}\n' >"$dir/probe.go" 2>/dev/null || {
+    rm -rf "$dir"
+    return 1
+  }
+  rc=0
+  ( cd "$dir" && go build -o "$dir/probe.bin" probe.go ) >/dev/null 2>&1 || rc=$?
+  rm -rf "$dir"
+  return "$rc"
+}
+
 gates_pass() {
   set -e
   if [ -n "${TRAIN_GATES_CMD:-}" ]; then
@@ -693,8 +732,12 @@ gates_pass() {
           fi
         done
         if [ "${#raceargs[@]}" -gt 0 ]; then
-          echo "==> go test -race on touched packages: ${raceargs[*]}"
-          go test -race "${raceargs[@]}"
+          if cgo_toolchain_ok; then
+            echo "==> go test -race on touched packages: ${raceargs[*]}"
+            go test -race "${raceargs[@]}"
+          else
+            echo "!!! race leg skipped: no cgo toolchain on this host (t_7cc44bf1, Endo 2026-11-10) - the -race signal stays on nightly/CI"
+          fi
         fi
       fi
     fi
@@ -757,6 +800,10 @@ grep -q '^FIN$' "$gates_log" || {
   die "gate list broke its own structure (no FIN marker) - un-landed, dev back to $pre"
 }
 note "gates green"
+# A skipped leg must be visible in the PASS log too, not only in the gate log
+# (a green pass prints no gate detail, and a permanent ruling nobody can see
+# is how a "temporary" workaround becomes invisible debt - t_7cc44bf1).
+grep -m1 'race leg skipped' "$gates_log" 2>/dev/null || true
 
 # ---- land --------------------------------------------------------------
 
