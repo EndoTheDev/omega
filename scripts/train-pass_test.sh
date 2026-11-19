@@ -138,6 +138,7 @@ STUB
   HERMES="$HARNESS/mock/hermes"
   export HERMES
   unset TRAIN_GATES_CMD TRAIN_JOURNEYS_CMD TRAIN_NO_PUSH HERMES_KANBAN_BOARD TRAIN_RECONCILER_ASSIGNEE
+  unset TRAIN_CGO_PROBE_CMD
   # the env contract under test (card t_7acaa267): every leg states its own
   unset KANBAN_DB HERMES_KANBAN_DB HERMES_KANBAN_HOME HERMES_HOME TRAIN_CARD
   unset OMEGA_HOME OMEGA_BIN JOURNEY_BASE_URL JOURNEY_WITNESS
@@ -280,6 +281,64 @@ card_branch() {
   git -C "$REPO" commit -qm "feat(card): $1 work"
   git -C "$REPO" checkout -q dev
   card_row "$1" "wt/$1" "$2"
+}
+
+# a fixture repo that reaches the REAL go gate (no TRAIN_GATES_CMD): a
+# go.mod, the dep-law stub the gate calls, and a mock `go` on PATH.
+fixture_go_module() {
+  printf 'module example.com/fixture\n\ngo 1.26\n' >"$REPO/go.mod"
+  mkdir -p "$REPO/scripts"
+  printf '#!/usr/bin/env bash\nexit 0\n' >"$REPO/scripts/gate-deps.sh"
+  chmod +x "$REPO/scripts/gate-deps.sh"
+  git -C "$REPO" add -A
+  git -C "$REPO" commit -qm "test(fixture): go module + dep-law stub"
+}
+
+go_stub() {
+  GOBIN_STUB="$(posix_path "$HARNESS")/gobin"
+  mkdir -p "$GOBIN_STUB"
+  : >"$HARNESS/mock/go.log"
+  cat >"$GOBIN_STUB/go" <<'GO'
+#!/usr/bin/env bash
+# mock go: the only answers the gate's own argument shapes need. `list`
+# names the module and one package; `test -race` exits GO_RACE_RC (a real
+# race red); everything else is green. Every call is logged verbatim.
+printf '%s\n' "$*" >>"$(dirname "$(dirname "$0")")/mock/go.log"
+if [ "$1" = "list" ] && [ "$2" = "-m" ]; then
+  printf 'example.com/fixture\n'
+  exit 0
+fi
+if [ "$1" = "list" ]; then
+  printf 'example.com/fixture\nexample.com/fixture/pkg\n'
+  exit 0
+fi
+if [ "$1" = "test" ]; then
+  case " $* " in
+    *" -race "*) exit "${GO_RACE_RC:-0}" ;;
+  esac
+  exit 0
+fi
+exit 0
+GO
+  chmod +x "$GOBIN_STUB/go"
+}
+
+# a card branch whose landing touches a .go package (the race leg's subject)
+go_card() { # go_card <task_id> <completed_at>
+  git -C "$REPO" checkout -q -b "wt/$1" dev
+  mkdir -p "$REPO/pkg"
+  echo "package pkg" >"$REPO/pkg/x.go"
+  git -C "$REPO" add -A
+  git -C "$REPO" commit -qm "feat(card): $1 pkg work"
+  git -C "$REPO" checkout -q dev
+  card_row "$1" "wt/$1" "$2"
+}
+
+# a real gate run against the mock go: run_go_gate <race_rc>
+run_go_gate() {
+  rc=0
+  ( cd "$REPO" && PATH="$GOBIN_STUB:$PATH" GO_RACE_RC="$1" \
+      "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
 }
 
 status_of() { sqlite3 "$KANBAN_DB" "SELECT status FROM tasks WHERE id='$1';"; }
@@ -762,6 +821,67 @@ if [ "$rc" != 0 ]; then badf "S11: expected rc 0 under a space-bearing override 
 grep -q "^ARGS=$" "$HARNESS/journey.env" ||
   badf "S11: the override must receive no injected flag, got: $(cat "$HARNESS/journey.env")"
 grep -q "DONE t_override" "$HARNESS/run.out" || badf "S11: no landing under the override: $(cat "$HARNESS/run.out")"
+
+echo ""
+echo "== S12a: no cgo toolchain -> the -race leg SKIPS with one receipt and the landing lands (t_7cc44bf1)"
+ok
+
+mk_harness
+new_board
+new_repo
+fixture_go_module
+go_stub
+go_card t_nocgo 800
+export TRAIN_CGO_PROBE_CMD="echo ran >\"$HARNESS/probe.witness\"; exit 1"
+run_go_gate 0
+unset TRAIN_CGO_PROBE_CMD
+if [ "$rc" != 0 ]; then badf "S12a: a cgo-less host must still land (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "race leg skipped: no cgo toolchain on this host (t_7cc44bf1, Endo 2026-11-10)" "$HARNESS/run.out" ||
+  badf "S12a: the skip receipt must reach the PASS log, not only the gate log: $(cat "$HARNESS/run.out")"
+[ "$(grep -c 'race leg skipped' "$HARNESS/run.out")" = 1 ] ||
+  badf "S12a: the skip must be ONE receipt line, got $(grep -c 'race leg skipped' "$HARNESS/run.out")"
+[ -f "$HARNESS/probe.witness" ] || badf "S12a: the skip must be decided by the cgo probe"
+grep -q -- '-race' "$HARNESS/mock/go.log" &&
+  badf "S12a: go test -race must not run without cgo: $(cat "$HARNESS/mock/go.log")"
+grep -q "DONE t_nocgo" "$HARNESS/run.out" || badf "S12a: no landing: $(cat "$HARNESS/run.out")"
+[ -f "$REPO/pkg/x.go" ] || badf "S12a: the card's work must land on dev"
+[ "$(status_of t_nocgo)" = "done" ] || badf "S12a: card stays done, got $(status_of t_nocgo)"
+
+echo "== S12b: a cgo host still runs go test -race on the touched packages"
+ok
+
+mk_harness
+new_board
+new_repo
+fixture_go_module
+go_stub
+go_card t_cgo 810
+export TRAIN_CGO_PROBE_CMD="exit 0"
+run_go_gate 0
+unset TRAIN_CGO_PROBE_CMD
+if [ "$rc" != 0 ]; then badf "S12b: expected rc 0, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -qE '^test -race \./pkg$' "$HARNESS/mock/go.log" ||
+  badf "S12b: the race leg must run where the toolchain exists: $(cat "$HARNESS/mock/go.log")"
+grep -q "race leg skipped" "$HARNESS/run.out" && badf "S12b: no skip receipt on a cgo host"
+grep -q "DONE t_cgo" "$HARNESS/run.out" || badf "S12b: no landing: $(cat "$HARNESS/run.out")"
+
+echo "== S12c: a real -race red still un-lands the card (the skip never hides a race)"
+ok
+
+mk_harness
+new_board
+new_repo
+fixture_go_module
+go_stub
+go_card t_racerace 820
+pre="$(git -C "$REPO" rev-parse dev)"
+export TRAIN_CGO_PROBE_CMD="exit 0"
+run_go_gate 1
+unset TRAIN_CGO_PROBE_CMD
+if [ "$rc" != 6 ]; then badf "S12c: a race red must exit 6, got $rc: $(cat "$HARNESS/run.out")"; fi
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S12c: dev must be un-landed"
+[ "$(status_of t_racerace)" = "ready" ] || badf "S12c: card back to ready, got $(status_of t_racerace)"
+grep -q "race leg skipped" "$HARNESS/run.out" && badf "S12c: a cgo host must never print the skip receipt"
 
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"

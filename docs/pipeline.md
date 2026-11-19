@@ -51,8 +51,10 @@ gate + soak automation.
    ```
 
    Rebase onto the dev tip, full gates on the merged tree (go
-   build/vet/test + `-race` on touched packages, dep-law gate, webui node
-   suite, embed-lane static regen, validation journeys), then
+   build/vet/test + `-race` on touched packages - the race leg is SKIPPED
+   with one receipt line on a host with no cgo toolchain, see below -
+   dep-law gate, webui node suite, embed-lane static regen, validation
+   journeys), then
    `merge --no-ff`, push `origin dev`, marker ref
    `refs/train/<seq>-<task_id>` at the merge commit. Green or red, the
    state machine is the same for every card.
@@ -144,6 +146,17 @@ there can be a pre-existing lane defect that no landing can clear.
   lane from the tree it tests. Train-time gates stay: build/vet/test,
   `-race` on touched packages, dep law, the fence eval, the webui node
   suite, the embed lane, then the journeys.
+- **The race leg skips, it never reds, on a host with no cgo toolchain.**
+  `go test -race` cannot run without one (winbtw has no C compiler and
+  `CGO_ENABLED=0`). Ruling 2026-11-10 (card t_7cc44bf1): the leg is
+  SKIPPED there, permanently, with one receipt line naming the skip -
+  `race leg skipped: no cgo toolchain on this host (t_7cc44bf1, Endo
+  2026-11-10)` - and the pass keeps gating. The signal stays on the
+  nightly and CI, where cgo exists; a cgo host keeps the hard-fail
+  exactly as before, so the skip can never hide a real race. The probe
+  is a trivial cgo compile, not `go env CGO_ENABLED` (a file-list build
+  reports 0 as "no Go source files", and `CGO_ENABLED=1` can still carry
+  an unresolved `CC`).
 
 ### The train's journeys gate is the regression set (ruling 2026-11-19)
 
