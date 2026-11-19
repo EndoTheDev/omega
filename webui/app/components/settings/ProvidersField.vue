@@ -61,20 +61,24 @@
             :value="inst.host"
             :aria-label="`instance ${i + 1} base url`" />
         </label>
+        <!-- the api key cell is config.yaml's on EVERY row: the pane only ever
+             holds the mask, so a live edit could only answer the door - a plain
+             key that is not an echo is refused, a clear of a stored secret is
+             refused, and a mask over an empty secret is refused. The bound value
+             still SUBMITS: the mask is the server's keep path, and an API-added
+             row's "" is its legal echo. -->
         <label class="provider-cell">
           <span
-            >api key<em v-if="isNew(inst)" class="provider-door"
-              >config.yaml-only</em
-            ></span
+            >api key<em class="provider-door">config.yaml-only</em></span
           >
           <input
             class="setting-input"
             type="password"
             autocomplete="off"
-            :disabled="isNew(inst)"
+            disabled
+            placeholder="config.yaml-only"
             :value="inst.api_key"
-            :aria-label="`instance ${i + 1} api key`"
-            @input="setRow(i, 'api_key', ($event.target as HTMLInputElement).value)" />
+            :aria-label="`instance ${i + 1} api key`" />
         </label>
         <button
           class="provider-remove"
@@ -128,22 +132,10 @@
   const PRIMARY = "default";
   const isPrimary = (row: ProviderInstanceRow): boolean => row.name === PRIMARY;
 
-  // isNew: a row the STORED list (knob.value, not the draft) does not name. A new row is
-  // legal with its name and type alone - a host or api key on one fails the save
-  // (applyProviderInstances, cmd/omega/settings.go), so the pane must not offer those
-  // inputs; a named row is a rename, whose masked key round-trips.
-  const isNew = (row: ProviderInstanceRow): boolean => {
-    const stored = props.knob.value;
-    if (!Array.isArray(stored)) return true;
-    const name = row.name.trim();
-    return !stored.some(
-      (r) =>
-        !!r &&
-        typeof r === "object" &&
-        typeof (r as ProviderInstanceRow).name === "string" &&
-        (r as ProviderInstanceRow).name === name,
-    );
-  };
+  // Both credential cells are STATIC gates (the template binds them disabled on
+  // every row): applyProviderInstances refuses any host that does not echo the
+  // stored one and any api key that is not the mask, so the pane offers no write
+  // path for either - only the name and type columns edit.
 
   function setRow(i: number, key: keyof ProviderInstanceRow, value: string) {
     if (key === "name" && isPrimary(rows.value[i]!)) return;

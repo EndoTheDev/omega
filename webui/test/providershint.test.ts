@@ -35,29 +35,28 @@ test("a blank row carries a name placeholder - and NO model column", () => {
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
 });
 
-// --- / (stored-row half) ------
+// --- the credential cells: both are config.yaml's -----------------------
 //
-// A submitted host is accepted only when it ECHOES the stored host of the
-// row the list already names: applyProviderInstances answers "config.yaml
-// is the only door" for `inst.Host != existing.Host` on a stored row, and
-// a row the stored list does not name has no stored host to echo at all.
-// So the base url cell is a STATIC gate - disabled with the door named at
-// the field on every row, no input handler, no predicate that could ever
-// re-open it after the save. The api key cell stays on the new-row
-// predicate: a stored row's masked key round-trips legally.
+// applyProviderInstances answers "config.yaml is the only door" for a host
+// that does not ECHO the stored one, and for an api key that is neither the
+// mask nor a stored row's empty echo (a plain key anywhere, a clear of a
+// stored secret, a mask over an empty secret). The pane only ever holds the
+// mask, so it can never produce a legal credential write: both cells are
+// STATIC gates - disabled with the door named at the field on every row, no
+// input handler, no predicate that could re-open one after the save.
 //
-// A new row is legal with its name and type alone, so its key cell is
-// disabled too - and the host placeholder is a hint, never the
-// http://localhost:11434 example that was itself an illegal value.
+// The gate removes the WRITE path, never the value: each cell still binds
+// its row's value, so the mask (or an API-added row's "") submits on every
+// save and the server's keep path fires.
 
 test("the base url cell is config.yaml's on EVERY row - stored or new", () => {
   const at = field.indexOf("provider-cell provider-host");
   assert.ok(at > 0, "the host cell renders");
-  const hostCell = field.slice(at, field.indexOf("api key", at));
+  const hostCell = field.slice(at, field.indexOf("</label>", at));
   assert.match(hostCell, /\sdisabled\s/,
     "the host input is gated unconditionally");
-  assert.doesNotMatch(hostCell, /:disabled="isNew\(inst\)"/,
-    "the gate cannot be the new-row predicate - a STORED row's host must echo the stored one, so a live cell there only ever produces a save error");
+  assert.doesNotMatch(hostCell, /:disabled=/,
+    "the gate cannot be a predicate - a STORED row's host must echo the stored one, so a live cell there only ever produces a save error");
   assert.doesNotMatch(hostCell, /@input=/,
     "a gated cell carries no write path");
   assert.match(hostCell, /<em class="provider-door">config\.yaml-only<\/em>/,
@@ -68,20 +67,22 @@ test("the base url cell is config.yaml's on EVERY row - stored or new", () => {
     "the stored host still renders (read-only)");
 });
 
-test("a NEW row disables the api key cell and names the door at the field", () => {
-  assert.match(field, /const isNew = \(row: ProviderInstanceRow\): boolean =>/,
-    "the editor knows which rows the server would treat as new");
-  // the predicate reads the STORED list off the knob, not the draft
-  assert.match(field, /const stored = props\.knob\.value;/,
-    "new-ness is measured against the last payload the server sent");
-  const gated = field.match(/:disabled="isNew\(inst\)"/g) ?? [];
-  assert.equal(gated.length, 1,
-    "the api key is disabled on a new row (name + type stay live; the host cell is a static gate)");
-  const doors = field.match(/<em v-if="isNew\(inst\)" class="provider-door"/g) ?? [];
-  assert.equal(doors.length, 1,
-    "the api key cell names config.yaml in its label on a new row");
-  assert.match(field, />config\.yaml-only</,
-    "the marker says the door: config.yaml-only");
+test("the api key cell is config.yaml's on EVERY row - stored or new", () => {
+  const at = field.indexOf(">api key<em");
+  assert.ok(at > 0, "the api key cell renders");
+  const keyCell = field.slice(at, field.indexOf("</label>", at));
+  assert.match(keyCell, /\sdisabled\s/,
+    "the key input is gated unconditionally");
+  assert.doesNotMatch(keyCell, /:disabled=/,
+    "the gate cannot be a predicate - the pane holds only the mask, so a live key cell on a STORED row can only answer the door (settings.go refuses a plain key, a clear, and a mask over an empty secret)");
+  assert.doesNotMatch(keyCell, /@input=/,
+    "a gated cell carries no write path");
+  assert.match(keyCell, /<em class="provider-door">config\.yaml-only<\/em>/,
+    "the key cell always names the door - a NEW row's cell too, unconditionally");
+  assert.match(keyCell, /:value="inst\.api_key"/,
+    "the masked value still renders AND submits: the round trip is the server's keep path (an API-added row submits its stored \"\")");
+  assert.doesNotMatch(field, /isNew/,
+    "no new-row predicate survives to re-open a credential cell after the save");
   // the host placeholder is a hint, never an example endpoint
   assert.doesNotMatch(field, /placeholder="http:\/\/localhost:11434"/,
     "an example host on a new row invites the exact value the API refuses");
