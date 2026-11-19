@@ -16,6 +16,10 @@
 #   - a branch-gone worktree still goes when its HEAD is in the merge ref;
 #   - a prune run from a stale sibling worktree (where `branch -d` also lies
 #     "not fully merged") still prunes, and says which mechanism it used;
+#   - a husk under .worktrees/ (empty, unregistered - what a held-cwd removal
+#     leaves) is swept, and the card's own verdict still prints;
+#   - a registered worktree is never a husk, and a non-empty unregistered dir
+#     is named for a human instead of deleted;
 #   - a repo with no merge ref refuses loudly instead of guessing.
 #
 # Fixtures are a throwaway repo + bare remote under mktemp -d, never the real
@@ -163,6 +167,59 @@ has "$out" "CLEAN t_absent nothing-to-prune" && ok || bad "T7d: the batch stoppe
 out=$(run_prune t_live); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T8a: a second pass exited $rc (out: $out)"
 has "$out" "CLEAN t_live nothing-to-prune" && ok || bad "T8b: a pruned card's second pass printed no CLEAN (out: $out)"
+
+# -- T10: a HUSK under .worktrees/ is swept -------------------------------
+# A live session holding a card worktree as cwd lets `git worktree remove -f`
+# delete every file but not the top dir. What is left names no worktree, so
+# wtpath_of cannot reach it and every prune run reported "nothing-to-prune"
+# over the furniture.
+mkdir -p .worktrees/t_husk
+out=$(run_prune t_husk); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T10a: a prune with a husk present exited $rc (out: $out)"
+has "$out" "PRUNED-HUSK t_husk" && ok || bad "T10b: the husk was not swept (out: $out)"
+[ ! -d .worktrees/t_husk ] && ok || bad "T10c: the husk dir survived a PRUNED-HUSK line"
+has "$out" "CLEAN t_husk nothing-to-prune" && ok || bad "T10d: the card's own verdict went missing (out: $out)"
+
+# The husk a prune run from a SIBLING worktree must still find: .worktrees/
+# sits beside the shared .git, not beside the worktree the script ran in.
+mkdir -p .worktrees/t_husk2
+out=$(run_prune_from "$REPO/.worktrees/t_sib" t_husk2); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T10e: a prune from a sibling worktree exited $rc (out: $out)"
+has "$out" "PRUNED-HUSK t_husk2" && ok \
+    || bad "T10f: a sibling-worktree prune could not see the husk (out: $out)"
+[ ! -d .worktrees/t_husk2 ] && ok || bad "T10g: the husk dir survived the sibling-worktree sweep"
+
+# -- T11: a REGISTERED worktree is never a husk ---------------------------
+# t_open is registered and unmerged (T2). A prune run that does not name it
+# must leave it alone: the sweep asks the same registration list the free
+# step asks.
+out=$(run_prune t_nobody); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T11a: an unrelated prune exited $rc (out: $out)"
+has "$out" "PRUNED-HUSK t_open" && bad "T11b: a registered worktree was swept as a husk (out: $out)" || ok
+[ -f .worktrees/t_open/.git ] && ok || bad "T11c: a registered worktree lost its .git file"
+[ -d .worktrees/t_open ] && ok || bad "T11d: a registered worktree dir is gone"
+
+# -- T12: a NON-empty unregistered dir is named, never deleted ------------
+# It may be unclaimed work, or a `dir` workspace: the pruner says so instead
+# of calling the sweep clean.
+mkdir -p .worktrees/t_orphan
+echo unclaimed >.worktrees/t_orphan/notes.txt
+out=$(run_prune t_nobody); rc=$?
+has "$out" "NOTE t_orphan unregistered-dir-kept" && ok \
+    || bad "T12a: an unregistered dir holding files was not named (out: $out)"
+hasnt "$out" "PRUNED-HUSK t_orphan" && ok || bad "T12b: a dir holding files was deleted as a husk (out: $out)"
+[ -f .worktrees/t_orphan/notes.txt ] && ok || bad "T12c: the unclaimed file was destroyed"
+
+# -- T13: the shared fold agrees with git in every spelling ---------------
+# The board writes D:\..., git prints D:/..., an MSYS caller hands /d/... .
+# wt_norm is the only comparison, and it lives in scripts/lib-wt.sh with
+# train-pass.sh sourcing the same file.
+. "$(dirname "$SCRIPT")/lib-wt.sh"
+reg="$(mixpath "$REPO/.worktrees/t_open")"
+win="${reg//\//\\}"
+wt_registered "$win" && ok || bad "T13a: the backslash (board) spelling did not fold: $win"
+wt_registered "$reg/" && ok || bad "T13b: a trailing-slash spelling did not fold: $reg/"
+wt_registered "$reg-missing" && bad "T13c: an unregistered path answered registered" || ok
 
 # -- T9: no merge reference refuses loudly, never guesses ---------------
 LONE="$(mktemp -d)/lone"

@@ -18,6 +18,20 @@
 # leave cleanly keeps its branch with it. Nothing on an unmerged branch is
 # ever touched, and no removal is forced.
 #
+# Husks: an unregistered EMPTY dir under .worktrees/ is what a held-cwd
+# removal leaves behind (git deletes the contents, the top directory
+# survives the handle), and `git worktree list` cannot name it - so
+# wtpath_of cannot see it and the card would read "nothing-to-prune"
+# forever. sweep_husks clears that shape before the per-card loop and says
+# PRUNED-HUSK <id>. A registered worktree is never a husk (both sides go
+# through the same scripts/lib-wt.sh fold), and a NON-empty unregistered
+# dir is never deleted here - NOTE <id> unregistered-dir-kept names it for
+# a human, since it may be unclaimed work or a `dir` workspace.
+#
+# NEVER run this under WSL: the repo's worktree registrations use D:/
+# paths, and WSL git reads them as nonexistent - a prune or repair under
+# WSL deletes LIVE registrations (proven 2026-11-17).
+#
 # Delete mechanism: `git branch -d` first (it re-checks against HEAD and
 # upstream); if it refuses a branch this script has ALREADY proved merged
 # into the merge ref, fall back to `git update-ref -d` and say so on the
@@ -27,10 +41,6 @@
 #
 # Merge ref: origin/dev when it exists, else the local dev. Neither present
 # is a loud refusal (a prune without a merge reference verifies nothing).
-#
-# NEVER run this under WSL: the repo's worktree registrations use D:/
-# paths, and WSL git reads them as nonexistent - a prune or repair under
-# WSL deletes LIVE registrations (proven 2026-11-17).
 
 set -uo pipefail
 
@@ -40,7 +50,27 @@ if [ -f /proc/version ] && grep -qi microsoft /proc/version 2>/dev/null; then
     exit 2
 fi
 
-cd "$(git rev-parse --show-toplevel)" || exit 2
+REPO="$(git rev-parse --show-toplevel)" || exit 2
+cd "$REPO" || exit 2
+
+# The worktree path fold lives in scripts/lib-wt.sh: the train's free step
+# reads the same registrations, and two copies of the fold drift.
+WT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-wt.sh"
+if [ ! -f "$WT_LIB" ]; then
+    echo "REFUSED missing-helper (scripts/lib-wt.sh does not exist at $WT_LIB)" >&2
+    exit 2
+fi
+. "$WT_LIB"
+
+# .worktrees lives beside the SHARED .git, so a prune run from a sibling
+# worktree sweeps the same directory the main checkout holds.
+common="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null \
+    || git rev-parse --git-common-dir 2>/dev/null || true)"
+if [ -n "$common" ] && [ -d "$common" ]; then
+    WT_ROOT="$(cd "$common/.." && pwd -P)/.worktrees"
+else
+    WT_ROOT="$REPO/.worktrees"
+fi
 
 if git rev-parse --verify --quiet refs/remotes/origin/dev >/dev/null; then
     MERGE_REF=origin/dev
@@ -65,15 +95,42 @@ wtpath_of() {
           done
 }
 
-# Is this path still a registered worktree? (Exact string, as wtpath_of gave it.)
-wt_registered() {
-    git worktree list --porcelain | grep -qxF "worktree $1"
-}
-
 # Is this commit reachable from the merge ref? The only merge verdict here.
 merged_into_ref() {
     git merge-base --is-ancestor "$1" "$MERGE_REF" 2>/dev/null
 }
+
+# sweep_husks: remove the empty, unregistered leftover dirs under
+# .worktrees/ - the husk a held-cwd removal leaves - and NAME every
+# unregistered dir it does not remove, so a prune run never reports a clean
+# sweep over furniture it simply could not see. Global rather than per-card:
+# a husk belongs to a card that may never get another prune run, and an
+# EMPTY dir carries no work. wt_registered answers through the shared fold,
+# so a registered worktree in any spelling is never a husk.
+sweep_husks() {
+    [ -d "$WT_ROOT" ] || return 0
+    local d id
+    for d in "$WT_ROOT"/*/; do
+        [ -d "$d" ] || continue
+        d="${d%/}"
+        id="${d##*/}"
+        wt_registered "$d" && continue
+        if [ -z "$(ls -A "$d" 2>/dev/null)" ]; then
+            if rmdir "$d" 2>/dev/null; then
+                echo "PRUNED-HUSK $id (empty dir, no worktree registration)"
+            else
+                echo "NOTE $id husk-empty-held $d (no worktree registration; a live process still holds the dir)"
+            fi
+        else
+            echo "NOTE $id unregistered-dir-kept $d (no worktree registration and not empty - left for a human)"
+        fi
+    done
+    return 0
+}
+
+# The husk sweep runs FIRST: the per-card loop can only report on what the
+# worktree list names, and this is the pass that clears what it cannot.
+sweep_husks
 
 held=0
 for id in "$@"; do

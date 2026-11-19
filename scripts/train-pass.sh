@@ -141,6 +141,13 @@ done
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this inside the omega checkout"
 cd "$REPO"
 
+# The worktree path fold is one file: factory-prune.sh reads the same
+# registrations to tell a husk from a live worktree, and two copies of the
+# fold drift (scripts/lib-wt.sh).
+WT_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-wt.sh"
+[ -f "$WT_LIB" ] || die "missing scripts/lib-wt.sh next to train-pass.sh ($WT_LIB)"
+. "$WT_LIB"
+
 cur="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
 [ "$cur" = "$BASE" ] || die "HEAD is on '$cur', not $BASE - the train lands from the main checkout on dev"
 [ -z "$(git status --porcelain)" ] || die "main checkout is dirty - commit or clean before a train pass"
@@ -517,40 +524,10 @@ fi
 # THIS checkout (the husk's parent), so the dirty guard read the main repo and
 # the free step died `fatal: not a working tree` on every pass, forever
 # (proven live on t_7acaa267, 2026-11-19, including the tick's fallback sweep).
-# The free step therefore asks the repo's own worktree list first, and treats
-# a husk as the plain directory it is.
-
-# wt_norm <path>: one spelling for both sides. The board carries the
-# dispatcher's spelling (winbtw: D:\Code\...), `git worktree list` prints
-# git's own (D:/Code/...), and an MSYS caller may hand /d/Code/... - so fold
-# separators, MSYS's drive form, trailing slashes and (windows being
-# case-blind) case before anything is compared.
-wt_norm() {
-  local p="$1"
-  p="${p//\\//}"
-  if command -v cygpath >/dev/null 2>&1; then
-    p="$(cygpath -m "$p" 2>/dev/null || printf '%s' "$p")"
-  fi
-  while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done
-  case "$p" in
-    [A-Za-z]:*) p="$(printf '%s' "$p" | tr 'A-Z' 'a-z')" ;;
-  esac
-  printf '%s' "$p"
-}
-
-# wt_registered <path>: this checkout carries that path on its worktree list.
-wt_registered() {
-  local want have line
-  want="$(wt_norm "$1")"
-  while IFS= read -r line; do
-    case "$line" in
-      "worktree "*) have="$(wt_norm "${line#worktree }")" ;;
-      *) continue ;;
-    esac
-    if [ "$have" = "$want" ]; then return 0; fi
-  done < <(git worktree list --porcelain 2>/dev/null)
-  return 1
-}
+# The free step therefore asks the repo's own worktree list first
+# (wt_registered, scripts/lib-wt.sh), and treats a husk as the plain
+# directory it is. The fold it compares with lives in the shared helper, so
+# factory-prune.sh's sweep answers the same question the same way.
 
 ws="$(task_field "$tid" "workspace_path" || true)"
 wskind="$(task_field "$tid" "workspace_kind" || true)"
