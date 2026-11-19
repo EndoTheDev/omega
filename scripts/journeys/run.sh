@@ -18,6 +18,11 @@
 #   JOURNEY_JSON=1 run.sh                      # machine summary on the final line
 #   JOURNEY_LOCK_WAIT=600 run.sh               # queue behind a live suite
 #                                              # instead of refusing
+#   JOURNEY_LOCK_IMPL=auto|flock|mkdir run.sh  # pin the lock implementation
+#                                              # (auto = flock where the host has
+#                                              # it, the mkdir dir otherwise; the
+#                                              # witness pins mkdir to exercise
+#                                              # the MSYS shape anywhere)
 #
 # Every argument is accounted for: an unknown option, a --base with no URL,
 # or a journey name no recipe matches is a loud exit 2. Nothing is dropped
@@ -98,6 +103,15 @@ set -u
 # sometimes, and a single leaked lock fd keeps the flock alive after
 # run.sh exits - every later suite would refuse forever (proven live
 # 2026-10-28, fixed the same day).
+#
+# OWNERSHIP IS NOT A PID (card t_804ab59c). The MSYS path could only ask
+# `kill -0`, and a pid is a number, not an identity: a dead suite's record
+# whose number Windows had since handed to an unrelated process refused every
+# later suite with "another journey suite holds the run lock (pid N)" while no
+# suite was running (hit live 2026-11-17, worked around with
+# JOURNEY_LOCK=/tmp/omega-journeys-tfdd12843.lock). The record is now checked
+# against the holder's own command line - lock_holder_is_suite below - so a
+# recycled number is reaped while a genuine holder is still refused.
 JOURNEY_LOCK="${JOURNEY_LOCK:-/tmp/omega-journeys.lock}"
 export JOURNEY_LOCK
 JOURNEY_LOCK_WAIT="${JOURNEY_LOCK_WAIT:-0}"
@@ -106,7 +120,78 @@ journey_lock_refuse() { # $1: holder pid text; callers pass 'cat-or-?'
   printf '  queue behind it instead: JOURNEY_LOCK_WAIT=<secs> run.sh ...\n' >&2
   exit 3
 }
-if command -v flock >/dev/null 2>&1; then
+
+# lock_holder_args <pid>: the holder's argv on one line, empty when the pid
+# exposes none. /proc is the honest read (Linux always, MSYS for the processes
+# its own runtime started); `ps -o args=` is the fallback. MSYS's ps has no -o
+# and reports only the executable path, so a ps answer there confirms "some
+# process", never "a suite" - which is the safe direction (see below).
+lock_holder_args() {
+  local args=""
+  args="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null | tr -d '\r\n')"
+  if [ -z "$args" ]; then
+    args="$(ps -p "$1" -o args= 2>/dev/null | tr -d '\r\n' | sed 's/^ *//; s/ *$//')"
+  fi
+  printf '%s' "$args"
+}
+
+# lock_holder_is_suite <pid> -> 0 a live journey suite, 1 nothing that can be
+# one (dead, or a recycled number), 2 alive but unverifiable.
+# A suite is bash running this script, so its argv names .../journeys/run.sh.
+# Invoked as ./run.sh from the suite home the argv carries only the bare
+# script name, so the holder's cwd is read as the second signal - reaping a
+# LIVE suite's lock would let two suites interleave, the exact failure this
+# lock exists to prevent, so one signal alone is not enough to convict.
+lock_holder_is_suite() {
+  local pid="$1" args cwd
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac   # empty/junk record: unproven
+  kill -0 "$pid" 2>/dev/null || return 1
+  args="$(lock_holder_args "$pid")"
+  if [ -z "$args" ]; then
+    # Alive but undescribed. A host WITH /proc that does not know this pid is
+    # naming a process outside the shell runtime (a native Windows process on
+    # MSYS) - never a bash suite, so the number was recycled. Everything else
+    # (a pid /proc will not describe, or a host with no /proc to ask) cannot
+    # be answered in either direction and stays unproven: refuse, never reap.
+    if [ -d /proc ] && [ ! -d "/proc/$pid" ]; then return 1; fi
+    return 2
+  fi
+  case "$args" in
+    *journeys/run.sh*|*journeys\\run.sh*) return 0 ;;
+  esac
+  case "$args" in
+    *run.sh*)
+      cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+      cwd="${cwd//\\//}"
+      case "$cwd" in */scripts/journeys|*/scripts/journeys/) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+# journey_lock_reapable <recorded pid> -> 0 that record names no live journey
+# suite, so the dir it left is stale. Unproven is NOT reapable.
+journey_lock_reapable() {
+  lock_holder_is_suite "$1"
+  case "$?" in
+    0|2) return 1 ;;
+  esac
+  return 0
+}
+
+JOURNEY_LOCK_IMPL="${JOURNEY_LOCK_IMPL:-auto}"
+case "$JOURNEY_LOCK_IMPL" in
+  auto)
+    if command -v flock >/dev/null 2>&1; then JOURNEY_LOCK_IMPL=flock; else JOURNEY_LOCK_IMPL=mkdir; fi ;;
+  flock|mkdir) ;;
+  *)
+    printf 'journeys: JOURNEY_LOCK_IMPL must be auto, flock or mkdir (got %s)\n' "$JOURNEY_LOCK_IMPL" >&2
+    exit 2 ;;
+esac
+if [ "$JOURNEY_LOCK_IMPL" = flock ] && ! command -v flock >/dev/null 2>&1; then
+  printf 'journeys: JOURNEY_LOCK_IMPL=flock, but this host has no flock(1)\n' >&2
+  exit 2
+fi
+if [ "$JOURNEY_LOCK_IMPL" = flock ]; then
   exec 9>"$JOURNEY_LOCK" || { echo "journeys: cannot open $JOURNEY_LOCK" >&2; exit 2; }
   if ! flock -w "$JOURNEY_LOCK_WAIT" 9; then
     journey_lock_refuse "$(cat "${JOURNEY_LOCK}.pid" 2>/dev/null || echo '?')"
@@ -117,13 +202,15 @@ else
   # No flock(1) (git-bash/MSYS on winbtw): same lock as an atomic mkdir dir
   # next to the flock file, pid file inside. mkdir(2) is atomic system-wide;
   # a dir whose owner pid is dead is stale and gets reaped - the SIGKILL
-  # story a kernel flock gets for free. Release removes the dir on every
-  # trappable exit (traps set further down); no trappable exit leaves a
-  # dir the NEXT suite's staleness check reaps. /tmp is shared across
-  # every MSYS shell on the host, same as the flock file. fd 9 does not
-  # exist in this mode; sweep-chromes.sh detects MSYS and hands the reap to
-  # sweep-chromes.ps1, which runs regardless of the lock - a chrome whose
-  # parent is dead cannot belong to a live suite.
+  # story a kernel flock gets for free. A dir whose owner pid is ALIVE but is
+  # not a journey suite is stale too (a recycled number, card t_804ab59c); a
+  # dir whose owner cannot be identified is held, never reaped. Release
+  # removes the dir on every trappable exit (traps set further down); no
+  # trappable exit leaves a dir the NEXT suite's staleness check reaps. /tmp
+  # is shared across every MSYS shell on the host, same as the flock file.
+  # fd 9 does not exist in this mode; sweep-chromes.sh detects MSYS and hands
+  # the reap to sweep-chromes.ps1, which runs regardless of the lock - a
+  # chrome whose parent is dead cannot belong to a live suite.
   JOURNEY_LOCK_DIR="$JOURNEY_LOCK.d"
   journey_lock_try() {
     if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then
@@ -131,18 +218,17 @@ else
       JOURNEY_LOCK_MKDIR=1
       return 0
     fi
-    holder="$(cat "$JOURNEY_LOCK_DIR/pid" 2>/dev/null || echo '?')"
-    case "$holder" in
-      [0-9]*)
-        if ! kill -0 "$holder" 2>/dev/null; then
-          rm -rf "$JOURNEY_LOCK_DIR" 2>/dev/null
-          if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then
-            printf '%s\n' "$$" > "$JOURNEY_LOCK_DIR/pid"
-            JOURNEY_LOCK_MKDIR=1
-            return 0
-          fi
-        fi ;;
-    esac
+    local holder
+    holder="$(tr -d '\r\n' < "$JOURNEY_LOCK_DIR/pid" 2>/dev/null || echo '?')"
+    if journey_lock_reapable "$holder"; then
+      printf 'journeys: reaping a stale run lock - pid %s is not a live journey suite\n' "$holder" >&2
+      rm -rf "$JOURNEY_LOCK_DIR" 2>/dev/null
+      if mkdir "$JOURNEY_LOCK_DIR" 2>/dev/null; then
+        printf '%s\n' "$$" > "$JOURNEY_LOCK_DIR/pid"
+        JOURNEY_LOCK_MKDIR=1
+        return 0
+      fi
+    fi
     JOURNEY_LOCK_LAST_HOLDER="$holder"
     return 1
   }
