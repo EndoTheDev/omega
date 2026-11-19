@@ -129,10 +129,10 @@ test("the row reads its own live tail from the store, keyed by the call id", () 
   );
 });
 
-// card t_64d14d2b: the derivation is PURE. It used to write
+//
 // it.liveText/it.liveSettled while reading the chip store, so every landed
 // chunk re-derived the transcript, the blocks and the activity line - and a
-// write inside a getter can re-arm the effects that read it (t_a356fcc7's
+// write inside a getter can re-arm the effects that read it 
 // spin class). The tail is read at the row instead.
 test("the transcript derivation is a pure projection - no writes, no chip read", () => {
   const chatTab = src("components/ChatTab.vue");
@@ -159,17 +159,17 @@ test("the tool call id reaches the row from both render paths", () => {
   const chat = src("composables/chat.ts");
   // the restore path assigns the wire's call id onto the row (it used to
   // be an object literal; the mapper now paints into a cached item, so
-  // the pin reads the assignment - card t_a20fbad7)
+  // the pin reads the assignment -
   assert.ok(omega.includes("t.callId = callId || undefined"), "the restore path stamps the call id");
   assert.ok(chat.includes("it.callId = callId"), "the canvas panel path stamps the call id");
 });
 
-// card t_85066d64: a GROUPED row never showed a live tail. ToolGroup is a
+//
 // container - but it forwarded no call id to the row it renders, so the
 // chips store had no key to hand that row its own chunk; only a lone call
 // (which renders through ChatItem) streamed its output. The group now
 // binds the same call-id path ChatItem does, and this pin holds it: the
-// binding arrived with the store view state work (t_15572849), so the pin
+// binding arrived with the store view state work, so the pin
 // is what keeps a future "group is only a container" cleanup from
 // silently dropping the tail again. Removing the binding reds the pin.
 test("a grouped child carries the call id - the group is a container, not a re-render", () => {

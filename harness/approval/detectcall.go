@@ -9,28 +9,22 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The safeagents detector set (card t_e3cd4381, half 1): deterministic,
-// request-only, plain Go regexes - zero dependencies, zero network.
+// The safeagents detector set: deterministic, request-only, plain Go regexes - zero
+// dependencies, zero network.
 //
 // Two questions only a request can answer:
+//  1. PROVENANCE - does the host this call reaches appear in the HUMAN's own words? A host
+//     the model wrote earlier is no more sourced than one it writes now, so assistant
+//     turns are excluded: self-citation is not provenance.
+//  2. REACH - a host only counts in a call that can reach it: the tool name, or a
+// line carrying a network client. A URL named above its `curl` still counts.
 //
-//  1. PROVENANCE - does the host this call reaches appear in the
-//     HUMAN's own words? A host the model wrote earlier is no more
-//     sourced than one it writes now, so the model's assistant turns
-//     are excluded: self-citation is not provenance.
-//  2. REACH - a host only counts in a call that can reach it. A tool
-//     named for the network, or a command line carrying a network
-//     client, is what makes a host matter; a URL named in a comment
-//     three lines above the `curl` in the same call still counts (the
-//     code names the URL a line before opening it).
-//
-// Severity decides routing: SeverityHigh findings block on their own,
-// the milder tiers mark the call SUSPICIOUS (judge, then human). Every
-// finding is a deterministic fact about the request - no model, no
-// history, no heuristics that need a conversation to be true.
+// Severity decides routing: SeverityHigh findings block on their own, the milder tiers
+// mark the call SUSPICIOUS (judge, then human). Every finding is a deterministic fact
+// about the request - no model, no history, no conversation-dependent heuristics.
 
-// Detector names - stable and greppable: they ride the audit row, the
-// judge payload and the human card. The string is the contract.
+// Detector names - stable and greppable: they ride the audit row, the judge payload and
+// the human card. The string is the contract.
 const (
 	DetectorHostProvenance  = "host-provenance"
 	DetectorProcEnviron     = "proc-environ"
@@ -44,22 +38,19 @@ const (
 	DetectorJudgeFailure  = "judge-failure"
 )
 
-// maxTaskChars caps the human task text the judge reads (a pasted
-// document must not make an unbounded body).
+// maxTaskChars caps the human task text the judge reads.
 const maxTaskChars = 2000
 
-// Provenance is the conversation's human-authored text - the only
-// citation that sources a host. The model's own assistant turns are
-// excluded by ruling, so a host the model invented on an earlier turn
-// reads exactly like a host it invents now.
+// Provenance is the conversation's human-authored text - the only citation that sources a
+// host. Assistant turns are excluded by rule, so a host the model invented earlier reads
+// exactly like one it invents now.
 type Provenance struct {
 	turns []string
 }
 
-// NewProvenance extracts the human-authored turns from one run's
-// conversation. A nil conversation (one-shot CLI paths, tests) is the
-// documented floor: nothing is sourced, so every non-allowlisted host
-// reads as novel.
+// NewProvenance extracts the human-authored turns from one run's conversation. A nil
+// conversation (one-shot CLI paths, tests) is the documented floor: nothing is sourced, so
+// every non-allowlisted host reads as novel.
 func NewProvenance(conversation []core.Message) Provenance {
 	p := Provenance{}
 	for _, m := range conversation {
@@ -75,10 +66,9 @@ func NewProvenance(conversation []core.Message) Provenance {
 	return p
 }
 
-// Sources reports whether the human's own words ever named host. The
-// match is label-bound: "evil.com" is NOT sourced by "notevil.com",
-// while a subdomain citation sources its registrable name
-// (api.evil.com cites evil.com).
+// Sources reports whether the human's own words ever named host. The match is
+// label-bound: "evil.com" is NOT sourced by "notevil.com", while a subdomain citation
+// sources its registrable name (api.evil.com cites evil.com).
 func (p Provenance) Sources(host string) bool {
 	h := strings.ToLower(strings.TrimSpace(host))
 	if h == "" {
@@ -120,8 +110,8 @@ func labelBoundary(s string, lo, hi int) bool {
 	return true
 }
 
-// Task returns the run's own request - the LAST human turn - for the
-// evidence-only judge. Empty = this run carried no human turn.
+// Task returns the run's own request - the LAST human turn - for the evidence-only judge.
+// Empty = this run carried no human turn.
 func (p Provenance) Task() string {
 	if len(p.turns) == 0 {
 		return ""
@@ -129,25 +119,21 @@ func (p Provenance) Task() string {
 	return truncTo(strings.TrimSpace(p.turns[len(p.turns)-1]), maxTaskChars)
 }
 
-// Call is one pending tool call as the detectors see it: the tool name
-// and its DECODED argument tree. Nothing else - the agent's reasoning
-// is not a detector input here, and not a judge input below.
+// Call is one pending tool call as the detectors see it: the tool name and its DECODED
+// argument tree. Nothing else - the agent's reasoning is not a detector input here.
 type Call struct {
 	Tool string
 	Args map[string]any
 }
 
-// Text flattens the call into the text the detectors read: one line
-// per decoded argument line. A JSON payload carried as a string is
-// decoded first - matching raw wire text would let an escaped "\n" in
-// front of "cat" read as "ncat" (the ruling: decode, then match per
-// line; never strip backslashes and call the result text).
+// Text flattens the call into the text the detectors read: one line per decoded argument
+// line. A JSON payload carried as a string is decoded first - matching raw wire text would
+// let an escaped "\n" in front of "cat" read as "ncat" (rule: decode, then match per line).
 func (c Call) Text() string {
 	return strings.Join(c.lines(), "\n")
 }
 
-// lines is the decoded argument tree as text lines (map keys are
-// walked in sorted order so the result is deterministic).
+// lines is the decoded argument tree as text lines, keys walked in sorted order.
 func (c Call) lines() []string {
 	var out []string
 	walkArgValue(c.Args, &out)
@@ -195,7 +181,7 @@ var (
 	// reachToolPattern: a tool NAME that can reach a network.
 	reachToolPattern = regexp.MustCompile(`(?i)fetch|browse|browser|web|http|url|download`)
 	// reachLinePattern: command lines that open a connection - the
-	// ruling's set (curl, wget, nc, ssh, git clone, pip install,
+	// rule's set (curl, wget, nc, ssh, git clone, pip install,
 	// /dev/tcp/, requests., httpx.) plus the clients the legacy
 	// detector already knows.
 	reachLinePattern = regexp.MustCompile(`(?i)(\bcurl\b|\bwget\b|\bnc\b|\bncat\b|\bnetcat\b|\btelnet\b|\bssh\b|\bscp\b|\bsftp\b|\bgit\s+clone\b|\bpip3?\s+install\b|\bnpm\s+(?:i|install)\b|/dev/tcp/|\brequests\.|\bhttpx\b|\bhttp\.client\b|\burllib\b|\baiohttp\b)`)
@@ -211,23 +197,21 @@ var (
 	readVerbPattern        = regexp.MustCompile(`(?i)(?:^|[\s;&|(])(?:cat|less|more|head|tail|strings|xxd|hexdump|od|base64|grep|rg|awk|sed|cp|scp|tar|zip|python3?|node|perl|ruby|php|curl|wget|nc)\b`)
 )
 
-// allowlistDomains: the package/tooling hosts the ruling allows
-// verbatim, plus the RFC 2606 reserved names no one can register.
+// allowlistDomains: the package/tooling hosts the rule allows verbatim.
 var allowlistDomains = []string{
 	"github.com", "pypi.org", "pythonhosted.org", "huggingface.co",
 	"hf.co", "npmjs.org", "crates.io",
 }
 
-// reservedDomains: RFC 2606 / RFC 6761 special-use names - never
-// registrable, so naming one can never reach a third party.
+// reservedDomains: RFC 2606 / RFC 6761 special-use names - never registrable, so naming
+// one can never reach a third party.
 var reservedDomains = []string{
 	"example.com", "example.net", "example.org",
 	"example", "test", "invalid", "localhost",
 }
 
-// allowlistedHost reports whether a host is exempt from the provenance
-// question. The loopback spellings (127.0.0.1, ::1, 0.0.0.0) are the
-// localhost ruling, not a new entry.
+// allowlistedHost reports whether a host is exempt from the provenance question. The
+// loopback spellings (127.0.0.1, ::1, 0.0.0.0) are the localhost rule, not a new entry.
 func allowlistedHost(host string) bool {
 	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	switch h {
@@ -279,14 +263,10 @@ func DetectCall(call Call, prov Provenance) []Finding {
 		return Finding{Detector: detector, Severity: SeverityMedium, Tiered: true, Detail: detail}
 	}
 
-	// HOST-PROVENANCE. A host only counts in a call that can reach it:
-	// a URL host counts anywhere in a reaching call (the code names the
-	// URL a line before opening it), a bare IP on a reaching line - a
-	// line carrying a network client, or ANY line when the tool NAME
-	// itself is the reach surface (`web.fetch`'s arguments are what it
-	// fetches, so `{"host":"10.1.2.3"}` reaches on its own).
-	// One finding per host: an IP used as a URL's own authority is one
-	// host, not two.
+	// HOST-PROVENANCE. A host only counts in a call that can reach it: a URL host counts
+	// anywhere in a reaching call (the code names the URL a line before opening it), a
+	// bare IP only on a reaching line - or on any line when the tool NAME is the reach
+	// surface (`web.fetch`'s arguments are what it fetches). One finding per host.
 	if callReaches {
 		novel := map[string]string{}
 		for _, line := range lines {
@@ -367,9 +347,8 @@ func urlHosts(line string) []string {
 	return out
 }
 
-// ipv4Hosts returns the dotted quads on one line that are really
-// addresses. The ruling: digits after "=" are a version, not an IP
-// (`pkg==0.5.1.4`), and every octet must fit a byte.
+// ipv4Hosts returns the dotted quads on one line that are really addresses: digits after
+// "=" are a version, not an IP (`pkg==0.5.1.4`), and every octet must fit a byte.
 func ipv4Hosts(line string) []string {
 	var out []string
 	for _, loc := range ipv4Pattern.FindAllStringIndex(line, -1) {

@@ -1,21 +1,13 @@
 <template>
-  <!--
-    +: the Agents panel on the shared RegistryList (one browser pattern across the.
-    The "@" duplicate button and its near-identical form died with.
-  -->
-  <!-- (Endo's three rulings): 1) the DEFAULT agent CANNOT be disabled. -->
+  <!-- the panel rides the shared RegistryList (one browser pattern across the tabs); the
+       default agent is LOCKED - it can never be disabled. -->
   <section class="pane agents">
-    <!--
-      the UNIVERSAL band - the create "+" rides the band; the band renders before
-      the.agents-body scrollport: scrolling the list never moves it.
-    -->
+    <!-- the UNIVERSAL band: the create "+" rides it, and it renders BEFORE the scrollport, so
+         scrolling the list never moves it. -->
     <TabBand title="Agents">
       <div class="agents-actions">
-        <!--
-          the band tool rides the icon law - a lucide glyph via the shared ui/Icon
-          wrapper at the band-tool size (13,.agents/DESIGN.md), never a bare "+" text
-          run (the cron tab's add-job tool is the reference).
-        -->
+        <!-- the band tool rides the icon law: a lucide glyph through the shared ui/Icon at
+             band-tool size, never a bare "+" text run. -->
         <button
           class="agents-new band-tool"
           title="create an agent"
@@ -27,13 +19,9 @@
         </button>
       </div>
     </TabBand>
-    <!--
-      THE ONE CREATE DOOR: one form, the kind inside.
-      (Endo's eyeball pass): the form adopts the CRON tab's editor pattern - a title, a
-      captioned field grid, the error line and an actions row - and sits ABOVE the
-      scroll body exactly where cron's job editor sits, so band -> editor -> scrolling
-      rows reads as one family across the two panels.
-    -->
+    <!-- THE ONE CREATE DOOR: one form, the kind inside. It wears the cron tab's editor
+         pattern (title, captioned field grid, error line, actions row) and sits above the
+         scroll body, so band -> editor -> scrolling rows reads as one family. -->
     <form
       v-if="showCreate"
       class="agents-create"
@@ -205,7 +193,7 @@
                       class="agents-inherit-chip"
                       :title="chipNote(row.name, 'provider.instance')">{{ chipText(row.name, "provider.instance") }}</span>
                   </span>
-                  <!-- item 4: a REFERENCED instance from settings. -->
+                  <!-- a REFERENCED instance from settings. -->
                   <select
                     v-model="editDraft[row.name].provider_instance"
                     class="agents-edit-input"
@@ -277,7 +265,7 @@
                   @click="resetField(row.name, 'max_turns')">inherit from main</button>
               </div>
 
-              <!-- ALWAYS OFF. -->
+              <!-- ALWAYS OFF: an agent runs only the toggles it names here. -->
               <div class="agents-edit-field">
                 <span class="agents-edit-label">toggles</span>
                 <div
@@ -298,10 +286,8 @@
                 <span class="agents-inherit-note">{{ agentTogglesNote(editDraft[row.name].toggles) }}</span>
               </div>
 
-              <!--
-                the explicit allowlist over the agent's VISIBLE registry.
-                Empty = no skills, never main's.
-              -->
+              <!-- the explicit allowlist over the agent's VISIBLE registry: empty means no skills,
+                   never main's. -->
               <div class="agents-edit-field">
                 <span class="agents-edit-label">skills</span>
                 <div
@@ -322,11 +308,8 @@
                 <span class="agents-inherit-note">{{ agentSkillsNote(editDraft[row.name].skills_allow) }}</span>
               </div>
 
-              <!--
-                inherit-as-disabled: main's artifacts are visible and inert until the
-                kind is switched on; enabling copies the artifact into this home (never
-                a live link).
-              -->
+              <!-- inherit-as-disabled: main's artifacts stay visible and inert until the kind is
+                   switched on; enabling copies the artifact into this home, never a live link. -->
               <div class="agents-edit-field">
                 <span class="agents-edit-label">inherit from main</span>
                 <div
@@ -442,7 +425,8 @@
               class="agents-status">no tool calls recorded</p>
           </template>
 
-          <!-- FULL SEPARATION. -->
+          <!-- FULL SEPARATION: the agent's own WORK sessions, inspected from the
+               expanded row - never the human's sessions sidebar. -->
           <template v-if="sessionsByAgent[row.name]">
             <h4 class="agents-cont-sub">sessions</h4>
             <p
@@ -528,15 +512,13 @@ const loadError = ref("");
 // notice is the panel's own record line (a delete's outcome, "deleted
 // scout's home - 3 sessions went with it") - never an error lane.
 const notice = ref("");
-// `loaded` gates the empty-text beat in RegistryList.
 const loaded = ref(false);
 const toggleError = ref<string | null>(null);
 const busy = ref<string | null>(null);
-// the row whose canonical open is in flight (the mint round trip), and the agent WORK.
+// the row whose canonical open is in flight: the mint round trip, then its WORK sessions.
 const opening = ref<string | null>(null);
 const sessionsByAgent = reactive<Record<string, OmegaAgentSession[]>>({});
 
-// the ONE create door ----------------------------
 const showCreate = ref(false);
 const creating = ref(false);
 const create = reactive(emptyCreateDraft());
@@ -555,11 +537,7 @@ const cloneCandidates = computed<OmegaAgent[]>(() =>
   cloneSources(profiles.value, create.name),
 );
 
-/**
- * submitCreate routes the ONE form by its KIND (the pure createRequest): scaffold ->
- * POST /agents, continuous -> POST /continuous, clone -> POST /agents {inherit_from}
- * (the landed CLONE law - a materialized copy at birth, never a live link).
- */
+/** routes the ONE form by its KIND (createRequest): scaffold and clone POST /agents, continuous POST /continuous. */
 async function submitCreate(): Promise<void> {
   const req = createRequest(create);
   if (!req) {
@@ -588,31 +566,26 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-// the wake strip state, per expanded agent.
 const waking = ref<string | null>(null);
 const wakeInput = reactive<Record<string, string>>({});
 const wakeMsg = reactive<Record<string, string>>({});
 const chatByAgent = reactive<Record<string, OmegaChatMessage[]>>({});
 const evidenceByAgent = reactive<Record<string, OmegaEvidenceRow[]>>({});
 
-// the definition layer's edit form (0.17.3 field set) -------------- description. host
-// / api_key are NOT here: the panel never carries a secret (law 2).
+// the panel never carries a secret: description, prompt, provider, model and turns only.
 const editDraft = reactive<Record<string, AgentEditDraft>>({});
 const editMsg = reactive<Record<string, string>>({});
 const saving = ref<string | null>(null);
 
-// the inheritance read + the host's definitions --------- GET /settings answers.
+// both host definitions the edit form reads come from GET /settings.
 const scopes = ref<SettingsScope[]>([]);
 const providerInstances = ref<string[]>([]);
 const modules = ref<Array<{ name: string; state?: string; toggleable?: boolean }>>([]);
 
 const toggleNames = computed<string[]>(() => toggleOptions(modules.value));
 
-/**
- * toggleChoicesFor is the union of the offered capsules and the ones this agent's file
- * already enables (a host-side disable after the fact must stay visible, dimmed, or the
- * next toggle save is a 400 the operator cannot explain).
- */
+/** the union of the offered capsules and the ones this agent's file enables: a host-side
+ * disable stays visible (dimmed), or the next toggle save is a 400 the operator cannot explain. */
 function toggleChoicesFor(name: string): string[] {
   return toggleChoices(toggleNames.value, editDraft[name]?.toggles ?? []);
 }
@@ -626,9 +599,7 @@ function chipFor(name: string, key: string) {
   return chipOf(fieldChips(scopeOf(name)), key);
 }
 
-/**
- * chipInherited / chipText / chipNote are the template's three reads of that state.
- */
+/** the template's three reads of one knob's state. */
 function chipInherited(name: string, key: string): boolean {
   return chipFor(name, key)?.inherited === true;
 }
@@ -651,18 +622,16 @@ function sessionCountOf(name: string): number {
   return p?.session_count ?? 0;
 }
 
-// the delete lane ------------------------------------
 const deleting = ref<string | null>(null);
 const removing = ref<string | null>(null);
 const deleteError = reactive<Record<string, string>>({});
 
-/** agentSessionReceipt voices the delete's own count, the number the confirm dialog. */
+/** voices the delete's own count - the same number the confirm dialog promised. */
 function agentSessionReceipt(n?: number): string {
   if (!Number.isFinite(n) || (n ?? 0) <= 0) return "no sessions were stored";
   return n === 1 ? "1 session went with it" : `${n} sessions went with it`;
 }
 
-/** deleteHome DELETEs the whole home. */
 async function deleteHome(name: string): Promise<void> {
   removing.value = name;
   deleteError[name] = "";
@@ -687,11 +656,8 @@ async function deleteHome(name: string): Promise<void> {
 // false when the host serves no toggle seam (501 on /disabled).
 const toggleable = ref(false);
 
-// the row model: name + description + config detail for the row, the fold state merged
-// by name, the continuous wake state folded in by name (the status dot+word rides the
-// row law's subtitle line).: the DEFAULT agent is LOCKED - `disabled` never renders
-// true for it (a stale persisted entry a pre-lock build left in the fold does not
-// render a disabled row) and the pill is non-interactive.
+// the row model: name, description, config detail, fold state and wake state merged by
+// name; the DEFAULT agent is LOCKED - `disabled` never renders true for it.
 const rows = computed<RegistryRow[]>(() => {
   const set = new Set(fold.value);
   const idx = continuousIndex(roster.value);
@@ -711,12 +677,11 @@ const rows = computed<RegistryRow[]>(() => {
   });
 });
 
-// the row click opens the CANONICAL chat ----------- The click's target is the. The
-// mint is a POST because it WRITES on the paths that need it, and the answer is the
-// session row the chat tab binds to - the panel never guesses an id.
+// the row click opens the CANONICAL chat: the mint is a POST because it WRITES, and the
+// answer is the session row the chat tab binds to - the panel never guesses an id.
 const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
 
-// the ACTIVE row - the shell broadcasts the session id its focused chat tab is.
+// the shell broadcasts the session id its focused chat tab is on.
 const FOCUSED_SESSION_EVENT = "omega:focused-session";
 const focusedSessionId = ref("");
 
@@ -738,17 +703,13 @@ const activeAgentName = computed<string>(() => {
 /** the canonical ids this panel has opened (or just minted). */
 const openedCanonical = ref<Record<string, string>>({});
 
-/** canonicalOf is the id a row's click targets. */
 function canonicalOf(name: string): string {
   const opened = openedCanonical.value[name];
   if (opened) return opened;
   return profiles.value.find((a) => a.name === name)?.canonical_session_id ?? "";
 }
 
-/**
- * openAgentChat is the click.
- * A failed mint renders on the panel's own status line - never a silent no-op.
- */
+/** a failed mint renders on the panel's own status line - never a silent no-op. */
 async function openAgentChat(row: RegistryRow): Promise<void> {
   if (opening.value) return; // one mint at a time - a double click must not race two opens
   const name = row.name;
@@ -776,11 +737,10 @@ function rosterOf(name: string): OmegaContinuousRow | null {
   return idx[name] ?? null;
 }
 
-// the status voice: the roster row's word (awake / "next wake HH:MM" / "sleeping").
+// the roster row's word: awake / "next wake HH:MM" / "sleeping".
 function rowStatusVoice(name: string): { on: boolean; label: string } | undefined {
   return agentStatusFor(rosterOf(name));
 }
-// rowStatus word, raw.
 function rowStatusOf(name: string): string {
   const c = rosterOf(name);
   return c ? rowStatus(c) : "";
@@ -800,7 +760,7 @@ async function fetchDisabledAgents(): Promise<string[] | null> {
     : [];
 }
 
-/** loadSettings reads the two host definitions the edit form references. */
+/** both host definitions the edit form references. */
 async function loadSettings(): Promise<void> {
   try {
     const res = await fetch("/settings");
@@ -823,9 +783,7 @@ async function loadSettings(): Promise<void> {
   }
 }
 
-/**
- * loadModules reads the capsule names a toggle may turn on.
- */
+/** the capsule names a toggle may turn on. */
 async function loadModules(): Promise<void> {
   try {
     const res = await fetch("/modules");
@@ -845,12 +803,8 @@ async function loadModules(): Promise<void> {
   }
 }
 
-/**
- * load refetches the roster's four reads.
- * `quiet` reloads WITHOUT the loading beat: a save, a reset or a delete must not swap
- * the list out for a "loading…" line, because the swap unmounts RegistryList and the
- * operator's expansion (with the form they were just using) collapses under them.
- */
+/** `quiet` reloads without the loading beat: the swap unmounts RegistryList and collapses the
+ * operator's expansion (with the form they were using), so a save, reset or delete must not take it. */
 async function load(quiet = false): Promise<void> {
   if (!quiet) loading.value = true;
   loadError.value = "";
@@ -891,16 +845,12 @@ async function loadRoster(): Promise<void> {
 function onExpand(row: RegistryRow): void {
   if (row.name !== DefaultAgentName) seedEdit(row.name);
   const name = row.name;
-  // the expanded row is where an agent's WORK sessions are inspected.
   void loadAgentSessions(name);
   if (!rosterOf(name)) return;
   void loadContinuousDetail(name);
 }
 
-/**
- * loadAgentSessions fetches one agent's own session rows.
- * A dead read renders the empty beat, never a stale list.
- */
+/** a dead read renders the empty beat, never a stale list. */
 async function loadAgentSessions(name: string): Promise<void> {
   if (name === DefaultAgentName) {
     sessionsByAgent[name] = [];
@@ -922,11 +872,7 @@ function openSession(id: string): void {
   window.dispatchEvent(new CustomEvent(CHAT_SESSION_OPEN_EVENT, { detail: id }));
 }
 
-/**
- * seedEdit fills one draft from the effective layer.
- * The draft is DIFFED against the same seed on save, so an untouched inherited knob is
- * never written down as an override.
- */
+/** the draft is DIFFED against the same seed on save, so an untouched inherited knob is never written as an override. */
 function seedEdit(name: string): void {
   const p = profiles.value.find((a) => a.name === name);
   if (!p) return;
@@ -950,7 +896,7 @@ function seedEdit(name: string): void {
   deleteError[name] = "";
 }
 
-// the canonical chat + evidence refresh, split out of onExpand.
+// the expanded row's two continuous reads.
 async function loadContinuousDetail(name: string): Promise<void> {
   const enc = encodeURIComponent(name);
   try {
@@ -997,7 +943,6 @@ async function wake(name: string, message: string): Promise<void> {
   }
 }
 
-// sleep ends a running wake.
 async function sleep(name: string): Promise<void> {
   try {
     await fetch(`/continuous/${encodeURIComponent(name)}/sleep`, { method: "POST" });
@@ -1007,9 +952,8 @@ async function sleep(name: string): Promise<void> {
   await loadRoster();
 }
 
-// the soft toggle: PUT /disabled/agents never touches agent home data. The default
-// agent never reaches here: its row carries NO toggle; the handler refuses a curl too -
-// the UI law mirrors the backend law.
+// the soft toggle never touches agent home data. The default agent never reaches here (its
+// row carries no toggle), and the handler refuses a curl too - the UI law mirrors the backend.
 async function onToggle(name: string, enabled: boolean): Promise<void> {
   if (busy.value !== null) return;
   if (name === DefaultAgentName && !enabled) return; // never
@@ -1040,7 +984,7 @@ async function onToggle(name: string, enabled: boolean): Promise<void> {
   }
 }
 
-/** saveAgentEdit PUTs the DIFF the draft carries through PUT /agents/{name}. */
+/** PUTs the DIFF the draft carries - never a full write. */
 async function saveAgentEdit(name: string): Promise<void> {
   const d = editDraft[name];
   const p = profiles.value.find((a) => a.name === name);
@@ -1069,7 +1013,7 @@ async function saveAgentEdit(name: string): Promise<void> {
   }
 }
 
-/** resetField is the layer's own reset verb. */
+/** PUTs the key in `unset`, which drops the override so the layer inherits again. */
 async function resetField(name: string, key: string): Promise<void> {
   editMsg[name] = "";
   try {
@@ -1088,7 +1032,7 @@ async function resetField(name: string, key: string): Promise<void> {
 }
 
 onMounted(() => {
-  // the listener FIRST, then the pull.
+  // the listener FIRST, then the pull: a reply that lands before the listener is lost.
   window.addEventListener(FOCUSED_SESSION_EVENT, onFocusedSession);
   window.dispatchEvent(new CustomEvent(FOCUSED_SESSION_QUERY_EVENT));
   void load();
@@ -1129,7 +1073,7 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   overflow-x: hidden;
   padding: 4px 12px 14px;
 }
-/* the ONE create door. */
+/* the create door's band action group. */
 .agents-actions {
   display: flex;
   gap: 4px;
@@ -1213,9 +1157,7 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   opacity: 0.5;
   cursor: default;
 }
-/*
- * the edit affordance - the layer's field set, label/input pairs in the panel's own.
- */
+/* the edit affordance: label/input pairs in the panel's own column. */
 .agents-readonly-note {
   color: var(--text-dim, #8a8a92);
   font-size: 11px;
@@ -1325,7 +1267,6 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
 .agents-check-off {
   color: var(--text-dim, #8a8a92);
 }
-/* the delete lane. */
 .agents-danger {
   border-top: 1px solid var(--z2, rgba(128, 128, 128, 0.12));
   display: flex;
@@ -1422,9 +1363,6 @@ defineExpose({ load, profiles, fold, rows, roster, rowStatusOf, rowStatusVoice }
   padding: 3px 0;
   white-space: pre-wrap;
 }
-/*
- * the agent's OWN sessions, inspected from the expanded row.
- */
 .agents-session-list {
   list-style: none;
   margin: 0;

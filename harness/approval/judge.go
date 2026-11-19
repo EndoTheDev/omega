@@ -10,24 +10,19 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// The evidence-only judge (card t_e3cd4381, half 2).
+// The evidence-only judge.
 //
-// The judging model sees EXACTLY three things: the human's task text,
-// the pending tool call, and the deterministic findings. It never sees
-// the worker agent's reasoning - an agent that wants a call to run
-// would argue its case there, and a judge that reads the argument is a
-// judge that has been talked to. Both the task and the call are
-// declared DATA in the prompt, never instructions.
+// The judging model sees EXACTLY three things: the human's task text, the pending tool
+// call, and the deterministic findings. It never sees the worker agent's reasoning - an
+// agent that wants a call to run would argue its case there, and a judge that reads the
+// argument is a judge that has been talked to. Both the task and the call are declared
+// DATA in the prompt, never instructions.
 //
-// The ratchet is Go's, not the model's: the judge can only ADD a
-// block. Nothing it answers ever lifts a deterministic finding, and a
-// dead judge cannot clear anything either - its failure law is fail
-// OPEN by default (the human still decides) and fail CLOSED only when
-// the operator says so.
-//
-// The judge rides the same /v1/systemone passthrough the reviewer
-// uses: one forward pass, the shared llm HTTP client, no new knob and
-// no new dependency.
+// The ratchet is Go's, not the model's: the judge can only ADD a block. Nothing it
+// answers lifts a deterministic finding, and a dead judge cannot clear anything either -
+// its failure law is fail OPEN by default (the human still decides) and fail CLOSED only
+// when the operator says so. It rides the same /v1/systemone passthrough the reviewer
+// uses: one forward pass, the shared llm client, no new knob.
 
 // Judge verdict states the audit row and the human card speak.
 const (
@@ -93,15 +88,13 @@ func judgeQuestions() map[string]any {
 	}
 }
 
-// judgePayload renders the whole request body. Every field is either
-// the task, the call, the findings, or the envelope - there is no
-// fourth source, so there is no place for the agent's reasoning to
-// enter (the boundary is a shape, not a promise).
+// judgePayload renders the whole request body. Every field is either the task, the call,
+// the findings, or the envelope - no fourth source, so there is no place for the agent's
+// reasoning to enter (the boundary is a shape, not a promise).
 //
-// The task and the call cross the SAME sanitize() egress boundary the
-// legacy reviewer rides (redact.go): the judge is a configured
-// reviewer, and key-shaped material never leaves the machine even to
-// one. Sanitizing at the source means no caller can forget it.
+// The task and the call cross the SAME sanitize() egress boundary the legacy reviewer
+// rides (redact.go): key-shaped material never leaves the machine, even to a configured
+// reviewer. Sanitizing at the source means no caller can forget it.
 func judgePayload(model, task string, call Call, findings []Finding) map[string]any {
 	task, _ = sanitize(task)
 	arguments, _ := sanitize(call.Text())

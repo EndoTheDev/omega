@@ -114,7 +114,7 @@ describe("content-change follow (t_bef3f45e)", () => {
     // the guard fuel: the scroller height at the last scroll event -
     // declared once, written in the scroll handler and in the follow
     // write's own-event branch (which resyncs it without deciding), and
-    // primed by the mount restore (card t_15572849) so the restore's own
+    // primed by the mount restore so the restore's own
     // scroll event is never read as a reader decision
     const writers = src.match(/lastScrollHeight\s*=/g) ?? [];
     assert.equal(

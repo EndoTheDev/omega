@@ -381,7 +381,7 @@ test("all five consumers import the predicate instead of spelling the set", () =
   );
   // the paint-time anchor's call site: the live set, by name, and resolved
   // ONCE per item - the anchor is a first-sight value, never re-derived per
-  // paint (card t_a356fcc7: a re-derived value differs on every paint of
+  // paint 
   // the same payload, and a changed write inside the paint re-arms it)
   assert.match(
     src("composables/chat.ts"),

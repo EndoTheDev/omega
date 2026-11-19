@@ -1,5 +1,5 @@
-// omega webui: unit tests for the canvas surface (arc 3c, card
-// ). Three layers, matching the house patterns:
+// omega webui: unit tests for the canvas surface. Three layers, matching
+// the house patterns:
 // composables/omega.ts canvas wrappers: GET /ui/canvas + POST
 //   /ui/actions URL + body contract under fetch interception;
 // the canvas store: snapshot-render + delta-update + the action

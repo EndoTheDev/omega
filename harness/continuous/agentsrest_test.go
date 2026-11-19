@@ -283,7 +283,7 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 	}
 }
 
-// TestAgentSessionCreateKeepsBothListsHonest pins the visibility ruling
+// TestAgentSessionCreateKeepsBothListsHonest pins the visibility rule
 // on POST /agents/{name}/sessions: a session created AS the default agent
 // is the maintainer's own conversation and keeps its sidebar row; a
 // session created AS a named agent lands in that home's own store, which

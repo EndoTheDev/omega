@@ -1,20 +1,13 @@
-// omega webui: the dock - the layout tree.
-// VS Code-style: any pane splits into rows/columns, unlimited depth, and the
-// whole tree persists under omega.dock-layout (per-browser localStorage; the
-// URL owns ONLY the focused chat session - app.vue's concern). Tabs and DnD
-// are card 2; this module is the tree: pure, render-free, unit-testable.
+// omega webui: the dock layout tree - VS Code-style splits, unlimited depth.
+// Persists under omega.dock-layout in per-browser localStorage; the URL owns only
+// the focused chat session (app.vue's concern).
 //
-// Node model:
-//   split { direction: row|column, children: [node], sizes: [fraction] }
-// pane { tabs: [{ component, sessionRef? }], active, fixed: px|null }
-// `sizes` are fractions of the split's CONTENT box, parallel to children.
-// A pane with `fixed` px ignores its fraction (flex: 0 0 Npx, exactly the
-// pre-dock sidebar behavior); the flexible children share what's left
-// proportionally via their fractions - flex-grow: fraction / flex-basis: 0.
-// One flexible child = it absorbs all remainder (the default shell's chat
-// pane). The `fixed` value is the drag handle's target: dividers adjust px
-// for fixed panes (snap attractor 320/640 applies, 128px floor stands) and
-// fractions for flexible pairs.
+// split { direction: row|column, children, sizes }, pane { tabs, active, fixed }
+// `sizes` are fractions of the split's CONTENT box, parallel to children. A pane
+// with `fixed` px ignores its fraction (flex: 0 0 Npx); the flexible children
+// share the rest proportionally (flex-grow: fraction, flex-basis: 0), so one
+// flexible child absorbs all remainder. Dividers adjust px for fixed panes
+// (320/640 snap attractor, 128px floor) and fractions for flexible pairs.
 
 import {
   PANE_OPEN_MIN,
@@ -62,7 +55,6 @@ import {
   type ModuleGate,
   type ViewerRef,
 } from "./dockables.ts";
-// the openable component universe, the menus' refill inventory and the tab-title.
 export {
   DOCK_COMPONENTS,
   DOCKABLES,
@@ -79,47 +71,26 @@ export {
   zonesOf,
 };
 export type { DockArea, DockComponentName, DockableComponentLike, ViewClass, ViewerRef } from "./dockables.ts";
-// re-export for consumers that think in dock terms (tests, toggle helpers)
 export { PANE_OPEN_MIN };
 
 export const DOCK_LAYOUT_KEY = "omega.dock-layout";
-/**
- * v0.14.4 BACKUP LAW: before the first auto-persist of a REPAIRED layout, the raw
- * record is copied here - a repair-chain bug must never destroy the only copy of the
- * user's layout.
- */
+/** BACKUP LAW: before the first auto-persist of a REPAIRED layout the raw record is
+ *  copied here - a repair bug must never destroy the only copy of the user's layout. */
 export const DOCK_LAYOUT_BAK_KEY = "omega.dock-layout.bak";
 
-// pre-dock pane state.
+// pre-dock pane widths, read once by migrateLegacy.
 export const LEGACY_WIDTH_KEYS = {
   sidebar: "omega.sidebar-width",
   inspector: "omega.inspector-width",
 } as const;
 
-// the pre-existing drag floor.
 export { MIN_PANE_PX, CHAT_FLOOR_PX } from "./dockables.ts";
-/**
- * Endo's comment: the bottom shell's max share of the split's content box.
- * A drag past it (the pane swallowing the window) strands the divider offscreen - the
- * pane is bottom-anchored, so its TOP edge (= the divider) climbs out of view and
- * cannot be grabbed back.: 0.65 still leaves the chat a cramped strip under the
- * composer (the max-up screenshot); 0.5 keeps the pane and the chat honest halves - the
- * anti-stranding rationale only gets SAFER as the number drops, and the divider
- * climbing out of view is the high-share failure mode.
- */
+/** the bottom shell's max share of the split: a taller pane pushes its top edge (the
+ *  divider) offscreen, where it cannot be grabbed back. */
 export const BOTTOM_MAX_FRACTION = 0.5;
 
-// leaf contracts ----------------------------------
-
-/**
- * a leaf's sizing constraints.
- * A pane shipping NO contract resolves to today's constants exactly: fixed -> the 128
- * drag floor, flexible -> the 320 wall, the +320 attractor ladder (the bottom keeps its
- * +200 ladder), no ceiling except the shells' geometry (the bottom's max share).
- * The contract is serialized in the layout record from v:3 on; relaxation order keys on
- * the pane class (shells 2, chat-hosting 1, plain 0) - not carried here (it rides the
- * record, milestone v:3).
- */
+/** a leaf's sizing constraints; absent = the pre-contract constants (contractFloorOf).
+ *  Serialized in the record from v:3, with the pane-class relaxation rank. */
 export interface PaneContract {
   /** the hard floor: a drag/squeeze never starves the pane below it */
   minPx: number;
@@ -129,47 +100,33 @@ export interface PaneContract {
   anchor: "leading" | "trailing" | "bottom";
 }
 
-/** the primary sidebar's factory. */
 export function edgeShellContract(): PaneContract {
   return { minPx: MIN_PANE_PX, maxPx: null, maxFrac: null, preferred: 320, anchor: "leading" };
 }
 
-/** the chat pane's factory: the 320 wall, flexible otherwise. */
 export function chatPaneContract(): PaneContract {
   return { minPx: CHAT_FLOOR_PX, maxPx: null, maxFrac: null, preferred: 0, anchor: "leading" };
 }
 
-/** the bottom shell's factory. */
 export function bottomShellContract(): PaneContract {
   return { minPx: MIN_PANE_PX, maxPx: null, maxFrac: BOTTOM_MAX_FRACTION, preferred: 200, anchor: "bottom" };
 }
 
-/**
- * the drag floor a pane contracts to RIGHT NOW.
- * Fixed panes drag down to the shared 128 floor; a flexible pane walls at honest pane
- * floor (paneFloorOf - the contract min lifted by its worst hosted tab), so a tool-only
- * flexible pane drags to 128 and chat keeps the 320 wall.
- * A nested split absorbs like a flexible pane STILL (the flat 320): minDockPx recursion
- * here would leak a row's HORIZONTAL sum into a vertical axis (the bottom shell's
- * column drag proved it), so the honest split floors are axis-aware work - a future
- * card, not this one.
- */
+/** the drag floor a pane contracts to right now: fixed -> the 128 drag floor,
+ *  flexible -> paneFloorOf (its contract min lifted by its worst hosted tab, so a
+ *  tools-only pane drags to 128 and chat keeps 320). A nested split takes the flat
+ *  320: minDockPx recursion would leak a row's HORIZONTAL sum into a vertical axis. */
 export function contractFloorOf(node: DockNode): number {
   if (!isPane(node)) return CHAT_FLOOR_PX; // a nested split absorbs like a flexible pane
   if (node.fixed !== null) return MIN_PANE_PX;
   return paneFloorOf(node);
 }
 
-/**
- * a flexible pane's HONEST floor - the worst floor over the tabs it HOSTS (a pane that
- * might show chat keeps chat room; a pane with only tool tabs floats at 128, Endo's
- * 250px screenshot proved the room was real), lifted by its own contract's minPx when
- * larger, and the chat wall when EMPTY (an empty pane's next tenant may be the chat -
- * the old law held there, and the fixtures hold it).
- * One consumer family: contractFloorOf (the drag clamps) and minDockPx (the reveal's
- * "no room" check) both read this - "no room" now fires exactly when a drag could not
- * free the space either.
- */
+/** a flexible pane's HONEST floor: the worst dockableMinPx over the tabs it hosts
+ *  (128 for a tools-only pane, 320 when it might show chat), lifted by its contract's
+ *  minPx, and the chat wall when EMPTY (an empty pane's next tenant may be the chat).
+ *  contractFloorOf (the drag clamps) and minDockPx (the reveal's "no room" check) both
+ *  read this, so "no room" fires exactly when a drag could not free the space. */
 export function paneFloorOf(pane: DockPane): number {
   let floor = pane.contract?.minPx ?? MIN_PANE_PX;
   for (const t of pane.tabs) floor = Math.max(floor, dockableMinPx(t.component));
@@ -177,17 +134,11 @@ export function paneFloorOf(pane: DockPane): number {
   return floor;
 }
 
-// component names panes may host.
-
 export interface DockTab {
   component: DockComponentName;
   sessionRef?: string;
   key?: string;
-  /**
-   * WHAT a viewer tab shows - the file path or skill name.
-   * Viewer tabs mint with it; nothing else carries it; a viewer tab without a viewer
-   * payload is unreachable (the menus can't mint one) and the reader drops it.
-   */
+/** WHAT a viewer tab shows; a viewer tab without one is unreachable and dropped. */
   viewer?: ViewerRef;
 }
 export interface DockPane {
@@ -197,22 +148,14 @@ export interface DockPane {
   active: number;
   fixed: number | null;
   edge?: "left" | "right" | "bottom";
-  /**
-   * v0.14.4 the leaf's sizing constraints.
-   * Optional - an absent contract resolves to today's constants via contractFloorOf,
-   * which is the pre-contract behavior verbatim.
-   */
+  /** sizing constraints; absent = the pre-contract constants of contractFloorOf. */
   contract?: PaneContract;
-  /**
-   * v0.14.4 the PINNED ROOT's local split tree.
-   * Root geometry - fixed px, contract, edge marker, hide/fullscreen modes - never
-   * moves down.
-   */
+  /** the PINNED ROOT's local split tree: the root keeps its fixed px, contract, edge
+   *  marker and hide/fullscreen modes. */
   grown?: DockSplit;
 }
 /** the pinned shells' markers (the toggle/find API's domain names) */
 export type DockEdgeComponent = "sidebar" | "inspector" | "bottom";
-/** the bottom panel's constant height ladder default (runs at rung 200) */
 export const BOTTOM_DEFAULT_PX = 200;
 export interface DockSplit {
   kind: "split";
@@ -220,20 +163,13 @@ export interface DockSplit {
   direction: "row" | "column";
   children: DockNode[];
   sizes: number[];
-  /**
-   * v:3 RECORD only: the children's integer px shares on disk.
-   * Never render: DockSplit.vue reads sizes.
-   */
+  /** v:3 record only: the children's integer px shares on disk; rendering reads sizes. */
   px?: number[];
 }
 export type DockNode = DockSplit | DockPane;
 
-// ids ----------------------------------------------------------------
-
 let idSeed = 0;
-/**
- * deterministic id generator; seed it from a loaded tree so reloaded sessions never.
- */
+/** the id generator; syncIdSeed seeds it from a loaded tree so a reload mints no dup. */
 export function nextNodeId(): string {
   return "n" + (++idSeed).toString(36);
 }
@@ -246,12 +182,8 @@ export function syncIdSeed(tree: DockNode): number {
   return idSeed;
 }
 
-// chat tab instance keys ----------------------------
-
 let tabKeySeed = 0;
-/**
- * tab keys use their own c-prefixed namespace so they never collide with pane/split.
- */
+/** tab keys use a c-prefix so they never collide with pane/split ids. */
 export function nextTabKey(): string {
   return "c" + (++tabKeySeed).toString(36);
 }
@@ -268,11 +200,8 @@ export function syncTabKeySeed(tree: DockNode): number {
   return tabKeySeed;
 }
 
-/**
- * boots every chat tab to the key invariant the host relies on: chat tabs minted
- * anywhere that carry no key get one right there - mutates, so callers run it on PLAIN
- * loaded data before the ref is set (and persist the result).
- */
+/** give every keyless chat tab a key (the host's key invariant); returns a fresh
+ *  clone, so callers run it on plain loaded data before the tree becomes a ref. */
 export function assignChatKeys(tree: DockNode): DockNode {
   syncTabKeySeed(tree);
   const copy = clone(tree);
@@ -284,8 +213,6 @@ export function assignChatKeys(tree: DockNode): DockNode {
   }
   return copy;
 }
-
-// small building blocks ------------------------------------------------
 
 export function makePane(
   component: DockComponentName | null,
@@ -312,7 +239,7 @@ export function makeSplit(direction: "row" | "column", children: DockNode[]): Do
   };
 }
 
-/** n equal fractions summing to 1; when given, normalizes the provided ones */
+/** n equal fractions summing to 1; provided ones are normalized. */
 export function normalizeSizes(n: number, sizes: number[] | undefined): number[] {
   if (sizes && sizes.length === n) {
     const sum = sizes.reduce((a, s) => a + s, 0);
@@ -329,60 +256,30 @@ export function isSplit(n: DockNode): n is DockSplit {
   return n.kind === "split";
 }
 
-// THE LOCKED LAST TAB --------
-// "the plan was that i should not be able to close the last 'new chat' tab
-// . it should basically be locked. the current approach is just empty
-// bad looking space." - the eyeball on the never-zero placeholder
-// commit 8eabefc7) a close used to seat in the emptied pane.
-//
-// One law, three sentences:
-// a pane's LAST tab never closes: closeTab refuses the request, and the
-// X on that tab renders DISABLED and DIMMED instead of vanishing
-// supersedes 's invisible refusal - the lock is
-//     VISIBLE now, the law itself unchanged). The lock IS how the pane
-//     stays non-empty - nothing has to be seated in its place;
-// nothing is minted to fill an empty pane. A pane emptied by a GESTURE
-//     (a split, a tab dragged out of a pane that cannot close) renders the
-//     bar-less empty state DockPane already had and a drop refills it; the
-//     15-button empty-pane menu stays deleted (DOCK-EMPTY-ACTIONS);
-// a pane REPAIRED into emptiness seats a fresh new-chat tab - a
-//     persisted placeholder seat (retired below) or a pane whose last chat
-//     died with its deleted session. That is the chat the user asked for,
-//     not a "New Tab" sticker.
-//
-// A GROWN root's classic bar is not a pane for this law:
-// its content lives in the local leaves, its own cell stays empty by
-// design.
+// THE LOCKED LAST TAB: a pane's LAST tab never closes - closeTab refuses and the X renders
+// disabled and dimmed. The lock IS how a pane stays non-empty; nothing is seated in its place.
+// A pane emptied by a GESTURE (a split, a tab dragged out) renders DockPane's empty state and a
+// drop refills it; one REPAIRED into emptiness gets a fresh new-chat tab, never a "New Tab" sticker.
 
-/**
- * THE LOCKED LAST TAB's single condition.
- * closeTab guards on this predicate and DockPane's dimmed X reads it through the same
- * one, so the surface can never drift from the refusal.
- */
+/** the lock's one condition; closeTab and DockPane's dimmed X both read this predicate. */
 export function lastTabLocked(pane: DockPane): boolean {
   return pane.tabs.length <= 1;
 }
 
-/** the retired never-zero placeholder id - LEGACY now (dockables.ts). */
+/** the retired never-zero placeholder id (LEGACY_DOCK_COMPONENTS). */
 const LEGACY_NEW_TAB = "newtab";
 
 function isLegacySeat(component: string): boolean {
   return component === LEGACY_NEW_TAB;
 }
 
-/** a fresh, unsaved new-chat tab. */
 function newChatTab(): DockTab {
   return { component: "chat", key: nextTabKey() };
 }
 
-/**
- * the boot's pane-seat repair.
- * Two dead states land here, one law fixes both: - a persisted never-zero placeholder
- * seat retires - dropped where it shared a pane with real content, converted into a
- * fresh new-chat tab where it sat alone; - a persisted ZERO-tab pane (a pre-placeholder
- * record) seats the same fresh chat rather than booting a blank pane.
- * Idempotent; a tree with neither dead state is returned as the SAME object.
- */
+/** the boot's pane-seat repair, one law for two dead states: a placeholder seat retires (dropped
+ *  beside real content, converted into a fresh new-chat tab when alone), and a zero-tab pane
+ *  seats the same fresh chat. Idempotent; a clean tree returns the SAME object. */
 export function repairPaneSeats(tree: DockNode): DockNode {
   const needs = (n: DockNode): boolean =>
     isPane(n)
@@ -406,19 +303,12 @@ export function repairPaneSeats(tree: DockNode): DockNode {
   });
 }
 
-// THE MODULE GATE -------------------------------------- The runtime dismounts a. The
-// architecture bar then says the module's surfaces are GONE, so a module-owned dockable
-// whose module is off leaves the strip: its tab is PARKED - taken out of the tree and
-// remembered, not deleted - and re-seated exactly where it sat when the module mounts
-// again. Parked tabs ride their own key, never the layout record: the record stays what
-// is LIVE (no ghost pane in omega.dock-layout), the stash is what is merely unhosted.
-// Deleting and re-creating tabs instead would lose the user's seat (a tab dragged into
-// a main pane must come back there).
+// THE MODULE GATE: a module-off dockable's tab leaves the strip but is PARKED, not deleted, and
+// re-seats exactly where it sat when the module returns. Parked tabs ride their own key, never
+// the layout record: the record stays what is LIVE (no ghost pane), the stash what is unhosted.
 
-/** the parked-tab stash (a module-off dockable's saved seat) */
 export const MODULE_STASH_KEY = "omega.dock-module-stash";
 
-/** one parked tab: WHAT it hosted, WHERE it sat (pane id + seat index) */
 export interface ParkedTab {
   component: string;
   pane: string;
@@ -431,10 +321,7 @@ export interface GateResult {
   changed: boolean;
 }
 
-/**
- * the stash reader: lenient like every persisted reader - junk entries are dropped,
- * never thrown.
- */
+/** lenient stash reader, like every persisted reader: junk entries drop, never throw. */
 export function parseParkedTabs(raw: string | null): ParkedTab[] {
   if (!raw) return [];
   let parsed: unknown;
@@ -462,11 +349,7 @@ export function parseParkedTabs(raw: string | null): ParkedTab[] {
   return out;
 }
 
-/**
- * park every gated tab: the tab leaves its pane's strip, the seat is recorded.
- * Idempotent; a tree with nothing gated comes back as the SAME object (the store's
- * identity no-op checks depend on that).
- */
+/** park every gated tab, recording its seat. Idempotent: an ungated tree comes back as-is. */
 export function parkGatedTabs(tree: DockNode, gate: ModuleGate): GateResult {
   const parked: ParkedTab[] = [];
   let changed = false;
@@ -487,9 +370,7 @@ export function parkGatedTabs(tree: DockNode, gate: ModuleGate): GateResult {
     if (hid === 0) return;
     changed = true;
     n.tabs = kept;
-    // the focus follows whatever held it; a gated ACTIVE tab lands on the
-    // seat's first survivor (a pane the gate emptied is left to the seat
-    // repair, exactly like any zero-tab pane)
+    // focus follows whatever held it; a gate-emptied pane is left to the seat repair
     n.active = Math.max(0, Math.min(active, kept.length - 1));
   });
   return { tree: changed ? next : tree, parked, changed };
@@ -509,11 +390,7 @@ function insertTabAt(
   });
 }
 
-/**
- * where a parked tab goes back.
- * A main-area tab with no main pane stays parked - the gate never mints panes (opening
- * the dockable from a menu does).
- */
+/** where a parked tab goes back; a main-area tab with no main pane stays parked. */
 function reseatTarget(
   tree: DockNode,
   parked: ParkedTab,
@@ -531,7 +408,6 @@ function reseatTarget(
   return main ? { paneId: main, index: parked.index } : null;
 }
 
-/** re-seat every parked tab whose module is live again. */
 export function reseatParkedTabs(
   tree: DockNode,
   parked: readonly ParkedTab[],
@@ -546,8 +422,7 @@ export function reseatParkedTabs(
     }
     if (!(DOCK_COMPONENTS as readonly string[]).includes(p.component)) continue;
     const id = p.component as DockComponentName;
-    // a singleton already hosted (re-opened from a menu, restored by the boot's
-    // inspector repair) absorbs the parked seat - one instance, no duplicate
+    // a singleton already hosted absorbs the parked seat - one instance, no duplicate
     if (findComponentTab(t, id)) continue;
     const seat = reseatTarget(t, p, id);
     if (!seat) {
@@ -559,10 +434,7 @@ export function reseatParkedTabs(
   return { tree: t, parked: still };
 }
 
-/**
- * one parked seat per component (module-owned dockables are singletons: a second park
- * of the same chip would be a duplicate seat) / /
- */
+/** one parked seat per component: module-owned dockables are singletons. */
 function mergeParked(
   existing: readonly ParkedTab[],
   incoming: readonly ParkedTab[],
@@ -575,7 +447,6 @@ function mergeParked(
   return out;
 }
 
-/** every node, depth-first, root first. */
 export function* allNodes(tree: DockNode): IterableIterator<DockNode> {
   yield tree;
   if (isSplit(tree)) for (const c of tree.children) yield* allNodes(c);
@@ -596,9 +467,6 @@ export function findSplit(tree: DockNode, id: string): DockSplit | null {
   return null;
 }
 
-/**
- * the first pane hosting `component` as its active tab.
- */
 export function findComponentPane(tree: DockNode, component: DockComponentName): DockPane | null {
   for (const n of allNodes(tree)) {
     if (isPane(n) && n.tabs[n.active]?.component === component) return n;
@@ -606,11 +474,7 @@ export function findComponentPane(tree: DockNode, component: DockComponentName):
   return null;
 }
 
-/**
- * the FIRST tab hosting `component` anywhere in the tree - the singleton lookup: a
- * singleton exists at most once, active or not, so its finders must read every tab, not
- * just active ones.
- */
+/** the FIRST tab hosting `component` anywhere - a singleton's finders read every tab. */
 export interface ComponentTabLocation {
   paneId: string;
   index: number;
@@ -628,19 +492,10 @@ export function findComponentTab(
   return null;
 }
 
-// the pane-model reset -------
-// three identities the whole dock enforces:
-// pinned pane an EDGE SHELL (left = sessions home, right = inspector
-//                 home) carrying the `edge` marker: never closable, never
-//                 removable, never movable. Its CONTENT is free - any tab
-// may live in it or leave it, except
-//                 the locked sessions tab, which lives ONLY in "left".
-// main pane everything else - the closable class, hover-X pans, the
-//                 '+' menus.
-// never-empty the dock always holds at least one pane; refusals are
-//                 no-ops (the tree comes back untouched). The law extends
-//                 to tabs: a pinned shell CAN sit empty (it renders the
-//                 empty '+' affordance) - it never disappears.
+// the pane model: a PINNED pane wears an edge marker (left = sessions home, right = inspector,
+// bottom = the panel) and is never closable, removable or movable; its CONTENT is free, except
+// the locked sessions tab, which lives only in "left". Everything else is a main pane. The dock
+// always holds at least one pane, and a pinned shell may sit empty but never disappears.
 
 export function paneCount(tree: DockNode): number {
   let n = 0;
@@ -648,7 +503,6 @@ export function paneCount(tree: DockNode): number {
   return n;
 }
 
-/** a pane is PINNED when it carries an edge marker - the sessions/inspector shells. */
 export function isPinnedPane(pane: DockPane): boolean {
   return pane.edge !== undefined;
 }
@@ -661,12 +515,7 @@ export function firstMainPaneId(tree: DockNode): string | null {
   return null;
 }
 
-/**
- * the main-pane census.
- * Pinned shells don't count - the close law is about the MAIN area, which must never
- * reach zero panes (the launcher pane IS a main pane; the pane itself is always right,
- * only its close button was the bug).
- */
+/** the main-pane census: pinned shells don't count - the MAIN area never reaches zero. */
 export function mainPaneCount(tree: DockNode): number {
   let n = 0;
   for (const node of allNodes(tree)) {
@@ -675,22 +524,15 @@ export function mainPaneCount(tree: DockNode): number {
   return n;
 }
 
-/** the close-refusal predicate: `pane` is a main pane and no OTHER main pane exists. */
 export function isLastMainPane(tree: DockNode, pane: DockPane): boolean {
   return !isPinnedPane(pane) && mainPaneCount(tree) <= 1;
 }
 
-// local split trees in the pinned roots -------------- The three roots (primary
-// sidebar, secondary sidebar, bottom panel) grow LOCAL split trees - the same
-// DockSplit/DockPane machinery the main pane uses, wrapped inside the root so the
-// root's geometry (fixed px, contract, resize band, hide/fullscreen modes) never
-// changes. Canvas C2's SHAPE LAW narrows the SIDEBARS to one shape: tabs + a STACK
-// (column splits only - a sidebar never puts two columns of content side by side,
-// because the shell's two columns ARE the two sidebars, and the deleted split-sidebar
-// gesture has no entry point left). Roots never die: a degenerate local tree un-grows
-// back into the shell's classic single cell.
+// The pinned roots grow LOCAL split trees from the same split/pane machinery inside the
+// root, so root geometry (fixed px, contract, resize band, hide/fullscreen) never moves.
+// THE SHAPE LAW: a sidebar only STACKS (column splits - its two side-by-side columns ARE
+// the two sidebars). Roots never die: a degenerate local tree un-grows to the classic cell.
 
-/** the depth-first first pane under a split - a grown root's host leaf */
 function firstPaneOf(split: DockSplit): DockPane | null {
   for (const c of split.children) {
     if (isPane(c)) return c;
@@ -702,7 +544,6 @@ function firstPaneOf(split: DockSplit): DockPane | null {
   return null;
 }
 
-/** the grown ROOT pane whose local tree hosts `paneId`, or null. */
 export function rootPaneOf(tree: DockNode, paneId: string): DockPane | null {
   for (const n of allNodes(tree)) {
     if (isPane(n) && n.grown && findPane(n.grown, paneId)) return n;
@@ -710,7 +551,6 @@ export function rootPaneOf(tree: DockNode, paneId: string): DockPane | null {
   return null;
 }
 
-/** split levels from a grown root's split down to the leaf's parent. */
 export function splitDepthInRoot(split: DockSplit, paneId: string): number {
   for (let i = 0; i < split.children.length; i++) {
     const c = split.children[i]!;
@@ -722,12 +562,9 @@ export function splitDepthInRoot(split: DockSplit, paneId: string): number {
   return 0;
 }
 
-/**
- * v0.14.4 /3 + canvas C2 THE SHAPE LAW: may `direction` split `paneId` HERE?
- * A sidebar - the shell itself or a leaf of its grown stack - STACKS (column) and never
- * splits into side-by-side columns; main + bottom take both, and the tight roots cap at
- * two split levels.
- */
+/** THE SHAPE LAW: may `direction` split `paneId` here? A sidebar - the shell or a leaf of
+ *  its grown stack - only stacks, never into side-by-side columns; the tight roots cap
+ *  at two split levels. */
 export function splitLawRefusal(
   tree: DockNode,
   paneId: string,
@@ -746,11 +583,7 @@ export function splitLawRefusal(
   return null;
 }
 
-/**
- * a main pane for the bottom-panel era.
- * The root is a COLUMN now (the main row rides on the pinned bottom child); a session
- * pane must go into the ROW, not beside the whole column.
- */
+/** a main pane for the column root: it goes into the ROW, never beside the whole column. */
 export function insertMainPaneIntoRow(tree: DockNode): { tree: DockNode; paneId: string } | null {
   if (!isSplit(tree) || tree.direction !== "column") return null;
   const rowIdx = tree.children.findIndex((c) => isSplit(c) && c.direction === "row");
@@ -760,25 +593,18 @@ export function insertMainPaneIntoRow(tree: DockNode): { tree: DockNode; paneId:
   row.children.push(makePane(null));
   row.sizes = normalizeSizes(row.children.length, row.sizes);
   // the minted pane starts EMPTY - the opener (app.vue) mints the tab that lands in it
-  // (openChatTab / openSingleton), and no placeholder sticker is seated (the never-zero
-  // seat retired)
   return {
     tree: copy,
     paneId: (row.children[row.children.length - 1] as DockPane).id,
   };
 }
 
-/**
- * the opener's insert: delegates the column-rooted case to the row push (the bottom
- * panel must NOT gain a main pane beside the whole column); the row-rooted/pane-rooted
- * shapes take the classic path.
- */
+/** the opener's insert: a column root delegates to the row push, never beside it. */
 export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string } {
   const inRow = insertMainPaneIntoRow(tree);
   if (inRow) return inRow;
   const pane = makePane(null);
   if (isPane(tree) || !isSplit(tree) || tree.direction !== "row") {
-    // pane root, or a column root: wrap in a row, new pane right of the tree
     return { tree: makeSplit("row", [tree, pane]), paneId: pane.id };
   }
   const copy = clone(tree);
@@ -787,7 +613,7 @@ export function insertMainPane(tree: DockNode): { tree: DockNode; paneId: string
   return { tree: copy, paneId: pane.id };
 }
 
-/** insights changed HOME. */
+/** strip every insights tab that is not right-hosted (its home moved). */
 export function rehomeInsightsTab(tree: DockNode): DockNode {
   let stranded = false;
   for (const n of allNodes(tree)) {
@@ -813,22 +639,13 @@ export function rehomeInsightsTab(tree: DockNode): DockNode {
   });
 }
 
-/**
- * the pinned shells are fixed chrome: a loaded tree that somehow lost one of the two (a
- * pre-marker tree) gets it re-inserted at its edge, and the loader's rulings are
- * re-asserted: sessions ALWAYS sits in the left shell's bar, and inspector-area
- * singletons missing from the whole tree return to the right shell (the default
- * arrangement fallback - a seat that only lives on demand, like settings behind the
- * menubar gear, is never in that set).
- */
+/** the pinned shells are fixed chrome: a loaded tree that lost one gets it re-inserted at
+ *  its edge, sessions is forced into the left shell, and inspector-area singletons missing
+ *  from the whole tree return to the right shell. */
 export function ensurePinnedEdges(
   tree: DockNode,
   closed: readonly DockEdgeComponent[] = [],
-  /**
-   * components recorded inside CLOSED shells' stowed panes - the stow IS the tree's
-   * composition while the shell sits hidden, so the missing-set restoration must never
-   * re-seat them (the shell's own reopen restores exactly its stow, never a duplicate).
-   */
+/** components inside CLOSED shells' stows: the missing-set repair must never re-seat them. */
   stowed: readonly DockComponentName[] = [],
 ): DockNode {
   let result = deriveEdgeMarkers(tree, closed);
@@ -847,22 +664,13 @@ export function ensurePinnedEdges(
     );
   }
   result = forceSessionsLeft(result);
-  // canvas C1: BOTH sidebars heal from the same law.
   result = restoreSeatSet(result, "left", stowed);
   return restoreSeatSet(result, "right", stowed);
 }
 
-/**
- * pre-marker trees were identified by content fingerprint.
- * Only fires for the FIRST content match of an unclaimed side, so a legit main pane
- * hosting relocated sidebar tabs is never grabbed - and a side the record says the user
- * closed is never minted either.
- * The PRIMARY shell is anchored by its class's LOCKED view (sessions - the one view
- * that can never leave it, so a pane hosting it IS that shell) and never by a visiting
- * class companion (agents, cron may sit anywhere, so their presence says nothing about
- * which pane is the shell).
- * Idempotent; no-op returns the SAME tree.
- */
+/** identify pre-marker trees by content fingerprint: only the FIRST match of an unclaimed side
+ *  claims it, and a side the record says the user closed is never minted. The primary shell is
+ *  anchored by its LOCKED view (sessions), never a visiting companion. Idempotent. */
 export function deriveEdgeMarkers(
   tree: DockNode,
   closed: readonly DockEdgeComponent[] = [],
@@ -899,11 +707,11 @@ export function deriveEdgeMarkers(
   return changed ? copy : tree;
 }
 
-/** the loader's lock enforcement. */
+/** the loader's lock enforcement: sessions sits in the left shell's bar. */
 export function forceSessionsLeft(tree: DockNode): DockNode {
   const left = findEdgePane(tree, "sidebar");
   if (!left) return tree; // repair mints it above - no shell, nothing to force
-  // v0.14.4 /4: a GROWN left root's bar is its leaf hosting sessions.
+  // a GROWN left root's bar is the leaf that hosts sessions.
   let host = left;
   if (left.grown) {
     for (const n of allNodes(left.grown)) {
@@ -933,13 +741,11 @@ export function forceSessionsLeft(tree: DockNode): DockNode {
   });
 }
 
-/** the default-arrangement fallback. */
+/** re-seat the zone's missing class members in its shell, never duplicating one. */
 export function restoreSeatSet(
   tree: DockNode,
   zone: "left" | "right",
-  /**
-   * components a CLOSED shell's stow records - never re-seated.
-   */
+  /** components a CLOSED shell's stow records - never re-seated. */
   stowed: readonly DockComponentName[] = [],
 ): DockNode {
   const right = zone === "right";
@@ -950,7 +756,7 @@ export function restoreSeatSet(
     (c) => !findComponentTab(tree, c) && !stowed.includes(c),
   );
   if (missing.length === 0) return tree;
-  // v0.14.4 a grown root seats the restored set in the leaf that already hosts.
+  // a grown root seats the restored set in the leaf that already hosts.
   let hostId = shell.id;
   if (shell.grown) {
     let host: DockPane | null = null;
@@ -971,13 +777,9 @@ export function restoreSeatSet(
   });
 }
 
-/**
- * canvas C2 THE SHAPE LAW's ONE-TIME migration.
- * A sidebar WITHOUT a stack tree is not the deleted model's work and loads untouched
- * (the break is exactly as wide as the feature was).
- * Center and bottom layouts SURVIVE UNTOUCHED: their splits, sizes and grown trees are
- * legal shapes and come back exactly as persisted.
- */
+/** THE SHAPE LAW's one-time migration: a sidebar carrying a local split tree records the
+ *  deleted model and resets. Center and bottom layouts are legal shapes and come back
+ *  exactly as persisted. */
 export function resetSidebarShape(tree: DockNode): DockNode {
   let dirty = false;
   for (const n of allNodes(tree)) {
@@ -995,9 +797,7 @@ export function resetSidebarShape(tree: DockNode): DockNode {
   });
 }
 
-/**
- * insert `pane` at the root's edge of a row.
- */
+/** insert `pane` at the root's edge (inside a bottom-pinned column, the main row's edge). */
 function insertRootEdge(tree: DockNode, side: "before" | "after", pane: DockPane): DockNode {
   if (
     isSplit(tree) && tree.direction === "column" &&
@@ -1040,19 +840,12 @@ export function expandInspectorTabs(tree: DockNode): DockNode {
   return done ? copy : tree;
 }
 
-/**
- * the inspector's tab set GREW.
- * Trees persisted while the inspector held five tabs get them back: every pane hosting
- * a right-area tab gains the missing right-area tabs, in the registry's canonical
- * order.: settings LEFT the set again (the menubar gear opens it as a main tab) - this
- * pass never touches a settings tab, and since "settings" is absent from the rank map a
- * pane holding only settings no longer reads as an inspector host
- * (retireInspectorSettings owns that seat on every load).
- */
+/** the inspector's tab set GREW: every pane hosting a right-area tab gains the missing ones in
+ *  registry order. "settings" left the set, so it is absent from the rank map and a settings-only
+ *  pane is no inspector host - retireInspectorSettings owns that seat. */
 export function upgradeInspectorTabs(tree: DockNode): DockNode {
   const rank = new Map(INSPECTOR_TAB_COMPONENTS.map((c, i) => [c, i]));
-  // a pane is the pre-marker inspector host when it carries a right-area
-  // id; the pre-move main-pane settings seat never makes one
+  // a right-area id marks the pre-marker inspector host; a settings seat never does
   const isInspectorTab = (c: DockComponentName) => rank.has(c);
   let done = false;
   const copy = clone(tree);
@@ -1080,7 +873,7 @@ export function upgradeInspectorTabs(tree: DockNode): DockNode {
   return done ? copy : tree;
 }
 
-/** settings left the inspector. */
+/** settings left the inspector set: evict it from every inspector host. */
 export function retireInspectorSettings(tree: DockNode): DockNode {
   const inInspector = (n: DockNode): n is DockPane =>
     isPane(n) &&
@@ -1107,9 +900,8 @@ export function retireInspectorSettings(tree: DockNode): DockNode {
   });
 }
 
-// the singleton opener --------------------------------- One contract rule, one. Multi
-// components (chat) never come through here: they mint a tab via the app's opener every
-// time.
+// the singleton opener: one instance per component, focus-reused. Multi components
+// (chat) never come through here - the app's opener mints a tab every time.
 
 export type OpenSingletonAction = "created" | "focused" | "noop";
 
@@ -1118,8 +910,7 @@ export function openSingleton(
   paneId: string,
   component: DockComponentName,
 ): { tree: DockNode; action: OpenSingletonAction } {
-  // locked components have no open path: sessions lives because the loader puts it
-  // there, never because a menu opened it
+  // locked components have no open path: the loader seats them, never a menu
   if (isLockedTab(component)) return { tree, action: "noop" };
   const found = findComponentTab(tree, component);
   if (found) {
@@ -1128,8 +919,7 @@ export function openSingleton(
   }
   const pane = findPane(tree, paneId);
   if (!pane) return { tree, action: "noop" }; // target vanished - no-op
-  // canvas C1: the target pane's ZONE must seat the view (the class law) -
-  // a sidebar never opens a chat, the main pane never opens the logs
+  // the target pane's ZONE must seat the view (the class law)
   if (seatRefusal(tree, component, paneId) !== null) return { tree, action: "noop" };
   const next = pane.tabs.length === 0
     ? setPaneComponent(tree, paneId, component)
@@ -1137,8 +927,7 @@ export function openSingleton(
   return { tree: next, action: "created" };
 }
 
-// pure tree operations ---------------------------------------------------- Each
-// returns a NEW tree (deep-cloned inputs are never mutated).
+// pure tree operations: each returns a NEW tree, inputs are never mutated.
 
 function clone<T>(tree: T): T {
   return structuredClone(tree);
@@ -1150,7 +939,6 @@ function cloneTreeWith(tree: DockNode, fn: (node: DockNode) => void): DockNode {
   return copy;
 }
 
-/** insert `pane` as a sibling of target, splitting the target with `direction`. */
 export function insertPane(
   tree: DockNode,
   targetId: string,
@@ -1178,27 +966,19 @@ export function insertPane(
   return result;
 }
 
-/**
- * remove a pane by id.
- * the LAST MAIN pane refuses too - the main area never reaches zero panes,
- * whatever path the request took (button, shortcut, API call, stale state).
- * Shells don't count toward the census: closing them may still leave no main pane,
- * which the store's ensureMainPane repairs on the next open.
- */
+/** remove a pane by id. The LAST MAIN pane refuses: the main area never reaches zero
+ *  panes, whatever path the request took (button, shortcut, API, stale state). Shells
+ *  don't count toward that census - the store's ensureMainPane repairs the next open. */
 export function removePane(tree: DockNode, paneId: string): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isPinnedPane(pane)) return tree;
-  // v0.14.4 a leaf inside a grown root prunes WITHIN the root (prunePane's split walk
-  // cannot see grown children). Roots never die.
+  // a grown root's leaf prunes WITHIN the root: prunePane cannot see grown children
   if (rootPaneOf(tree, paneId)) return pruneInnerLeaf(tree, paneId);
   if (isLastMainPane(tree, pane)) return tree;
   return prunePane(tree, pane.id);
 }
 
-/**
- * the shared prune body: cut `paneId`, hoist a lone survivor, repair sizes.
- * Callers enforce the WHO-MAY-GO policy; this is only mechanics.
- */
+/** the shared prune body: cut, hoist a lone survivor, repair sizes. Callers own the policy. */
 function prunePane(tree: DockNode, paneId: string): DockNode {
   if (paneCount(tree) <= 1) return tree; // the never-empty invariant
   const hoist = (n: DockNode): DockNode => {
@@ -1231,17 +1011,11 @@ function prunePane(tree: DockNode, paneId: string): DockNode {
   return result;
 }
 
-// the edge toggle --------------------------------------- the pane reset made the
-// pinned panes untouchable via the generic removePane/closeTab refusals; the menubar
-// toggles get a dedicated, tightly-guarded route so hide/reopen survives the reset's
-// invariants.: shells are identified by their `edge` MARKER now - content is free, so
-// the old tab fingerprint cannot survive.
+// the edge toggle: pinned panes are untouchable through removePane and closeTab, so the
+// menubar toggles get this guarded route. Shells are found by marker, not tab fingerprint.
 
-/**
- * THE CLASS <-> SHELL ADAPTER (canvas C1): the edge component a home zone names.
- * ONE map - handing a zone name to findEdgePane silently answers the bottom pane, so no
- * caller may spell the translation itself.
- */
+/** THE CLASS <-> SHELL ADAPTER: the edge component a home zone names. ONE map - handing a
+ *  zone name to findEdgePane silently answers the bottom pane, so no caller spells it. */
 export function edgeOfArea(area: DockArea): DockEdgeComponent | null {
   switch (area) {
     case "left":
@@ -1255,7 +1029,6 @@ export function edgeOfArea(area: DockArea): DockEdgeComponent | null {
   }
 }
 
-/** the dedicated pinned shell for `component`. */
 export function findEdgePane(
   tree: DockNode,
   component: DockEdgeComponent,
@@ -1267,10 +1040,6 @@ export function findEdgePane(
   return null;
 }
 
-/**
- * the toggle's hide half: the marked shell goes as a whole.
- * Guards mirror the fixed shape: the marker found, never-empty held.
- */
 export function hideEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
@@ -1312,13 +1081,11 @@ export function recalledEdgePx(
   }
   const px = mem[component];
   if (typeof px !== "number" || !Number.isFinite(px)) return null;
-  // the sidebars' reopen clamp lifts a stale sub-floor width to 320; the
-  // bottom panel's heights are smaller scale - floor at the drag floor
-  // (128), never at the sidebar's open clamp
+  // the sidebars' reopen clamp lifts a stale sub-floor width to 320; the bottom's smaller
+  // scale floors at the drag floor (128), never at the sidebar's open clamp
   return component === "bottom" ? Math.max(MIN_PANE_PX, px) : openClamp(px);
 }
 
-/** which edge component a pane's marker matches (null. */
 export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
   return pane.edge === "left" ? "sidebar"
     : pane.edge === "right" ? "inspector"
@@ -1326,13 +1093,11 @@ export function edgeComponentOf(pane: DockPane): EdgeComponent | null {
     : null;
 }
 
-// window-narrow give-way -------------------------------- Divider drags already enforce
-// the priority floors per gesture, but a plain WINDOW resize skips the math entirely:
-// the fixed sidebars keep their px, and the flexible main pane shrinks under its 320px
-// contract floor (or the fixed sum overflows the pane-area). A wider window never
-// re-reveals (the user reopens by toggle, like a drag-close).
+// window-narrow give-way: a plain window resize skips the divider math, so the fixed
+// sidebars keep their px and the flexible main pane shrinks under its 320 floor. A wider
+// window never re-reveals - the user reopens by toggle, like a drag-close.
 
-/** the minimum horizontal px a subtree needs at its axis. */
+/** the minimum px a subtree needs along its axis (a row sums, a column maxes). */
 export function minDockPx(node: DockNode): number {
   if (isPane(node)) return node.fixed !== null ? node.fixed : paneFloorOf(node);
   const reqs = node.children.map(minDockPx);
@@ -1342,19 +1107,15 @@ export function minDockPx(node: DockNode): number {
     : Math.max(0, ...reqs);
 }
 
-/** one give-way step's record: which edge pane collapsed at what width */
 export interface NarrowHiddenEntry {
   component: "sidebar" | "inspector";
   px: number;
   pane: DockPane;
 }
 
-/**
- * pure window-narrow give-away: while `contentPx` cannot seat every fixed pane plus.
- * When the tree already fits (or only the two edge panes are gone and it still
- * doesn't), it stops - user-made splits are never pruned by a resize.: `justRevealed` -
- * the component a user JUST revealed - is exempt from the give-away.
- */
+/** pure window-narrow give-away: while `contentPx` cannot seat every fixed pane plus the
+ *  flexible floors, edge panes collapse (inspector first unless just revealed, then
+ *  sidebar). A tree that still doesn't fit stops - a resize never prunes user splits. */
 export function narrowGiveWay(
   tree: DockNode,
   contentPx: number,
@@ -1374,32 +1135,18 @@ export function narrowGiveWay(
   return { tree: t, hidden };
 }
 
-/**
- * the toggle's reopen half: the shell comes back at the root's edge - same builders
- * ensurePinnedEdges uses, so reopen and boot-repair mint IDENTICAL panes.: the reopened
- * right shell mints only the inspector tabs NOT already living elsewhere - a relocated
- * singleton is never duplicated by a reopen.
- */
+/** the toggle's reopen half: the shell comes back at the root's edge through the same
+ *  builders ensurePinnedEdges uses. The reopened right shell mints only the inspector tabs
+ *  not already living elsewhere - a relocated singleton is never duplicated by a reopen. */
 export function revealEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
   side: "before" | "after",
   fixedPx?: number | null,
-  /**
-   * the closed shell's stowed pane - reopen restores THE pane (its tabs, active, fixed,
-   * grown come back exactly as the hide captured them) instead of minting a fresh
-   * default.
-   * The stow's own fixed px wins over `fixedPx` (the caller recalls the same width
-   * anyway); nothing stowed (or an edge-marker mismatch) falls back to the default
-   * minting below.
-   */
+/** the closed shell's stowed pane: reopen restores THE pane (tabs, active, fixed, grown as the
+ *  hide captured them), its own px winning over `fixedPx`. Nothing stowed mints the default. */
   hidden?: DockPane | null,
-  /**
-   * the pane-area's measured content px - a reveal the window cannot seat is refused
-   * BEFORE any state mutates (the caller gets the SAME tree back).
-   * null/absent = no measurement in play (callers without a viewport) and the reveal
-   * proceeds as today.
-   */
+  /** the measured content px: a reveal the window cannot seat is refused before any mutation. */
   contentPx?: number | null,
 ): DockNode {
   const edge = component === "sidebar" ? "left" : "right";
@@ -1416,11 +1163,9 @@ export function revealEdgePane(
       pane = revived;
     } // every restored tab already lives elsewhere: mint the default
   }
-  // (wall law: a gesture stops at a wall, never surprises): a reveal whose result
-  // cannot fit is checked against what the watcher's give-way could actually free - the
-  // overflow that matters lives INSIDE a grown root split, where hideEdgePane frees
-  // nothing and the insert would be reaped on sight. contentPx omitted = no measurement
-  // in play (callers without a viewport) and the reveal proceeds as today.
+  // the wall law: a reveal that cannot fit is checked against what the watcher's give-way
+  // could actually free - the overflow that matters lives INSIDE a grown root split, where
+  // hideEdgePane frees nothing and the insert would be reaped on sight.
   const candidate = insertRootEdge(tree, side, pane);
   if (
     contentPx !== null &&
@@ -1428,12 +1173,9 @@ export function revealEdgePane(
     Number.isFinite(contentPx) &&
     minDockPx(candidate) > contentPx
   ) {
-    // can the root-edge give-away ever seat it? The protected pane (this
-    // component) is NEVER reaped; every OTHER root edge gives way. If the
-    // floor of that fully-relieved tree still exceeds the content px, the
-    // watcher could never reach a fitting state (the real overflow lives
-    // INSIDE a grown root split, which reaps nothing) - the reveal is
-    // hopeless: the caller gets the SAME tree back, zero churn.
+    // the protected component is NEVER reaped and every OTHER root edge gives way; if that
+    // fully-relieved floor still exceeds the content px the watcher could never reach a
+    // fitting state - the reveal is hopeless and the caller gets the SAME tree back.
     let probe = candidate;
     for (const comp of ["inspector", "sidebar"] as const) {
       if (comp !== component && findEdgePane(probe, comp)) {
@@ -1445,11 +1187,7 @@ export function revealEdgePane(
   return candidate;
 }
 
-/**
- * the reveal's decision wrapper: the tree AND whether it revealed (the refusal returns
- * the caller's tree reference - the toggle stays closed with zero churn and surfaces a
- * one-line "no room" hint instead of a silent dead button).
- */
+/** the reveal's decision wrapper: the tree and whether it revealed (a refusal = same tree). */
 export function tryRevealEdgePane(
   tree: DockNode,
   component: "sidebar" | "inspector",
@@ -1462,12 +1200,9 @@ export function tryRevealEdgePane(
   return { tree: next, revealed: next !== tree };
 }
 
-/**
- * the restore twin of the minters: the stowed pane comes back id-for-id fresh (its ids
- * may have been re-minted in the live tree while it sat hidden - duplicate ids would
- * make every later id-keyed op act on BOTH), reopened at `floor` (the caller's reopen
- * clamp) or its own recorded px when it carries one.
- */
+/** the restore twin of the minters: the stowed pane comes back with FRESH ids (its old ones
+ *  may have been re-minted live, and duplicate ids make every id-keyed op act on BOTH),
+ *  reopened at `floor` or its own recorded px when it carries one. */
 function revivePane(hidden: DockPane, fallbackFixed: number, floor: number): DockPane {
   const pane = clone(hidden);
   pane.id = nextNodeId();
@@ -1497,7 +1232,6 @@ function defaultInspectorPane(tree: DockNode, fixed: number): DockPane {
   };
 }
 
-/** the fresh left shell (canvas C1). */
 function defaultPrimaryPane(tree: DockNode, fixed: number): DockPane {
   return {
     kind: "pane",
@@ -1511,16 +1245,9 @@ function defaultPrimaryPane(tree: DockNode, fixed: number): DockPane {
   };
 }
 
-// the bottom panel --------------------------------------- the horizontal pane.
-
-/**
- * closed-flag persistence: the bottom panel's hide (toggle or divider push) survives.
- */
+/** legacy bottom-closed flag: read once at boot, migrated into closedEdges. */
 export const BOTTOM_CLOSED_KEY = "omega.dock-bottom-closed";
 
-/**
- * the fresh bottom shell: a fixed-height edge pane seeded from the registry's bottom.
- */
 export function bottomShellPane(): DockPane {
   return {
     kind: "pane",
@@ -1532,11 +1259,8 @@ export function bottomShellPane(): DockPane {
   };
 }
 
-/**
- * graft the bottom shell in: the tree becomes the column's first child.
- * Idempotent only via the caller (ensureBottomPanel); a shell that already sits in the
- * tree should not reach here.
- */
+/** graft the bottom shell in: the tree becomes the column's first child; the caller owns
+ *  idempotence (a shell that already sits in the tree must never reach here). */
 export function ensureBottomShell(tree: DockNode): DockNode {
   return makeSplit("column", [tree, bottomShellPane()]);
 }
@@ -1550,13 +1274,8 @@ export function ensureBottomPanel(
   return ensureBottomShell(tree);
 }
 
-/**
- * the boot repair's bottom-home strip SYNC.
- * The whole-tree read (not strip-only) keeps the singleton law: a default the user
- * parked in another pane is never duplicated - it is seated, just elsewhere.
- * Persisted trees heal on the next load; a fully-seated shell returns the SAME tree
- * (idempotent).
- */
+/** the boot repair's bottom-home SYNC: the whole-tree read keeps the singleton law (a default
+ *  parked elsewhere is never duplicated), and a fully-seated shell returns the SAME tree. */
 export function syncBottomHostTabs(tree: DockNode): DockNode {
   const shell = findEdgePane(tree, "bottom");
   if (!shell) return tree; // closed/absent: the graft owns re-seeding
@@ -1584,11 +1303,7 @@ export function syncBottomHostTabs(tree: DockNode): DockNode {
   });
 }
 
-/**
- * the toggle's hide half (the bottom domain).
- * The closed-edge marking is the caller's (createDock owns the set that rides the
- * record).
- */
+/** the toggle's hide half (the bottom domain); the closed-edge marking is the caller's. */
 export function hideBottomPanel(tree: DockNode, store: Storage): DockNode {
   const pane = findEdgePane(tree, "bottom");
   if (!pane) return tree;
@@ -1596,7 +1311,6 @@ export function hideBottomPanel(tree: DockNode, store: Storage): DockNode {
   return prunePane(tree, pane.id);
 }
 
-/** the toggle's reopen half. */
 export function revealBottomPanel(
   tree: DockNode,
   store: Storage,
@@ -1606,7 +1320,6 @@ export function revealBottomPanel(
   let shell: DockPane;
   if (hidden && hidden.edge === "bottom") {
     const revived = revivePane(hidden, Math.max(MIN_PANE_PX, restored ?? BOTTOM_DEFAULT_PX), MIN_PANE_PX);
-    // the no-duplication law, same as the sidebars' reveal
     revived.tabs = revived.tabs.filter((t) => !findComponentTab(tree, t.component));
     if (revived.tabs.length > 0) {
       revived.active = clamp(revived.active, 0, revived.tabs.length - 1);
@@ -1622,7 +1335,6 @@ export function revealBottomPanel(
   return makeSplit("column", [tree, shell]);
 }
 
-/** move a pane next to a target pane. */
 export function movePane(
   tree: DockNode,
   paneId: string,
@@ -1634,16 +1346,13 @@ export function movePane(
   if (!pane || isPinnedPane(pane) || !findPane(tree, targetId)) return tree;
   // detach must not collapse while the source still anchors the insert.
   const without = removePane(tree, paneId);
-  // a refused detach (the last main pane never goes) must not fall through
-  // to the insert - the pane never left, so inserting its clone would duplicate it
-  // beside itself
+  // a refused detach must not fall through to the insert - the clone would duplicate the pane
   if (without === tree) return tree;
   if (!findPane(without, targetId)) return without; // target WAS the source
   const moving = clone(pane);
   return insertPane(without, targetId, "row", position, moving);
 }
 
-/** active-tab focus */
 export function focusTab(tree: DockNode, paneId: string, index: number): DockNode {
   return cloneTreeWith(tree, (n) => {
     if (isPane(n) && n.id === paneId) {
@@ -1652,14 +1361,9 @@ export function focusTab(tree: DockNode, paneId: string, index: number): DockNod
   });
 }
 
-/**
- * give an EMPTY pane its first component (the '+' menu path), replacing tabs wholesale.
- * Emptying back is closeTab's job.: the LOCKED sessions tab never enters a pane this
- * way, and unknown ids refuse (the safe class).
- * canvas C1: the pane's ZONE decides too - a pane only takes a view its zone seats (the
- * class law), so an empty sidebar refills with sidebar views, never with chat.: no seat
- * sweep rides the fill any more - the pane's tab set is exactly what this op wrote.
- */
+/** give an EMPTY pane its first component (the '+' path), replacing tabs wholesale; emptying
+ *  back is closeTab's job. The LOCKED sessions tab never enters this way, unknown ids refuse,
+ *  and the pane's ZONE must seat the view. */
 export function setPaneComponent(
   tree: DockNode,
   paneId: string,
@@ -1676,12 +1380,9 @@ export function setPaneComponent(
   });
 }
 
-/**
- * open a new tab in a pane, appending at the end and activating it.
- * canvas C1: THE SEAT MAP decides - a view opens only in a zone its class allows, so a
- * chat tab can never be minted into a sidebar and a bottom view never opens in the main
- * pane.
- */
+/** open a new tab at the end of a pane and activate it. THE SEAT MAP decides: a view opens
+ *  only in a zone its class allows, so chat can never be minted into a sidebar and a bottom
+ *  view never opens in the main pane. */
 export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode {
   const pane = findPane(tree, paneId);
   if (!pane || isLockedTab(tab.component)) return tree;
@@ -1694,15 +1395,9 @@ export function openTab(tree: DockNode, paneId: string, tab: DockTab): DockNode 
   });
 }
 
-/**
- * close a tab.: a pane's LAST tab never closes - the request is refused.
- * That refusal is the whole never-zero law: no close can empty a pane, so nothing is
- * seated in its place (the 8eabefc7 "new tab" placeholder is retired).: an UNCLOSEABLE
- * tab refuses too - the pinned sidebars' tabs have no X.
- * v0.14.4 an inner leaf leaves the tree through its own remove X (canRemovePane is true
- * for a grown root's leaves), never by closing its last tab - the lock holds there as
- * everywhere.
- */
+/** close a tab. A pane's LAST tab never closes and an UNCLOSEABLE tab (the pinned shells')
+ *  refuses too - no close empties a pane, so nothing is ever seated in its place. A grown
+ *  root's inner leaf leaves through its own remove X, never by closing its last tab. */
 export function closeTab(tree: DockNode, paneId: string, index: number): DockNode {
   const pane = findPane(tree, paneId);
   const tab = pane?.tabs[index];
@@ -1717,16 +1412,10 @@ export function closeTab(tree: DockNode, paneId: string, index: number): DockNod
   });
 }
 
-/**
- * card 2 DnD: move a tab between positions/panes.
- * `toIndex` is the insertion index into the TARGET pane's tabs AFTER the tab has been
- * lifted out of the source (for a same-pane reorder, the callers pass the post-removal
- * index - clamped to the remaining range).: when a cross-pane move takes the source
- * pane's LAST tab, the source pane closes with it (same result as the manual remove
- * button) - a non-pinned main pane never lingers empty from a move.
- * Pinned shells stay empty-but-present (the shells may sit empty; the never-empty law
- * keeps the last pane alive via prunePane's guard).
- */
+/** DnD: move a tab between positions or panes. `toIndex` is the insertion index into the
+ *  TARGET pane's tabs AFTER the tab is lifted out of the source (a same-pane reorder passes
+ *  the post-removal index). A cross-pane move that takes the source's last tab closes the
+ *  source; pinned shells stay empty-but-present. */
 export function moveTab(
   tree: DockNode,
   fromPaneId: string,
@@ -1739,9 +1428,7 @@ export function moveTab(
   const to = findPane(tree, toPaneId);
   if (!to) return tree;
   const tab = from.tabs[fromIndex]!;
-  // canvas C1: THE ZONE LAW - a tab only lands where its class allows. A same-pane
-  // reorder never changes the seat (it is already there), so the gate covers cross-pane
-  // landings only.
+  // THE ZONE LAW gates cross-pane landings only: a same-pane reorder never changes the seat
   if (fromPaneId !== toPaneId && seatRefusal(tree, tab.component, toPaneId) !== null) return tree;
   if (fromPaneId === toPaneId) {
     const target = clamp(toIndex, 0, from.tabs.length - 1);
@@ -1770,14 +1457,11 @@ export function moveTab(
       n.active = at;
     }
   });
-  // the last tab out closes the source pane (the manual remove button's result,
-  // automatic) - a main pane never lingers empty from a move. The guards live in the
-  // law itself: pinned shells stay (they may sit empty), the last remaining pane stays
-  // (prunePane's never-empty guard).
+  // the last tab out closes the source pane; pinned shells stay, prunePane keeps the last one
   if (result === tree) return tree;
   const src = findPane(result, fromPaneId);
   if (src && !isPinnedPane(src) && src.tabs.length === 0) {
-    // v0.14.4 an inner leaf that emptied MERGES AWAY (the grown root unwinds)
+    // an inner leaf that emptied MERGES AWAY (the grown root unwinds)
     if (rootPaneOf(result, fromPaneId)) return pruneInnerLeaf(result, fromPaneId);
     if (!isLastMainPane(result, src)) return prunePane(result, fromPaneId);
   }
@@ -1794,14 +1478,9 @@ export function splitPane(
   return insertPane(tree, paneId, direction, side, makePane(null));
 }
 
-/**
- * v0.14.4 grow the pinned root `shellId` a LOCAL split in `direction`.
- * The shell's classic content (tabs + active) moves into the first leaf - the shell
- * keeps marker, fixed px and contract and empties its bar - and the fresh leaf takes
- * the zone's side.
- * Null for any shell that already grown or a vanished/gone target (the caller reports
- * the refusal).
- */
+/** grow the pinned root `shellId` a LOCAL split in `direction`: the shell's classic content
+ *  (tabs + active) moves into the first leaf, and the shell keeps marker, fixed px and
+ *  contract while its bar empties. Null when already grown or the target vanished. */
 export function growRoot(
   tree: DockNode,
   shellId: string,
@@ -1826,7 +1505,6 @@ export function growRoot(
   return { tree: next, shellLeafId: shellLeaf.id, freshPaneId: fresh.id };
 }
 
-/** v0.14.4 prune an inner leaf from its grown root. */
 export function pruneInnerLeaf(tree: DockNode, leafId: string): DockNode {
   const root = rootPaneOf(tree, leafId);
   if (!root || !root.grown) return tree;
@@ -1836,8 +1514,7 @@ export function pruneInnerLeaf(tree: DockNode, leafId: string): DockNode {
       if (isPane(c) && c.id === leafId) continue;
       children.push(isSplit(c) ? cut(c) : c);
     }
-    // degenerate: a corrupt/one-leaf state loses its survivor wholesale -
-    // the root un-grows empty rather than crashing (roots never die)
+    // degenerate: the root un-grows empty rather than crashing (roots never die)
     if (children.length === 0) {
       return { kind: "pane", id: nextNodeId(), tabs: [], active: 0, fixed: null };
     }
@@ -1862,22 +1539,14 @@ export function pruneInnerLeaf(tree: DockNode, leafId: string): DockNode {
   });
 }
 
-/**
- * v0.14.4 (the load-bearing law).
- * The split zones self-drop now, so refusals: the center zone's self-dock (body drops
- * of a pane's own tab keep the focus-only read), a vanished pane mid-gesture, the
- * shells' split-zones the law refuses (sidebar row zones, depth caps, a grown
- * re-growth), and the LOCKED tab - it never leaves the left shell and never lands in a
- * fresh pane.
- */
+/** the drop predictor: the tree a drop would produce, or the refusal's reason. Refusals
+ *  cover a vanished pane mid-gesture, the split law (sidebar row zones, depth caps, a grown
+ *  re-growth) and the LOCKED tab, which never leaves the left shell nor lands fresh. */
 export type DockDropPrediction =
   | { tree: DockNode; freshPaneId: string | null }
   | { refused: true; reason: string };
 
-/**
- * THE PANE'S ZONE (canvas C1): which seat of the shell `paneId` is.
- * null = the pane is not in this tree (the caller's refusal).
- */
+/** THE PANE'S ZONE: which seat of the shell `paneId` is; null = not in this tree. */
 export function paneZone(tree: DockNode, paneId: string): PaneZone | null {
   const pane = findPane(tree, paneId);
   if (!pane) return null;
@@ -1885,11 +1554,7 @@ export function paneZone(tree: DockNode, paneId: string): PaneZone | null {
   return zoneOfEdge(rootPaneOf(tree, paneId)?.edge ?? null);
 }
 
-/**
- * THE ZONE LAW's refusal (canvas C1).
- * ONE predicate read by the drag hit-test, moveTab, the drop predictor and the openers
- * - the class law, never a per-view conditional.
- */
+/** THE ZONE LAW's refusal - the class law, never a per-view conditional; four callers read it. */
 export function seatRefusal(
   tree: DockNode,
   component: DockComponentName,
@@ -1914,7 +1579,6 @@ export function predictDockDrop(
     return { refused: true, reason: "a pane of the gesture vanished" };
   }
   const component = from.tabs[fromIndex]!.component;
-  // canvas C1: ONE gate for both zone shapes - the class law's seat check
   const seat = seatRefusal(tree, component, toPaneId);
   const split = zoneSplitOf(zone);
   if (!split) {
@@ -1924,11 +1588,9 @@ export function predictDockDrop(
     if (seat) return { refused: true, reason: seat };
     return { tree: moveTab(tree, fromPaneId, fromIndex, toPaneId, to.tabs.length), freshPaneId: null };
   }
-  // a SPLIT lands in the target's zone (a shell grows its own root - the fresh leaf
-  // inherits it; a main pane's fresh sibling is main), so the same gate refuses before
-  // the tree is reshaped around a landing that could never happen
+  // a SPLIT lands in the target's zone, so the same gate refuses before the tree is reshaped
   if (seat) return { refused: true, reason: seat };
-  // v0.14.4 -3: the direction/depth law gates BOTH the shell's growth and an inner.
+  // the direction/depth law gates BOTH the shell's growth and an inner split
   const law = splitLawRefusal(tree, toPaneId, split.direction);
   if (law) return { refused: true, reason: law };
   if (isPinnedPane(to)) {
@@ -1936,9 +1598,7 @@ export function predictDockDrop(
     const g = growRoot(tree, toPaneId, split.direction, split.side);
     if (!g) return { refused: true, reason: "the shells keep their shape" };
     if (fromPaneId === toPaneId) {
-      // a SAME-pane shell grow already moved the shell's tabs wholesale into shellLeaf.
-      // Seat it from the emptied root instead and moveTab would silently no-op (the
-      // drag would "vanish" into the wholesale move).
+  // a SAME-pane grow already moved the shell's tabs: seat from the emptied root, not the old index
       const leaf = findPane(g.tree, g.shellLeafId);
       const i = leaf && fromIndex < leaf.tabs.length ? fromIndex : 0;
       return {
@@ -1966,10 +1626,6 @@ export function predictDockDrop(
   return { tree: moveTab(after, fromPaneId, fromIndex, freshId, 0), freshPaneId: freshId };
 }
 
-/**
- * the commit path: a thin read of the predictor.
- * Any refusal is the tree unchanged, exactly as before the predictor existed.
- */
 export function dockDropToZone(
   tree: DockNode,
   fromPaneId: string,
@@ -1981,10 +1637,7 @@ export function dockDropToZone(
   return "refused" in p ? tree : p.tree;
 }
 
-// the content viewer ----------------------------------- A viewer tab is a MULTI.
-// Focus-reuse is the law (the chat-precedent singleton feel without limiting tabs):
-// opening the same file/skill twice FOCUSES the existing tab wherever it lives and
-// never mints a duplicate.
+// the content viewer: a viewer tab is a MULTI - opening the same file twice FOCUSES it
 
 /** a viewer ref's equality: kind + name, undefined matches undefined */
 export function viewerRefEq(a?: ViewerRef, b?: ViewerRef): boolean {
@@ -1992,10 +1645,7 @@ export function viewerRefEq(a?: ViewerRef, b?: ViewerRef): boolean {
   return a.kind === b.kind && a.name === b.name;
 }
 
-/**
- * the FIRST tab in the tree showing `v` (active or not - like the singleton finders,
- * the identity read must see parked tabs).
- */
+/** the FIRST tab showing `v`, active or not - the identity read must see parked tabs. */
 export function findViewerTab(
   tree: DockNode,
   v: ViewerRef,
@@ -2010,11 +1660,7 @@ export function findViewerTab(
   return null;
 }
 
-/**
- * the viewer opener's pure half: a tab already showing `v` focuses wherever it lives;
- * otherwise one mints into `paneId` (the caller's ensureMainPane target - the same main
- * pane a session would open in).
- */
+/** the viewer opener's pure half: focus a tab already showing `v`, else mint into `paneId`. */
 export function openViewerTab(
   tree: DockNode,
   v: ViewerRef,
@@ -2035,8 +1681,6 @@ export function openViewerTab(
   return { tree: next, paneId, index, action: "created" };
 }
 
-// chat tab session binding ----------------------------
-
 export interface ChatTabLocation {
   paneId: string;
   index: number;
@@ -2053,9 +1697,6 @@ export function findChatTab(tree: DockNode, key: string): ChatTabLocation | null
   return null;
 }
 
-/**
- * the first chat tab in the tree, depth-first.
- */
 export function firstChatTab(
   tree: DockNode,
   sessionRef?: string,
@@ -2070,14 +1711,8 @@ export function firstChatTab(
   return null;
 }
 
-/**
- * the chat tab a pane is ACTUALLY showing (tabs[pane.active]), depth-first.: boot focus
- * must carry over the tree's chat focus - the tab the user left active - not merely the
- * first chat tab in tree order: the shipped default pane holds a sessionless "new chat"
- * draft at index 0 while the user's session tab sits ACTIVE at index 1, and the draft
- * pick left the focused-session seam null forever (the Files tab booted on the
- * default/cwd fallback and the re-root watch never fired).
- */
+/** the chat tab a pane is ACTUALLY showing, depth-first: boot focus must carry over the tab the
+ *  user left active, not the first chat tab in tree order (a draft may sit at index 0). */
 export function activeChatTab(tree: DockNode): ChatTabLocation | null {
   for (const n of allNodes(tree)) {
     if (!isPane(n)) continue;
@@ -2087,7 +1722,6 @@ export function activeChatTab(tree: DockNode): ChatTabLocation | null {
   return null;
 }
 
-/** the first DRAFT chat tab (no session binding. */
 export function firstDraftChatTab(tree: DockNode): ChatTabLocation | null {
   for (const n of allNodes(tree)) {
     if (!isPane(n)) continue;
@@ -2097,24 +1731,16 @@ export function firstDraftChatTab(tree: DockNode): ChatTabLocation | null {
   return null;
 }
 
-/** whether the chat tab `key` IS the draft conversation (no session binding yet). */
 export function isDraftChatKey(tree: DockNode, key: string | null): boolean {
   if (!key) return false;
   const loc = findChatTab(tree, key);
   return loc !== null && !loc.tab.sessionRef;
 }
 
-// (journey 98): the /board route owns its host pane's FOREGROUND. The board view folds
-// into the chat pane template, which DockPane renders only while the pane's ACTIVE tab
-// is chat - a persisted content pane (the browser singleton) must not shadow the route,
-// or Board.vue never mounts on a /board reload.
+// the /board route owns its host pane's FOREGROUND: the board view folds into the chat pane
+// template, which DockPane renders only while chat is the ACTIVE tab (else Board.vue never mounts).
 
-/**
- * the first main (non-pinned) pane that hosts a chat tab, depth-first.
- * The /board route prefers a chat-hosting main pane over the first main pane; null =
- * every main pane is content-only (the caller falls back to ensureMainPane and mints a
- * draft).
- */
+/** the first main pane hosting a chat tab (the /board route prefers it); null = mint a draft. */
 export function firstChatMainPaneId(tree: DockNode): string | null {
   for (const n of allNodes(tree)) {
     if (!isPane(n) || isPinnedPane(n)) continue;
@@ -2123,13 +1749,9 @@ export function firstChatMainPaneId(tree: DockNode): string | null {
   return null;
 }
 
-/**
- * what the /board route's host pane needs for the board's outlet to exist: chat is
- * already the foreground ("none"), a chat tab sits inactive in the pane ("focus", with
- * its index), or the pane lost every chat tab ("mint" - the caller mints the draft chat
- * there).
- * Pure: reading the plan, not the mutation, is the caller's side.
- */
+/** what the /board route's host pane needs for the board's outlet to exist: chat already
+ *  foreground ("none"), a chat tab sitting inactive ("focus", with its index), or no chat
+ *  left ("mint"). Pure - applying the plan is the caller's side. */
 export type ChatForegroundPlan = { mode: "none" | "focus" | "mint"; index: number };
 
 export function chatForegroundPlan(
@@ -2146,7 +1768,6 @@ export function chatForegroundPlan(
   return { mode: "mint", index: -1 };
 }
 
-/** write the session id back onto the chat tab that owns `key`. */
 export function setTabSessionRef(
   tree: DockNode,
   key: string,
@@ -2167,7 +1788,6 @@ export function setTabSessionRef(
   });
 }
 
-/** close EVERY chat tab bound to a session (the delete flow). */
 export function closeSessionTabs(tree: DockNode, sessionId: string): DockNode {
   if (firstChatTab(tree, sessionId) === null) return tree;
   return cloneTreeWith(tree, (n) => {
@@ -2184,29 +1804,16 @@ export function closeSessionTabs(tree: DockNode, sessionId: string): DockNode {
   });
 }
 
-// resize ---------------------------------------------------------------
-
 export interface DividerDragResult {
   split: DockSplit;
-  /**
-   * the controlled pane dragged PAST its min at this divider.
-   * The pure math cannot prune (it only sees the split); the store applies the intent
-   * against the tree.
-   */
+/** the controlled pane dragged past its min here; the pure math cannot prune, the store does. */
   collapsedPaneId: string | null;
 }
 
-/**
- * the divider's ADJACENT neighbor absorbs the fixed pane's change 1:1.
- * The fixed lanes used to write only their own `fixed` px and let the flex reflow
- * spread the delta over EVERY flexible child: the pane the divider touches then tracked
- * the pointer at its SHARE of the flex space (a small pane beside a big one shrank at a
- * fraction of the drag - Endo's "the terminal shrinks slow" - while a pane the user
- * never touched moved too).
- * Both are re-derived from the gesture's FROZEN startPx each event, so the write is
- * idempotent like the fixed lanes themselves, and the sizes sum is preserved (later
- * events re-read the same total).
- */
+/** the divider's ADJACENT neighbor absorbs the fixed pane's change 1:1. Without this the flex
+ *  reflow spread the delta over EVERY flexible child: the touched pane tracked the pointer at
+ *  its share while panes the user never touched moved too. Both are re-derived from the
+ *  gesture's FROZEN startPx each event, so the write is idempotent and the sum is preserved. */
 function absorbNeighbor(
   next: DockSplit,
   fixedIdx: number,
@@ -2235,11 +1842,7 @@ function absorbNeighbor(
   next.sizes = sizes;
 }
 
-/**
- * pure divider drag: between children [i-1, i] of `split`.
- * If the far pane must donate space, the user moves its divider: two gestures, zero
- * surprises.
- */
+/** pure divider drag between [i-1, i]: the neighbor never donates - the far side is a 2nd gesture. */
 export function dragSplitDivider(
   split: DockSplit,
   dividerIndex: number,
@@ -2262,15 +1865,13 @@ export function dragSplitDivider(
 
   const capFor = (floorOther: number) => Math.max(MIN_PANE_PX, room - floorOther);
   const applySnap = (px: number, lo: number, hi: number, step: number = SNAP_STEP): number => {
-    // attractor first, then the floors again: a snap point that overshoots
-    // the cap lands ON the cap, never past it
+    // attractor first, then the floors: a snap past the cap lands ON the cap
     const snapped = snapCandidateAt(px, step);
     return clamp(snapped ?? px, lo, hi);
   };
   const pxOf = (k: number): number => startPx[k]!;
 
-  // the wall: with the squeeze chain gone, `req` past a cap simply stops at the wall
-  // (applySnap clamps) - the neighbor never donates, the panes beyond it never move.
+  // past a cap the drag simply stops at the wall (applySnap clamps); panes beyond never move
   const lp = left as DockPane;
   const rp = right as DockPane;
   if (isPane(lp) && lp.fixed !== null) {
@@ -2278,8 +1879,7 @@ export function dragSplitDivider(
     if (req < MIN_PANE_PX) {
       return { split: next, collapsedPaneId: lp.id };
     }
-    // drag controls the LEFT pane; right absorbs: its floor is the wall
-    // (128 for fixed, 320 for a flexible pane with no contract)
+    // drag controls the LEFT pane; the right one absorbs, its floor is the wall
     const hi = capFor(contractFloorOf(rp));
     (next.children[li] as DockPane).fixed = applySnap(req, MIN_PANE_PX, hi);
     absorbNeighbor(next, li, i, startPx, room);
@@ -2310,11 +1910,9 @@ export function dragSplitDivider(
     return { split: next, collapsedPaneId: null };
   }
 
-  // both flexible: re-derive BOTH adjacent fractions from the frozen.
-  // Writing the pair's shares absolutely - (finalLeft, room - finalLeft) as fractions
-  // of the pair's own px box, scaled by the pair's size sum which this branch alone
-  // preserves - makes event n compute the same fractions from the same frozen baseline:
-  // idempotent, exactly the fixed lanes' law.
+  // both flexible: write the pair's shares absolutely from the FROZEN start px, scaled by
+  // the pair's size sum which this branch alone preserves - event n computes the same
+  // fractions from the same baseline, idempotent exactly like the fixed lanes.
   const content = Math.max(1, room);
   // the LEFT pane floors at ITS contract floor, the same law the right side has.
   const pxLo = contractFloorOf(lp);
@@ -2337,25 +1935,19 @@ export function clamp(v: number, lo: number, hi: number): number {
 
 // snapCandidate lives in panes.ts (imported at the top); dock.ts must not re-derive.
 
-// persistence ------------------------------------------------------------
-
-// v2 - shell panes carry the `edge` marker. Records below 4 were written by the deleted
-// sidebar-split model and get ONE reset (resetSidebarShape, run by the loader); the
-// bump is what makes the reset happen exactly once.
+// v4: records below it were written by the deleted sidebar-split model and get ONE reset
+// (resetSidebarShape at load); the bump is what makes the reset happen exactly once.
 const LAYOUT_VERSION = 4;
 
-// closing an edge pane HIDES state, it does not delete it. The hide stows the pane's
-// full record (tabs, active, fixed, grown) and the reopen restores THE pane, not a
-// fresh default - a tab dragged into a sidebar survives the closed window, and a tab
-// dragged out never duplicates back in. In-flight the stow is the pre-prune pane
-// object; on the record it rides the `hiddenEdges` field (edge component -> pane
-// record), optional like `closedEdges` was: records that predate the field load
-// unchanged and the reveal falls back to minting the default exactly.
+// closing an edge pane HIDES it, it does not delete it: the hide stows the pane's full
+// record (tabs, active, fixed, grown) and the reopen restores THE pane, so a tab dragged
+// into a sidebar survives the closed window and one dragged out never duplicates back. On
+// the record the stow rides the optional `hiddenEdges` field; records predating it load
+// unchanged and the reveal falls back to minting the default.
 export type HiddenEdgeState = Partial<Record<DockEdgeComponent, DockPane>>;
-/** v:2 -> v:3 migration container. */
+/** the nominal container px the v2 fraction -> px migration assumes. */
 const V2_NOMINAL_CONTAINER_PX = 1000;
 
-/** the closed-edge flags on a layout record. */
 function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) return [];
@@ -2364,11 +1956,9 @@ function validateClosedEdges(raw: unknown): DockEdgeComponent[] | undefined {
   );
 }
 
-/**
- * the stowed pane records' reader: every entry must validate as a pane node AND carry.
- * A corrupted entry DROPS, never the record (the stow is auxiliary state; failing the
- * whole layout over it would destroy the LIVE tree's record to save the hidden one).
- */
+/** the stowed pane records' reader: every entry must validate as a pane node carrying its
+ *  own edge marker. A corrupted entry DROPS, never the record - the stow is auxiliary, and
+ *  failing the whole layout over it would destroy the LIVE tree's record. */
 function validateHiddenEdges(
   raw: unknown,
   repairs?: string[],
@@ -2396,19 +1986,10 @@ function validateHiddenEdges(
   return out;
 }
 
-/**
- * the px shares one split's children hold against `containerPx`.
- * Fixed panes keep their px; every other child (a flexible pane, a nested split) takes
- * round(remaining * frac/sum of the flexible fractions) - the render's own share law,
- * so a recorded px re-derives the exact fractions it came from.: the fixed test is a
- * finite-number guard (isFixed: typeof number AND Number.isFinite), never an identity
- * check against null - a pane carrying fixed === undefined (or NaN) previously passed
- * `fixed !== null` and the emit returned the undefined raw, JSON turned it into a null
- * px entry, and the strict reader rejected the WHOLE record the writer itself produced
- * (layout reset on every reload).
- * This function must never emit a non-finite px; anything unreadable takes the flexible
- * branch.
- */
+/** the px shares one split's children hold against `containerPx`: fixed panes keep their px,
+ *  every other child takes round(remaining * frac / flexible-fraction sum) - the render's own
+ *  share law. The fixed test is a finite-number guard, never `!== null`: an undefined/NaN px
+ *  once reached disk as null and the strict reader rejected the record. Never emit non-finite. */
 export function splitPxShares(
   split: DockSplit,
   containerPx: number = V2_NOMINAL_CONTAINER_PX,
@@ -2445,7 +2026,7 @@ function recordTree(tree: DockNode, containerPx: number): RecordNode {
       return {
         kind: "pane", id: n.id, tabs: n.tabs, active: n.active, fixed: n.fixed,
         ...(n.edge ? { edge: n.edge } : {}),
-        // v0.14.4 the local split tree rides ITS OWN record with the same px-share.
+        // the local split tree rides its own record with the same px-share
         ...(n.grown ? { grown: walk(n.grown) } : {}),
       };
     }
@@ -2464,10 +2045,7 @@ export function serialize(
   tree: DockNode,
   closedEdges: readonly DockEdgeComponent[] = [],
   containerPx: number = V2_NOMINAL_CONTAINER_PX,
-  /**
-   * the closed shells' stowed panes.
-   * Omitted when empty: records that never stowed a pane keep today's exact shape.
-   */
+  /** the closed shells' stowed panes; omitted when empty so stow-free records keep their shape. */
   hiddenEdges?: HiddenEdgeState,
 ): string {
   const stowed = hiddenEdges && Object.keys(hiddenEdges).length
@@ -2490,11 +2068,7 @@ export interface LoadedLayout {
   hiddenEdges?: HiddenEdgeState;
 }
 
-/**
- * validates + parses a persisted layout.
- * Returns null for anything the loader cannot safely render (old/foreign/corrupt) so
- * callers migrate.
- */
+/** validates a persisted layout; null for anything the loader cannot safely render. */
 export function deserializeLayout(raw: string | null): LoadedLayout | null {
   if (!raw) return null;
   let parsed: unknown;
@@ -2518,12 +2092,10 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
   };
 }
 
-/** the plain tree-only read (every caller that does not care about the persisted. */
 export function deserialize(raw: string | null): DockNode | null {
   return deserializeLayout(raw)?.tree ?? null;
 }
 
-/** the px shares of a RAW split record -> fractions, or null when the shares cannot. */
 function fractionsFromPxShare(raw: unknown, width: number): number[] | null {
   const arr = Array.isArray(raw) ? (raw as unknown[]) : null;
   if (!arr || arr.length !== width) return null;
@@ -2570,9 +2142,7 @@ function validateNode(raw: unknown): DockNode | null {
       )
     )
       return null;
-    // a viewer payload present but unreadable rejects the whole record (the strict
-    // reader; it can only be writer bug or hand corruption - the tolerant path repairs
-    // instead)
+    // an unreadable viewer payload rejects the record: writer bug or hand corruption
     if (tab.viewer !== undefined && !validViewerRef(tab.viewer)) return null;
     tabs.push(
       typeof tab.sessionRef === "string" && tab.sessionRef
@@ -2589,7 +2159,7 @@ function validateNode(raw: unknown): DockNode | null {
   const active = typeof n.active === "number" && Number.isFinite(n.active)
     ? clamp(Math.trunc(n.active), 0, Math.max(0, tabs.length - 1))
     : 0;
-  // v0.14.4 the local split tree validates like any node.
+  // the local split tree validates like any node
   let grown: DockSplit | undefined;
   if (n.grown !== undefined) {
     const g = validateNode(n.grown);
@@ -2614,8 +2184,6 @@ function normalizeSizesFromRecord(raw: unknown, width: number): number[] | null 
   return normalizeSizes(width, sizes);
 }
 
-// the TOTAL deserializer ------------------------------
-
 const MAX_LAYOUT_DEPTH = 32;
 
 export interface ParsedLayout {
@@ -2626,10 +2194,7 @@ export interface ParsedLayout {
   repairs: string[];
 }
 
-/**
- * consumes ANY JSON shape and hands back a renderable tree - no throw path, no null
- * (the caller's `fallback` boots the default arrangement, ALWAYS receipted).
- */
+/** consumes ANY JSON shape, never throwing nor returning null: the fallback boots the default. */
 export function parseAnyLayout(raw: string | null, fallback: () => DockNode): ParsedLayout {
   if (!raw) {
     if (raw === null) return { tree: fallback(), version: 2, repairs: [] };
@@ -2784,7 +2349,6 @@ function tolerantNode(
   };
 }
 
-/** a split's fractions from whatever the record carries. */
 function tolerantSplitSizes(
   n: Record<string, unknown>,
   childCount: number,
@@ -2834,8 +2398,6 @@ function tolerantSplitSizes(
   return migrated;
 }
 
-// migration (first boot without a dock key) ------------------------------
-
 function readWidth(get: (k: string) => string | null, key: string): number | null {
   const raw = get(key);
   if (raw === null || raw === "") return null;
@@ -2843,7 +2405,6 @@ function readWidth(get: (k: string) => string | null, key: string): number | nul
   return Number.isFinite(n) && n >= MIN_PANE_PX ? n : null;
 }
 
-/** Seeds the tree from the pre-dock persisted pane state. */
 export function migrateLegacy(
   get: (k: string) => string | null,
 ): DockNode {
@@ -2862,7 +2423,6 @@ export function migrateLegacy(
     fixed: iw,
     edge: "right",
   };
-  // canvas C1: the fresh primary shell seats its CLASS.
   const primary: DockPane = {
     kind: "pane",
     id: nextNodeId(),
@@ -2894,20 +2454,15 @@ export function migrateLegacy(
   return root;
 }
 
-// store ------------------------------------------------------------
-
 import { shallowRef, watch, ref, type InjectionKey, type Ref } from "vue";
 
-/**
- * pure graft: replace the split node `replacement` (by id) inside `root` and return.
- * No id regeneration, no sibling churn - and no in-place mutation on the reactive tree
- * (structuredClone cannot touch Vue proxies; the tree stays a shallowRef of PLAIN data,
- * re-swapped on every op so the deep-watcher only ever sees fresh values).
- */
+/** pure graft: replace the split node `replacement` (by id) inside `root`. No id regeneration,
+ *  no sibling churn, no in-place mutation on the reactive tree - structuredClone cannot touch
+ *  Vue proxies, so the tree stays a shallowRef of PLAIN data re-swapped on every op. */
 export function graftSplit(root: DockNode, replacement: DockSplit): DockNode {
   if (isSplit(root) && root.id === replacement.id) return replacement;
   const copy = clone(root);
-  // v0.14.4 m4: a grown root's local splits graft too.
+  // a grown root's local splits graft too
   const walk = (n: DockSplit): boolean => {
     for (let i = 0; i < n.children.length; i++) {
       const c = n.children[i]!;
@@ -2924,7 +2479,6 @@ export function graftSplit(root: DockNode, replacement: DockSplit): DockNode {
   return isSplit(copy) && walk(copy) ? copy : root;
 }
 
-/** the round-trip gate's compare. */
 export function treeShapesMatch(a: DockNode, b: DockNode): boolean {
   if (isPane(a)) {
     if (!isPane(b)) return false;
@@ -2943,7 +2497,7 @@ export function treeShapesMatch(a: DockNode, b: DockNode): boolean {
       (a.fixed ?? null) === (b.fixed ?? null) &&
       (a.edge ?? undefined) === (b.edge ?? undefined) &&
       tabEq &&
-      // v0.14.4 the local split trees compare through the same walk.
+      // local split trees compare through the same walk
       (!!a.grown === !!b.grown) &&
       (!a.grown || !b.grown || treeShapesMatch(a.grown, b.grown))
     );
@@ -2969,10 +2523,8 @@ export interface DockApi {
   openTab: (paneId: string, tab: DockTab) => void;
   closeTab: (paneId: string, index: number) => void;
   moveTab: (fromPaneId: string, fromIndex: number, toPaneId: string, toIndex: number) => void;
-  /**
-   * the docking drop - release a dragged tab on a zone of another pane's body.
-   * Refusals are no-ops (shells don't split, zones never self-dock).
-   */
+  /** the docking drop - release a dragged tab on a zone of another pane's body; refusals
+   *  are no-ops. */
   dockDropToZone: (
     fromPaneId: string,
     fromIndex: number,
@@ -2981,63 +2533,35 @@ export interface DockApi {
   ) => void;
   seatOk: (component: DockComponentName, paneId: string) => boolean;
   zoneOf: (paneId: string) => PaneZone | null;
-  /**
-   * canvas C1 THE ROUTING LAW: the pane a session opens.
-   * A sidebar NEVER hosts a session, so a non-main preferred id falls through to the
-   * main column.
-   */
+/** THE ROUTING LAW: a sidebar NEVER hosts a session; a non-main id falls to the main column. */
   sessionPane: (preferred?: string | null) => string;
   undoLayout: () => boolean;
   beginResize: () => void;
-  /**
-   * card 4 - the dockable contract opener: singletons FOCUS their one instance when it
-   * lives (created | focused), multi goes through the app's chat opener instead - this
-   * must only be called for singletons / /
-   */
+/** the dockable contract opener: singletons FOCUS their one instance when it lives; multi goes
+ *  through the app's chat opener, so call this for singletons only. */
   openSingleton: (paneId: string, component: DockComponentName) => "created" | "focused";
   setSessionRef: (key: string, sessionRef: string | null) => void;
   closeSession: (sessionRef: string) => void;
-  /**
-   * open (or FOCUS) the viewer tab for `v` - a file path or skill name already shown
-   * anywhere focuses that tab (focus-reuse, never a duplicate); otherwise one mints
-   * into the ensured main pane, exactly the routing a session open takes.
-   */
+/** open (or FOCUS) the viewer tab for `v`: a file or skill already shown anywhere is focused,
+ *  never duplicated; otherwise one mints into the ensured main pane. */
   openViewer: (v: ViewerRef) => void;
   findChatTab: (key: string) => ChatTabLocation | null;
   firstChatTab: (sessionRef?: string) => ChatTabLocation | null;
-  /**
-   * the first DRAFT chat tab (no session binding) - the '+' new flow focuses it instead
-   * of minting a duplicate.
-   */
+  /** the first DRAFT chat tab - the '+' new flow focuses it instead of minting a duplicate. */
   firstDraftChatTab: () => ChatTabLocation | null;
   activeChatTab: () => ChatTabLocation | null;
   split: (paneId: string, direction: "row" | "column", side: "before" | "after") => void;
   remove: (paneId: string) => void;
   toggleEdge: (component: "sidebar" | "inspector", side: "before" | "after") => void;
   toggleBottom: () => void;
-  /**
-   * Endo's comment: the bottom shell's fullscreen view.
-   * Session-only (a reload never boots fullscreen).
-   */
+  /** the bottom shell's fullscreen view; session-only, a reload never boots fullscreen. */
   bottomFullscreen: Ref<boolean>;
   toggleBottomFullscreen: () => void;
   ensureMainPane: () => string;
-  /**
-   * whether the pane's X may remove it: pinned panes never (they host unclosable tabs)
-   * and the LAST MAIN pane never.
-   */
+  /** whether the pane's X may remove it: pinned panes never, and the LAST MAIN pane never. */
   canRemovePane: (paneId: string) => boolean;
-  /**
-   * whether `paneId` is a MAIN pane with no other main pane beside it.
-   * Pinned panes are never the last main pane (their tabs keep their own closable
-   * rules).
-   */
   isLastMainPane: (paneId: string) => boolean;
-  /**
-   * divider drag: measured start widths flow in on the first move event.
-   * Returns the drag's close intents for the caller to react to (the store itself
-   * already applies them to the tree).
-   */
+  /** divider drag; returns the drag's close intents, which the store already applied. */
   drag: (
     splitId: string,
     dividerIndex: number,
@@ -3045,76 +2569,57 @@ export interface DockApi {
     deltaPx: number,
     contentPx: number,
   ) => { collapsedPaneId: string | null };
-  /**
-   * the window-narrow give-way.
-   * While the content box `contentPx` cannot seat every fixed pane plus the flexible
-   * 320 floor, the secondary sidebar (inspector) collapses first, then the primary
-   * (sessions); each hide remembers the pane's width via the edge-px memory, so the
-   * menubar toggle restores exactly what the resize took.
-   * Page-lifetime like a drag-close - a wider window never re-reveals.
-   */
+  /** the window-narrow give-way: while `contentPx` cannot seat every fixed pane plus the
+   *  flexible floors, the inspector collapses first, then the sidebar; each hide remembers
+   *  its width so the toggle restores what the resize took. Never re-reveals. */
   narrowSqueeze: (contentPx: number) => void;
   revealRefused: Ref<"sidebar" | "inspector" | null>;
-  /**
-   * THE RUNTIME MODULE GATE.
-   * Idempotent, safe to call on every module-state change; the parked seats persist
-   * under MODULE_STASH_KEY.
-   */
+  /** THE RUNTIME MODULE GATE: idempotent, safe on every module-state change. */
   setModuleGate: (gate: ModuleGate) => void;
 }
 
 export const DOCK_API_KEY: InjectionKey<DockApi> = Symbol("omega-dock-api");
 
-// chat is multi-instance now.
 export const DOCK_CHAT_OPEN_KEY: InjectionKey<
   (paneId: string, sessionId: string | null) => void
 > = Symbol("omega-dock-chat-open");
-// the app resolves chat tab titles to their session label (sidebar
-// highlight follows the FOCUSED tab, so labels must read in the bar);
-// null falls back to the generic COMPONENT_TITLES entry
+// the app resolves chat tab titles to their session label (the bar follows the FOCUSED tab);
+// null falls back to the generic COMPONENT_TITLES entry.
 export const DOCK_TAB_TITLE_KEY: InjectionKey<(tab: DockTab) => string | null> =
   Symbol("omega-dock-tab-title");
 
-// The NEW-CONVERSATION DIM. The doors keep rendering - dimmed and disabled, never
-// removed - the same law the last-tab close X obeys (aria-disabled + tabindex -1, the
-// click still focuses the draft).
+// The NEW-CONVERSATION DIM: the doors keep rendering, dimmed and disabled, never removed -
+// aria-disabled + tabindex -1, the click still focuses the draft.
 export const DOCK_DRAFT_FOCUS_KEY: InjectionKey<Ref<boolean>> = Symbol(
   "omega-dock-draft-focus",
 );
 
-/** the persisted reopen sizes for edge panes (page-lifetime memory. */
 export const EDGE_DEFAULT_PX: Record<"sidebar" | "inspector", number> = {
   sidebar: 264,
   inspector: 264,
 };
 
 export function createDock(store: Storage): DockApi {
-  // the persisted VERSION rides the load.
   const stored = store.getItem(DOCK_LAYOUT_KEY);
   const loaded = parseAnyLayout(stored, () => migrateLegacy((k) => store.getItem(k)));
   const closedEdges: DockEdgeComponent[] =
     loaded?.closedEdges ??
     (store.getItem(BOTTOM_CLOSED_KEY) === "1" ? ["bottom"] : []);
   store.removeItem(BOTTOM_CLOSED_KEY);
-  // the closed shells' stowed panes ride the record. Chat-tab keys in the stows must
-  // seed the tab-key counter too (nextTabKey never mints a key a hidden pane already
-  // holds).
+  // stow chat-tab keys must seed the tab counter: nextTabKey never mints a key a stow holds
   const hiddenState: HiddenEdgeState = {};
-  // the module gate's parked seats. The stash is its own record (MODULE_STASH_KEY), so
-  // the layout record never carries a ghost pane; the shell applies the gate below
-  // (setModuleGate) as soon as it has the runtime facts.
+  // the gate's parked seats ride MODULE_STASH_KEY, so the layout record never carries a ghost
   let parkedTabs: ParkedTab[] = parseParkedTabs(store.getItem(MODULE_STASH_KEY));
   let liveGate: ModuleGate = EMPTY_MODULE_GATE;
   let revealPending: "sidebar" | "inspector" | null = null;
-  // the latest pane-area px the resize watcher measured - the toggle's fit-check reads
-  // it (the reveal refuses when the window cannot seat the pane).
+  // the latest pane-area px the resize watcher measured - the reveal's fit-check reads it
   let lastContentPx: number | null = null;
   const revealRefused = ref<"sidebar" | "inspector" | null>(null);
   if (loaded?.hiddenEdges) {
     for (const comp of Object.keys(loaded.hiddenEdges) as DockEdgeComponent[]) {
       const pane = loaded.hiddenEdges[comp];
-      // canvas C2 (ONE-TIME): a sidebar stow carrying a LOCAL SPLIT TREE is a record of
-      // the deleted split-sidebar model - it never comes back.
+      // (ONE-TIME) a sidebar stow carrying a LOCAL SPLIT TREE records the deleted split-sidebar
+      // model - it never comes back
       if (loaded.version < 4 && (comp === "sidebar" || comp === "inspector") && pane?.grown) continue;
       if (pane) {
         pane.tabs = pane.tabs.filter((t) => t.component !== "settings");
@@ -3129,20 +2634,15 @@ export function createDock(store: Storage): DockApi {
   } else {
     initial = expandInspectorTabs(initial);
   }
-  // sync the id seed BEFORE boot repair mints panes. The seed is per-page (0 at boot):
-  // repair first + sync after let ensurePinnedEdges mint a fresh "n1" while the loaded
-  // tree still holds its own old "n1" - duplicate ids, and every later id-keyed op (the
-  // divider intents' prunePane, canRemovePane, focus lookups) acts on BOTH panes.
+  // sync the id seed BEFORE boot repair mints panes: repair-first let ensurePinnedEdges mint
+  // a fresh "n1" beside the loaded tree's own, and every later id-keyed op would act on both.
   syncIdSeed(initial);
   initial = rehomeInsightsTab(initial);
-  // settings' home moved the OTHER way.
   initial = retireInspectorSettings(initial);
-  // canvas C2 THE SHAPE LAW (ONE-TIME). Both sidebars reset to the clean default HERE -
-  // before the seat repair, so restoreSeatSet re-seats the class members in the reset
-  // shells on this same boot, and the boot's own re-persist writes v4 so the reset
-  // never runs again. The markers derive first: a v1-era record has no edge markers at
-  // all, and the reset must see the shells the repair is about to heal
-  // (deriveEdgeMarkers is idempotent).
+  // THE SHAPE LAW (ONE-TIME): derive the markers first (idempotent - a v1 record has none, and
+  // the reset must see the shells the repair is about to heal), then reset both sidebars BEFORE
+  // the seat repair so restoreSeatSet re-seats the class members in the reset shells on this
+  // same boot; the v4 re-persist below keeps the reset from running again.
   if (loaded.version < 4) {
     const marked = deriveEdgeMarkers(initial, closedEdges);
     const reset = resetSidebarShape(marked);
@@ -3153,17 +2653,15 @@ export function createDock(store: Storage): DockApi {
     }
     initial = reset;
   }
-  // the CLOSED shells' stows count as the tree's composition while they sit hidden: the
-  // missing-set repair never re-seats them
+  // the CLOSED shells' stows count as the tree's composition while they sit hidden
   const stowedComponents = Object.keys(hiddenState) as DockEdgeComponent[];
   initial = ensurePinnedEdges(
     initial,
     closedEdges,
     stowedComponents.flatMap((c) => (hiddenState[c]?.tabs ?? []).map((t) => t.component)),
   );
-  // the bottom panel is grafted (or left closed) AFTER the sidebars repair and BEFORE
-  // chat keys - the panel hosts no chat tabs, and its id must seed above the loaded
-  // tree's max (syncIdSeed ran once)
+  // the bottom panel is grafted AFTER the sidebars repair - it hosts no chat tabs, and its id
+  // must seed above the loaded tree's max (syncIdSeed ran once)
   initial = ensureBottomPanel(initial, closedEdges);
   const syncedBottom = syncBottomHostTabs(initial);
   if (syncedBottom !== initial) {
@@ -3173,10 +2671,7 @@ export function createDock(store: Storage): DockApi {
     initial = syncedBottom;
   }
   initial = assignChatKeys(initial);
-  // (THE LOCKED LAST TAB): the boot repairs the two dead pane states the retired
-  // placeholder law can leave on disk - a persisted never-zero seat and a zero-tab pane
-  // from a record older still. Both land on a fresh new-chat tab: the chat the user
-  // closed comes back as a chat, never as a blank "New Tab" body.
+  // a fresh chat comes back for either dead pane state, never a blank "New Tab" body
   const seated = repairPaneSeats(initial);
   if (seated !== initial) {
     loaded.repairs.push(
@@ -3184,9 +2679,7 @@ export function createDock(store: Storage): DockApi {
     );
     initial = seated;
   }
-  // v0.14.4 BACKUP LAW: a REPAIRED record copies its raw form ONCE, BEFORE the first
-  // auto-persist - the repair chain must never be able to rewrite history, so the
-  // boot's own re-persist happens.
+  // BACKUP LAW: the repaired record's raw form is copied ONCE, before the auto-persist below
   if (stored && loaded.repairs.length > 0) {
     store.setItem(DOCK_LAYOUT_BAK_KEY, stored);
   }
@@ -3213,15 +2706,9 @@ export function createDock(store: Storage): DockApi {
     { deep: true },
   );
 
-  /**
-   * apply the runtime module gate.
-   * Three passes, in order, because a re-seat must not be parked in the same tick: 1.
-   * park them in the CLOSED shells' stows too - a hidden inspector must not reveal a
-   * dead tab later (the settings-seat precedent); 3.
-   * A park that empties a pane is left to repairPaneSeats, the same never-blank law
-   * every other boot repair obeys.
-   * The stash writes on every call (it is tiny and idempotent).
-   */
+  /** apply the runtime module gate: park gated tabs out of the tree AND out of the closed
+   *  shells' stows (a hidden inspector must not reveal a dead tab later), then re-seat what
+   *  the live modules host. A park that empties a pane is left to repairPaneSeats. */
   const syncModuleGate = (gate: ModuleGate) => {
     liveGate = gate;
     let t = tree.value;
@@ -3243,7 +2730,6 @@ export function createDock(store: Storage): DockApi {
     store.setItem(MODULE_STASH_KEY, JSON.stringify(parkedTabs));
   };
 
-  /** the closed-edge marking helper, idempotent. */
   const setClosed = (comp: DockEdgeComponent, closed: boolean) => {
     const at = closedEdges.indexOf(comp);
     if (closed && at < 0) closedEdges.push(comp);
@@ -3251,14 +2737,10 @@ export function createDock(store: Storage): DockApi {
   };
 
   const has = (component: DockComponentName): boolean =>
-    // singleton semantics: exists anywhere, active tab or not - findComponentPane
-    // (active-only) would under-report a singleton parked as an inactive tab and let
-    // toggles duplicate it
+    // singleton semantics: exists anywhere, active or not - an active-only read would duplicate
     findComponentTab(tree.value, component) !== null;
 
-  // the undo ring ------------------------------------- Every committed LAYOUT op.
-  // Content ops (tab opens/closes, focus, session refs) never enter the ring - except a
-  // close that MERGES (the pane census dropped), which is structural op.
+  // the undo ring: every committed LAYOUT op - content ops except a close that MERGES
   const UNDO_RING_MAX = 20;
   const undoRing: string[] = [];
   const undoPush = (t: DockNode) => {
@@ -3267,17 +2749,12 @@ export function createDock(store: Storage): DockApi {
     undoRing.push(s);
     if (undoRing.length > UNDO_RING_MAX) undoRing.shift();
   };
-  /**
-   * swap in a NEW tree from a layout op: no-op trees contribute no snapshot (a refused
-   * drop / vanished target never rings) / /
-   */
+  /** swap in a NEW tree from a layout op; a no-op contributes no snapshot. */
   const applyLayout = (before: DockNode, next: DockNode) => {
     if (next === before) return;
     undoPush(before);
     tree.value = next;
-    // belt+suspenders: any layout mutation ends an armed gesture - the record's
-    // geometry and indices are pre-mutation; the record must never outlive its event
-    // (drops commit here; undo and reveal ops run through the same funnel).
+    // any layout mutation ends an armed gesture: the record must never outlive its event
     endGesture();
   };
   const undoLayout = (): boolean => {
@@ -3296,8 +2773,7 @@ export function createDock(store: Storage): DockApi {
       Object.assign(hiddenState, rec.hiddenEdges);
     }
     tree.value = restored;
-    // a snapshot predates the gate. Re-apply the live gate so undo can never resurrect
-    // a chip whose module is off.
+    // a snapshot predates the gate; re-apply it so undo never resurrects a parked chip
     syncModuleGate(liveGate);
     endGesture(); // undo mid-gesture: the record's indices are pre-restore
     return true;
@@ -3354,9 +2830,7 @@ export function createDock(store: Storage): DockApi {
     tree.value = res.tree;
   };
   const split = (paneId: string, direction: "row" | "column", side: "before" | "after") => {
-    // v0.14.4 /3: the direction/depth law gates the menu path too (sidebars refuse row
-    // splits, tight roots refuse past depth 2) - a refused split is a no-op, exactly
-    // like the refused drop
+    // the direction/depth law gates the menu path too: a refused split is a no-op
     if (splitLawRefusal(tree.value, paneId, direction)) return;
     applyLayout(tree.value, splitPane(tree.value, paneId, direction, side));
   };
@@ -3373,16 +2847,14 @@ export function createDock(store: Storage): DockApi {
   const canRemovePane = (paneId: string): boolean => {
     const pane = findPane(tree.value, paneId);
     if (!pane) return false;
-    // v0.14.4 a leaf inside a grown root merges away (the root unwinds, never dies).
+    // a leaf inside a grown root merges away (the root unwinds, never dies)
     if (rootPaneOf(tree.value, paneId)) return true;
     return !isPinnedPane(pane) && mainPaneCount(tree.value) > 1;
   };
-  // canvas C1: the live drop gate reads the class law over the pane's zone;
-  // the seat map decides, never a per-view conditional
   const seatOk = (component: DockComponentName, paneId: string): boolean =>
     seatRefusal(tree.value, component, paneId) === null;
   const zoneOf = (paneId: string): PaneZone | null => paneZone(tree.value, paneId);
-  // canvas C1: THE ROUTING LAW - a session opens in the main column, never.
+  // THE ROUTING LAW: a session opens in the main column, never in a sidebar
   const sessionPane = (preferred?: string | null): string => {
     if (preferred && paneZone(tree.value, preferred) === "main") return preferred;
     return firstChatMainPaneId(tree.value) ?? ensureMainPane();
@@ -3401,10 +2873,7 @@ export function createDock(store: Storage): DockApi {
     const node = findSplit(tree.value, splitId);
     if (!node) return { collapsedPaneId: null };
     const d = dragSplitDivider(node, dividerIndex, startPx, deltaPx, contentPx);
-    // the divider close (drag-past-min) hides - the intent prunes the tree directly
-    // (prunePane is the same body hideEdgePane runs; a pinned pane hides, it is never
-    // unpinned).: the close persists now (the closed-edge set rides the record) - a
-    // reload restores the visibility the user left, exactly like the menubar toggle.
+    // the divider close hides and persists: the intent prunes, prunePane is hideEdgePane's body
     if (d.split !== node) tree.value = graftSplit(tree.value, d.split);
     for (const id of [d.collapsedPaneId]) {
       if (!id) continue;
@@ -3457,7 +2926,7 @@ export function createDock(store: Storage): DockApi {
 
   const toggleBottom = () => {
     if (findEdgePane(tree.value, "bottom")) {
-      // v0.14.4 the pre-hide snapshot first (closed set intact)
+      // the pre-hide snapshot first (closed set intact)
       undoPush(tree.value);
       const pane = findEdgePane(tree.value, "bottom");
       if (pane) hiddenState.bottom = clone(pane);
@@ -3468,42 +2937,31 @@ export function createDock(store: Storage): DockApi {
       const stowed = hiddenState.bottom ?? null;
       delete hiddenState.bottom;
       applyLayout(tree.value, revealBottomPanel(tree.value, store, stowed));
-      // (round 2): the same reintroduction class as the edge reveal above - the
-      // restacked bottom strip re-runs the gate, or a seat parked while the panel was
-      // closed never comes back.
+      // the restacked strip re-runs the gate, or a seat parked while closed never returns
       syncModuleGate(liveGate);
     }
   };
 
-  // Endo's comment: the bottom shell's FULLSCREEN toggle - the pane's tabbar button
-  // flips it.: the band leaves the flow (position absolute over the pane-area between
-  // the sidebar insets) and the column keeps rendering its split children - the main
-  // row above stays visible with BOTH sidebars live and self-toggled ("the sidebars
-  // never hide - Endo"), the sidebars' resize dividers stay visible/draggable, and the
-  // row's chat sits under the band. Session-only on purpose: a reload never boots into
-  // fullscreen (the stored height + the render clamp keep the divider grabbable;
-  // fullscreen is a view, not a layout state).
+  // the bottom shell's FULLSCREEN toggle: the band leaves the flow (absolute over the pane-area
+  // between the sidebar insets) and the column keeps rendering its split children, so the main row
+  // and both sidebars stay live. Session-only: a reload never boots into fullscreen.
   const bottomFullscreen = ref(false);
   const toggleBottomFullscreen = () => {
     bottomFullscreen.value = !bottomFullscreen.value;
   };
 
-  // the window-narrow give-way.
-  // Each collapsed edge pane's width goes through the same memory the menubar toggle
-  // uses.: the give-way's closure persists like every other hide (a reload never
-  // re-reveals a pane the user's own state says is closed).
+  // the give-way's width goes through the toggle's own memory, and the closure persists
   const narrowSqueeze = (contentPx: number) => {
     lastContentPx = contentPx;
     const justRevealed = revealPending;
     revealPending = null;
     const res = narrowGiveWay(tree.value, contentPx, justRevealed);
     if (!res.hidden.length) return;
-    // v0.14.4 the pre-give-way snapshot first.
+    // the pre-give-way snapshot first
     undoPush(tree.value);
     for (const h of res.hidden) {
       rememberEdgePx(store, h.component, h.px);
-      // the give-way is a hide - the pane's record stows like the menubar toggle's, the
-      // toggle's reopen restores exactly it
+      // a hide like the menubar toggle's: the stow is what the reopen restores
       hiddenState[h.component] = h.pane;
       setClosed(h.component, true);
     }

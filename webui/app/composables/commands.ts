@@ -1,34 +1,25 @@
-// omega webui: the / command palette and @ mention picker. Slash commands run LOCALLY
-// and never hit the agent; the palette lists the webui's shell commands, the extension
-// command registry (ctx.Commands via GET /commands) and skills as /<skill-name>.
-// @-mention expansion itself is SERVER-SIDE on the /chat submit path
-// (core.ExpandAtMentions) - the picker here only helps TYPE the tokens; it never reads
-// or expands files.
-
-// palette model
+// the / command palette and @ mention picker. Slash commands run LOCALLY and never hit the
+// agent; the palette lists the webui's shell commands, the extension registry (GET
+// /commands) and skills as /<name>. @-mention expansion is SERVER-SIDE on the /chat submit
+// path (core.ExpandAtMentions) - this picker only helps TYPE the tokens.
 
 export interface PaletteItem {
   name: string;
   description: string;
-  // shell = webui-native local action; extension = a module's registered command
-  // (dispatched server-side, never the agent); skill = content injection on the next
-  // send; file/session = @-mention inserts; dir is the @ path list's drill row -
-  // picking it never completes a token, it opens the folder's own list
+  // shell = local action; extension = a module's registered command (dispatched
+  // server-side); skill = content injection on the next send; dir is the @ drill row,
+  // which opens the folder's list instead of completing a token
   kind: "shell" | "extension" | "skill" | "file" | "dir" | "session";
 }
 
-// The one set the ChatTab + host use to route a "/" draft.
-
-// The webui's shell set: /exit is deliberately absent (nothing to quit),.
+// the webui's shell set: /exit is deliberately absent (nothing to quit)
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
   { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
   { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
   { name: "/fork", description: "aim the next send to continue from the newest response", kind: "shell" },
-  // card t_8ad7ab33: /help is a REFERENCE, not a notice - it opens the
-  // command palette (the shell's searchable command list) and answers
-  // with one line. The description points there, so the reference and
-  // the row never disagree.
+  // /help opens the command palette and answers with one line; the description points
+  // there, so the reference and the row never disagree.
   { name: "/help", description: "open the command palette - every command, searchable", kind: "shell" },
   { name: "/new", description: "start a new chat tab", kind: "shell" },
   { name: "/panels", description: "open the canvas panels tab", kind: "shell" },
@@ -38,7 +29,6 @@ export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/variant", description: "show the response variants on the active path", kind: "shell" },
 ];
 
-// paletteCommands assembles the slash list.
 export function paletteCommands(
   extensions: { name: string; description?: string }[],
   skills: { name: string; description: string }[],
@@ -61,7 +51,7 @@ export function paletteCommands(
 // The one set the ChatTab + host use to route a "/" draft.
 export const SHELL_COMMAND_NAMES = new Set(WEBUI_SHELL_COMMANDS.map((c) => c.name));
 
-// filterCommands: a case-insensitive substring over the name AND the description.
+// case-insensitive substring over the name AND the description
 export function filterCommands(query: string, items: PaletteItem[]): PaletteItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
@@ -70,9 +60,7 @@ export function filterCommands(query: string, items: PaletteItem[]): PaletteItem
   );
 }
 
-// the @ mention token
-
-// MentionQuery at a caret: active when a token like "@.".
+// MentionQuery at a caret: active when a token like "@." runs to the caret
 export interface MentionQuery {
   active: boolean;
   token: string;
@@ -85,7 +73,7 @@ export function mentionQueryAt(draft: string, caret: number): MentionQuery {
   return { active: true, token: upto.slice(start) };
 }
 
-// MentionPrefix classifies a mention token.
+// MentionPrefix classifies a mention token
 export type MentionPrefix = "" | "session:" | "skill:";
 
 export function mentionPrefixOf(token: string): MentionPrefix {
@@ -95,13 +83,12 @@ export function mentionPrefixOf(token: string): MentionPrefix {
   return "";
 }
 
-// pickList classifies the mention dropdown rows for a token.
 export function pickList(token: string): "files" | "sessions" | "skills" {
   return mentionPrefixOf(token).slice(0, -1) as "files" | "sessions" | "skills";
 }
 
-// replaceMentionToken writes a completed mention back into the draft at the caret.
-// Returns the new draft; the caller moves the caret to start + insertion.length.
+// replaceMentionToken writes a completed mention back at the caret; the caller moves the
+// caret to start + insertion.length.
 export function replaceMentionToken(
   draft: string,
   caret: number,
@@ -119,12 +106,8 @@ export function replaceMentionToken(
   };
 }
 
-// the / slash token
-
-// SlashQuery at a caret: active when the caret sits inside a token that starts with "/"
-// and runs back to a word boundary (whitespace, an open paren, or the text start) - the
-// draft's leading word is just the boundary-free case, so a leading slash behaves
-// exactly.
+// SlashQuery at a caret: active inside a token that starts with "/" and runs back to a word
+// boundary (whitespace, an open paren, or the text start).
 export interface SlashQuery {
   active: boolean;
   token: string;
@@ -137,8 +120,8 @@ export function slashTokenAt(draft: string, caret: number): SlashQuery {
   return { active: true, token: m[2] ?? "" };
 }
 
-// replaceSlashToken writes a completed command back into the draft at the caret.
-// Returns the new draft; the caller moves the caret to start + insertion.length.
+// replaceSlashToken writes a completed command back at the caret; the caller moves the
+// caret to start + insertion.length.
 export function replaceSlashToken(
   draft: string,
   caret: number,
@@ -162,14 +145,12 @@ export function replaceSlashToken(
   return { draft, caret };
 }
 
-// clampIndex is the only arithmetic the palette keyboard nav does.
+// the only arithmetic the palette keyboard nav does
 export function clampIndex(active: number, delta: number, len: number): number {
   if (len <= 0) return -1;
   if (active < 0) return delta < 0 ? len - 1 : 0;
   return (active + delta + len) % len;
 }
-
-// the wire (production shapes; fetch happens at the components)
 
 export interface PaletteExtensionCommand {
   name: string;
@@ -177,7 +158,7 @@ export interface PaletteExtensionCommand {
   args?: string[];
 }
 
-// CommandDispatchWire is POST /commands/dispatch's answer.
+// POST /commands/dispatch's answer
 export interface CommandDispatchWire {
   kind: "command" | "skill";
   text?: string;
@@ -197,7 +178,7 @@ export async function fetchPaletteSkills(): Promise<{ name: string; description:
   return r.json();
 }
 
-// dispatchCommand POSTs one extension command (or /<skill-name>).
+// POSTs one extension command (or /<skill-name>) and returns its dispatch answer
 export async function dispatchCommand(
   name: string,
   args = "",

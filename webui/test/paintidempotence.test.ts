@@ -1,10 +1,10 @@
-// omega webui: the PAINT-WRITE LAW (card t_a356fcc7).
+// omega webui: the PAINT-WRITE LAW.
 //
 // The chat pane paints from ONE cached item per transcript row: the canvas
 // paint (createCanvasTranscript.apply) does NOT build fresh objects, it
 // rewrites its cached, REACTIVE rows in place, because identity is what
 // keeps the meters, the folds and the keyed v-for steady across a stream
-// (t_494639c8 / t_078a2c35). That makes every assignment inside a paint a
+//. That makes every assignment inside a paint a
 // reactive write on the objects the paint just handed out.
 //
 // The law this file pins: A PAINT OF AN UNCHANGED PAYLOAD WRITES NOTHING
@@ -14,7 +14,7 @@
 // re-arms the paint it just came from. Vue's production build has no
 // recursive-update guard: the flush loop never drains, the main thread is
 // pinned, clicks do nothing, and a reload re-enters the same spin (his
-// 2026-11-18 report: the approval gate never painted, only a fresh tab
+// report: the approval gate never painted, only a fresh tab
 // recovered).
 //
 // Two writes were that shape and both are pinned here:

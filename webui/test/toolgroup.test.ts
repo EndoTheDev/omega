@@ -167,7 +167,7 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   const g = src("components/chat/ToolGroup.vue");
   assert.match(g, /<details\s+ref="el"/);
   assert.match(g, /@click="onSummaryClick"/);
-  // the manual pin is STORED on the tab's view record (card t_15572849):
+  // the manual pin is STORED on the tab's view record:
   // the click records the post-toggle state against the group's durable
   // address, and applyAuto applies the pin (never recomputes over it)
   assert.match(g, /rememberPin\(!el\.value\.open\)/);

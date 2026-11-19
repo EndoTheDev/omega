@@ -1,4 +1,3 @@
-// omega webui: TYPED MODEL PICKERS' catalog.
 import { ref } from "vue";
 import { fetchModels, type ModelProviderSection } from "./omega.ts";
 
@@ -8,11 +7,9 @@ export interface ModelEntry {
   capabilities: string[];
 }
 
-// The decision family (System One).
 export const KNOWN_DECISION_MODELS = ["clef", "clef-flash", "nimble", "tev1"];
 
-// Vision families for listings that answer without capabilities.
-// Extend here when the wire does not say, never guess per-slot in the components.
+// Vision families, curated: extend here, never guess per-slot in the components.
 export const KNOWN_VISION_MODELS = [
   "gemma3",
   "gemma4",
@@ -21,14 +18,12 @@ export const KNOWN_VISION_MODELS = [
   "minicpm-v",
 ];
 
-// familyMatch: curated entries name FAMILIES, not exact wires - the qualifier (":27b")
-// and the variant tag ("-flash") never break the match.
+// familyMatch: curated entries name FAMILIES, not exact wires (":27b", "-flash" both match)
 const familyMatch = (name: string, family: string) =>
   name === family ||
   name.startsWith(family + ":") ||
   name.startsWith(family + "-");
 
-// effectiveCapabilities: the model's flags after the curated fallback.
 export function effectiveCapabilities(
   name: string,
   wire: string[] | null | undefined,
@@ -41,7 +36,6 @@ export function effectiveCapabilities(
   return [...caps];
 }
 
-// filterModelEntries: the slot rules.
 export function filterModelEntries(
   entries: ModelEntry[],
   filter: ModelFilter,
@@ -53,12 +47,9 @@ export function filterModelEntries(
   return entries;
 }
 
-// the auxiliary "default" entry
-
-// AUX_DEFAULT_VALUE is the sentinel an auxiliary model knob persists for "follow.
+// AUX_DEFAULT_VALUE is the sentinel an auxiliary model knob persists for "follow the chat".
 export const AUX_DEFAULT_VALUE = "default";
 
-// withAuxDefault prepends the "default" entry to a model picker's option list.
 export function withAuxDefault(
   options: { value: string; label: string }[],
   enabled: boolean,
@@ -68,13 +59,9 @@ export function withAuxDefault(
   return [{ value: AUX_DEFAULT_VALUE, label }, ...options];
 }
 
-// when a picker must fall back to free text
-
-// pickerNeedsFreeText: the ONE rule that decides whether a model picker renders.
-// Count only the NAMED models: the aux "default" sentinel is a rendering entry, not a
-// model, so a knob that offers it must still degrade to free text when the filtered
-// catalog matched nothing - otherwise the escape hatch (type a model name) disappears
-// behind a one-item dead dropdown.
+// pickerNeedsFreeText is the ONE rule for whether a model picker degrades to free text.
+// Count only NAMED models: the aux "default" sentinel is a rendering entry, not a model, so
+// a knob offering it must still degrade when the filtered catalog matched nothing.
 export function pickerNeedsFreeText(
   namedCount: number,
   loading: boolean,
@@ -84,12 +71,8 @@ export function pickerNeedsFreeText(
   return !loading && namedCount === 0;
 }
 
-// a filtered slot's DISQUALIFIER
-
-// slotRejectReason says why a model may not be picked in a filtered slot, or null. The
-// settings pickers render a rejected row DISABLED WITH THIS REASON instead of dropping
-// it: the catalog must read complete, and an operator can see that a model exists and
-// why the knob refuses it. An empty filter (chat slots, the main model) never rejects.
+// slotRejectReason: why a model may not be picked in a filtered slot, or null. Pickers render
+// a rejected row DISABLED with this reason, so the catalog reads complete.
 export function slotRejectReason(
   filter: ModelFilter,
   model: string,
@@ -104,21 +87,12 @@ export function slotRejectReason(
   return null;
 }
 
-// the value a knob PERSISTS
-
-// knobModelValue maps the picker's emit onto the value a settings knob
-// stores. The word "default" carries TWO meanings here and they stay
-// apart: the composer grammar's "default:model" addresses the BASE
-// PROVIDER's section, while the aux inherit word "default"
-// (AUX_DEFAULT_VALUE) means "follow the model the chat runs" - a literal
-// the pinned inherit row is the only source.
-// slot knobs (compaction, summarizer, curator, approval) persist the
-//     chat grammar VERBATIM: "instance:model" / "default:model" - the
-//     server resolves them on its slot lane.
-// every other model knob persists a BARE model name: vision_model,
-//     title_model and provider.model_name feed a provider directly, so a
-//     section prefix is never part of the value. An inherited "default"
-//     rides through untouched and is never produced by a section pick.
+// knobModelValue maps the picker's emit onto the value a settings knob stores. The word
+// "default" carries TWO meanings: the chat grammar's "default:model" addresses the BASE
+// PROVIDER section, while the aux inherit word "default" (AUX_DEFAULT_VALUE) means "follow
+// the chat's model". Slot knobs persist the chat grammar VERBATIM; every other model knob
+// persists a BARE model name, because vision_model, title_model and provider.model_name
+// feed a provider directly.
 export function knobModelValue(
   raw: string,
   slot: boolean,
@@ -136,8 +110,7 @@ export function knobModelValue(
   return raw;
 }
 
-// the shared catalog state (one fetch per settings open)
-
+// the shared catalog state, one fetch per settings open
 export interface ModelCatalogState {
   /** null until a fetch answers; null + error = the list never landed */
   entries: ModelEntry[] | null;
@@ -154,9 +127,9 @@ const state = ref<ModelCatalogState>({
 });
 let inflight: Promise<void> | null = null;
 
-// refreshModelCatalog replaces the shared list with a fresh /models answer. On failure
-// the error lands in state and entries stay null - the fields degrade to text entry
-// with the error as the hint, never a silent dead dropdown.
+// refreshModelCatalog replaces the shared list with a fresh /models answer. On failure the
+// error lands in state and entries stay null, so fields degrade to text entry with the
+// error as the hint.
 export function refreshModelCatalog() {
   if (inflight) return;
   state.value = { entries: null, error: null, loading: true, sections: null };

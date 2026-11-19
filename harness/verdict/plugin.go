@@ -7,9 +7,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin mounts the verdicts seam and its surfaces. The hub is built once and shared by
-// the tool (the blocking Ask), the HTTP channel (the answer POSTs), and the command
-// surface (the /verdict command) - that one object is the single-answer race.
+// Plugin mounts the verdicts seam and its surfaces. The hub is built once and shared by the
+// tool (the blocking Ask), the HTTP channel (the answer POSTs) and the /verdict command -
+// that one object is the single-answer race.
 type Plugin struct {
 	hub    *Hub
 	routes *Routes
@@ -25,29 +25,25 @@ func (p *Plugin) Description() string {
 	return "verdict cards: the request action hard-pauses a turn until the user answers by click or type"
 }
 
-// Provides: verdicts (exclusive. Requires store and logger (the hub captures the logger
-// offer at Mount) - any host mounting this plugin must provide both seams; buildPlugins
-// always does.: mount order is declared data, not list position.
 func (p *Plugin) ConfigKey() string { return "" }
 
+// Provides: verdicts (exclusive) plus the tools and prompt sections this capsule ships.
+// Requires store and logger (the hub captures the logger offer at Mount).
 func (p *Plugin) Provides() []string { return []string{"verdicts", "tools", "prompt_sections"} }
 func (p *Plugin) Requires() []string { return []string{"store", "logger"} }
 
-// MountWithAPI builds the hub from the seams the mount reads in place.
-// Capsule posture: this registration is the module's whole surface - the seam, the
-// blocking verdict tool, the /verdict command, the /verdicts REST routes, and the
-// Verdict Cards prompt section all ship from here, and the module ships nothing else.
-// The CLI loop's busy-time answer path reads the same seam and is nil-guarded: no
-// mount, no answering.
+// MountWithAPI builds the hub from the seams the mount reads in place. Capsule posture:
+// this registration is the module's whole surface - the seam, the blocking verdict tool,
+// the /verdict command, the /verdicts REST routes and the prompt section. The CLI loop's
+// busy-time answer path reads the same seam and is nil-guarded: no mount, no answering.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	p.hub = NewHub(seam[agent.StoreProvider](ctx, "store"), seam[agent.LoggerProvider](ctx, "logger"))
 	p.routes = newRoutes(p.hub)
 	if err := api.Offer("verdicts", p.hub); err != nil {
 		return err
 	}
-	// The answer surface is the capsule's REST face: the bell's pending listing + the
-	// answering POST mount and die with the hub (registered here, no longer a shell
-	// seam-nil guard in agent/api).
+	// The answer surface is the capsule's REST face: the bell's pending listing and the
+	// answering POST mount and die with the hub.
 	for _, r := range []struct {
 		pattern string
 		h       func(http.ResponseWriter, *http.Request)
@@ -86,5 +82,5 @@ func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSecti
 	}
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule as a module capsule.
 func (p *Plugin) Toggleable() bool { return true }

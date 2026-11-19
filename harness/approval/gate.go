@@ -12,14 +12,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The gate (design Q3/Q11/Q13).
+// Gate is the approval gate: every tool call passes through it.
 type Gate struct {
 	cfgMu sync.RWMutex
 	cfg   Config
 
-	// verdicts/notifications are the consumer-side faces (part 3 seam constitution): local
-	// interfaces with just what the gate calls, resolved live from the universal registry,
-	// nil-safe by the classic law. The owner capsules never know this gate exists.
+	// verdicts/notifications are consumer-side faces: local interfaces with just what the
+	// gate calls, resolved live from the registry and nil-safe. The owner capsules never
+	// know this gate exists.
 	verdicts      func() verdictHub     // read live: the service stays the source of truth
 	notifications func() finishedThings // read live; nil-safe
 	logger        agent.LoggerProvider
@@ -30,8 +30,7 @@ type Gate struct {
 
 // verdictHub is the consumer-side face of the verdict capsules question cards.
 type verdictHub interface {
-	// Ask registers the card and BLOCKS for the answer (see the
-	// implementing capsule for the race and expiry law).
+	// Ask registers the card and BLOCKS for the answer (the capsule owns the expiry law).
 	Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionAnswer, error)
 	// Answer records the user's answer to one pending card; FIRST answer wins.
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)
@@ -49,10 +48,10 @@ const (
 	originSubagent  = "delegate"
 )
 
-// NewGate builds the gate. verdicts and notifications are closures over the live
-// Context (a seam rewire is visible at ask time); the logger may be nil. Smart mode
-// without a reviewer host/model still mounts - every gated command then fails closed
-// into escalation, honest about a dead review rather than silently open.
+// NewGate builds the gate. verdicts and notifications are closures over the live Context
+// (a seam rewire is visible at ask time); the logger may be nil. Smart mode without a
+// reviewer host/model still mounts - every gated command then fails closed into
+// escalation, honest about a dead review rather than silently open.
 func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finishedThings, logger agent.LoggerProvider) *Gate {
 	return &Gate{
 		cfg:           cfg,
@@ -72,8 +71,7 @@ func (g *Gate) SetConfig(cfg Config) {
 	g.cfg = cfg
 }
 
-// config returns one consistent copy of the live config; callers read
-// fields off the copy, never off g.cfg directly.
+// config returns one consistent copy of the live config.
 func (g *Gate) config() Config {
 	g.cfgMu.RLock()
 	defer g.cfgMu.RUnlock()
@@ -99,10 +97,10 @@ const followUpReasonPrefix = "follow-up guidance: "
 const followUpMax = 2000
 const stampGuidanceMax = 240
 
-// stamp renders the transcript-facing decision record. An escalation that never
-// resolved (a background refusal, Q11) has no resolution to record - empty line, the
-// tool error text stays the visible truth. fromCard marks the card-settled paths: the
-// RESOLUTION lands as the line, never the model's original advice.
+// stamp renders the transcript-facing decision record. An escalation that never resolved
+// (a background refusal) has no resolution to record - empty line, the tool error text
+// stays the visible truth. fromCard marks the card-settled paths: the RESOLUTION lands as
+// the line, never the model's original advice.
 func (g *Gate) stamp(o Outcome, fromCard bool) string {
 	if g.mode() != ModeSmart {
 		return ""
@@ -129,40 +127,34 @@ func (g *Gate) stamp(o Outcome, fromCard bool) string {
 }
 
 // Gate implements agent.ApprovalProvider. Contract: nil error = execute, non-nil = the
-// tool result refusing execution; the line is the decision record stamped onto the
-// call's tool result (empty = no machine decision). Concurrency-safe: the loop runs a
-// turn's tool calls in parallel.
+// tool result refusing execution; the line is the decision record stamped onto the tool
+// result (empty = no machine decision). Safe for concurrent calls.
 func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (string, error) {
 	return g.decide(ctx, toolName, args, nil)
 }
 
-// GateWithConversation is the agent.GateProvenance upgrade (card
-// t_e3cd4381): the loop hands the run's conversation so the safeagents
-// detectors can ask the provenance question - does the host this call
-// reaches appear in the HUMAN's own words? A gate consulted the plain
-// way sees no conversation, so nothing is sourced and every
-// non-allowlisted host reads as novel (the documented floor).
+// GateWithConversation is the agent.GateProvenance upgrade: the loop hands the run's
+// conversation so the safeagents detectors can ask the provenance question - does the host
+// this call reaches appear in the HUMAN's own words? Consulted the plain way there is no
+// conversation, so nothing is sourced and every non-allowlisted host reads as novel.
 func (g *Gate) GateWithConversation(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error) {
 	return g.decide(ctx, toolName, args, conversation)
 }
 
-// decide is the one decision path: the legacy shell lane (parse,
-// reviewer, ladder) plus the safeagents lane (request-only detectors,
-// severity tiers). The tiered lane decides first when it fires - its
-// severity rulings are the newer contract - and the legacy lane decides
-// everything it does not claim. Both end in the same escalation
-// machinery: a card, a background refusal, or a stamped record.
+// decide is the one decision path: the legacy shell lane (parse, reviewer, ladder) plus the
+// safeagents lane (request-only detectors, severity tiers). The tiered lane decides first
+// when it fires; the legacy lane decides everything it does not claim. Both end in the same
+// escalation machinery: a card, a background refusal, or a stamped record.
 func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error) {
 	start := time.Now()
 	if g.mode() == ModeOff {
-		return "", nil // Q10: an off gate decides nothing, logs nothing
+		return "", nil // an off gate decides nothing and logs nothing
 	}
 	live := g.config()
 	origin := core.RunOriginFromContext(ctx)
 	session := agent.SessionIDFromContext(ctx)
 
-	// The legacy lane (Q1/Q7): shell commands only - parse + static
-	// expansion, then the would-interrupt rule set.
+	// The legacy lane: shell commands only - parse plus the would-interrupt rule set.
 	command, _ := args["command"].(string)
 	var (
 		p    Parsed
@@ -173,18 +165,15 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 		risk = Assess(p)
 	}
 
-	// The safeagents lane (card t_e3cd4381): request-only detectors over
-	// EVERY tool call. In the log-only soak a hit is recorded as a
-	// WOULD-BLOCK and the call proceeds exactly as it would have.
+	// The safeagents lane: request-only detectors over EVERY tool call. In the log-only
+	// soak a hit is recorded as a WOULD-BLOCK and the call proceeds untouched.
 	call := Call{Tool: toolName, Args: args}
 	prov := NewProvenance(conversation)
 	findings := DetectCall(call, prov)
 	if len(findings) > 0 {
 		if !live.DetectorsEnforce() {
-			// the row rides the same egress boundary as every other
-			// row this gate writes (redact.go): a flagged call that
-			// carries a credential must not persist it in cleartext in
-			// the soak log.
+			// the row rides the same egress boundary as every other row this gate writes
+			// (redact.go): a flagged call carrying a credential must not persist it.
 			monitorText, monitorRedacted := sanitize(callText(call))
 			g.audit.Append(g.row(rowInput{
 				mode: g.mode(), origin: origin, session: session, tool: toolName,
@@ -211,10 +200,10 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 	background := origin == originScheduled || origin == originSubagent
 
 	if rec, ok := g.cache.Lookup(key); ok {
-		// Q8: a recorded APPROVE/DENY replays with zero cloud calls. (Settlements above never
-		// store escalations - a background refusal must not poison an interactive ask.) The
-		// replay carries the recorded decision's own stamp: a card-approved resolution
-		// replays as "escalated -> approved", never as an auto verdict.
+		// a recorded APPROVE/DENY replays with zero cloud calls. Settlements never store
+		// escalations - a background refusal must not poison an interactive ask. The replay
+		// carries the recorded decision's own stamp: a card-approved resolution replays as
+		// "escalated -> approved", never as an auto verdict.
 		g.audit.Append(g.row(rowInput{
 			mode: g.mode(), origin: origin, session: session,
 			command: sanitized, rules: risk.Reasons, findings: risk.Findings, rec: rec,
@@ -253,7 +242,7 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 
 	if outcome.Verdict == VerdictEscalate {
 		if background {
-			// Q11: workers never block on a human. Not cached: a background refusal must not
+			// workers never block on a human. Not cached: a background refusal must not
 			// replay against an interactive ask.
 			g.notifyEscalation(session, origin, sanitized, outcome)
 			g.audit.Append(g.row(rowInput{
@@ -268,7 +257,7 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 			}
 			return "", fmt.Errorf("approval escalated, command not executed (%s): %s", outcome.Step, outcome.Reason)
 		}
-		// Q13: the interactive escalation rides the EXISTING verdict card machinery.
+		// the interactive escalation rides the EXISTING verdict card machinery.
 		var cardErr error
 		outcome, followUp, cardErr = g.humanCard(ctx, sanitized, outcome)
 		if cardErr != nil {
@@ -298,10 +287,9 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 	}))
 	if (outcome.Verdict == VerdictApprove || outcome.Verdict == VerdictDeny) &&
 		outcome.Step != "human_card_followup" {
-		// Only settlements cache: approve/deny are the stable answers; an escalation (model
-		// or human refusal) is situational and never replays in place of a fresh decision. A
-		// follow-up answer is deny-with-directions - equally situational, never a standing
-		// verdict for the command.
+		// Only settlements cache: approve/deny are the stable answers; an escalation (model or
+		// human refusal) is situational and never replays in place of a fresh decision. A
+		// follow-up answer is deny-with-directions - equally situational.
 		g.cache.Store(key, record{outcome: outcome, answers: answers, modelUsed: live.Model, stamp: stamp})
 	}
 	return stamp, outcomeError(outcome)
@@ -325,11 +313,10 @@ func outcomeError(o Outcome) error {
 	}
 }
 
-// humanCard rides the verdicts seam (Q13 - no new webui UI). Approve and deny are
-// decisions; a typed follow-up answer denies the command and hands the agent the text
-// as its resolution guidance (the tool error carries "follow-up guidance: <text>");
-// expiry, skip and a dead verdicts seam are fail-closed non-decisions (executed =
-// false, never cached).
+// humanCard rides the verdicts seam. Approve and deny are decisions; a typed follow-up
+// answer denies the command and hands the agent the text as its resolution guidance (the
+// tool error carries "follow-up guidance: <text>"); expiry, skip and a dead verdicts seam
+// are fail-closed non-decisions (executed = false, never cached).
 func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcome, string, error) {
 	hub := g.verdicts()
 	if hub == nil {
@@ -348,7 +335,7 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 			{Label: "deny", Description: "refuse; the agent is told the command did not run"},
 		},
 		AllowText: true, // the follow-up surface
-		TimeoutS:  0,    // the hub's 20-minute default (Q13)
+		TimeoutS:  0,    // the hub's 20-minute default
 	}
 	verdict, err := hub.Ask(ctx, card)
 	if err != nil {
@@ -362,7 +349,7 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 		return Outcome{VerdictEscalate, "card_skipped", "the approval card was skipped - treated as non-execution"}, "",
 			fmt.Errorf("card skipped")
 	default:
-		// The card's third way: ANSWERED - typed guidance wins over any option pick, the
+		// The card's third way: ANSWERED - typed guidance wins over any option pick and the
 		// command never runs.
 		if msg := strings.TrimSpace(verdict.Text); msg != "" {
 			if len(msg) > followUpMax {
@@ -377,7 +364,7 @@ func (g *Gate) humanCard(ctx context.Context, command string, o Outcome) (Outcom
 	}
 }
 
-// notifyEscalation emits the background-run escalation (Q11).Nil-safe.
+// notifyEscalation emits the background-run escalation. Nil-safe.
 func (g *Gate) notifyEscalation(session, origin, command string, o Outcome) {
 	prov := g.notifications()
 	if prov == nil {
@@ -401,18 +388,14 @@ func truncTo(s string, n int) string {
 	return s[:n-1] + "…"
 }
 
-// detectorLane is the safeagents lane's escalation path (card
-// t_e3cd4381): a HIGH finding blocks on its own (the cheap regex
-// catches the obvious), a suspicious one passes the evidence-only
-// judge and then the human - the judge/human see only the gray zone.
-// The judge can only ADD a block: its finding rides the record and the
-// card, never lifts a deterministic one. The legacy shell rules ride
-// along as EVIDENCE (the card and the row name them) but their routing
-// stays theirs: this lane was reached because a tiered finding fired.
+// detectorLane is the safeagents lane's escalation path: a HIGH finding blocks on its own,
+// a suspicious one passes the evidence-only judge and then the human - the judge and human
+// see only the gray zone. The judge can only ADD a block: its finding rides the record and
+// the card, never lifts a deterministic one. The legacy shell rules ride along as EVIDENCE
+// (the card and the row name them) but their routing stays theirs.
 //
-// Nothing here is cached: the lane is deterministic and costs no model
-// call on the block path, and a judge-augmented escalation is
-// situational (the legacy lane's cache law, unchanged).
+// Nothing here is cached: the block path costs no model call, and a judge-augmented
+// escalation is situational.
 func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, call Call, findings []Finding, legacy Risk, start time.Time) (string, error) {
 	origin := core.RunOriginFromContext(ctx)
 	session := agent.SessionIDFromContext(ctx)
@@ -432,10 +415,9 @@ func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, c
 	judged := evidence
 	blockers := tieredAtLeast(evidence, SeverityHigh)
 	if len(blockers) == 0 {
-		// SUSPICIOUS: the evidence-only judge reads the human's task,
-		// the call and the findings - never the agent's reasoning.
-		// A run with no human turn at all (a wake, a synthetic fire)
-		// has nothing to judge accountability AGAINST: the judge stays
+		// SUSPICIOUS: the evidence-only judge reads the human's task, the call and the
+		// findings - never the agent's reasoning. A run with no human turn at all (a wake, a
+		// synthetic fire) has nothing to judge accountability AGAINST, so the judge stays
 		// unconsulted rather than answering from half the record.
 		task := prov.Task()
 		switch {
@@ -455,8 +437,8 @@ func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, c
 				blockers = tieredAtLeast(judged, SeverityHigh)
 				reviewErr = err
 			default:
-				// the default failure law: fail OPEN - the judge adds
-				// nothing and the human still decides
+				// the default failure law: fail OPEN - the judge adds nothing and the human
+				// still decides
 				reviewErr = err
 			}
 		}
@@ -491,8 +473,8 @@ func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, c
 		return "", outcomeError(outcome)
 	}
 	if background {
-		// Q11: workers never block on a human - the refusal rides the
-		// tool error, the notification reaches the operator
+		// workers never block on a human - the refusal rides the tool error, the notification
+		// reaches the operator
 		g.notifyEscalation(session, origin, sanitized, outcome)
 		g.audit.Append(g.row(rowInput{
 			mode: g.mode(), origin: origin, session: session, tool: call.Tool,
@@ -529,20 +511,19 @@ func (g *Gate) detectorLane(ctx context.Context, live Config, prov Provenance, c
 	return stamp, outcomeError(resolved)
 }
 
-// Step names the safeagents lane stamps on its outcomes (the audit
-// row's step column and the escalation card's body).
+// Step names the safeagents lane stamps on its outcomes (the audit row's step column and
+// the escalation card's body).
 const (
 	DetectorBlockStep   = "detector_high_severity"
 	DetectorSuspectStep = "detector_suspicious"
-	// MonitorVerdict / MonitorStep are the log-only dry run's record: a
-	// WOULD-BLOCK measurement, never a decision (nothing about the call
-	// changed, the row exists for the soak's false-positive count).
+	// MonitorVerdict / MonitorStep are the log-only dry run's record: a WOULD-BLOCK
+	// measurement, never a decision.
 	MonitorVerdict = "FLAG"
 	MonitorStep    = "monitor_would_block"
 )
 
-// tieredAtLeast returns the findings of the safeagents set at or above
-// one tier (the legacy lane's findings never route here: Tiered=false).
+// tieredAtLeast returns the safeagents findings at or above one tier (the legacy lane's
+// findings never route here: Tiered=false).
 func tieredAtLeast(findings []Finding, min Severity) []Finding {
 	var out []Finding
 	for _, f := range findings {
@@ -553,8 +534,7 @@ func tieredAtLeast(findings []Finding, min Severity) []Finding {
 	return out
 }
 
-// reasonsOf lists the detector names (the audit row's rules column,
-// deduped and sorted: the legacy row shape, extended to the new set).
+// reasonsOf lists the detector names for the audit row's rules column, deduped and sorted.
 func reasonsOf(findings []Finding) []string {
 	seen := make(map[string]bool, len(findings))
 	out := make([]string, 0, len(findings))
@@ -569,10 +549,8 @@ func reasonsOf(findings []Finding) []string {
 	return out
 }
 
-// detectorSummary renders the findings as one line for the audit row
-// and the escalation card (the human reads the evidence, not a code).
-// Each part carries its SEVERITY first: the card is the approval
-// surface, so the tier renders as plain text - no chip redesign needed.
+// detectorSummary renders the findings as one line for the audit row and the escalation
+// card, each part carrying its SEVERITY first so the card needs no chip redesign.
 func detectorSummary(findings []Finding) string {
 	var parts []string
 	for _, f := range findings {
@@ -585,14 +563,12 @@ func detectorSummary(findings []Finding) string {
 	return truncTo(strings.Join(parts, "; "), 300)
 }
 
-// callText renders a call for the audit row and the escalation card:
-// the tool and its decoded arguments, capped like a command.
+// callText renders a call for the audit row and the escalation card, capped like a command.
 func callText(call Call) string {
 	return truncTo(call.Tool+" "+call.Text(), maxCommandChars)
 }
 
-// trimFloat renders a probability with two decimals (the audit row and
-// the card carry a readable number, never a float noise tail).
+// trimFloat renders a probability with two decimals, never a float noise tail.
 func trimFloat(v float64) string {
 	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }

@@ -1,21 +1,15 @@
-// The session workspace surface, riding the file domain capsule
-// (shell-ring shrink wave 3, a filesystem listing face
-// is the files domain's work - the workspace PICKER is the session's
-// row truth (the store's Workspace column); these routes only WALK
-// directories, unbuzzed from the explorer's rooted cwd). The picker
-// reads the local filesystem to pick a folder; strictly read-only GET
-// no write, delete or exec path exists here. The browse walks REAL
-// directories (an absolute path selects any folder on the box - a
-// session workspace is not contained by the process working directory,
-// unlike the /files inspector, which stays rooted there).
+// The session workspace surface. The workspace PICKER is the session's row truth (the
+// store's Workspace column); these routes only WALK directories, unbuzzed from the
+// explorer's rooted cwd. The picker reads the local filesystem to pick a folder, strictly
+// read-only: no write, delete or exec path exists here. The browse walks REAL directories
+// (an absolute path selects any folder on the box, unlike /files, which stays rooted in
+// the process working directory).
 //
 // Safety rules, every request:
-// absolute paths only (no browser-relative confusion), validated
-//     by core.ResolveWorkspaceDir (the shared guard the session
-//     create/PATCH paths use - one validator, two consumers)
-// "."-prefixed segments and hidden entries are rejected/filtered
-// the path is symlink-resolved before the disk is touched
-// only directory listings are served, never file contents
+//   - absolute paths only, validated by core.ResolveWorkspaceDir (the one validator the
+//     session create/PATCH paths share)
+//   - "."-prefixed segments and hidden entries are rejected or filtered; the path is
+//     symlink-resolved before the disk is touched; only directory listings are served
 package files
 
 import (
@@ -50,9 +44,8 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 			return
 		}
 	} else if filepath.VolumeName(abs) == "" {
-		// The empty-path root default. Rows then carry volume-qualified paths that
-		// re-validate on click ("/Users" -> "C:\Users"); a non-windows volume name is "", so
-		// linux behavior is byte-identical.
+		// The empty-path root default. Rows carry volume-qualified paths that re-validate on
+		// click; a non-windows volume name is "", so linux behavior is byte-identical.
 		if wd, err := os.Getwd(); err == nil {
 			if vol := filepath.VolumeName(wd); vol != "" {
 				abs = vol + string(filepath.Separator)
@@ -75,9 +68,8 @@ func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request)
 		return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name)
 	})
 	parent := ""
-	// "/" is the documented root default on every platform; on windows
-	// the process volume's root ("C:\") is also a root - filepath.Dir
-	// of it is itself, and the climb must stay hidden there too.
+	// "/" is the documented root default on every platform; on windows the process
+	// volume's root ("C:\") is also a root, and the climb must stay hidden there too.
 	if volRoot := filepath.VolumeName(abs) + string(filepath.Separator); abs != "/" && abs != volRoot {
 		parent = filepath.Dir(abs)
 	}
@@ -90,11 +82,9 @@ type workspaceFile struct {
 	IsDir bool   `json:"is_dir"`
 }
 
-// handleWorkspaceFiles serves GET /workspaces/files?path=<abs>, listing one validated.
-// It backs the @ mention picker when a workspace intent (or a pinned session workspace)
-// is set: the token the picker inserts expands SERVER-side against the session
-// workspace at run time, so the listing must read THAT folder, not the process working
-// directory /files/browse is jailed.
+// handleWorkspaceFiles serves GET /workspaces/files?path=<abs>, listing one validated
+// folder. It backs the @ mention picker: the token the picker inserts expands SERVER-side
+// against the session workspace at run time, so the listing must read THAT folder.
 func (rt *Routes) handleWorkspaceFiles(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -1,11 +1,8 @@
 // omega webui: the MCP tab's per-server toggle chain.
 import type { McpStatusWire } from "./serverRows";
 
-// setMcpServerEnabled persists the per-server flag. The POST body IS the fresh
-// StatusReport - the one round-trip the v0.14.1 review lens collected (the old two-step
-// re-GET was dead weight the route contract never needed). Returns the fresh listing;
-// failure throws so the panel's error line shows it and the prior rows stand (a refused
-// write never fakes a swap).
+// The POST body IS the fresh StatusReport (one round trip). A refused write throws so the
+// panel shows it and the prior rows stand - never a faked swap.
 export async function setMcpServerEnabled(
   name: string,
   enabled: boolean,

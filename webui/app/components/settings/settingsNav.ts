@@ -1,21 +1,13 @@
-// omega webui: the settings pane's CATEGORY NAVIGATION. A category with no knobs never
-// enters the nav.
 
 import type { SettingGroup, SettingKnob } from "../../composables/omega";
 
-/** the implicit child every undeclared knob lands in */
 export const GENERAL_SUBGROUP = "general";
-/** the virtual top category of curated knobs */
 export const COMMON_CATEGORY = "common";
-/** the MODULES category - the module lifecycle surface, which is CONFIGURATION. */
 export const MODULES_CATEGORY = "modules";
-/** client storage key for the remembered LAST ANCHOR */
 export const NAV_STORAGE_KEY = "omega.settings-category";
 
-// the surface classification ------------------------- The pane's sections are. The
-// classification is DATA - a table, never a derivation from a key's spelling - exactly
-// like the nesting table below: Endo vetoes the mapping at review, and a veto edits ONE
-// line here.
+// The pane's sections are classified in DATA. A reclassification edits one
+// line here - never a rule inferred from a key's spelling.
 export const SURFACE_FRONTEND = "frontend";
 export const SURFACE_BACKEND = "backend";
 export const SURFACE_CURATED = "curated";
@@ -27,11 +19,8 @@ interface SettingSurface {
   header: boolean;
 }
 
-/**
- * THE render order.
- * A surface missing from here still renders (its group is appended, headed by the raw
- * id) - a classification can never make a section vanish.
- */
+/** THE render order. A surface missing here still renders (appended, headed by the
+    raw id) - a classification can never make a section vanish. */
 export const SURFACE_ORDER: readonly SettingSurface[] = [
   { id: SURFACE_CURATED, label: "", header: false },
   { id: SURFACE_FRONTEND, label: "frontend", header: true },
@@ -39,14 +28,10 @@ export const SURFACE_ORDER: readonly SettingSurface[] = [
   { id: SURFACE_MODULES, label: "", header: false },
 ];
 
-/**
- * SECTION_SURFACES: section id -> surface class.
- * The two CLIENT-STATE domains are the frontend: their values live in this browser
- * (theme, dock width, turn display) and never reach the server.
- * An undeclared section is BACKEND - a new schema group describes server config until a
- * line here says otherwise (and a new CLIENT-STATE group must say so explicitly, or it
- * renders under the wrong header).
- */
+/** section id -> surface class. chat/dock are the CLIENT-STATE frontend (values
+    live in this browser, never on the server); an undeclared section is BACKEND,
+    so a new client-state group must say so here or it renders under the wrong
+    header. */
 export const SECTION_SURFACES: Readonly<Record<string, string>> = {
   [COMMON_CATEGORY]: SURFACE_CURATED,
   [MODULES_CATEGORY]: SURFACE_MODULES,
@@ -64,7 +49,6 @@ export const SECTION_SURFACES: Readonly<Record<string, string>> = {
   approvals: SURFACE_BACKEND,
 };
 
-/** the surface a section renders under - the declared one, else backend */
 export function categorySurface(id: string): string {
   return SECTION_SURFACES[id] ?? SURFACE_BACKEND;
 }
@@ -76,13 +60,9 @@ export interface SurfaceGroup<T> {
   items: T[];
 }
 
-/**
- * groupBySurface buckets items by their surface class IN SURFACE_ORDER, keeping each
- * bucket's own order (callers pass nav/document order, so a stable bucket is a stable
- * group).
- * A class SURFACE_ORDER does not name still renders - appended, headed by the raw id -
- * because a typo'd classification must be LOUD, never a silently dropped section.
- */
+/** buckets items by surface class IN SURFACE_ORDER, keeping each bucket's own order.
+    A class SURFACE_ORDER does not name still renders - appended, headed by the raw
+    id - because a typo'd classification must be LOUD, never a silent drop. */
 export function groupBySurface<T>(
   items: readonly T[],
   surfaceOf: (item: T) => string,
@@ -112,11 +92,8 @@ export function groupBySurface<T>(
   return groups;
 }
 
-// the nesting data --------------------------------------
 
-/** KNOB_SUBGROUPS: knob key -> subgroup id. */
 export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
-  // provider -: the connection subgroup and the instances subgroup MERGED into one.
   "provider.instances": "providers",
   "provider.model_name": "models",
   "provider.vision_model": "models",
@@ -163,11 +140,7 @@ export const KNOB_SUBGROUPS: Readonly<Record<string, string>> = {
   "dock.bottom_width": "panel",
 };
 
-/**
- * SUBGROUP_LABELS: the child's display name.
- * An id with no line here renders as the id itself - a missing label is never a blank
- * nav row.
- */
+/** the child's display name; an id with no line here renders as the id, never a blank row. */
 export const SUBGROUP_LABELS: Readonly<Record<string, string>> = {
   general: "general",
   providers: "providers",
@@ -195,17 +168,14 @@ export const SUBGROUP_LABELS: Readonly<Record<string, string>> = {
   panel: "panel",
 };
 
-/** the subgroup a knob belongs to - the declared one, else "general" */
 export function knobSubgroup(key: string): string {
   return KNOB_SUBGROUPS[key] ?? GENERAL_SUBGROUP;
 }
 
-/** the display name of a subgroup id (tolerant: the id is the fallback) */
 export function subgroupLabel(id: string): string {
   return SUBGROUP_LABELS[id] ?? id;
 }
 
-// the tree ----------------------------------------------------------
 
 export interface NavSubgroup {
   id: string;
@@ -223,17 +193,12 @@ export interface NavCategory {
   count?: number;
 }
 
-/** the number the nav prints for a category. */
 export function categoryCount(cat: NavCategory): number {
   return cat.count ?? cat.knobs.length;
 }
 
-/**
- * modulesNavCategory is the MODULES entry the settings pane APPENDS to the nav.
- * Its document section is rendered by the pane's own ModulesSection block, so
- * documentFor (which walks knobs) never emits it - the nav entry is what makes it a
- * jump target.
- */
+/** the MODULES entry the pane APPENDS to the nav: documentFor walks knobs and never
+    emits it, so this entry is what makes the section a jump target. */
 export function modulesNavCategory(count = 0): NavCategory {
   return {
     id: MODULES_CATEGORY,
@@ -246,10 +211,8 @@ export function modulesNavCategory(count = 0): NavCategory {
   };
 }
 
-/**
- * withSubgroups stamps every knob with its declared subgroup, so the nav's `subgroup`.
- * Returns fresh groups - the caller's arrays are never mutated.
- */
+/** stamps every knob with its declared subgroup, on fresh groups - no caller array
+    is mutated. */
 export function withSubgroups(groups: SettingGroup[]): SettingGroup[] {
   return groups.map((group) => ({
     ...group,
@@ -260,7 +223,6 @@ export function withSubgroups(groups: SettingGroup[]): SettingGroup[] {
   }));
 }
 
-/** buildNav derives the two-level tree from the (already annotated) groups. */
 export function buildNav(groups: SettingGroup[]): NavCategory[] {
   const nav: NavCategory[] = [];
   for (const group of groups) {
@@ -309,7 +271,6 @@ export function buildNav(groups: SettingGroup[]): NavCategory[] {
   return nav;
 }
 
-// selection algebra -------------------------------------------------
 
 interface Selection {
   category: string;
@@ -321,7 +282,6 @@ interface ResolvedSelection {
   subgroup: NavSubgroup | null;
 }
 
-/** the selection id the nav buttons carry and the pane remembers. */
 export function selectionId(category: string, subgroup: string | null = null): string {
   return subgroup === null || subgroup === "" ? category : `${category}/${subgroup}`;
 }
@@ -332,13 +292,8 @@ export function parseSelection(id: string): Selection {
   return { category: id.slice(0, cut), subgroup: id.slice(cut + 1) || null };
 }
 
-/**
- * resolveSelection maps a persisted id onto the LIVE nav: a category or child that no
- * longer exists (module unmounted, knob set changed) is not an error - it answers null
- * and the caller falls back.
- * A child id under a known category but an unknown child resolves to the category
- * itself (never a blank pane).
- */
+/** maps a persisted id onto the LIVE nav: an id no longer there answers null (the
+    caller falls back); an unknown child answers its category, never a blank pane. */
 export function resolveSelection(
   nav: NavCategory[],
   id: string,
@@ -351,12 +306,8 @@ export function resolveSelection(
   return { category, subgroup: subgroup ?? null };
 }
 
-/**
- * selectionLost is the pane's NORMALISATION question, asked of every id it remembers.
- * Normalising the highlight ONLY left that filter standing, and a document filtered to
- * a category the live nav cannot resolve renders NOTHING (the pane answers "no settings
- * here", and the URL keeps a section the pane is not showing).
- */
+/** the pane's NORMALISATION question, asked of every id it remembers: a document
+    filtered to a category the live nav cannot resolve would render nothing. */
 export function selectionLost(
   nav: NavCategory[],
   ids: readonly (string | null | undefined)[],
@@ -364,11 +315,8 @@ export function selectionLost(
   return ids.some((id) => !!id && resolveSelection(nav, id) === null);
 }
 
-/**
- * anchorSelection resolves the REMEMBERED value into the id the pane opens scrolled.
- * A remembered CHILD the current nav no longer carries normalises to its category: a
- * stale id is never a broken restore.
- */
+/** resolves the REMEMBERED value into the id the pane opens scrolled; a remembered
+    child the nav no longer carries normalises to its category, never a broken restore. */
 export function anchorSelection(
   nav: NavCategory[],
   remembered: string | null,
@@ -379,10 +327,8 @@ export function anchorSelection(
   return selectionId(resolved.category.id, resolved.subgroup?.id ?? null);
 }
 
-/**
- * expandedCategoryIds is the nav's OPEN branches - DERIVED, never remembered.
- * There is no collapse set anywhere: "what is open" and "where I am" cannot disagree.
- */
+/** the nav's OPEN branches - DERIVED, never remembered: with no collapse set
+    anywhere, "what is open" and "where I am" cannot disagree. */
 export function expandedCategoryIds(
   selection: string | null,
   queryOpen: ReadonlySet<string> | null = null,
@@ -392,7 +338,6 @@ export function expandedCategoryIds(
   return new Set<string>([parseSelection(selection).category]);
 }
 
-// the ONE document --------------------------------------------------
 
 export interface DocBlock {
   id: string;
@@ -404,20 +349,17 @@ export interface DocBlock {
 export interface DocSection {
   id: string;
   label: string;
-  /**
-   * the surface class the renderer groups this section under (carried from the nav so
-   * the document and the nav can never disagree about which group a section belongs to)
-   * / /
-   */
+  /** the surface class the renderer groups this section under - carried from the
+      nav, so document and nav can never disagree about which group a section is in. */
   surface: string;
   count: number;
   blocks: DocBlock[];
 }
 
 interface ContentInput {
-  /** knob keys the live query matched - null/undefined means no query is
-      live (an EMPTY set is a query that matched nothing: the difference
-      decides between "everything" and "the empty state") */
+  /** knob keys the live query matched - null/undefined means NO query is live, which
+      is not an EMPTY set (a query that matched nothing: "everything" vs the empty
+      state) */
   hits?: ReadonlySet<string> | null;
   modifiedOnly?: boolean;
   isModified?: (knob: SettingKnob) => boolean;
@@ -435,15 +377,8 @@ function keeper(input: ContentInput): (knob: SettingKnob) => boolean {
   };
 }
 
-/**
- * sectionFilter is the CATEGORY the pane's document is narrowed to,.
- * It used to be exempted as a "curated all-view" (its knobs are borrowed from every
- * domain, so the narrowing looked like a duplicate list); the exemption read as a
- * broken filter, because every category narrowed except this one, which left the whole
- * document on screen.
- * A subsection id resolves to its CATEGORY: "provider/models" filters to provider
- * (which renders that block), never to a section that does not exist.
- */
+/** the CATEGORY the document is narrowed to; a subsection id resolves to its
+    CATEGORY ("provider/models" filters to provider, which renders that block). */
 export function sectionFilter(
   selected: string | null,
   searching: boolean,
@@ -453,10 +388,8 @@ export function sectionFilter(
   return parseSelection(selected).category;
 }
 
-/**
- * documentFor is the pane's whole body.
- * "modified only" narrows the SAME document, whole - never one category at a time.
- */
+/** the pane's whole body. "modified only" narrows the SAME document, whole - never
+    one category. */
 export function documentFor(
   nav: NavCategory[],
   input: ContentInput = {},
@@ -503,7 +436,6 @@ export function documentFor(
   return sections;
 }
 
-/** spyTargetIds is the scroll-spy's document order. */
 export function spyTargetIds(sections: DocSection[]): string[] {
   return sections.flatMap((section) => [
     section.id,
@@ -513,13 +445,12 @@ export function spyTargetIds(sections: DocSection[]): string[] {
   ]);
 }
 
-/** The node surface the spy/clamp target resolution needs. */
 export interface SpyNodeLike {
   readonly dataset: { readonly section?: string };
   closest(selector: string): unknown;
 }
 
-/** buildSpyTargets is the pane's id -> node map (the spy observes these nodes, the. */
+/** id -> node map the spy observes; a category wins over a block carrying the same id. */
 export function buildSpyTargets<T extends SpyNodeLike>(root: {
   querySelectorAll(selector: string): Iterable<T>;
 }): Map<string, T> {
@@ -535,15 +466,11 @@ export function buildSpyTargets<T extends SpyNodeLike>(root: {
   return targets;
 }
 
-/** targetSection is the box a scroll anchor lands IN: the nearest category section. */
 export function targetSection<T extends SpyNodeLike>(node: T): T {
   return (node.closest(".settings-category") as T | null) ?? node;
 }
 
-/**
- * matchingCategoryIds is the nav's grey-out set.
- * The nav itself never changes shape.
- */
+/** the nav's grey-out set - the nav itself never changes shape. */
 export function matchingCategoryIds(
   nav: NavCategory[],
   input: ContentInput = {},
@@ -554,7 +481,6 @@ export function matchingCategoryIds(
   return ids;
 }
 
-// the selected-section scroll clamp ---------------
 
 interface ClampGeometry {
   /** the section's top, in the scrollport's own scroll coordinates */
@@ -564,42 +490,26 @@ interface ClampGeometry {
   content: number;
 }
 
-/**
- * clampedRange answers the `[min, max]` scrollTop window a SELECTED section allows.
- * The clamped-range maths is settled law and keeps it verbatim: the pane still scrolls,
- * and the clamp only bounds WHERE it may rest - `min` puts the section's top at the
- * scrollport's top edge (its sticky heading is the section's first child, so the
- * heading pins exactly there), `max` puts the section's bottom at the bottom edge.
- * That is the honest answer, not a bug, and the clamp can never produce `max < min`.
- */
+/** the `[min, max]` scrollTop window a SELECTED section allows: `min` puts the
+    section's top at the scrollport's top edge (its sticky heading is the first child
+    and pins there), `max` its bottom at the bottom edge. Never `max < min`. */
 export function clampedRange(input: ClampGeometry): [number, number] {
   const viewport = Math.max(0, input.viewport);
   const limit = Math.max(0, input.content - viewport);
-  // the section's top, never above the document's start nor below its end
   const min = Math.min(Math.max(0, input.top), limit);
   const natural = input.top + input.height - viewport;
   const max = Math.max(min, Math.min(natural, limit));
   return [min, max];
 }
 
-// the end follows the box ---------------------------- clampedRange bounds a. That
-// makes the START follow its box in both directions (it is enforced with max(now, min),
-// so a section whose top moves DOWN drags the pane with it) and the END follow it in
-// only ONE (min(now, max) pulls a pane UP when the end shrinks, but a section that
-// GROWS under a pane resting on its bottom leaves that pane short of it for as long as
-// nothing scrolls again - the nightly's clamp witness rested at 810 while its own end
-// measured 814, and every later pass found 810 a legal position, so the 4px never
-// healed). A later pass that measures a LONGER end while the pane still rests exactly
-// there answers the new end; every other pass answers null and the pane keeps its
-// place. Only a pane ON the end follows - one parked anywhere inside the section is
-// never moved.
+/** the START follows its box both ways (max(now, min)); the END follows only when
+    the pane was resting exactly on it - a pane parked inside is never moved. */
 
 export interface ClampHold {
   at: number;
   max: number;
 }
 
-/** clampEndFollow answers the scrollTop a pane must take when the window's END grew. */
 export function clampEndFollow(
   now: number,
   hold: ClampHold | null,
@@ -616,9 +526,8 @@ export function clampEndFollow(
   return max;
 }
 
-// the pane's OWN scrolls ----------------------------- The clamp and the scroll-spy are
-// suppressed for exactly ONE reason: a scroll the PANE issued itself (a jump, a
-// deselect's return to top, a restore, a cleared query's give-back).
+/** The clamp and the scroll-spy are suppressed for exactly ONE reason: a scroll the
+    PANE issued itself (a jump, a deselect's return to top, a restore, a cleared query). */
 
 export interface PaneScrollState {
   target: number | null;
@@ -626,78 +535,51 @@ export interface PaneScrollState {
   intent: boolean;
 }
 
-/** paneScrollSettled: the pane's own scroll is over. */
 export function paneScrollSettled(state: PaneScrollState): boolean {
   return state.target === null;
 }
 
-/**
- * paneScrollOwns: the ONE scroll the clamp may not measure.
- * The suppression exists so a jump's smooth scroll is never cut short: the pane is
- * travelling to a position it chose, and the window it passes through on the way is not
- * the clamp's business (a filtered document puts the pane's old position just past the
- * section's end, so the FIRST frame of a jump is often outside the live window -
- * enforcing there would cancel the animation a few px in and the pane would never reach
- * its section).
- */
+/** the ONE scroll the clamp may not measure: the suppression lets a jump's smooth
+    scroll finish. A filtered document puts the pane's old position past the section's
+    end, so the first frame is often outside the live window - enforcing there cancels
+    the jump. */
 export function paneScrollOwns(state: PaneScrollState): boolean {
   return state.target !== null && state.intent;
 }
 
-/**
- * paneScrollIsUser: this scroll event is the USER's - no pane scroll in flight, and the
- * settle window (which swallows an animation's trailing repeats, so a deselect cannot
- * re-select what its return-to-top just passed) is.
- */
+/** this scroll event is the USER's: no pane scroll in flight, and the settle window
+    (which swallows an animation's trailing repeats) is past. */
 export function paneScrollIsUser(state: PaneScrollState, now: number): boolean {
   return state.target === null && now >= state.graceUntil;
 }
 
-/** paneScrollSettle: the pane's own scroll ended at `now`. */
 export function paneScrollSettle(now: number, graceMs: number): PaneScrollState {
   return { target: null, graceUntil: now + graceMs, intent: false };
 }
 
-// the anchor is the USER's --------------------------- The remembered anchor means. A
-// delivery like that resolves whatever id the NEW boxes put at the top edge, and the
-// nightly caught it overwriting the anchor an explicit jump had just written - a drawer
-// jump to "compaction" at 340px, a widen to 1280px, and the stored anchor read back as
-// the neighbouring section. So the write is gated on ORDER, never on a flag someone
-// must remember to clear: a delivery may write only when the user's scroll is newer
-// than the last geometry change, and only once per scroll. A scroll the pane issued
-// itself (a jump, a re-clamp, a restore) never stamps `userScrollAt`, so the ONE
-// suppression of keeps covering the anchor too.
+/** The remembered anchor is the USER's: a geometry-armed delivery resolves whatever id
+    the new boxes put at the top edge and must not overwrite the anchor an explicit
+    jump wrote, so the write is gated on ORDER, never on a flag, and once per scroll. */
 
 export interface SpyAnchorTrace {
   /** when a scroll event was last judged the USER's (ms); 0 = never */
   userScrollAt: number;
-  /**
-   * when the spy's boxes last moved with no scroll - a resize, a re-arm (ms); 0 = never
-   * / /
-   */
+  /** when the spy's boxes last moved with no scroll - a resize, a re-arm (ms); 0 = never */
   geometryAt: number;
   wroteAt: number;
 }
 
-/** spyAnchorMayWrite: this spy decision may persist the remembered anchor. */
 export function spyAnchorMayWrite(trace: SpyAnchorTrace): boolean {
   return trace.userScrollAt > trace.geometryAt && trace.userScrollAt > trace.wroteAt;
 }
 
-// the URL carries the section ----------------- The in-app URL owns the focused. This
-// card adds the settings pane's section on the QUERY axis instead of inventing a second
-// path scheme: `?settings=<section>` rides whatever path is current, so the two never
-// fight, and the settings-path card can add `/settings` later without touching this
-// parameter.
+/** The pane keeps ONE thing in the URL: `?settings=<section>` rides whatever path
+    is current, so the query axis and the path scheme never fight. */
 
-/** the query parameter the settings section rides */
 export const SETTINGS_SECTION_PARAM = "settings";
 
-/**
- * parseSettingsSection answers the section id a settings URL carries.
- * Null for "no parameter" and for a BLANK one: `?settings=` is a deselect that leaked
- * into a bookmark, never a section named "".
- */
+/** the section id a settings URL carries. Null for no parameter AND for a blank one:
+    `?settings=` is a deselect that leaked into a bookmark, never a section named "". */
 export function parseSettingsSection(href: string): string | null {
   const url = settingsUrl(href);
   const raw = url.searchParams.get(SETTINGS_SECTION_PARAM);
@@ -706,7 +588,6 @@ export function parseSettingsSection(href: string): string | null {
   return id === "" ? null : id;
 }
 
-/** withSettingsSection answers the path a replaceState should commit. */
 export function withSettingsSection(
   href: string,
   section: string | null,
@@ -727,7 +608,6 @@ export function withSettingsSection(
   return `${url.pathname}${search}${url.hash}`;
 }
 
-/** settingsUrl parses an absolute OR relative href (the node suite pins it with. */
 function settingsUrl(href: string): URL {
   try {
     return new URL(href);

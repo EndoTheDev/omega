@@ -1,10 +1,9 @@
 // omega webui: the agents surface model.
 
-// RECORD: - continuousRows.ts types fold in here.
 import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
 
-// The 0.17.3 make-over made the row SECRET-FREE (agent/configedit.go law 2): an agent
-// names a provider INSTANCE, never a type/host/key.
+// the row is SECRET-FREE (agent/configedit.go): an agent names a provider INSTANCE,
+// never a type, host or key.
 export interface OmegaAgent {
   name: string;
   dir: string;
@@ -35,11 +34,7 @@ export interface OmegaAgentSession {
   message_count?: number;
 }
 
-/**
- * row voice for the list: the model is the headline (the knob agents are created for);
- * the default agent carries "(home config)" and an empty model_name never renders as a
- * phantom empty row.
- */
+/** the model is the row's headline (the knob agents are created for); the default agent carries "(home config)" so an empty model_name never renders blank. */
 export function agentModelText(a: OmegaAgent): string {
   return a.model_name || (a.name === "default" ? "(home config)" : "");
 }
@@ -51,41 +46,29 @@ export function agentMemoryText(a: OmegaAgent): string {
   return `${Math.round(a.memory_size / 1024)}kb`;
 }
 
-/** description placeholder: an empty description is honest empty. */
 export function agentDescriptionText(a: OmegaAgent): string {
   return a.description || "";
 }
 
-/** skills summary: the count is the primary signal, names when few. */
 export function agentSkillsText(a: OmegaAgent): string {
   const names = a.skills ?? [];
   return names.length ? names.join(", ") : "";
 }
 
-/**
- * the panel's empty state: default exists by definition, so a bare default-only home
- * still renders one row, never an empty table.
- */
 export function agentsListIsEmpty(profiles: readonly OmegaAgent[]): boolean {
   return profiles.length === 0;
 }
 
-/** session label voice for the agent's session list (same rule the sessions sidebar. */
+/** the same label rule the sessions sidebar uses: label, else a short id. */
 export function agentSessionTitle(s: OmegaAgentSession): string {
   return s.label || s.id.slice(0, 12) + "...";
 }
 
-/** the provider voice (0.17.3 item 4). */
 export function agentProviderText(a: OmegaAgent): string {
   if (a.provider_instance) return a.provider_instance;
   return a.name === "default" ? "(home config)" : "(main's provider)";
 }
 
-/**
- * agentDetailLines builds the RegistryList row's expandable detail: the config summary,
- * one line per fact, the ordering the old detail block used (model, provider, dir,
- * skills, memory, last activity).
- */
 export function agentDetailLines(a: OmegaAgent): string[] {
   return [
     `model: ${agentModelText(a) || "-"}`,
@@ -97,7 +80,7 @@ export function agentDetailLines(a: OmegaAgent): string[] {
   ];
 }
 
-/** agentStatusFor: the subtitle line's live dot + short word. */
+/** no continuous row = no status; the live dot is off only for "sleeping" (rowStatus owns the word). */
 export function agentStatusFor(
   c: OmegaContinuousRow | null,
 ): { on: boolean; label: string } | undefined {
@@ -106,34 +89,20 @@ export function agentStatusFor(
   return { on: label !== "sleeping", label };
 }
 
-/**
- * the default-agent law: the default agent cannot be disabled EVER - the fold is
- * filtered of it on display (a stale entry an older build persisted must not render a
- * disabled row) and the row carries the locked pill.
- */
+/** the default agent can never be disabled: the fold is filtered of it on display, so a stale persisted entry never renders. */
 export const DefaultAgentName = "default";
 
-/**
- * agentIsMain: the roster includes the main agent like every other home, and the row.
- */
 export function agentIsMain(a: Pick<OmegaAgent, "name">): boolean {
   return a.name === DefaultAgentName;
 }
 
-/**
- * agentSessionCountText: the roster's session count column.
- * Zero is honest ("no sessions"), never "0 sessions" dressed up as activity.
- */
+/** zero is honest ("no sessions"), never "0 sessions" dressed up as activity. */
 export function agentSessionCountText(n: number): string {
   if (!Number.isFinite(n) || n <= 0) return "no sessions";
   return n === 1 ? "1 session" : `${n} sessions`;
 }
 
-/**
- * agentActivityText: the last-activity column as a relative age.
- * Empty for a missing/unparseable timestamp (honest absence beats an invented row
- * voice); a future stamp (clock skew) reads "just now", never a negative age.
- */
+/** empty for a missing/unparseable stamp; a future stamp (clock skew) reads "just now", never a negative age. */
 export function agentActivityText(iso?: string, now: Date = new Date()): string {
   if (!iso) return "";
   const t = Date.parse(iso);
@@ -149,7 +118,6 @@ export function agentActivityText(iso?: string, now: Date = new Date()): string 
   return iso.slice(0, 10);
 }
 
-/** agentRosterSubtitle: the roster row's subtitle line - the facts the tab is FOR. */
 export function agentRosterSubtitle(a: OmegaAgent, now: Date = new Date()): string {
   const parts: string[] = [];
   if (a.description) parts.push(a.description);
@@ -161,12 +129,7 @@ export function agentRosterSubtitle(a: OmegaAgent, now: Date = new Date()): stri
   return parts.join(" · ");
 }
 
-/**
- * agentPreview: the roster row's one-line preview - the newest thing the agent said in
- * its canonical chat, whitespace collapsed so it can never be two lines, plus the age
- * of that reply.
- * No reply yet = no preview line (never a placeholder).
- */
+/** whitespace collapsed so the preview can never be two lines; no reply means no preview, never a placeholder. */
 export function agentPreview(
   a: OmegaAgent,
   now: Date = new Date(),
@@ -176,11 +139,7 @@ export function agentPreview(
   return { text, at: agentActivityText(a.last_report_at, now) };
 }
 
-/**
- * mergedRowDetail: the merged agent row's detail.
- * A null roster row (no continuous home) renders the config summary alone - never a
- * phantom "sleeping" for an agent with no wake schedule.
- */
+/** a null roster row renders the config summary alone - never a phantom "sleeping" for an agent with no wake schedule. */
 export function mergedRowDetail(
   a: OmegaAgent,
   c: OmegaContinuousRow | null,
@@ -189,7 +148,7 @@ export function mergedRowDetail(
   return [...agentDetailLines(a), `wake: ${rowStatus(c)}`];
 }
 
-/** the join key: the roster and the config listing share the agent name (folder. */
+/** the join key: the roster and the config listing share the agent name (its folder). */
 export function continuousIndex(
   roster: readonly OmegaContinuousRow[],
 ): Record<string, OmegaContinuousRow> {
@@ -198,28 +157,17 @@ export function continuousIndex(
   return out;
 }
 
-// the create door (0.17.3 rulings 1 + 6) -----------------------
-//
-// ONE "+" opens ONE form. The KIND is a choice inside that form, and the
-// kind decides the wire - that routing is pure, so the suite pins it
-// without a DOM:
-//
-// scaffold POST /agents an empty, always-off home
-// continuous POST /continuous home + canonical chat + wake schedule
-// clone POST /agents {inherit_from}: a MATERIALIZED FULL
-// COPY at birth
-//                                   path is clone + delete, never a link)
-//
-// The "@" duplicate door and its near-identical second form died here.
+// the create door: ONE "+" opens ONE form, and the KIND decides the wire (pure, so the
+// suite pins it without a DOM):
+//   scaffold   POST /agents - an empty, always-off home
+//   continuous POST /continuous - home + canonical chat + wake schedule
+//   clone      POST /agents {inherit_from} - a MATERIALIZED FULL COPY at birth (a path
+//              is clone + delete, never a link)
 
 export const AGENT_KINDS = ["scaffold", "continuous", "clone"] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
-/**
- * AgentCreateDraft is the ONE form's shape.
- * The routing below reads only the fields its kind owns - an unused field is never
- * sent.
- */
+/** the routing reads only the fields its kind owns - an unused field is never sent. */
 export interface AgentCreateDraft {
   name: string;
   kind: AgentKind;
@@ -240,18 +188,11 @@ export function emptyCreateDraft(): AgentCreateDraft {
   };
 }
 
-/**
- * kindNeedsContinuous: only the continuous kind needs the continuous capsule mounted.
- */
 export function kindNeedsContinuous(kind: AgentKind): boolean {
   return kind === "continuous";
 }
 
-/**
- * createRequest is the ONE door's routing.
- * A clone with no source (or any kind with no name) is the form's own incomplete state,
- * reported as null so the caller refuses instead of inventing an endpoint.
- */
+/** a clone with no source, or any kind with no name, is null - the caller refuses instead of inventing an endpoint. */
 export function createRequest(
   d: AgentCreateDraft,
 ): { path: string; body: Record<string, string> } | null {
@@ -274,10 +215,7 @@ export function createRequest(
   return { path: "/agents", body: { name, description: d.description } };
 }
 
-/**
- * cloneSources: every OTHER agent home is a legal clone source (the main agent included
- * - "inherit from agent" must be able to copy the home root).
- */
+/** every OTHER agent home is a legal clone source, main included ("inherit from agent" must copy the home root). */
 export function cloneSources(
   profiles: readonly OmegaAgent[],
   draftName: string,
@@ -286,7 +224,6 @@ export function cloneSources(
   return profiles.filter((p) => p.name !== name);
 }
 
-/** agentKindLabel: the kind's voice in the picker. */
 export function agentKindLabel(kind: AgentKind): string {
   switch (kind) {
     case "continuous":
@@ -298,23 +235,14 @@ export function agentKindLabel(kind: AgentKind): string {
   }
 }
 
-/**
- * agentKindOption: the CLOSED option's line in the create form's kind select.
- * The parenthetical consequence is never lost: the kind's note under the grid speaks it
- * (the scaffold's empty home, the clone's materialized copy) and the continuous kind's
- * own directive/schedule fields appear with it.
- */
+/** the parenthetical consequence is never lost: the kind's note under the grid speaks it. */
 export function agentKindOption(kind: AgentKind): string {
   return agentKindLabel(kind).split(" (")[0];
 }
 
-// delete = delete the HOME ------------------
+// delete = delete the HOME
 
-/**
- * agentDeleteConfirm names what the trigger will take.
- * The count is the ROW's session_count - the same number the delete record answers -
- * so the dialog can never promise a different number than the delete delivers.
- */
+/** the count is the ROW's session_count, the same number the delete record answers - the dialog can never promise more. */
 export function agentDeleteConfirm(name: string, sessions: number): string {
   if (!Number.isFinite(sessions) || sessions < 0) {
     return `delete ${name}? its home, including every session - the session count is unknown`;
@@ -324,22 +252,17 @@ export function agentDeleteConfirm(name: string, sessions: number): string {
   return `delete ${name}? its home and ${voice} go with it - this cannot be undone`;
 }
 
-/**
- * agentDeleteLabel: the trigger's own word, in the destructive voice - never a bare.
- */
 export function agentDeleteLabel(name: string): string {
   return `delete ${name}'s home - sessions included`;
 }
 
-// the edit write (the draft diff) -------------------------------- The panel's. The
-// diff is pure and lives here because it has one sharp edge the DOM hides: a `<input
-// type="number">` under v-model hands back a NUMBER, not the string the draft declares
-// - every read goes through String so a typed 7 cannot throw on.trim at submit time.
+// the draft diff. One sharp edge the DOM hides: a `<input type="number">` under v-model
+// hands back a NUMBER, not the string the draft declares, so every read goes through
+// String - a typed 7 must not throw on .trim at submit time.
 
 export const AGENT_INHERIT_KINDS = ["skills", "soul", "user", "memory"] as const;
 export type AgentInheritKind = (typeof AGENT_INHERIT_KINDS)[number];
 
-/** AgentEditDraft is the panel's edit form shape. */
 export interface AgentEditDraft {
   description: string;
   system_prompt: string;
@@ -351,7 +274,6 @@ export interface AgentEditDraft {
   inherit: Record<AgentInheritKind, boolean>;
 }
 
-/** AgentEditTarget is the saved truth the draft diffs against. */
 export interface AgentEditTarget {
   description?: string;
   toggles?: readonly string[];
@@ -365,10 +287,7 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
   return left.length === right.length && left.every((v, i) => v === right[i]);
 }
 
-/**
- * editRequest builds the PUT body for one draft - nil when nothing changed (the panel's
- * "no changes" beat, never an empty write).
- */
+/** null when nothing changed - the panel's "no changes" beat, never an empty write. */
 export function editRequest(
   d: AgentEditDraft,
   saved: AgentEditTarget,
@@ -400,8 +319,7 @@ export function editRequest(
   return Object.keys(body).length ? body : null;
 }
 
-// the inheritance chips ------------------------ ONE state machine, both surfaces. The
-// panel never re-parses yaml: one read, two surfaces.
+// the panel never re-parses yaml: one settings read feeds both surfaces.
 
 /** ScopeKnob is one knob inside an agent scope (core.SettingsScopeKnob). */
 export interface ScopeKnob {
@@ -422,7 +340,6 @@ export interface SettingsScope {
   error?: string;
 }
 
-/** scopeIndex flattens one agent's scope into knob-by-key. */
 export function scopeIndex(scope?: SettingsScope | null): Record<string, ScopeKnob> {
   const out: Record<string, ScopeKnob> = {};
   for (const g of scope?.groups ?? []) {
@@ -431,12 +348,8 @@ export function scopeIndex(scope?: SettingsScope | null): Record<string, ScopeKn
   return out;
 }
 
-/** FieldChip is one inheritable knob's state on the panel. */
 export interface FieldChip {
-  /**
-   * the dotted layer key - the SAME spelling the write lane's `unset` vocabulary takes,
-   * so the chip's reset button and the write path cannot drift / /
-   */
+  /** the dotted layer key - the same spelling the write lane's unset vocabulary takes, so reset and write cannot drift. */
   key: string;
   label: string;
   inherited: boolean;
@@ -445,11 +358,7 @@ export interface FieldChip {
   note: string;
 }
 
-/**
- * the knobs a secondary agent INHERITS, in the panel's render order.
- * Toggles and skills are not here either: the always-off law makes them the agent's own
- * set, never main's (rulings 4 and 5).
- */
+/** the knobs a secondary agent INHERITS, in render order; toggles and skills are never here (the always-off law). */
 export const INHERITABLE_FIELDS: ReadonlyArray<{ key: string; label: string }> = [
   { key: "system_prompt", label: "system prompt" },
   { key: "provider.instance", label: "provider" },
@@ -457,11 +366,7 @@ export const INHERITABLE_FIELDS: ReadonlyArray<{ key: string; label: string }> =
   { key: "max_turns", label: "max turns" },
 ];
 
-/**
- * INHERIT_SOURCE is the chip's source word.
- * Main is the only link an agent has: an agent layers over the home config, never over
- * another agent ("inherit from agent" at CREATE is a copy, not a link).
- */
+/** main is the only link an agent has; "inherit from agent" at CREATE is a copy, not a link. */
 export const INHERIT_SOURCE = "main";
 
 function knobText(v: unknown): string {
@@ -470,7 +375,6 @@ function knobText(v: unknown): string {
   return String(v);
 }
 
-/** fieldChips resolves the inheritable knobs for one row. */
 export function fieldChips(scope?: SettingsScope | null): FieldChip[] {
   const idx = scopeIndex(scope);
   return INHERITABLE_FIELDS.map(({ key, label }) => {
@@ -492,45 +396,29 @@ export function fieldChips(scope?: SettingsScope | null): FieldChip[] {
   });
 }
 
-/**
- * chipOf looks one knob up in a resolved list.
- */
 export function chipOf(chips: readonly FieldChip[], key: string): FieldChip | undefined {
   return chips.find((c) => c.key === key);
 }
 
 
-/**
- * agentTogglesNote: the toggles list is the ENABLED set, so an empty list is a real
- * answer - "nothing enabled", never "inherits main's features" (the ALWAYS OFF law).
- */
+/** the toggles list is the ENABLED set: empty means "nothing enabled", never "inherits main's features". */
 export function agentTogglesNote(toggles: readonly string[]): string {
   return toggles.length
     ? `${toggles.length} enabled - an agent only runs what it names here`
     : "nothing enabled - an agent never inherits main's feature set";
 }
 
-/**
- * agentSkillsNote: the allowlist's own voice.
- * Empty means NO skills; it is never a silent inheritance of main's registry.
- */
+/** empty means NO skills: never a silent inheritance of main's registry. */
 export function agentSkillsNote(allow: readonly string[]): string {
   return allow.length
     ? `${allow.length} allowed - the explicit allowlist that runs`
     : "no skills - an empty allowlist means none, never main's registry";
 }
 
-/**
- * lockedAgentModules mirrors agent.AlwaysOnAgentModules: the pair is not in the
- * toggleable tier at all, so the panel must not offer it.
- */
+/** mirrors agent.AlwaysOnAgentModules: not in the toggleable tier at all, so the panel must not offer it. */
 export const LOCKED_AGENT_MODULES: readonly string[] = ["agent-loop", "provider"];
 
-/**
- * toggleOptions: the capsule names an agent may switch.
- * The subset law starts here: a module the host has off is not offered, so the operator
- * never meets a refusal they could have avoided.
- */
+/** the subset law: a module the host has off is not offered, so the operator never meets an avoidable refusal. */
 export function toggleOptions(
   modules: ReadonlyArray<{ name: string; state?: string; toggleable?: boolean }>,
 ): string[] {
@@ -540,23 +428,12 @@ export function toggleOptions(
     .map((m) => m.name);
 }
 
-/**
- * toggleChoices: the checkbox set for ONE agent.
- * The union matters: a capsule the host switched off AFTER the agent enabled it is not
- * offered, and hiding it would leave an invisible enabled entry that makes the next
- * toggle save a 400 (the subset law refuses the name the operator cannot see).
- * Shown dim with a reason instead, so unchecking it is a deliberate act, never a silent
- * drop.
- */
+/** the union matters: a capsule the host switched off after the agent enabled it stays visible (dim), or the next save is a 400. */
 export function toggleChoices(offered: readonly string[], own: readonly string[]): string[] {
   return [...new Set([...offered, ...own])].sort();
 }
 
-/**
- * skillOptions: the allowlist's checkbox set is the agent's VISIBLE registry
- * (row.skills) - the same list the backend validates against, so a name offered here
- * can never be refused as unknown.
- */
+/** the agent's VISIBLE registry - the backend validates the same list, so an offered name can never be refused. */
 export function skillOptions(a: Pick<OmegaAgent, "skills">): string[] {
   return [...(a.skills ?? [])];
 }

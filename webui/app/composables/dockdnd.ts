@@ -1,7 +1,6 @@
-// omega webui: tab DnD gesture state + the VS Code-style docking-zone prediction. The
-// DOM drag events hide the dragged data from dragover (only `types` are readable), but
-// the hit-test needs the dragged tab's identity DURING the gesture (the zone law
-// refuses by class: main members never leave the main pane).
+// tab DnD gesture state + docking-zone prediction. The DOM hides the dragged data from
+// dragover (only `types` are readable), but the hit-test needs the dragged tab's identity
+// DURING the gesture.
 import { seatAllowsIn, type DockComponentName } from "./dockables.ts";
 import { isSidebarZone, zoneOfEdge, type PaneZone } from "./panes.ts";
 
@@ -13,11 +12,10 @@ export interface TabDragInfo {
 
 let current: TabDragInfo | null = null;
 
-// gesture ownership ------------------------------------ The gesture record is.
 type GestureEndHandler = () => void;
 const gestureEndHandlers = new Set<GestureEndHandler>();
 
-/** subscribe to every gesture end (window dragend / drop / Esc / blur, or a layout. */
+/** subscribe to every gesture end (dragend / drop / Esc / blur, or a layout swap) */
 export function onGestureEnd(handler: GestureEndHandler): () => void {
   gestureEndHandlers.add(handler);
   return () => {
@@ -26,16 +24,14 @@ export function onGestureEnd(handler: GestureEndHandler): () => void {
 }
 
 /**
- * the ONE global clear: the gesture record dies and every subscriber.
- * Idempotent - running with nothing armed still rings the subscribers so a stale
- * highlight never outlives its gesture.
+ * the ONE global clear: the record dies and every subscriber rings. Idempotent - running
+ * with nothing armed still notifies, so a stale highlight never outlives its gesture.
  */
 export function endGesture(): void {
   current = null;
   for (const handler of [...gestureEndHandlers]) handler();
 }
 
-/** the guard's event target. */
 interface GuardTarget {
   addEventListener(type: string, listener: (e: Event) => void): void;
   removeEventListener(type: string, listener: (e: Event) => void): void;
@@ -77,9 +73,8 @@ export const tabDrag = {
     return current;
   },
   /**
-   * a gesture begins: ANY stale record dies first - a new gesture never inherits a
-   * poisoned hit-test (the record must never outlive its event, and the first act of
-   * the next event is this overwrite) / /
+   * a gesture begins: any stale record dies first, so a new gesture never inherits a
+   * poisoned hit-test.
    */
   start(info: TabDragInfo): void {
     endGesture();
@@ -92,10 +87,8 @@ export const tabDrag = {
 };
 
 /**
- * PURE hit-test: may the active drag drop into a pane whose edge is `targetEdge`.
- * THE ZONE LAW answers (canvas C1): the dragged view's CLASS decides which seats it may
- * occupy - a main member never leaves the main pane, a bottom member never enters it, a
- * sidebar view visits every seat.
+ * PURE hit-test: may the active drag drop into a pane whose edge is `targetEdge`? THE ZONE
+ * LAW answers: the dragged view's CLASS decides which seats it may occupy.
  */
 export function dropAllowedFor(
   targetEdge: "left" | "right" | "bottom" | null,
@@ -105,11 +98,8 @@ export function dropAllowedFor(
   return seatAllowsIn(drag.component, zoneOfEdge(targetEdge));
 }
 
-// docking zones ----------------------------------------- A tab dragged.
-
 export type DragZone = "left" | "right" | "top" | "bottom" | "center";
 
-/** a content box in viewport px (the pane body under the tab bar) */
 export interface ZoneRect {
   x: number;
   y: number;
@@ -117,10 +107,9 @@ export interface ZoneRect {
   h: number;
 }
 
-/** the middle 50%-of-axis band whose overlap on BOTH axes reads "center". */
+/** the middle 50%-of-axis band whose overlap on BOTH axes reads "center" */
 export const ZONE_CENTER_BAND = 0.25;
 
-/** PURE pointer -> zone. */
 export function zoneForPoint(x: number, y: number, rect: ZoneRect): DragZone {
   if (!(rect.w > 0) || !(rect.h > 0)) return "center";
   const rx = Math.min(1, Math.max(0, (x - rect.x) / rect.w));
@@ -145,9 +134,7 @@ export function zoneForPoint(x: number, y: number, rect: ZoneRect): DragZone {
   return best;
 }
 
-/**
- * the overlay rect of a zone as FRACTIONS of the pane body.
- */
+/** the overlay rect of a zone as FRACTIONS of the pane body */
 export function zoneRectFractions(zone: DragZone): ZoneRect {
   switch (zone) {
     case "left":
@@ -164,10 +151,9 @@ export function zoneRectFractions(zone: DragZone): ZoneRect {
 }
 
 /**
- * PURE pointer -> zone, BOUNDED by the target pane's own zone.
- * Its x axis is not part of the gesture at all, so the left/right halves that would
- * split it into side-by-side columns cannot be entered - the split-sidebar gesture is
- * gone, not refused.
+ * PURE pointer -> zone, BOUNDED by the target pane's own zone: a sidebar's x axis is not part
+ * of the gesture, so the left/right halves that would split it into columns cannot be
+ * entered. The split-sidebar gesture is gone, not refused.
  */
 export function zoneForPointer(
   zone: PaneZone,
@@ -179,7 +165,6 @@ export function zoneForPointer(
   return zoneForPoint(rect.x + rect.w / 2, y, rect);
 }
 
-/** the dock mutation a zone encodes, for the drop handlers. */
 export function zoneSplitOf(zone: DragZone):
   | { direction: "row" | "column"; side: "before" | "after" }
   | null {

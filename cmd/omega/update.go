@@ -142,7 +142,7 @@ func fetchStable() (githubRelease, error) {
 	return rel, nil
 }
 
-// fetchReleaseList fetches one page of the release list (newest first), the same.
+// fetchReleaseList fetches one page of the release list, newest first.
 func fetchReleaseList() ([]githubRelease, error) {
 	resp, err := http.Get(githubAPIBase + "/repos/" + repoSlug + "/releases?per_page=100")
 	if err != nil {

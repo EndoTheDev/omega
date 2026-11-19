@@ -1,5 +1,5 @@
-// omega webui: unit tests for verdict cards v1.1 (cards,
-// ). Three layers, matching the house patterns:
+// omega webui: unit tests for verdict cards. Three layers, matching the
+// house patterns:
 // the pure card helpers: args parse, result parse, wire restore
 //
 // the fetch wrappers: fetchVerdicts / postVerdict URL + body contract

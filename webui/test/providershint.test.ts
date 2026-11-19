@@ -35,7 +35,7 @@ test("a blank row carries a name placeholder - and NO model column", () => {
     "the model column is GONE (t_1914a8c9): instances carry no model - the pickers offer the endpoint's catalog");
 });
 
-// --- card t_4924df4c (new-row half) / t_0346201c (stored-row half) ------
+// --- / (stored-row half) ------
 //
 // A submitted host is accepted only when it ECHOES the stored host of the
 // row the list already names: applyProviderInstances answers "config.yaml

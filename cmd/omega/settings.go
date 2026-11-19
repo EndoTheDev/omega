@@ -22,14 +22,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// settings.go exposes the config.yaml knobs to the webui settings pane over the. The
-// schema here is the single source of truth: one entry per Config field, grouped in
-// config-file order — no new config keys, no duplicates.
-
-// The knob/group shapes are core.SettingsKnob / core.SettingsGroup /
-// core.SettingsSchema - the seam is typed end to end, so cmd/omega and http_channel
-// cannot drift apart on the wire shape. maskedSecret stands in for a secret knob's
-// value everywhere the schema is served (GET and save refreshes alike): the pane treats
+// settings.go exposes the config.yaml knobs to the webui settings pane. The schema here is
+// the single source of truth: one entry per Config field, grouped in config-file order - no
+// new config keys, no duplicates.
+//
+// The knob/group shapes are core.SettingsKnob / core.SettingsGroup / core.SettingsSchema -
+// the seam is typed end to end, so cmd/omega and http_channel cannot drift apart on the
+// wire shape. maskedSecret stands in for a secret knob's value everywhere the schema is
+// served (GET and save refreshes alike): the pane treats
 // api_key as write-only (diff-only saves), so the plain text never rides the wire.
 const maskedSecret = "****"
 
@@ -362,9 +362,8 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.Approvals.SmartPolicy, Live: true,
 					Default: def.Approvals.SmartPolicy,
 					Help:    "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
-				// The safeagents detector set's rollout (card t_e3cd4381).
-				// New detectors ship in the log-only soak: findings land
-				// in the audit log as WOULD-BLOCK and no call is touched
+				// The safeagents detector set's rollout. New detectors ship in the log-only
+				// soak: findings land in the audit log as WOULD-BLOCK and no call is touched
 				// until a real-run soak shows no false-positive pile.
 				{Key: "approvals.monitor", Label: "new detectors", Type: "select",
 					Options: []string{approval.MonitorLogOnly, approval.MonitorEnforce},
@@ -479,7 +478,8 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			// The provider instances: the ONE list every provider lives in, the primary row.
 			err = applyProviderInstances(cfg, key, raw)
 		case "provider.api_key", "server.bind":
-			// gated knobs: bind is the escalation lever for the whole LAN surface, api_key is.
+			// gated knobs: config.yaml is the only door - bind is the escalation lever for the
+			// whole LAN surface, and api_key is the provider credential.
 			err = fmt.Errorf("%s: config.yaml is the only door for this knob - not settable over the API", key)
 		case "server.port":
 			err = setInt(&cfg.Server.Port, key, raw, 1, math.MaxUint16)
@@ -1407,7 +1407,7 @@ func settingsSet(configPath, key, raw string, w io.Writer) error {
 	return nil
 }
 
-// coerceSettingValue turns the operator's text into the JSON-shaped value the webui.
+// coerceSettingValue turns the operator's text into the JSON-shaped value the webui sends.
 // This is an input adapter, never a second validator: ranges, enum membership,
 // absolute-path checks, the config.yaml-only doors and every cross-field rule stay
 // behind saveSettings (applySettingValues + cfg.Validate), so the CLI can never accept

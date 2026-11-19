@@ -9,37 +9,23 @@ import (
 	"sync/atomic"
 )
 
-// The Host/Origin guard (v0.14.1 audit p10; read side closed at v0.15.0;
-// the non-loopback surface closed at ).
-// The local surface is unauthenticated by design (loopback, one
-// operator), so the browser same-site rules are the only firewall it
-// has - and a cross-site POST of Content-Type text/plain triggers no
-// CORS preflight, which made POST /files/write, POST /files/mkdir, the
-// module writes (PATCH /tasks/{id}, DELETE /boards/{name},.) and
-// the byte-returning reads (GET /files/read, GET /files/raw, the
-// transcript GETs) reachable from any web page the operator visits
-// while the server runs. DNS rebinding moves the same attack onto the
-// Host header, and a top-level navigation GET carries no Origin, so
-// reads cannot lean on the Origin rule. The guard closes the class on
-// the wire: EVERY request must name a trusted identity in Host, and a
-// mutating request (anything but GET/HEAD/OPTIONS) must also carry an
-// Origin that identity owns. The SPA's own requests carry the serving
-// host:port as both Host and Origin, so every legit caller passes
-// untouched.
+// The Host/Origin guard. The local surface is unauthenticated by design (loopback, one
+// operator), so the browser's same-site rules are its only firewall: a cross-site POST
+// of Content-Type text/plain triggers no CORS preflight, and DNS rebinding moves the
+// same attack onto the Host header. Every request must name a trusted identity in Host,
+// and a mutating request (anything but GET/HEAD/OPTIONS) must also carry an Origin that
+// identity owns. The SPA passes untouched: it sends the serving host:port as both.
 //
-// Three surfaces, one law (the bind shape decides the identity set):
-// loopback bind: the loopback names on the same port, plus any
-//     declared public host. An empty Origin is exempt (local curl, the
-//     agent loop) - nothing off-machine reaches a loopback socket.
-// exact non-loopback bind (a LAN or tailnet address): that address
-//     only, plus any declared public host. A mutating request must
-//     carry an Origin - the empty-Origin exemption belongs to loopback
-//     alone, so a no-Origin LAN client cannot write.
-// wildcard bind (0.0.0.0, a bare:port): the addresses answered
-//     are not enumerable, so the operator's server.public_hosts
-//     declaration IS the identity set - and an empty declaration
-//     refuses to start (a wildcard bind would otherwise have no
-//     identity to check and would fail open).
+// The bind shape decides the identity set:
+//   - loopback bind: the loopback names on the same port plus any declared public host.
+//     An empty Origin is exempt (local curl, the agent loop) - nothing off-machine
+//     reaches a loopback socket.
+//   - exact non-loopback bind (a LAN or tailnet address): that address only, plus any
+//     declared public host. An empty Origin is never exempt here, so a no-Origin LAN
+//     client cannot write.
+//   - wildcard bind (0.0.0.0, a bare :port): the addresses answered are not enumerable,
+//     so server.public_hosts IS the identity set, and an empty declaration refuses to
+//     start rather than fail open.
 
 // mutatingRequest reports whether the method changes server state.
 func mutatingRequest(method string) bool {
@@ -51,24 +37,21 @@ func mutatingRequest(method string) bool {
 }
 
 // hostGuard wraps the mux with the guard. The bind address arrives at Serve (never at
-// NewServer), so it rides an atomic value: zero before the first Serve means the guard
-// has no bind to defend, which is only reachable by direct Handler consumers in tests -
-// the serving path always plants the bind before ListenAndServe answers its first
-// request.
+// NewServer), so it rides an atomic value: zero before the first Serve is only reachable
+// by direct Handler consumers in tests - the serving path plants the bind before
+// ListenAndServe answers its first request.
 type hostGuard struct {
 	addr atomic.Value // string
-	// public (map[string]bool) carries the operator-declared public
-	// identities (server.public_hosts) - a tunneled domain's Host
-	// never matches the bind, so the guard needs the declaration.
-	// Empty/nil = no public surface, and no wildcard bind either.
+	// public carries the operator-declared public identities (server.public_hosts): a
+	// tunneled domain's Host never matches the bind. Empty = no public surface.
 	public atomic.Value // map[string]bool
 	next   http.Handler
 }
 
-// bind plants the bind address and refuses a bind the guard cannot defend. A wildcard
-// bind has no enumerable identity set, so without a non-empty server.public_hosts the
-// process refuses to start rather than serve an open surface; the address is planted
-// FIRST so a caller that ignored the error still answers 403 to everything.
+// bind plants the bind address and refuses one the guard cannot defend: a wildcard bind
+// has no enumerable identity set, so without a non-empty server.public_hosts the process
+// refuses to start. The address is planted FIRST so a caller that ignored the error
+// still answers 403 to everything.
 func (g *hostGuard) bind(addr string) error {
 	g.addr.Store(addr)
 	return checkBindCoverage(addr, g.publicSet())
@@ -126,7 +109,8 @@ func bindHost(addr string) string {
 	return addr
 }
 
-// isWildcardBind reports whether the bind answers on every interface, which leaves.
+// isWildcardBind reports whether the bind answers on every interface, which leaves no
+// identity to enumerate.
 func isWildcardBind(addr string) bool {
 	switch bindHost(addr) {
 	case "", "0.0.0.0", "::", "[::]":
@@ -135,10 +119,10 @@ func isWildcardBind(addr string) bool {
 	return false
 }
 
-// allowedHosts derives the permitted Host values from the bind address. A loopback bind
-// allows every loopback name on the same port (the operator types localhost, the SPA
-// sees 127.0.0.1, both must pass). A wildcard bind (: 0.0.0.0, a bare:port) cannot be
-// enumerated and returns nil: the caller substitutes the declared public set there.
+// allowedHosts derives the permitted Host values from the bind. A loopback bind allows
+// every loopback name on the same port (the operator types localhost, the SPA sees
+// 127.0.0.1, both must pass). A wildcard bind answers on 0.0.0.0 or a bare :port, cannot
+// be enumerated, and returns nil: the caller substitutes the declared public set.
 func allowedHosts(addr string) map[string]bool {
 	host := bindHost(addr)
 	port := ""
@@ -167,10 +151,10 @@ func isLoopbackName(host string) bool {
 	return host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "[::1]"
 }
 
-// hostAllowed checks the request's Host header against the derived set plus the. An
-// empty set passes nothing: a bind the guard cannot map to a trusted identity fails
-// closed, and a request with no Host at all never passes (HTTP/1.1 requires one, and a
-// missing Host is exactly what a raw-crafted rebinding probe looks like).
+// hostAllowed checks the request's Host header against the derived set plus the declared
+// public one. An empty set passes nothing: a bind the guard cannot map to a trusted
+// identity fails closed, and a request with no Host at all never passes (HTTP/1.1
+// requires one, and a missing Host is exactly what a raw rebinding probe looks like).
 func hostAllowed(host string, allowed map[string]bool, public map[string]bool) bool {
 	if host == "" {
 		return false
@@ -178,12 +162,11 @@ func hostAllowed(host string, allowed map[string]bool, public map[string]bool) b
 	return allowed[host] || public[host]
 }
 
-// originAllowed checks the Origin header on a mutating request. The header must parse
-// as an absolute origin URL - a garbage Origin is refused, not shrugged at. A
-// same-origin caller matches the request Host (the SPA served from this very bind). On
-// a non-loopback bind that equality alone is a DNS rebinding hole - Host == Origin ==
-// attacker-domain - so the Host must also be a trusted identity; the hostAllowed pass
-// already proves it, and the re-read keeps this rule correct standing alone.
+// originAllowed checks the Origin header on a mutating request. A non-empty header must
+// parse as an absolute origin URL - a garbage Origin is refused, not shrugged at. On a
+// non-loopback bind, Host == Origin alone is a DNS rebinding hole (both read
+// attacker-domain), so the Host must also be a trusted identity; the hostAllowed pass
+// already proves it, and this re-read keeps the rule correct standing alone.
 func originAllowed(r *http.Request, allowed map[string]bool, public map[string]bool, loopback bool) bool {
 	o := r.Header.Get("Origin")
 	if o == "" {

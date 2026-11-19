@@ -1,5 +1,5 @@
-// omega webui: the SETTINGS model knobs ride the composer's picker
-// ). Two Endo rulings and one collision are pinned here:
+// omega webui: the SETTINGS model knobs ride the composer's picker. Two
+// rulings and one collision are pinned here:
 // the aux inherit entry is a PINNED TOP ROW labelled
 //     "default (inherit from the main model)", never a provider section;
 // a model the knob's slot refuses is SHOWN DISABLED WITH ITS REASON

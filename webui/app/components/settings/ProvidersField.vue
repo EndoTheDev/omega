@@ -1,12 +1,9 @@
 <template>
   <!--
-    omega webui: the NAMED PROVIDER INSTANCES editor.
-    The row named "default" is the primary, so the list always carries it; remove drops
-    any other row (a removed instance strands ITS sessions - their next send fails
-    loudly, never a silent fallback); add appends a blank row.
-    The list REPLACES the server's list on save; a masked api key ("****") round-trips
-    as "keep the existing secret" - typing over it replaces the secret, clearing it
-    keeps the masked round trip failing server-side (a masked key must mean something).
+    Named provider instances. The list REPLACES the server's list on save, and a masked
+    api key ("****") round-trips as "keep the existing secret". The row named "default"
+    is the primary and never leaves the list; a removed instance strands its sessions -
+    their next send fails loudly, never a silent fallback.
   -->
   <div class="providers-editor">
     <p class="provider-hint">
@@ -47,13 +44,9 @@
             drop="down"
             @update:model-value="setRow(i, 'type', $event)" />
         </label>
-        <!-- card t_0346201c (the post-save half of t_4924df4c): the host
-             cell is config.yaml's on EVERY row, not just a new one.
-             applyProviderInstances accepts a submitted host only when it
-             ECHOES the stored host of the row the list already names
-             (`inst.Host != existing.Host` answers the door), and a row
-             the stored list does not name has no stored host to echo -
-             so any live edit here could only ever fail the save. -->
+        <!-- the base url cell is read-only on EVERY row: applyProviderInstances accepts a
+             submitted host only when it echoes the stored host of a row the list already
+             names, so a live edit here could only fail the save -->
         <label class="provider-cell provider-host">
           <span
             >base url<em class="provider-door">config.yaml-only</em></span
@@ -99,8 +92,6 @@
       @click="addRow">
       add instance
     </button>
-    <!-- card t_4924df4c: a fresh row can only save its name and type,
-         so the add flow says where an endpoint actually comes from -->
     <p class="provider-add-note">
       a new instance saves with its name and type - its base url and api
       key are set in config.yaml, and the row shows them here once the
@@ -124,7 +115,6 @@
     (e: "update", value: ProviderInstanceRow[]): void;
   }>();
 
-  // BandSelect's ladder is {value,label} objects.
   const types: { value: string; label: string }[] = [
     { value: "ollama", label: "ollama" },
     { value: "openai", label: "openai" },
@@ -133,22 +123,15 @@
 
   const rows = computed<ProviderInstanceRow[]>(() => props.value ?? []);
 
-  // The primary is the row named "default": the provider the agent serves, so its name
-  // is the contract and the row never leaves the list through the pane (the server
-  // refuses a list without it).
+  // The primary is the row named "default": its name is the contract, and the server
+  // refuses a list without it.
   const PRIMARY = "default";
   const isPrimary = (row: ProviderInstanceRow): boolean => row.name === PRIMARY;
 
-  // isNew: a row the STORED list does not name. props.value is the draft
-  // (SettingsTab reads draft-first); knob.value is the last payload the
-  // server sent, which is exactly what applyProviderInstances compares a
-  // submitted name against. A new row is legal with its name and type
-  // ALONE - a host or api key on one answers "config.yaml is the only
-  // door" (cmd/omega/settings.go), so the pane must not offer those
-  // inputs. A row named like a stored one is a rename/retype, whose
-  // masked key round-trips legally, so its key input stays live; its
-  // HOST does not (card t_0346201c): a stored row's host must echo the
-  // stored value, so the base url cell is gated on every row up top.
+  // isNew: a row the STORED list (knob.value, not the draft) does not name. A new row is
+  // legal with its name and type alone - a host or api key on one fails the save
+  // (applyProviderInstances, cmd/omega/settings.go), so the pane must not offer those
+  // inputs; a named row is a rename, whose masked key round-trips.
   const isNew = (row: ProviderInstanceRow): boolean => {
     const stored = props.knob.value;
     if (!Array.isArray(stored)) return true;
@@ -225,8 +208,6 @@
     max-width: 100%;
   }
 
-  /* card t_4924df4c: the door marker on a new row's gated cells - the
-     field itself says config.yaml owns it, before any save click */
   .provider-door {
     margin-left: 0.35em;
     font-style: normal;

@@ -273,7 +273,7 @@ describe("command registry build (t_6215474b)", () => {
     assert.ok(cmds.every((c) => !c.hint));
   });
 
-  // card t_8ad7ab33: /help opens the palette, so the palette must BE the
+  //
   // reference it claims to be - every shell command, name + description,
   // straight from commands.ts (ONE list; a copy here would drift).
   it("carries the / shell reference set - the literal token + its description", () => {
@@ -316,7 +316,7 @@ describe("command registry filter (substring, the settled lazy default)", () => 
     assert.equal(filterPaletteCommands("zzz-none", cmds).length, 0);
   });
 
-  // card t_8ad7ab33: a reference is searchable by what a command DOES, not
+  //
   // only by its name - "clipboard" finds /copy through its description.
   it("matches the description too (the reference fuel)", () => {
     assert.ok(filterPaletteCommands("clipboard", cmds).some((c) => c.title === "/copy"));
@@ -352,7 +352,7 @@ describe("command palette overlay + wiring (t_6215474b)", () => {
     assert.ok(app.includes("runSlashCommand,"), "the / rows execute through the shell's own handler");
   });
 
-  // card t_8ad7ab33: /help is a REFERENCE wearing NOTICE clothes - the
+  //
   // palette is the reference surface, so /help opens it and answers with
   // ONE line. Every other command keeps the status line (the notice class
   // is untouched).

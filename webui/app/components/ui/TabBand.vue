@@ -1,9 +1,7 @@
 <template>
   <!--
-    omega webui: THE UNIVERSAL PANEL TOP BAR.
-    NON-SCROLLING BY STRUCTURE: the band renders BEFORE the tab's scroll body so
-    scrolling never moves it.
-    Geometry rides the Files-band contract.
+    THE UNIVERSAL PANEL TOP BAR. NON-SCROLLING BY STRUCTURE: the band renders BEFORE the
+    tab's scroll body, so scrolling never moves it. Geometry rides the Files-band contract.
   -->
   <header
     class="tab-band"
@@ -11,7 +9,7 @@
     <span
       class="tab-band-title"
       :title="titleAttr ?? undefined">{{ title }}</span>
-    <!-- the LEAD seat (0.17.3 make-over, the kanban board selector). -->
+    <!-- the LEAD seat (the kanban board selector) -->
     <div
       v-if="$slots.lead"
       class="tab-band-lead">
@@ -22,17 +20,13 @@
       class="tab-band-actions"
       role="toolbar"
       :aria-label="title + ' actions'">
-      <!--
-        the parent's buttons carry their own aria-labels; the shared.band-tool look is
-        the files-tool contract
-      -->
+      <!-- the parent's buttons carry their own aria-labels; .band-tool is the shared look -->
       <slot />
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-  // `title` = what the tab is.
   withDefaults(
     defineProps<{
       title: string;
@@ -50,9 +44,8 @@
     justify-content: space-between;
     gap: 4px;
     /*
-     * min-height, not height: a band action taller than the row (the settings filter,
-     * the insights window select) grows the row instead of clipping; the Files geometry
-     * below is exactly what renders there / /
+     * min-height, not height: a band action taller than the row (the settings filter, the
+     * insights window select) grows the row instead of clipping.
      */
     min-height: 22px;
     margin-top: 14px;
@@ -77,7 +70,6 @@
     gap: 2px;
     flex-shrink: 0;
   }
-  /* the lead seat sits BETWEEN the title and the actions, and it is what eats the. */
   .tab-band-lead {
     display: flex;
     align-items: center;
@@ -85,9 +77,7 @@
     min-width: 0;
     flex: 1 1 auto;
   }
-  /*
-   * the ONE action-button look: FilesTab's files-tool contract promoted to the band.
-   */
+  /* the ONE action-button look: FilesTab's files-tool contract promoted to the band */
   .tab-band-actions :deep(.band-tool),
   .tab-band-lead :deep(.band-tool) {
     display: inline-flex;
@@ -103,9 +93,7 @@
     font-family: var(--mono);
     font-size: 12px;
   }
-  /*
-   * the compact SEARCH SEAT, the AppSidebar's pattern promoted here.
-   */
+  /* the search seat, the AppSidebar's pattern promoted here */
   .tab-band-actions :deep(.band-search) {
     width: 128px;
     min-width: 96px;
@@ -115,7 +103,7 @@
     padding: 2px 20px 2px 6px;
   }
   /*
-   * the Narrow-pane adaptation, self-measuring: the band only WRAPS when its single row
+   * the narrow-pane adaptation, self-measuring: the band only WRAPS when its single row
    * cannot hold title + seat.
    */
   .tab-band:has(.band-search) {

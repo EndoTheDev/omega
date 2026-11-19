@@ -1,4 +1,4 @@
-// omega webui: the tab's VIEW record (card t_15572849) - the values a
+// omega webui: the tab's VIEW record - the values a
 // dock-tab switch destroys. DockPane renders ONE outlet for the ACTIVE tab
 // and there is no KeepAlive in the tree, so every switch unmounts ChatTab
 // and took the reader's scroll place, the follow latch, the tool-row fold

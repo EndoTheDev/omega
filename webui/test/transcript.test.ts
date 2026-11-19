@@ -477,14 +477,14 @@ describe("verdict countdown anchor", () => {
   });
 });
 
-// --- the restore path's identity (card t_a20fbad7) ----------------------
+// --- the restore path's identity ----------------------
 //
 // renderTranscriptItems is PURE: every call mints fresh literals, so a
 // refetch (a dock-tab remount, a reload, a variant select - load() always
 // refetches) re-created every rendered row and the keyed v-for destroyed
 // and re-created it: fold pins, elapsed meters and selection died. Every
 // session the canvas panel does not cover lives on this path. The pins
-// below are the audit's F5 acceptance (t_839b75c8, render-hygiene-audit-
+// below are the audit's F5 acceptance 
 // FULL.md): two renders over the same wire share every object, and a
 // refetch re-uses the object of each unchanged row.
 describe("createRestoreTranscript: identity across refetches", () => {
@@ -569,7 +569,7 @@ describe("createRestoreTranscript: identity across refetches", () => {
     assert.equal(live.streaming, true);
 
     // the reader the pane renders through: the in-place write must
-    // invalidate it (the items are reactive proxies, the t_078a2c35 law)
+    // invalidate it (the items are reactive proxies, the law)
     const seen: string[] = [];
     const reader = effect(() => seen.push(`${(before[1] as { content: string }).content}/${String((before[1] as { streaming?: boolean }).streaming)}`));
 

@@ -39,14 +39,12 @@ type Config struct {
 	SystemPrompt string                          `yaml:"system_prompt"`
 	// VisionModel is the auxiliary captioner (vision_model knob). The special value
 	// "default" (provider.DefaultAuxModel) follows whichever model the current run serves
-	// - the composer's chip at caption time - and persists as the literal word, never a
-	// frozen model name. Empty keeps today's behavior - images ride to the main provider
-	// and a model that cannot see them fails loudly.
+	// and persists as the literal word, never a frozen model name. Empty = images ride to
+	// the main provider, and a model that cannot see them fails loudly.
 	VisionModel string `yaml:"vision_model"`
 	TitleModel string `yaml:"title_model"`
-	// The four per-subsystem model slots. The schema keys ride the provider group
-	// (provider.*_model), mirroring vision_model / title_model: top-level knobs, one
-	// settings home, no per-section duplicates.
+	// The four per-subsystem model slots: top-level knobs (provider.*_model), one settings
+	// home, no per-section duplicates.
 	CompactionModel string            `yaml:"compaction_model"`
 	SummarizerModel string            `yaml:"summarizer_model"`
 	SkillsModel     string            `yaml:"skills_model"`
@@ -112,8 +110,7 @@ func (c *Config) foldLegacyProviders() {
 }
 
 // DisabledNamespaces is the config.yaml `disabled:` fold shape. An all-off namespace is
-// never written: an empty list carries no state, and an all-empty key carries none at
-// all.
+// never written: an empty list carries no state, and the all-empty key omits itself.
 type DisabledNamespaces struct {
 	Modules    []string `yaml:"modules"`
 	SkillNames []string `yaml:"skills"`
@@ -146,7 +143,7 @@ func (d *DisabledNamespaces) UnmarshalYAML(node *yaml.Node) error {
 		*d = DisabledNamespaces{Modules: flat}
 		return nil
 	case node.Kind == yaml.MappingNode:
-		// zero-value first: a re-used decode target must not inherit namespaces an earlier.
+		// zero-value first: a re-used decode target must not inherit an earlier fold.
 		type fold DisabledNamespaces
 		*d = DisabledNamespaces{}
 		var f fold
@@ -313,7 +310,7 @@ func (c Config) defaultInstance() (ProviderInstance, bool) {
 	return c.Provider.instance(PrimaryProviderInstance)
 }
 
-// setDefaultInstance replaces the primary row's endpoint fields, the one way a caller.
+// setDefaultInstance replaces the primary row's endpoint fields.
 func (c *Config) setDefaultInstance(inst ProviderInstance) {
 	inst.Name = PrimaryProviderInstance
 	c.Provider.setInstance(inst)
@@ -334,18 +331,17 @@ func validInstanceName(name string) bool {
 	return name[0] >= 'a' && name[0] <= 'z' || name[0] >= '0' && name[0] <= '9'
 }
 
-// ServerConfig configures the HTTP listener(s). Additional addresses - e.g. the
-// Tailscale IP so Traefik can route to omega - are an explicit opt-in, never a default.
-// RunTimeout caps each detached /chat run's wall-clock time, in seconds: a hung tool
-// call must not brick the session's run slot until restart.
+// ServerConfig configures the HTTP listener(s). Additional addresses (the Tailscale IP so
+// Traefik can route to omega) are an explicit opt-in, never a default. RunTimeout caps each
+// detached /chat run's wall-clock time in seconds: a hung tool call must not brick the
+// session's run slot until restart.
 type ServerConfig struct {
 	Port       int      `yaml:"port"`
 	Bind       []string `yaml:"bind"`
 	RunTimeout int      `yaml:"run_timeout"`
 	// PublicHosts (config key public_hosts) declares the public identities this serve
-	// answers to - domains fronted by a reverse proxy or tunnel (the tunnel forwards the
-	// browser's Host, which never matches the bind, so the Host guard refuses them without
-	// this declaration).
+	// answers to - a tunnel forwards the browser's Host, which never matches the bind, so
+	// without the declaration the Host guard refuses it.
 	PublicHosts []string `yaml:"public_hosts"`
 	DefaultWorkspace string `yaml:"default_workspace"`
 }
@@ -368,14 +364,12 @@ type KanbanConfig struct {
 type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
 	SmartPolicy string `yaml:"smart_policy"`
-	// Monitor is the safeagents detector set's rollout (card
-	// t_e3cd4381): "log-only" (or empty) reports WOULD-BLOCK findings
-	// and never blocks - the soak; "enforce" lets the severity tiers
+	// Monitor is the safeagents detector set's rollout: "log-only" (or empty) reports
+	// WOULD-BLOCK findings and never blocks - the soak; "enforce" lets the severity tiers
 	// decide.
 	Monitor string `yaml:"monitor"`
-	// JudgeFailClosed flips the evidence-only judge's failure law:
-	// false (the default) fails open - the human still decides;
-	// true refuses the call.
+	// JudgeFailClosed flips the evidence-only judge's failure law: false (the default)
+	// fails open - the human still decides; true refuses the call.
 	JudgeFailClosed bool `yaml:"judge_fail_closed"`
 }
 
@@ -433,10 +427,10 @@ func DefaultConfig() Config {
 		},
 		HTTPTimeout: 300,
 		MaxTurns:    100,
-		// the ship-dark default (Q5): manual IS the explicit default - the knob render reads
-		// the field directly, no helper (the pure-failure law: the approval vocabulary must
-		// die whole under scripts/nm-purity.sh --module approval, and a helper derived
-		// entirely from the config field leaves an illegal empty func behind).
+		// the ship-dark default: manual IS the explicit default - the knob render reads the
+		// field directly, no helper (the pure-failure law: the approval vocabulary must die
+		// whole under scripts/nm-purity.sh --module approval, and a helper derived entirely
+		// from the config field leaves an illegal empty func behind).
 		Approvals: ApprovalConfig{
 			Mode:    "manual",
 			Monitor: approval.MonitorLogOnly,
@@ -517,9 +511,9 @@ func legacyConfigHint(path string) string {
 	return fmt.Sprintf(" - config.yaml lives at %s now (v0.8 layout); run `omega setup` to write one", moved)
 }
 
-// foldOmegaJSON migrates the v0.12 omega.json module toggle list into config..
-// Entries a config.yaml that already carries the key would also name are reported in
-// the boot warning but never double-written.
+// foldOmegaJSON migrates the legacy omega.json module toggle list into config.yaml. Entries
+// a config.yaml that already carries the key would also name are reported in the boot
+// warning but never double-written.
 func foldOmegaJSON(configPath string) ([]string, string, error) {
 	home := omegaHome()
 	dirs := []string{}
@@ -580,16 +574,14 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 	return entries, target, nil
 }
 
-// writeDisabled writes the config.yaml `disabled:` toggle fold: parse, modify, marshal
-// at the yaml node level, so comments, key order, and unknown keys survive (the
-// struct-marshal settings-save path normalizes; this one must not). The v0.14.1 fold
-// shape is one `disabled:` mapping with a namespace key per registry; a namespace with
-// no entries is never written, and when every namespace is empty the whole key goes
-// away - an all-on home carries no toggle state. A legacy flat sequence under
-// `disabled:` is REPLACED on the first write: the caller's fold always carries the
-// authoritative full state (a partial write would re-shape history it did not read). A
-// malformed config.yaml fails loud - a write that destroys the file boot must parse is
-// worse than a failed toggle.
+// writeDisabled writes the config.yaml `disabled:` toggle fold: parse, modify, marshal at
+// the yaml node level, so comments, key order and unknown keys survive (the struct-marshal
+// settings-save path normalizes; this one must not). The fold is one `disabled:` mapping, a
+// namespace key per registry; an empty namespace is never written, and an all-empty fold
+// drops the whole key. A legacy flat sequence under `disabled:` is REPLACED on the first
+// write: the caller's fold is the authoritative full state, and a partial write would
+// re-shape history it did not read. A malformed config.yaml fails loud - a write that
+// destroys the file boot must parse is worse than a failed toggle.
 func writeDisabled(path string, fold DisabledNamespaces) error {
 	fold = cleanNamespaces(fold)
 	var mapping yaml.Node
@@ -834,9 +826,9 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// WatchConfig polls the config file at path for modification time changes and calls. If
-// the reload fails (e.g. file is temporarily empty during an atomic save), the error is
-// logged and the old config stays in effect. Runs until the caller's goroutine exits.
+// WatchConfig polls the config file at path for modification-time changes and calls
+// onChange. A failed reload (a file briefly empty during an atomic save) is logged and the
+// old config stays in effect. Runs until the caller's goroutine exits.
 func WatchConfig(path string, onChange func(Config)) {
 	go func() {
 		var lastMod time.Time

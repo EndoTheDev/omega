@@ -41,9 +41,9 @@ func proofResolve(t *testing.T, ctx *core.Context, key string) {
 	}
 }
 
-// TestNotificationsRemovalProof is the arc 4b removal proof
-// ): the first module capsule migrates everything - list
-// panel, toast event, emitter wiring - and unmount kills all of it.
+// TestNotificationsRemovalProof is the first module capsule's removal
+// proof: it migrates everything - list panel, toast event, emitter
+// wiring - and unmount kills all of it.
 // The two mounts are the proof:
 //
 //  1. WITH notifications: the canvas snapshot carries the capsule's
@@ -512,9 +512,9 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 	return core.Panel{}, false
 }
 
-// TestMemoryRemovalProof is the arc 6 memory-capsule proof
-// ), the fourth worked proof in this file. Memory is the
-// capsule that was born one: the memory offer (the "memory" key), the memory tool and
+// TestMemoryRemovalProof is the memory-capsule removal proof, the fourth
+// worked proof in this file. Memory is the capsule that was born one: the
+// memory offer (the "memory" key), the memory tool and
 // the prompt section all ship from the plugin's single Mount, and the
 // module ships nothing else - no command, no REST route, and no canvas
 // panel (nothing rendered memory before the arc; adding one is a
@@ -685,11 +685,11 @@ func TestMemoryRemovalProof(t *testing.T) {
 	t.Log("PROOF removed: seam nil, no memory-shaped tools, no memory prompt block, the action pipe answers ErrUnknownModule, cron keeps mounting (deliver=memory degrades through its nil-guard), the store files stay on disk - data is not code; core/seams.go memory types remain - documented as intentional")
 }
 
-// TestDelegateRemovalProof is the arc 6 delegate-capsule proof
-// ), the fifth worked proof in this file, now under the async
-// agent loop's migration: the inject seam retired
-// delegate.task is yield-class, its report re-enters as the tool
-// result through the loop's own wake machinery. Delegate ships only
+// TestDelegateRemovalProof is the delegate-capsule removal proof, the fifth
+// worked proof in this file, now under the async agent loop's migration:
+// the inject seam retired and delegate.task is yield-class, its report
+// re-enters as the tool result through the loop's own wake machinery.
+// Delegate ships only
 // the two namespaced tools and the finished-things emitter capture
 // no command, no REST route, no skills, no canvas panel, and no
 // delegate-owned re-entry surface. The two mounts are the proof:
@@ -867,8 +867,8 @@ func TestDelegateRemovalProof(t *testing.T) {
 	t.Log("PROOF removed: no re-entry seam in the context (retired with the phase-2 migration), no delegate-shaped tools, no delegate panel or actions, notifications seam still mounted (the Requires edge points at it, not from it); delegate keeps no disk state (in-memory task map) - data is not code holds vacuously")
 }
 
-// TestMCPRemovalProof is the arc 6 mcp-capsule proof
-// ), the sixth worked proof in this file. MCP is the
+// TestMCPRemovalProof is the mcp-capsule removal proof, the sixth worked
+// proof in this file. MCP is the
 // additive-seam born-capsule: the bridge (stdio + Streamable HTTP MCP
 // servers), its server-qualified discovered tools ("server.tool"), and
 // the whole env/mcp.yaml config load ship from files in harness/mcp,
@@ -1070,8 +1070,8 @@ for line in sys.stdin:
 	t.Log("PROOF removed: no mcp-shaped tools (MCP_SERVERS still set, nothing outside the module reads it), no /mcp command, no mcp panel or actions, the action pipe answers ErrUnknownModule, the other modules mount unchanged; the bridge persists no state (tools are discovered live, mcp.yaml is user config) - data is not code holds vacuously; the additive tools seam (core.Tool / core.ToolProvider / ctx.ToolProviders) remains - shared vocabulary, documented as intentional")
 }
 
-// TestVerdictRemovalProof is the arc 6 verdict-capsule proof
-// ), the seventh worked proof in this file. Verdict is the
+// TestVerdictRemovalProof is the verdict-capsule removal proof, the seventh
+// worked proof in this file. Verdict is the
 // interactive born-capsule: the single-answer hub (ctx.Verdicts), the
 // blocking `verdict` tool, the /verdict TUI command, and the Verdict
 // Cards prompt section all ship from the one Mount - the same object
@@ -1284,8 +1284,8 @@ func TestVerdictRemovalProof(t *testing.T) {
 	t.Log("PROOF removed: seam nil (the /verdicts routes fall through to their 501 guard), no verdict tool, no /verdict command, no Verdict Cards prompt block, no canvas panel or verdict-qualified actions, the action pipe answers ErrUnknownModule; the card + verdict audit rows stay on disk in the session store (data is not code) and the shell keeps its guarded surfaces inert (busy-Enter sees a nil seam, the denied tool name denies nothing); core carries no verdict seam type - the wire shapes stay, the hub nouns live in the capsule (part 3)")
 }
 
-// TestTrustRemovalProof is the arc 6 trust-capsule proof
-// ), the eighth worked proof in this file. Trust is the
+// TestTrustRemovalProof is the trust-capsule removal proof, the eighth
+// worked proof in this file. Trust is the
 // gating capsule: the trust offer (the "trust" key; ResolveContext gates the
 // AGENTS.md project context behind trust.yaml, State feeds the webui
 // status bar) is the whole surface, shipped from the one Mount. No
@@ -1643,8 +1643,8 @@ func TestTerminalRemovalProof(t *testing.T) {
 		"and the model loses the verb family together; no seams or commands ever rode this capsule")
 }
 
-// TestApprovalRemovalProof is the smart-approval-capsule proof
-// ). Approval is the loop-side born-capsule: the detector,
+// TestApprovalRemovalProof is the smart-approval-capsule removal proof.
+// Approval is the loop-side born-capsule: the detector,
 // parser, reviewer client, ladder, cache and audit log all ship from
 // the one Mount, and the whole feature is the ApprovalProvider seam
 // the agent loop consults before every tool run. No tool, no command,

@@ -429,9 +429,9 @@ func TestAuditRows(t *testing.T) {
 	g := newTestGate(t, ModeManual)
 	home := g.config().Home
 	g.verdicts = func() verdictHub { return nil }
-	// The cron fire's session rides the run context (cody card
-	//): the row must name it - a background origin's
-	// decision is evidence about a session, not an anonymous one.
+	// The cron fire's session rides the run context: the row must name it -
+	// a background origin's decision is evidence about a session, not an
+	// anonymous one.
 	ctx := agent.WithSessionID(core.WithRunOrigin(context.Background(), "cron"), "sess-cron-gate")
 	_, _ = g.Gate(ctx, "shell.run", map[string]any{"command": "rm x.txt"})
 	raw, err := os.ReadFile(filepath.Join(home, auditFileName))
@@ -468,10 +468,10 @@ func TestAuditRows(t *testing.T) {
 	}
 }
 
-// TestEveryDecisionLandsARow pins the audit ledger's completeness
-//: every gate decision - a card approval, a cache
-// replay, a card denial - appends exactly one decision row, each with
-// its verdict, its decided-by rule and the session. Benign traffic is
+// TestEveryDecisionLandsARow pins the audit ledger's completeness: every
+// gate decision - a card approval, a cache replay, a card denial - appends
+// exactly one decision row, each with its verdict, its decided-by rule and
+// the session. Benign traffic is
 // not a decision (TestBenignTrafficPaysNothing) and stays rowless.
 func TestEveryDecisionLandsARow(t *testing.T) {
 	g := newTestGate(t, ModeManual)
@@ -697,8 +697,8 @@ func TestManualModeStampsNothing(t *testing.T) {
 // question - deny + guidance; empty guidance = the plain deny.
 // ---------------------------------------------------------------------------
 
-// followUpGate wires a smart gate whose reviewer is unreachable (host
-// :1) so every interactive ask escalates to the card, answered by the
+// followUpGate wires a smart gate whose reviewer is unreachable (host:1)
+// so every interactive ask escalates to the card, answered by the
 // fake verdicts seam's canned verdict.
 func followUpGate(t *testing.T, answers core.QuestionAnswer) (*Gate, *fakeVerdicts) {
 	t.Helper()

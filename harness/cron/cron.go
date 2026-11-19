@@ -163,7 +163,7 @@ func readCronFile(path string) (data []byte, existed bool, err error) {
 // loadConfig reads and parses the crons.yaml at path. The reload law is
 // switchable: strict turns
 // a zero-byte or whitespace-only EXISTING file into a read error instead
-// of an empty job set (loadAllConfigsForReload below, card t_8be45d55).
+// of an empty job set (loadAllConfigsForReload below,.
 // A missing file stays an empty config in both modes.
 func loadConfig(path string, strict bool) (*Config, error) {
 	data, existed, err := readCronFile(path)

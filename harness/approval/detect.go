@@ -5,25 +5,23 @@ import (
 	"strings"
 )
 
-// The would-interrupt detector (design Q1). Benign tool traffic pays one pass, never a
-// cloud call. The detector is deliberately over-eager, never under: a false ask costs a
-// click (or, in smart mode, one cheap forward pass - the cache makes repeats free); a
-// false pass costs whatever the command does.
+// The would-interrupt detector. Benign tool traffic pays one pass, never a cloud call.
+// The detector is deliberately over-eager, never under: a false ask costs a click (or, in
+// smart mode, one cheap forward pass); a false pass costs whatever the command does.
 
 // Risk is the detector's verdict for one command.
 type Risk struct {
 	// WouldInterrupt - true when a reviewer must see it.
 	WouldInterrupt bool
 	Reasons []string
-	// Findings carries the same hits as structured records (card
-	// t_e3cd4381): one per reason, each with its severity tier. These
-	// are the LEGACY shell rules - Tiered=false, so their routing is
-	// untouched (a hit still means "interrupt", exactly as before);
-	// the severity is what the audit row and the approval surface read.
+	// Findings carries the same hits as structured records, one per reason with its
+	// severity tier. The LEGACY shell rules ride Tiered=false, so their routing is
+	// untouched (a hit still means "interrupt"); the severity is what the audit row and
+	// the approval surface read.
 	Findings []Finding
 }
 
-// Severity is a detector finding's tier (card t_e3cd4381).
+// Severity is a detector finding's tier.
 type Severity string
 
 const (
@@ -32,16 +30,13 @@ const (
 	SeverityHigh   Severity = "high"   // blocks on its own - no model, no human needed
 )
 
-// Finding is one detector hit. Detector is the stable greppable name
-// (audit row, judge payload, the approval surface's chip text); Detail
-// names the concrete evidence (the host, the path) and never carries
-// credential material.
+// Finding is one detector hit. Detector is the stable greppable name (audit row, judge
+// payload, the approval surface's chip text); Detail names the concrete evidence (the
+// host, the path) and never carries credential material.
 //
-// Tiered marks the safeagents detector set, whose SEVERITY decides the
-// route: >= SeverityHigh blocks automatically, the milder tiers mark
-// the call suspicious and only those escalate. The legacy shell rules
-// ride Tiered=false: their severity is a label (the reviewer/ladder
-// lane routes them, unchanged since card t_c2b52cb5).
+// Tiered marks the safeagents detector set, whose SEVERITY decides the route: >=
+// SeverityHigh blocks automatically, milder tiers only escalate. The legacy shell rules
+// ride Tiered=false, where severity is a label and routing is unchanged.
 type Finding struct {
 	Detector string   `json:"detector"`
 	Severity Severity `json:"severity"`
@@ -49,8 +44,7 @@ type Finding struct {
 	Detail   string   `json:"detail,omitempty"`
 }
 
-// severityRank orders the tiers; unknown values rank below low so a
-// malformed finding can never outrank a real one.
+// severityRank orders the tiers; unknown values rank below low.
 func severityRank(s Severity) int {
 	switch s {
 	case SeverityHigh:
@@ -74,11 +68,10 @@ func MaxSeverity(findings []Finding) Severity {
 	return best
 }
 
-// reasonSeverity assigns the legacy shell rules their informational
-// tier. Routine development traffic (a package install, a git branch,
-// a redirect write) reads milder than the machine's destructive set -
-// the label tells the truth about the rule, it does not change what
-// the rule does.
+// reasonSeverity assigns the legacy shell rules their informational tier. Routine dev
+// traffic (a package install, a git branch, a redirect write) reads milder than the
+// machine's destructive set - the label tells the truth about the rule, it does not change
+// what the rule does.
 var reasonSeverity = map[string]Severity{
 	"system-control":       SeverityHigh,
 	"process-control":      SeverityHigh,
@@ -136,9 +129,8 @@ var plainRules = []struct {
 		"eval", "exec", "xargs", "nohup", "setsid")},
 }
 
-// Interpreters: run code a file or stdin carries - the one family where the CODE is not
-// the command text (a reviewer cannot read what `bash script.sh` does), so any
-// meaningful interpreter-invocation flags.
+// Interpreters run code a file or stdin carries - the one family where the CODE is not the
+// command text (a reviewer cannot read what `bash script.sh` does).
 var interpreters = set(
 	"bash", "sh", "zsh", "bash5", "dash", "ksh", "ash", "source", "node",
 	"deno", "python", "python2", "python3", "pypy", "pypy3", "perl",
@@ -189,13 +181,12 @@ var actionRules = []struct {
 	}},
 }
 
-// gitHardDestruct: git subcommands only destructive with a flag.
+// gitHardFlags are the flags that make an otherwise routine git subcommand destructive.
 var gitHardFlags = set("--hard", "--force", "-f", "--prune", "--amend", "--no-gpg-sign", "--delete")
 
-// Assess runs the rule set over the parsed command. Substitution
-// presence and an unparsable command are risks in themselves (Q7:
-// command substitutions stay visible and flagged; a command whose
-// static form cannot be certified is treated as would-interrupt).
+// Assess runs the rule set over the parsed command. Substitution presence and an
+// unparsable command are risks in themselves: a command whose static form cannot be
+// certified is treated as would-interrupt.
 func Assess(p Parsed) Risk {
 	reasons := map[string]bool{}
 	if p.ParseErr != nil {
@@ -237,8 +228,8 @@ func assessSegment(seg Segment) []string {
 	fired := map[string]bool{}
 
 	// interpreter invocation (any interpreter, any position): flag when the segment would
-	// run code the reviewer cannot certify - a bare interpreter (stdin REPL), a
-	// code-carrying flag (-c/-e/--eval), or an unvetted arg.
+	// run code the reviewer cannot certify - a bare REPL, a code-carrying flag, or an
+	// unvetted arg.
 	if segHitsInterpreter(seg) {
 		invoked, work := false, 0
 		for _, w := range seg.Words {
@@ -264,7 +255,7 @@ func assessSegment(seg Segment) []string {
 			fired["script-execution"] = true
 		}
 	}
-	// a script file named as a command word:./deploy.sh, bin/setup.sh.
+	// a script file named as a command word: ./deploy.sh, bin/setup.sh.
 	for _, w := range seg.Words {
 		if hasScriptExtension(w) && !strings.Contains(w, ".test.") {
 			fired["script-execution"] = true
@@ -323,8 +314,6 @@ func actionsHit(seg Segment, tool map[string]wordSet) bool {
 	return false
 }
 
-// toolsAreFlags removed: flag-form tools (pacman -Syu) are modeled by (tool, action).
-
 func gitHardFlagsHit(seg Segment) bool {
 	for i, w := range seg.Words {
 		if baseWord(w) != "git" {
@@ -362,9 +351,8 @@ var runnerFlags = set("--test", "--check", "--compile-only", "lint")
 // interpreterCodeFlags: flags whose value IS code.
 var interpreterCodeFlags = set("-c", "-e", "-x", "--eval", "-X")
 
-// dataEgressHit: curl/wget/fetch that SENDS data (POST/PUT/form/
-// upload) flags; a bare GET/HEAD fetch reads a remote and writes
-// nothing - the corpus's real traffic includes exactly those.
+// dataEgressHit: curl/wget/fetch that SENDS data (POST/PUT/form/upload) flags; a bare
+// GET/HEAD fetch writes nothing - the corpus's real traffic includes exactly those.
 func dataEgressHit(seg Segment) bool {
 	dataFlags := set("-d", "--data", "--data-binary", "--data-raw",
 		"--data-urlencode", "-F", "--form", "--form-string", "-T",
@@ -472,7 +460,8 @@ func hasScriptExtension(w string) bool {
 	return false
 }
 
-// baseWord strips a path prefix (basename) and trailing punctuation so `/usr/bin/rm`.
+// baseWord strips a path prefix (basename) and trailing punctuation, so `/usr/bin/rm`
+// reads as `rm`.
 func baseWord(w string) string {
 	if i := strings.LastIndexAny(w, "/"); i >= 0 {
 		w = w[i+1:]

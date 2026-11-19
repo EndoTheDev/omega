@@ -11,7 +11,7 @@
         @click="$emit('move', prevStatus)">
         ◀
       </button>
-      <!-- (audit M1): the status selector rides the themed listbox (BandSelect). -->
+      <!-- the status selector is the shared BandSelect listbox. -->
       <BandSelect
         class="drawer-status"
         :model-value="task.status"
@@ -170,12 +170,8 @@
       </form>
     </div>
 
-    <!--
-      the card DELETE rides the drawer, never the board canvas - a destructive act must
-      not sit one stray click away on the grid, and it must not hide inside the body
-      editor (the old shape: you had to click into the body to even see it).
-      Do not add undo by half.
-    -->
+    <!-- the card DELETE rides the drawer, never the board canvas: a destructive act must not
+         sit one stray click away on the grid. There is deliberately NO undo. -->
     <div class="drawer-danger">
       <button
         v-if="!confirmingDelete"
@@ -234,8 +230,7 @@
     (e: "close"): void;
   }>();
 
-  // Local comment draft; a NEW task in the drawer resets it - a stale
-  // draft (or a stale edit) must not leak between tasks.
+  // a stale comment draft or edit must not leak between tasks: a new task resets both.
   const commentDraft = ref("");
   watch(
     () => props.task.id,
@@ -248,18 +243,17 @@
   );
   watch(
     () => props.task.title,
-    // a title saved by any route (this drawer, the tool, another pane) must not leave.
+    // a title saved by any route (this drawer, the tool, another pane) must not leave the
+    // title editor open on a stale draft.
     () => {
       if (editingTitle.value) cancelTitleEdit();
     },
   );
 
-  // arrow moves are the status sequence one step left/right; at the
-  // edges the buttons do not render (step returns null)
+  // arrow moves step the status sequence; at the edges the buttons do not render (step returns null).
   const prevStatus = computed(() => step(props.task.status, -1));
   const nextStatus = computed(() => step(props.task.status, +1));
 
-  // the status selector's listbox options (BandSelect).
   const statusOptions = computed(() =>
     STATUSES.map((s) => ({ value: s, label: s })),
   );
@@ -310,8 +304,7 @@
     emit("save", { body });
   }
 
-  // armed delete. There is deliberately NO undo - see the template comment: the tool
-  // layer cannot resurrect a deleted card.
+  // armed delete: no undo anywhere - the tool layer cannot resurrect a deleted card.
   const confirmingDelete = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
   const deleteConfirmLabel = computed(
@@ -417,11 +410,7 @@
     opacity: 0.4;
     cursor: default;
   }
-  /*
-   * armed delete: the drawer-level danger zone.
-   * The heavier border is the warning, the same tinge the board-remove button carries /
-   * /
-   */
+  /* armed delete: the drawer-level danger zone; the heavier border is the warning tint. */
   .drawer-danger {
     flex: none;
     margin-top: 8px;

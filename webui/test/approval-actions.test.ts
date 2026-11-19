@@ -1,5 +1,5 @@
-// omega webui: unit tests for the answerable gate question
-// ). Two surfaces over the SAME verdict endpoint:
+// omega webui: unit tests for the answerable gate question. Two surfaces
+// over the SAME verdict endpoint:
 // the chat card:
 //   approve / deny / follow-up prompt;
 // the notification card (NotificationsPanel.vue): approve / deny

@@ -1,12 +1,8 @@
-// omega webui: the notifications feed store. Module-level reactive singleton: the badge
-// must stay live wherever the notifications tab chip renders (DockPane), independent of
-// whether the feed panel or the toast stack is mounted. startNotificationFeed is
-// idempotent - the first mount (usually NotificationToasts) lights the feed; every
-// later mount is a no-op.: the store owns THREE emitters now, and the third one is the
-// approval surface. What it never had was a VOICE: the badge rides the notifications
-// chip, which is invisible when that tab is not on screen, so an approval from a
-// session the page never opened looked like nothing happening until the panel's
-// activation read.
+// the notifications feed store. A module-level reactive singleton, so the badge stays live
+// wherever the notifications tab chip renders - and startNotificationFeed is idempotent
+// (the first mount usually NotificationToasts lights it). The badge rides the notifications
+// chip, which is invisible when that tab is not on screen, so the store also owns the toast
+// stack that speaks for an approval from a session this page never opened.
 
 import { computed, ref } from "vue";
 import {
@@ -25,33 +21,28 @@ import {
 import { onToastPanel } from "../../composables/canvas";
 import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
 
-// the age renderer rides the one surface.
 export { notificationAge };
 
 // the durable feed (newest first) + the server's unread count
 const list = ref<OmegaNotification[]>([]);
 const unread = ref(0);
-// pending agent questions. The hub holds them in memory and pushes nothing of its own:
-// this list is a REST read (GET /verdicts) refreshed on the shell's event hints, never
-// a poll, and its ARRIVALS toast - see newlyPendingVerdicts.
+// pending agent questions: a REST read (GET /verdicts) refreshed on the shell's event hints,
+// never a poll, whose ARRIVALS toast (see newlyPendingVerdicts)
 const pendingVerdicts = ref<PendingVerdictCard[]>([]);
-// the card ids this page has already announced, and whether the boot read has seeded.
+// the card ids this page has already announced, and whether the boot read has seeded
 const announcedVerdicts = new Set<string>();
 let verdictsSeeded = false;
 
-// NotificationToast is one row of the transient stack. The kind discriminates so a
-// renderer (or a click) never has to guess which shape it holds.
+// one row of the transient stack; the kind discriminates the shape
 export type NotificationToast =
   | { key: number; kind: "record"; record: OmegaNotification }
   | { key: number; kind: "verdict"; card: PendingVerdictCard };
-// the transient toast stack
 const toasts = ref<NotificationToast[]>([]);
 
-// THE badge: the dockable's tab chip reads.
+// THE badge: the dockable's tab chip reads it
 export const notificationsBadge = computed(
   () => unread.value + pendingVerdicts.value.length,
 );
-// the chip text: the cap voice (99+), "" at zero.
 export const notificationsBadgeText = computed(() =>
   notificationBadgeText(notificationsBadge.value),
 );
@@ -61,10 +52,8 @@ export const notificationsUnread = unread;
 export const pendingVerdictList = pendingVerdicts;
 export const notificationToasts = toasts;
 
-// decodeToast is the canvas feed's record reader: the canvas contract
-// hands the payload verbatim (it never knows the record shape); this
-// store owns the OmegaNotification read. An unusable payload is
-// skipped - a toast that never fires is cleaner than a broken frame.
+// decodeToast is the canvas feed's record reader: the canvas contract hands the payload
+// verbatim, so this store owns the OmegaNotification read; an unusable payload is skipped.
 function decodeToast(payload: unknown): OmegaNotification | null {
   if (!payload || typeof payload !== "object") return null;
   const p = payload as Record<string, unknown>;
@@ -82,11 +71,9 @@ function decodeToast(payload: unknown): OmegaNotification | null {
   };
 }
 
-// refresh pulls the REST truth: the full feed + the pending cards. The two reads are
-// INDEPENDENT: they answer different seams, so one broken route must not blank the
-// other - the pending list is the half a user is BLOCKED on. A failed read degrades to
-// "state unchanged" (the store starts empty and a broken lane never breaks the panel -
-// it just renders stale).
+// refresh pulls the REST truth: the feed + the pending cards. The two reads are
+// INDEPENDENT - one broken route must not blank the other, since the pending list is the
+// half a user is BLOCKED on. A failed read degrades to "state unchanged".
 async function refresh(): Promise<void> {
   const [page, vpage] = await Promise.all([
     fetchNotifications(false).catch(() => null),
@@ -106,11 +93,6 @@ async function refresh(): Promise<void> {
   }
 }
 
-// newlyPendingVerdicts (the arrival diff this read feeds) lives in. Every caller of
-// refresh shares the bookkeeping law - the boot read, an event hint, the panel's
-// activation, a reconnect catch-up.
-
-// pushVerdictToast announces one newly pending approval in the shell.
 function pushVerdictToast(card: PendingVerdictCard): void {
   const key = ++toastKey;
   toasts.value = [...toasts.value, { key, kind: "verdict", card }];
@@ -131,7 +113,7 @@ function pushToast(n: OmegaNotification): void {
   timers.add(id);
 }
 
-// the funnel: one live frame -> the feed row, the unread count, the toast.
+// one live frame -> the feed row, the unread count, the toast
 function ingest(payload: unknown): void {
   const n = decodeToast(payload);
   if (!n) return;
@@ -140,7 +122,7 @@ function ingest(payload: unknown): void {
   pushToast(n);
 }
 
-// markRecordRead: a row (or toast) click un-badges that one record.
+// a row (or toast) click un-badges that one record
 export async function markRecordRead(n: OmegaNotification): Promise<void> {
   if (n.read) return;
   const before = unread.value;
@@ -152,7 +134,6 @@ export async function markRecordRead(n: OmegaNotification): Promise<void> {
   });
 }
 
-// markAllRead: every record read in one POST.
 export async function markAllRead(): Promise<void> {
   const before = { unread: unread.value };
   const beforeList = list.value;
@@ -166,20 +147,18 @@ export async function markAllRead(): Promise<void> {
   }
 }
 
-// dismissToast: one toast out of the stack (its click or its expiry).
+// one toast out of the stack (its click or its expiry)
 export function dismissToast(key: number): void {
   toasts.value = toasts.value.filter((t) => t.key !== key);
 }
 
-// clearToasts: every toast out of the stack at once - the expiry
-// timers die with it (a toast that never renders fires no timer).
+// every toast out at once; the expiry timers die with it
 export function clearToasts(): void {
   for (const id of timers) clearTimeout(id);
   timers.clear();
   toasts.value = [];
 }
 
-// clearAll: every record DELETES (the tab's clear-all button).
 export async function clearAll(): Promise<void> {
   const before = { unread: unread.value, list: list.value };
   list.value = [];
@@ -193,8 +172,7 @@ export async function clearAll(): Promise<void> {
   }
 }
 
-// a toast click: mark the record read (the old openRecord contract),
-// drop the toast, return the record for the caller's navigation intent.
+// a toast click: mark the record read, drop the toast, hand the record back for navigation
 export async function openToastRecord(t: {
   key: number;
   record: OmegaNotification;
@@ -204,9 +182,8 @@ export async function openToastRecord(t: {
   return t.record;
 }
 
-// openToastVerdict: an approval toast's click. The toast drops and the card comes back
-// for the caller's navigation intent - the answering surface is the notifications
-// panel's pending list.
+// an approval toast's click: the toast drops and the card comes back for the caller's
+// navigation intent (the answering surface is the panel's pending list).
 export function openToastVerdict(t: {
   key: number;
   card: PendingVerdictCard;
@@ -220,12 +197,10 @@ let toastKey = 0;
 const timers = new Set<ReturnType<typeof setTimeout>>();
 let releaseFeed: (() => void) | null = null;
 
-// startNotificationFeed lights the page-lifetime store. Idempotent; every mount calls
-// it, only the first one pays. The chat topic is NOT pane-scoped: the hub fans every
-// run out to every page, so an approval from a session this page never opened still
-// arrives as a frame - and the arrival toasts on the spot. refresh never rejects (each
-// half catches to null), so a broken route can strand neither the read nor the marker
-// that awaits it.
+// startNotificationFeed lights the page-lifetime store. Idempotent; every mount calls it,
+// only the first pays. The chat topic is NOT pane-scoped (the hub fans every run out to
+// every page), so an approval from a session this page never opened still arrives as a
+// frame and toasts on the spot. refresh never rejects, so a broken route strands nothing.
 let bootRead: Promise<void> | null = null;
 
 export function startNotificationFeed(): void {
@@ -235,16 +210,14 @@ export function startNotificationFeed(): void {
   releaseFeed = onToastPanel(ingest);
 }
 
-// notificationFeedSettled: the boot refresh's promise. Resolves at once
-// when the feed never started (a shell with no toast host has no boot
-// read to wait on). It never RE-triggers the read - exactly one boot pull
-// per page, the same one the panel and the hints then keep fresh.
+// the boot refresh's promise; resolves at once when the feed never started. It never
+// RE-triggers the read - exactly one boot pull per page.
 export function notificationFeedSettled(): Promise<void> {
   return bootRead ?? Promise.resolve();
 }
 
-// stopNotificationFeed: drop the funnel + toast timers so a store lit under a disposed
-// page (HMR, tests) never leaks them across a module re-evaluation.
+// drop the funnel + toast timers, so a store lit under a disposed page (HMR, tests) never
+// leaks them across a module re-evaluation.
 export function stopNotificationFeed(): void {
   releaseFeed?.();
   releaseFeed = null;
@@ -256,7 +229,7 @@ export function stopNotificationFeed(): void {
   timers.clear();
 }
 
-// refreshNotifications: an activation pull.
+// an activation pull
 export function refreshNotifications(): Promise<void> {
   return refresh();
 }
