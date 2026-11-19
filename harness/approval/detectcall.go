@@ -281,7 +281,10 @@ func DetectCall(call Call, prov Provenance) []Finding {
 
 	// HOST-PROVENANCE. A host only counts in a call that can reach it:
 	// a URL host counts anywhere in a reaching call (the code names the
-	// URL a line before opening it), a bare IP only on a reaching line.
+	// URL a line before opening it), a bare IP on a reaching line - a
+	// line carrying a network client, or ANY line when the tool NAME
+	// itself is the reach surface (`web.fetch`'s arguments are what it
+	// fetches, so `{"host":"10.1.2.3"}` reaches on its own).
 	// One finding per host: an IP used as a URL's own authority is one
 	// host, not two.
 	if callReaches {

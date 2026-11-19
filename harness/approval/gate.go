@@ -220,10 +220,16 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 	findings := DetectCall(call, prov)
 	if len(findings) > 0 {
 		if !live.DetectorsEnforce() {
+			// the row rides the same egress boundary as every other
+			// row this gate writes (redact.go): a flagged call that
+			// carries a credential must not persist it in cleartext in
+			// the soak log.
+			monitorText, monitorRedacted := sanitize(callText(call))
 			g.audit.Append(g.row(rowInput{
 				mode: g.mode(), origin: origin, session: session, tool: toolName,
-				command: callText(call), rules: reasonsOf(findings),
+				command: monitorText, rules: reasonsOf(findings),
 				findings: findings, monitor: true, judge: JudgeNotConsulted,
+				redacted:  monitorRedacted,
 				outcome:   Outcome{Verdict: MonitorVerdict, Step: MonitorStep, Reason: detectorSummary(findings)},
 				decidedBy: "monitor", latency: time.Since(start),
 			}))

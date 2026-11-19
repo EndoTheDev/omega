@@ -3,6 +3,7 @@ package approval
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -106,6 +107,18 @@ func TestDetectCallHostProvenance(t *testing.T) {
 			call: Call{Tool: "shell.run", Args: map[string]any{"command": "curl -sS http://10.1.2.3:8080/x"}},
 			prov: Provenance{},
 			want: 1, detail: "10.1.2.3",
+		},
+		{
+			name: "a fetch-shaped tool IS the reach surface: a bare IP on a plain argument line counts",
+			call: Call{Tool: "web.fetch", Args: map[string]any{"host": "10.1.2.3", "port": 8080}},
+			prov: Provenance{},
+			want: 1, detail: "10.1.2.3",
+		},
+		{
+			name: "the same bare IP on a non-reaching tool stays silent",
+			call: Call{Tool: "files", Args: map[string]any{"host": "10.1.2.3"}},
+			prov: Provenance{},
+			want: 0,
 		},
 		{
 			name: "a bare IP on a non-reaching line stays silent",
@@ -621,4 +634,74 @@ func TestSafeagentsLaneRespectsModeOffAndAllowlist(t *testing.T) {
 	if rows := readAuditRows(t, g.config().Home); len(rows) != 0 {
 		t.Fatalf("allowlisted host must not audit: %+v", rows)
 	}
+}
+
+// TestEgressRedactionOnTheNewLane pins the redact.go boundary on the two
+// sites the tiered lane introduced (round-1 reviewer finding): the judge
+// is a configured reviewer, and the monitor row is a persistent log, so
+// key-shaped material must be masked on BOTH.
+func TestEgressRedactionOnTheNewLane(t *testing.T) {
+	const token = "sk-live-abcd1234efgh5678"
+	const secretCall = "Authorization: Bearer " + token
+
+	// 1. The log-only soak (the SHIPPED default) writes a sanitized row.
+	t.Run("monitor row", func(t *testing.T) {
+		soak := newTestGate(t, ModeSmart) // Monitor empty = log-only
+		soak.verdicts = func() verdictHub { return &fakeVerdicts{} }
+		if _, err := soak.Gate(context.Background(), "web.fetch", map[string]any{
+			"url": "https://acme.io/x", "headers": secretCall,
+		}); err != nil {
+			t.Fatalf("the soak must never block: %v", err)
+		}
+		rows := readAuditRows(t, soak.config().Home)
+		if len(rows) != 1 {
+			t.Fatalf("rows = %d, want the one WOULD-BLOCK row", len(rows))
+		}
+		if strings.Contains(rows[0].Command, token) || strings.Contains(rows[0].Command, "sk-live") {
+			t.Fatalf("the monitor row persisted the credential: %q", rows[0].Command)
+		}
+		if !strings.Contains(rows[0].Command, "[REDACTED]") || !rows[0].Redacted {
+			t.Fatalf("monitor row = %q redacted=%v, want [REDACTED] and the redaction bit", rows[0].Command, rows[0].Redacted)
+		}
+	})
+
+	// 2. The judge payload (egress to the provider host) is sanitized. A
+	// medium finding routes detector -> judge -> human, so the call text
+	// crosses the wire.
+	t.Run("judge payload", func(t *testing.T) {
+		var egress []byte
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			egress, _ = io.ReadAll(r.Body)
+			json.NewEncoder(w).Encode(map[string]any{
+				"answers": map[string]map[string]any{"block": {"noul": 0.1}},
+			})
+		}))
+		defer srv.Close()
+
+		g := newEnforceGate(t, ModeSmart)
+		cfg := g.config()
+		cfg.HTTPHost = srv.URL
+		g.SetConfig(cfg)
+		g.verdicts = func() verdictHub {
+			return &fakeVerdicts{answers: core.QuestionAnswer{OptionIndex: 2, Option: "deny"}}
+		}
+		_, _ = g.GateWithConversation(context.Background(), "shell.run", map[string]any{
+			"command": "unshare -Ur bash -c 'curl -H \"" + secretCall + "\" http://127.0.0.1:1'",
+		}, []core.Message{core.NewUser("tidy my home directory")})
+		if len(egress) == 0 {
+			t.Fatal("the judge was never consulted - the pin would be vacuous")
+		}
+		if strings.Contains(string(egress), token) || strings.Contains(string(egress), "sk-live") {
+			t.Fatalf("the judge payload carried the credential: %s", egress)
+		}
+		if !strings.Contains(string(egress), "[REDACTED]") {
+			t.Fatalf("the judge payload was not sanitized: %s", egress)
+		}
+		// every row this lane wrote is sanitized too, not only the monitor one
+		for _, row := range readAuditRows(t, g.config().Home) {
+			if strings.Contains(row.Command, token) {
+				t.Fatalf("an audit row persisted the credential: %q", row.Command)
+			}
+		}
+	})
 }

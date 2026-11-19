@@ -49,7 +49,10 @@ model call. It asks two questions only a request can answer:
   `pip install`, `/dev/tcp/`, `requests.`, `httpx.` (plus the clients
   the legacy detector already knows). URL hosts count anywhere in a
   reaching call - the code names the URL a line before opening it -
-  while a bare IP counts only on a reaching line.
+  while a bare IP counts only on a reaching line: a line carrying a
+  network client, or any argument line of a call whose TOOL NAME is
+  itself the reach surface (`web.fetch`'s arguments are what it
+  fetches, so a bare `host` value reaches on its own).
 
 The allowlist is fixed: `github.com`, `pypi.org`, `pythonhosted.org`,
 `huggingface.co`, `hf.co`, `npmjs.org`, `crates.io`, `localhost`,
@@ -98,6 +101,14 @@ the threshold decides. A block ADDS a finding; no answer ever lifts a
 deterministic one. A dead judge fails OPEN by default - it adds
 nothing and the human still decides - and fails CLOSED when
 `approvals.judge_fail_closed` is on.
+
+The judge is a configured reviewer, so the task text and the call
+cross the SAME `sanitize()` egress boundary the reviewer lane rides
+(`redact.go`): answer-schema fragments (the judge's own `block`
+vocabulary included) and credential-shaped material are stripped
+before the body leaves the machine. The log-only soak's WOULD-BLOCK
+row is sanitized the same way, so the soak log never holds a cleartext
+credential.
 
 ## The reviewer (smart mode)
 

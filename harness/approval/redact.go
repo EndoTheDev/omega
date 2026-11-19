@@ -23,7 +23,11 @@ var schemaPairRes = schemaPairPatterns()
 func schemaPairPatterns() []*regexp.Regexp {
 	keys := []string{"verdict", "policy_allows", "blast_radius", "self_advocating",
 		"reads_secrets", "sends_outbound", "choice", "confidence",
-		"probabilities", "noul", "score", "answers", "questions"}
+		"probabilities", "noul", "score", "answers", "questions",
+		// the evidence-only judge's own answer vocabulary (card
+		// t_e3cd4381): a call quoting `block: 0.9` at the judge is the
+		// same parse-divergence/self-advocacy class, so it is cut too.
+		"block"}
 	out := make([]*regexp.Regexp, 0, len(keys))
 	for _, k := range keys {
 		pat := `"?` + k + `"?\s*:\s*(?:"(?:\\.|[^"\\])*"|[^\s,{};\"]*(?:\.[^\s,{};\"]*)*)`
