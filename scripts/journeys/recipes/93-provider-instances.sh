@@ -16,14 +16,17 @@
 # error. The journey therefore:
 #   - adds its instance WITHOUT an api_key (empty is the one legal
 #     keyless shape on a new row - a real key only ever enters
-#     through config.yaml), and
-#   - PINS the refusal: a plain-key PUT on a new row, a plain-key PUT
-#     on the stored row, a clear of a keyed lane row when the lane
-#     carries one (the nightly CI lane is zero-provider - that face
-#     stays pinned by cmd/omega settings_test.go
-#     TestApplyProviderInstancesGate), and the same refusal surfaced
-#     IN THE PANE. A future door-removal turns this journey red
-#     instead of silently reopening the API.
+#     through config.yaml),
+#   - PINS the refusal on the wire: a plain-key PUT on a new row, a
+#     plain-key PUT on the stored row, a clear of a keyed lane row when
+#     the lane carries one (the nightly CI lane is zero-provider - that
+#     face stays pinned by cmd/omega settings_test.go
+#     TestApplyProviderInstancesGate), and
+#   - PINS the pane gate: the key cell is disabled on every row and
+#     names the door, so a typed key can never reach a save at all - the
+#     pane has no write path to refuse. A future door-removal or a
+#     re-opened pane turns this journey red instead of silently
+#     reopening the API.
 #
 # Wire truth: GET /settings (the provider.instances knob value) is
 # the config truth, GET /sessions (the row's provider field) is the
@@ -237,10 +240,24 @@ row_key_js() {
   printf '%s' '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");return r?(r.querySelector("input[type=password]")||{}).value||"":"";})()'
 }
 
-# fill_row_key <name> <text>: set the NAMED row's api-key input (the
-# input-event law: value alone does nothing).
+# fill_row_key <name> <text>: dispatch an input event into the NAMED
+# row's api-key cell. The cell is gated (disabled, no handler), so this
+# is the INERT probe of section 1c: the DOM node takes the value, the
+# draft does not move.
 fill_row_key() {
   jsq '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");if(!r) return false;const i=r.querySelector("input[type=password]");if(!i) return false;i.value="'$2'";i.dispatchEvent(new Event("input",{bubbles:true}));return true;})()' >/dev/null 2>&1
+}
+
+# row_key_disabled_js <name>: the named row's api-key cell is disabled
+# (config.yaml is the only door - the pane holds only the mask).
+row_key_disabled_js() {
+  printf '%s' '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");if(!r) return false;const i=r.querySelector("input[type=password]");return !!i && i.disabled;})()'
+}
+
+# row_key_door_js <name>: the named row's key label carries the door
+# marker (the field says config.yaml owns it, before any save click).
+row_key_door_js() {
+  printf '%s' '(()=>{const r=[...document.querySelectorAll(".providers-editor .provider-row")].find(x=>x.getAttribute("data-instance")==="'$1'");if(!r) return false;const d=r.querySelector(".provider-door");return !!d && (d.textContent||"").trim()==="config.yaml-only";})()'
 }
 
 # remove_row <name>: click the named row's remove control.
@@ -354,38 +371,43 @@ fi
 # every refused PUT mutated nothing: the wire is byte-identical
 assert_eq "$(read_instances)" "$WIRE_AT_PINS" "the refused door PUTs changed nothing (wire unchanged)"
 
-# --- 1c. the door pin in the pane -------------------------------------
-# The refusal must be VISIBLE where the operator edits (the Nov 8
-# nightly red surfaced exactly here): a plain key typed into the
-# saved row's key input dies on save with the door error, the dirty
-# save row stays (the config never moved), and a pane reload shows
-# the key input EMPTY again - the refused write left no residue.
+# --- 1c. the pane's key cell is gated: no edit reaches a save --------
+# The api key is config.yaml's on EVERY row (the masked round trip is the
+# only legal value the pane submits), so the pane cannot produce the door
+# error at all: the cell is DISABLED, its label names the door, and an
+# input dispatched into it moves no draft - nothing turns dirty, so no
+# save can ever carry a refused key. The wire half above pins the refusal
+# itself; this half pins that the pane cannot even attempt the write.
 if ! poll_js "$(row_present_js "$PROV_NAME")" 8; then
-  die "the saved instance row never rendered (pane pin)"
+  die "the saved instance row never rendered (pane gate pin)"
 fi
-fill_row_key "$PROV_NAME" "$PLAIN_KEY"
-if ! wait_js '!!document.querySelector(".settings-save-row")' 8; then
-  die "the plain-key edit never marked the pane dirty (save row missing)"
-fi
-jsq '(()=>{const b=document.querySelector(".settings-save-row .settings-save");if(!b) return 0;b.click();return 1})()' >/dev/null 2>&1
-door_in_pane='(()=>{const e=document.querySelector(".settings-error");return !!e && (e.textContent||"").indexOf("config.yaml is the only door") !== -1;})()'
-if ! poll_js "$door_in_pane" 15; then
-  err=$(jsq '(document.querySelector(".settings-error")||{}).textContent||""' 2>&1 | tail -1 | deq)
-  die "pane save with a plain key was not refused with the door error (error: $err)"
-fi
-step "ok: pane save with a plain api_key surfaces the door error"
-# the refusal keeps the dirty row - the config never moved
-assert_eq "$(jsq '!!document.querySelector(".settings-save-row")' 2>&1 | tail -1 | deq)" "true" \
-  "the refused pane save keeps the dirty save row"
+assert_eq "$(jsq "$(row_key_disabled_js "$PROV_NAME")" 2>&1 | tail -1 | deq)" "true" \
+  "the stored row's api key cell is disabled (config.yaml is the only door)"
+assert_eq "$(jsq "$(row_key_door_js "$PROV_NAME")" 2>&1 | tail -1 | deq)" "true" \
+  "the key cell names the door at the field"
+assert_eq "$(jsq '!!document.querySelector(".settings-save-row")' 2>&1 | tail -1 | deq)" "false" \
+  "the pane starts the gate pin clean (no dirty save row)"
 
-# reload: the refused write left no residue - the row persists, its
-# key input empty again
+fill_row_key "$PROV_NAME" "$PLAIN_KEY"
+i=0
+while [ "$i" -lt 8 ]; do
+  jsq '!!document.querySelector(".settings-save-row")' >/dev/null 2>&1
+  sleep 0.25
+  i=$((i + 1))
+done
+assert_eq "$(jsq '!!document.querySelector(".settings-save-row")' 2>&1 | tail -1 | deq)" "false" \
+  "a value typed into the gated key cell never marks the pane dirty (the cell carries no write path)"
+step "ok: the pane offers no api_key write path (no save can be attempted)"
+
+# reload: the refused shape left no residue - the row persists, its key
+# input is empty again (maskSecret keeps an empty key empty, so the plain
+# never touches the wire)
 open_settings
 if ! poll_js "$(row_present_js "$PROV_NAME")" 10; then
-  die "the instance row never re-rendered after the refused save (did it persist?)"
+  die "the instance row never re-rendered after the gate pin (did it persist?)"
 fi
 residue=$(jsq "$(row_key_js "$PROV_NAME")" 2>&1 | tail -1 | deq)
-assert_eq "$residue" "" "the refused plain key left no residue (key input empty after reload)"
+assert_eq "$residue" "" "the gated cell left no residue (key input empty after reload)"
 
 # --- 2. remove the row, save: the instance leaves --------------------
 remove_row "$PROV_NAME"
