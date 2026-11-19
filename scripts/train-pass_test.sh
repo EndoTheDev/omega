@@ -883,6 +883,64 @@ if [ "$rc" != 6 ]; then badf "S12c: a race red must exit 6, got $rc: $(cat "$HAR
 [ "$(status_of t_racerace)" = "ready" ] || badf "S12c: card back to ready, got $(status_of t_racerace)"
 grep -q "race leg skipped" "$HARNESS/run.out" && badf "S12c: a cgo host must never print the skip receipt"
 
+echo "== S13a: branch_name NULL + a live wt/<id> branch LANDS (scratch-spawned card)"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_nobr 900
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name=NULL WHERE id='t_nobr';"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S13a: expected rc 0, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "DONE t_nobr" "$HARNESS/run.out" || badf "S13a: no landing: $(cat "$HARNESS/run.out")"
+grep -q "carries no branch_name - resolved its wt branch wt/t_nobr" "$HARNESS/run.out" ||
+  badf "S13a: the fallback must name the branch it resolved: $(cat "$HARNESS/run.out")"
+[ -f "$REPO/t_nobr.txt" ] || badf "S13a: the card's work must land on dev"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_nobr)" ] ||
+  badf "S13a: marker must sit at dev tip"
+bn="$(sqlite3 "$KANBAN_DB" "SELECT IFNULL(branch_name,'') FROM tasks WHERE id='t_nobr';")"
+[ "$bn" = "wt/t_nobr" ] || badf "S13a: landing must repair the row to wt/t_nobr, got '$bn'"
+
+echo "== S13b: the pinned path (review seat) resolves wt/<id> too, never the old refusal"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_nobrpin 910
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name=NULL WHERE id='t_nobrpin';"
+rc=0
+( cd "$REPO" && TRAIN_CARD=t_nobrpin "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+if [ "$rc" != 0 ]; then badf "S13b: expected rc 0, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "not a queued landing" "$HARNESS/run.out" &&
+  badf "S13b: a NULL branch_name must not refuse the pinned card: $(cat "$HARNESS/run.out")"
+grep -q "pinned card: t_nobrpin" "$HARNESS/run.out" || badf "S13b: the pin did not land: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_nobrpin" "$HARNESS/run.out" || badf "S13b: no landing: $(cat "$HARNESS/run.out")"
+[ -f "$REPO/t_nobrpin.txt" ] || badf "S13b: the card's work must land on dev"
+
+echo "== S13c: a reconciler-excluded card (NULL branch + exclusion event) stays OUT of the queue"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_excl 920
+# exactly what reconcile_card writes: the row's branch_name cleared and the
+# queue-exclusion event. branch_name NULL alone must not resurrect it.
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name=NULL WHERE id='t_excl';
+INSERT INTO task_events(task_id,kind,payload,created_at)
+  VALUES('t_excl','commented','{\"author\": \"train\", \"note\": \"third strike (3) - handed to the reconciler, queue-excluded\"}',123);"
+pre="$(git -C "$REPO" rev-parse dev)"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S13c: expected rc 0 (empty queue), got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "queue empty" "$HARNESS/run.out" || badf "S13c: the excluded card must stay out of the queue: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S13c: nothing may land for an excluded card"
+[ -f "$REPO/t_excl.txt" ] && badf "S13c: the excluded card's work must not reach dev"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_excl || badf "S13c: the excluded card's branch is kept for archaeology"
+grep -q "kanban create" "$HARNESS/mock/hermes.log" &&
+  badf "S13c: an excluded card must not spawn a second reconciler card: $(cat "$HARNESS/mock/hermes.log")"
+
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
