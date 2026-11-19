@@ -28,8 +28,32 @@ DIRECTIVE = re.compile(
 )
 
 
-def strip_js(src):
-    """Remove // and /* */ comments; keep strings, raw strings and templates."""
+REGEX_PREV = set("(,=:[!&|?{};+-*%<>~^")
+REGEX_KEYWORDS = ("return", "typeof", "case", "in", "of", "if", "while", "do", "else", "yield", "await")
+
+
+def _regex_start(out):
+    """A '/' opens a regex literal when the last significant token allows one."""
+    text = "".join(out)
+    i = len(text) - 1
+    while i >= 0 and text[i].isspace():
+        i -= 1
+    if i < 0:
+        return True
+    c = text[i]
+    if c in REGEX_PREV:
+        return True
+    for kw in REGEX_KEYWORDS:
+        if text.endswith(kw) and (i + 1 - len(kw) == 0 or not (text[i - len(kw)].isalnum() or text[i - len(kw)] in "_$")):
+            return True
+    return False
+
+
+def strip_js(src, go=False):
+    """Remove // and /* */ comments; keep strings, raw strings and templates.
+
+    In Go a backtick string is raw: backslashes are not escapes there.
+    """
     out = []
     i, n = 0, len(src)
     while i < n:
@@ -42,6 +66,27 @@ def strip_js(src):
             while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
                 i += 1
             i += 2
+        elif c == "/" and _regex_start(out):
+            out.append(c)
+            i += 1
+            in_class = False
+            while i < n:
+                ch = src[i]
+                out.append(ch)
+                if ch == "\\" and i + 1 < n:
+                    out.append(src[i + 1])
+                    i += 2
+                    continue
+                if ch == "[":
+                    in_class = True
+                elif ch == "]":
+                    in_class = False
+                elif ch == "/" and not in_class:
+                    i += 1
+                    break
+                elif ch == "\n":
+                    break
+                i += 1
         elif c in "\"'":
             q = c
             out.append(c)
@@ -60,12 +105,12 @@ def strip_js(src):
             out.append(c)
             i += 1
             while i < n:
-                if src[i] == "\\" and i + 1 < n:
+                if not go and src[i] == "\\" and i + 1 < n:
                     out.append(src[i])
                     out.append(src[i + 1])
                     i += 2
                     continue
-                if src[i] == "$" and i + 1 < n and src[i + 1] == "{":
+                if not go and src[i] == "$" and i + 1 < n and src[i + 1] == "{":
                     out.append("${")
                     i += 2
                     depth = 1
@@ -146,7 +191,7 @@ def directives(text):
 def strip_for(path, text):
     if path.endswith(".vue") or path.endswith(".html"):
         return strip_html(text)
-    return strip_js(text)
+    return strip_js(text, go=path.endswith(".go"))
 
 
 def git(*args, binary=False):
