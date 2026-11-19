@@ -379,6 +379,7 @@
       :streaming="anyBusyNow"
       :message-count="messageCount"
       :tokens="tokens"
+      :tokens-estimated="tokensEstimated"
       :context-size="contextSize"
       :tokens-per-second="tokensPerSecond"
       :live-deltas-per-second="liveDeltasPerSecond"
@@ -1200,6 +1201,7 @@
     return panel ? normalizeChatPayload(panel.payload) : null;
   });
   const tokens = computed(() => focusedChatState.value.tokens);
+  const tokensEstimated = computed(() => focusedChatState.value.tokensEstimated);
   const tokensPerSecond = computed(() => focusedChatState.value.tokensPerSecond);
   const liveDeltasPerSecond = computed(() => focusedChatState.value.liveDeltasPerSecond);
   const lastChunksPerSecond = computed(() => focusedChatState.value.lastChunksPerSecond);

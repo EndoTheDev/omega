@@ -44,7 +44,7 @@
         v-if="tokens"
         class="seg hide-sm"
         title="tokens used, active session">
-        {{ tokens }} tok
+        {{ tokensEstimated ? "~" : "" }}{{ tokens }} tok
       </span>
       <span
         v-if="contextSize"
@@ -170,6 +170,8 @@
     streaming: boolean;
     messageCount: number;
     tokens: number;
+    // true while `tokens` carries a run-time estimate instead of reported usage
+    tokensEstimated?: boolean;
     contextSize: number;
     tokensPerSecond: number;
     liveDeltasPerSecond: number;

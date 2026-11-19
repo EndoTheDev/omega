@@ -1,5 +1,6 @@
 
 import { computed, reactive, ref, type ComputedRef, type InjectionKey, type Ref } from "vue";
+import { durableTokens, estimateTokens, usageTokens, type SessionTokens } from "./tokenstat.ts";
 import {
   attachSession,
   chatPanelContent,
@@ -86,6 +87,10 @@ export interface ChatState {
   files: OmegaAttachment[];
   statusLine: string;
   tokens: number;
+  // true while `tokens` carries a run-time estimate instead of reported usage
+  tokensEstimated: boolean;
+  // the last STORE-reported cumulative total: the base a live run counts onto
+  tokensDurable: number;
   tokensPerSecond: number;
   liveDeltasPerSecond: number;
   lastDeltasPerSecond: number;
@@ -122,6 +127,8 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   files: [],
   statusLine: "",
   tokens: 0,
+  tokensEstimated: false,
+  tokensDurable: 0,
   tokensPerSecond: 0,
   liveDeltasPerSecond: 0,
   lastDeltasPerSecond: 0,
@@ -312,6 +319,20 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     }
   }
 
+  // the ONE writer of the bar's token figure. The live paths (run start, usage,
+  // estimate) and the restore paths (session row, run end) all land here, so the
+  // two can never drift into different meanings for the same session.
+  function paintTokens(st: ChatState, next: SessionTokens) {
+    st.tokens = next.total;
+    st.tokensEstimated = next.estimated;
+  }
+
+  // a store-reported total: cumulative and exact, and the base the next run counts onto.
+  function paintDurable(st: ChatState, total: number) {
+    paintTokens(st, durableTokens(total));
+    st.tokensDurable = Math.max(0, total);
+  }
+
   function ensureState(key: string, sessionId: string | null = null, ephemeral?: boolean): ChatState {
     let st = states.get(key);
     if (!st) {
@@ -324,6 +345,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         files: [],
         statusLine: "",
         tokens: 0,
+        tokensEstimated: false,
+        tokensDurable: 0,
         tokensPerSecond: 0,
         liveDeltasPerSecond: 0,
         lastDeltasPerSecond: 0,
@@ -343,7 +366,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return st;
     }
     // the ephemeral bit NEVER flips: an `eph-` id adopting onto an unsaved tab keeps the no-persist contract
-    if (sessionId && st.sessionId !== sessionId) st.sessionId = sessionId;
+    if (sessionId && st.sessionId !== sessionId) {
+      st.sessionId = sessionId;
+      // a DIFFERENT session starts at its own total: the previous one is not its base
+      paintDurable(st, 0);
+    }
     if (ephemeral !== undefined) st.ephemeral = ephemeral;
     return st;
   }
@@ -371,7 +398,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (event === "session") continue; // the auto-create id rides the sender's own stream
       const handlers: StreamHandlers = {
         onUsage: (u) => {
-          st.tokens = u.promptTokens + u.completionTokens;
+          paintTokens(st, usageTokens(st.tokensDurable, u.promptTokens, u.completionTokens));
         },
         onViewModelDelta: (panel) => deps.canvasDelta?.(panel),
         onRunEnd: (finishReason) => {
@@ -400,7 +427,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 
   function makeTransportHandlers(st: ChatState): StreamHandlers {
     const sentAt = Date.now();
-    st.tokens = 0;
+    // a run counts ONTO the session's durable total: the bar never drops to one run
+    const base = st.tokensDurable;
+    // the panel's visible output at run start, so the estimate counts THIS run only
+    const panelAtStart = normalizeChatPayload(chatPanel()?.payload);
+    const outputAtStart = panelAtStart ? chatPanelContent(panelAtStart) : 0;
+    let usageSeen = false;
+    paintTokens(st, durableTokens(base));
     st.tokensPerSecond = 0;
     st.liveDeltasPerSecond = 0;
     st.lastDeltasPerSecond = 0;
@@ -416,14 +449,15 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       deltaTimes.push(now);
       while (deltaTimes.length && now - (deltaTimes[0] ?? now) > 1000) deltaTimes.shift();
       st.liveDeltasPerSecond = deltaTimes.length;
-      if (payload) {
-        st.tokens = Math.ceil(chatPanelContent(payload) / 4);
-      }
+      // an estimate never outranks reported usage for the same run
+      if (payload && !usageSeen)
+        paintTokens(st, estimateTokens(base, chatPanelContent(payload) - outputAtStart));
     };
     return {
       onSession: undefined, // the send path overrides (below)
       onUsage: (usage) => {
-        st.tokens = usage.promptTokens + usage.completionTokens;
+        usageSeen = true;
+        paintTokens(st, usageTokens(base, usage.promptTokens, usage.completionTokens));
         const seconds = (Date.now() - sentAt) / 1000;
         st.tokensPerSecond =
           seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
@@ -551,7 +585,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       const row = st.sessionId ? deps.sessionRow(st.sessionId) : undefined;
       if (row) {
         const durable = persistedTelemetry(row);
-        st.tokens = durable.tokens;
+        paintDurable(st, durable.tokens);
         st.tokensPerSecond = durable.tps;
         st.lastChunksPerSecond = durable.cps;
       }
@@ -603,7 +637,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     try {
       const detail = await fetchTranscript(sessionId);
       const durable = persistedTelemetry(detail.session);
-      st.tokens = durable.tokens;
+      paintDurable(st, durable.tokens);
       st.tokensPerSecond = durable.tps;
       st.lastChunksPerSecond = durable.cps;
       // restore IS rendering where the canvas panel does not cover, through the cache, so rows keep their instance
