@@ -34,8 +34,6 @@ import {
   INSPECTOR_TAB_COMPONENTS,
   LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
-  MENU_DOCKABLES,
-  COMPONENT_TITLES,
   CHAT_FLOOR_PX,
   MIN_PANE_PX,
   PRIMARY_TAB_COMPONENTS,
@@ -48,29 +46,18 @@ import {
   moduleGated,
   seatAllowsIn,
   validViewerRef,
-  zonesOf,
   type DockArea,
-  type DockableComponentLike,
   type DockComponentName,
   type ModuleGate,
   type ViewerRef,
 } from "./dockables.ts";
 export {
-  DOCK_COMPONENTS,
-  DOCKABLES,
   INSPECTOR_TAB_COMPONENTS,
-  LEGACY_DOCK_COMPONENTS,
   MAIN_DOCKABLES,
-  MENU_DOCKABLES,
-  COMPONENT_TITLES,
   PRIMARY_TAB_COMPONENTS,
   dockableMinPx,
-  isClosableTab,
-  isLockedTab,
-  seatAllowsIn,
-  zonesOf,
 };
-export type { DockArea, DockComponentName, DockableComponentLike, ViewClass, ViewerRef } from "./dockables.ts";
+export type { DockComponentName, ViewerRef } from "./dockables.ts";
 export { PANE_OPEN_MIN };
 
 export const DOCK_LAYOUT_KEY = "omega.dock-layout";

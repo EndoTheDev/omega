@@ -1083,9 +1083,15 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 
 ```bash
 node --test "test/*.test.ts"        # from webui - node's built-in runner
+npm run knip                        # from webui - dead exports/files/types/duplicates
 bash scripts/build.sh               # SPA generate + sync to api/static
 python3 scripts/stream_check.py http://127.0.0.1:8098   # transport probe (dev omega must run)
 ```
+
+`knip.json` roots the analyzer at `webui/`, so a shell export whose only
+consumers are capsule UIs (`harness/<name>/ui`) reads as dead there; the
+census in `test/capsulecensus.test.ts` names those imports in-workspace and
+asserts every capsule-imported shell name is still exported.
 
 `stream_check.py` exit codes: 0 healthy (incremental chunks), 1 buffered
 (no incremental arrival), 2 no stream at all.

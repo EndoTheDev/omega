@@ -17,9 +17,9 @@ import {
   upsertRecord,
   VERDICT_TOAST_MS,
   type OmegaNotification,
-} from "../../composables/notifications";
-import { onToastPanel } from "../../composables/canvas";
-import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega";
+} from "../../composables/notifications.ts";
+import { onToastPanel } from "../../composables/canvas.ts";
+import { fetchVerdicts, type PendingVerdictCard } from "../../composables/omega.ts";
 
 export { notificationAge };
 
@@ -40,7 +40,7 @@ export type NotificationToast =
 const toasts = ref<NotificationToast[]>([]);
 
 // THE badge: the dockable's tab chip reads it
-export const notificationsBadge = computed(
+const notificationsBadge = computed(
   () => unread.value + pendingVerdicts.value.length,
 );
 export const notificationsBadgeText = computed(() =>
@@ -153,7 +153,7 @@ export function dismissToast(key: number): void {
 }
 
 // every toast out at once; the expiry timers die with it
-export function clearToasts(): void {
+function clearToasts(): void {
   for (const id of timers) clearTimeout(id);
   timers.clear();
   toasts.value = [];
