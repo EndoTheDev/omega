@@ -262,7 +262,7 @@ type ApprovalProvider interface {
 }
 
 // GateProvenance is the optional upgrade to ApprovalProvider (card
-// t_e3cd4381, the model-capabilities pattern): a gate that judges a
+//, the model-capabilities pattern): a gate that judges a
 // call's PROVENANCE needs the conversation the call belongs to, and the
 // loop is the one place that holds it. The loop hands the run's message
 // snapshot with every gated call; what COUNTS as provenance is the

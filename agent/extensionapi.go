@@ -728,8 +728,8 @@ func (api *ExtensionAPI) RegisterLifecycle(name string, start func(ctx context.C
 //
 // The key namespace is closed per direction: capsule services use the
 // capsule's own name ("cron", "trust", "verdicts", "notifications",
-// "skills", "memory") plus the shell-offered "chat-runs" (Endo ruling
-// 2026-11-04, the first shell-offered service key - the census names
+// "skills", "memory") plus the shell-offered "chat-runs" (
+//, the first shell-offered service key - the census names
 // it, the consumer owns the face); the substrate need-keys are a
 // documented closed list (provider, store, loop, logger, compactor,
 // prompt, nudger, approvals) - proposing need key #9 is a design

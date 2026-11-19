@@ -369,7 +369,7 @@ type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
 	SmartPolicy string `yaml:"smart_policy"`
 	// Monitor is the safeagents detector set's rollout (card
-	// t_e3cd4381): "log-only" (or empty) reports WOULD-BLOCK findings
+	//): "log-only" (or empty) reports WOULD-BLOCK findings
 	// and never blocks - the soak; "enforce" lets the severity tiers
 	// decide.
 	Monitor string `yaml:"monitor"`

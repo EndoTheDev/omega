@@ -62,7 +62,7 @@
     gateCards: (PendingVerdictCard | null)[];
     sessionId?: string;
     live?: boolean;
-    // this group's DURABLE fold address (card t_15572849): ChatTab derives
+    // this group's DURABLE fold address: ChatTab derives
     // it from the head row - the same row the container is keyed by - so
     // the reader's manual open/close survives the dock-tab switch that
     // unmounts the pane. Absent = no pin (auto only).
@@ -81,7 +81,7 @@
   //     a manual summary click PINS the group for the session and mode
   //     flips + status transitions recompute around it, never over it.
   //
-  // The pin is stored, not remembered (card t_15572849): a dock-tab switch
+  // The pin is stored, not remembered: a dock-tab switch
   // unmounts the whole pane (DockPane renders only the ACTIVE tab), so the
   // group's open state lives on the tab's view record, keyed by the group's
   // durable address (ChatTab derives it from the head row - the same row the
@@ -108,7 +108,7 @@
     const pin = pinned.value;
     // a pin WINS, and on a remount it must be applied to the fresh DOM
     // (a <details> mounts closed - skipping a pinned group would render
-    // every restored group collapsed, card t_15572849)
+    // every restored group collapsed,
     el.value.open =
       pin !== null
         ? pin

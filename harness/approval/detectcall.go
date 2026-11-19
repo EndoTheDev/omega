@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The safeagents detector set (card t_e3cd4381, half 1): deterministic,
+// The safeagents detector set: deterministic,
 // request-only, plain Go regexes - zero dependencies, zero network.
 //
 // Two questions only a request can answer:
@@ -50,7 +50,7 @@ const maxTaskChars = 2000
 
 // Provenance is the conversation's human-authored text - the only
 // citation that sources a host. The model's own assistant turns are
-// excluded by ruling, so a host the model invented on an earlier turn
+// excluded by rule, so a host the model invented on an earlier turn
 // reads exactly like a host it invents now.
 type Provenance struct {
 	turns []string
@@ -140,7 +140,7 @@ type Call struct {
 // Text flattens the call into the text the detectors read: one line
 // per decoded argument line. A JSON payload carried as a string is
 // decoded first - matching raw wire text would let an escaped "\n" in
-// front of "cat" read as "ncat" (the ruling: decode, then match per
+// front of "cat" read as "ncat" (the rule: decode, then match per
 // line; never strip backslashes and call the result text).
 func (c Call) Text() string {
 	return strings.Join(c.lines(), "\n")
@@ -195,7 +195,7 @@ var (
 	// reachToolPattern: a tool NAME that can reach a network.
 	reachToolPattern = regexp.MustCompile(`(?i)fetch|browse|browser|web|http|url|download`)
 	// reachLinePattern: command lines that open a connection - the
-	// ruling's set (curl, wget, nc, ssh, git clone, pip install,
+	// rule's set (curl, wget, nc, ssh, git clone, pip install,
 	// /dev/tcp/, requests., httpx.) plus the clients the legacy
 	// detector already knows.
 	reachLinePattern = regexp.MustCompile(`(?i)(\bcurl\b|\bwget\b|\bnc\b|\bncat\b|\bnetcat\b|\btelnet\b|\bssh\b|\bscp\b|\bsftp\b|\bgit\s+clone\b|\bpip3?\s+install\b|\bnpm\s+(?:i|install)\b|/dev/tcp/|\brequests\.|\bhttpx\b|\bhttp\.client\b|\burllib\b|\baiohttp\b)`)
@@ -211,7 +211,7 @@ var (
 	readVerbPattern        = regexp.MustCompile(`(?i)(?:^|[\s;&|(])(?:cat|less|more|head|tail|strings|xxd|hexdump|od|base64|grep|rg|awk|sed|cp|scp|tar|zip|python3?|node|perl|ruby|php|curl|wget|nc)\b`)
 )
 
-// allowlistDomains: the package/tooling hosts the ruling allows
+// allowlistDomains: the package/tooling hosts the rule allows
 // verbatim, plus the RFC 2606 reserved names no one can register.
 var allowlistDomains = []string{
 	"github.com", "pypi.org", "pythonhosted.org", "huggingface.co",
@@ -227,7 +227,7 @@ var reservedDomains = []string{
 
 // allowlistedHost reports whether a host is exempt from the provenance
 // question. The loopback spellings (127.0.0.1, ::1, 0.0.0.0) are the
-// localhost ruling, not a new entry.
+// localhost rule, not a new entry.
 func allowlistedHost(host string) bool {
 	h := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 	switch h {
@@ -368,7 +368,7 @@ func urlHosts(line string) []string {
 }
 
 // ipv4Hosts returns the dotted quads on one line that are really
-// addresses. The ruling: digits after "=" are a version, not an IP
+// addresses. The rule: digits after "=" are a version, not an IP
 // (`pkg==0.5.1.4`), and every octet must fit a byte.
 func ipv4Hosts(line string) []string {
 	var out []string

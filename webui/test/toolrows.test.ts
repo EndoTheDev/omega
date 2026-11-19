@@ -59,7 +59,7 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
   // the element must be reachable.
   assert.match(t, /<details\s+ref="el"/);
   // the pin: a summary click records the post-toggle state against the
-  // row's DURABLE address on the tab's view record (card t_15572849 - a
+  // row's DURABLE address on the tab's view record 
   // dock-tab switch unmounts the pane, so the pin cannot live in the
   // instance), and applyAuto applies it rather than recomputing over it
   assert.match(t, /@click="onSummaryClick"/);

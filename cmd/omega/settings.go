@@ -362,7 +362,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.Approvals.SmartPolicy, Live: true,
 					Default: def.Approvals.SmartPolicy,
 					Help:    "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
-				// The safeagents detector set's rollout (card t_e3cd4381).
+				// The safeagents detector set's rollout.
 				// New detectors ship in the log-only soak: findings land
 				// in the audit log as WOULD-BLOCK and no call is touched
 				// until a real-run soak shows no false-positive pile.

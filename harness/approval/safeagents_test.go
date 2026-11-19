@@ -15,7 +15,7 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Half 1: the safeagents detector set (card t_e3cd4381).
+// Half 1: the safeagents detector set.
 // ---------------------------------------------------------------------------
 
 // provenanceOf builds the gate's provenance input from plain human turns.
@@ -27,7 +27,7 @@ func provenanceOf(turns ...string) Provenance {
 	return NewProvenance(convo)
 }
 
-// TestProvenanceExcludesAssistantTurns pins the self-citation ruling: a
+// TestProvenanceExcludesAssistantTurns pins the self-citation rule: a
 // host the model wrote on an earlier turn is no more sourced than one
 // it writes now, so only human turns count.
 func TestProvenanceExcludesAssistantTurns(t *testing.T) {
@@ -220,7 +220,7 @@ func TestDetectCallBehaviourPatterns(t *testing.T) {
 
 // TestDetectCallDecodesArguments: JSON carried as a string value is
 // decoded before matching, and a decoded newline IS a line boundary (the
-// ruling: decode, then match per line - never strip backslashes and call
+// rule: decode, then match per line - never strip backslashes and call
 // the result text, where an escaped \n before "cat" would read as
 // "ncat").
 func TestDetectCallDecodesArguments(t *testing.T) {

@@ -7,12 +7,12 @@ type Config struct {
 	// (Q2/Q8: trusted operator configuration, never command text).
 	SmartPolicy string `yaml:"smart_policy"`
 	// Monitor is the safeagents detector set's rollout mode (card
-	// t_e3cd4381): "log-only" (or empty) records WOULD-BLOCK findings
+	//): "log-only" (or empty) records WOULD-BLOCK findings
 	// in the audit log and never blocks - the soak every new detector
 	// ships through; "enforce" lets the severity tiers decide.
 	Monitor string `yaml:"monitor"`
 	// JudgeFailClosed flips the evidence-only judge's failure law
-	// (card t_e3cd4381): false (the default) fails OPEN - an
+	//: false (the default) fails OPEN - an
 	// unreachable judge adds nothing and the human still decides;
 	// true fails CLOSED - the call is refused.
 	JudgeFailClosed bool `yaml:"judge_fail_closed"`
@@ -43,7 +43,7 @@ func ValidMode(m string) bool {
 	return m == "" || m == ModeOff || m == ModeManual || m == ModeSmart
 }
 
-// Detector modes (card t_e3cd4381): the safeagents detector set's
+// Detector modes: the safeagents detector set's
 // rollout. Empty = MonitorLogOnly - a new detector ships dark, soaks
 // on real runs, and only then flips.
 const (

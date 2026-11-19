@@ -902,7 +902,7 @@
     };
     switch (name) {
       case "/help": {
-        // card t_8ad7ab33: /help is a REFERENCE, and a reference belongs
+        //
         // in the reference surface - the command palette (Ctrl+K), whose
         // list carries every shell command with its description. The
         // status line answers with the pointer, one line, like every other
@@ -1851,7 +1851,7 @@
     window.location.reload();
   }
 
-  // card t_8ad7ab33: the palette's "/" rows execute the shell verb on the
+  //
   // ACTIVE chat tab - the same host.command path a typed "/theme" takes
   // (one router, one status line). No chat tab anywhere means no status
   // line to answer on, so the verb runs unbound rather than silently
@@ -1876,11 +1876,11 @@
       openRecentSession: openRecentSessionTab,
       reloadLayout: () => window.location.reload(),
       clearSavedLayout,
-      // card t_8ad7ab33: the palette IS the command reference - /help
+      //
       // opens it, so the "/" verbs (name + description, from commands.ts)
       // ride the same list and run through the shell's own executor.
       runSlashCommand,
-      // card t_0a9edc72: the "New chat" command dims under the draft
+      //
       // focus - the same fact every other new-conversation door reads
       draftFocused: draftConversationFocused.value,
       hiddenDockable: (id) => moduleGated(id, currentModuleGate()),

@@ -16,14 +16,14 @@ type Risk struct {
 	WouldInterrupt bool
 	Reasons []string
 	// Findings carries the same hits as structured records (card
-	// t_e3cd4381): one per reason, each with its severity tier. These
+	//): one per reason, each with its severity tier. These
 	// are the LEGACY shell rules - Tiered=false, so their routing is
 	// untouched (a hit still means "interrupt", exactly as before);
 	// the severity is what the audit row and the approval surface read.
 	Findings []Finding
 }
 
-// Severity is a detector finding's tier (card t_e3cd4381).
+// Severity is a detector finding's tier.
 type Severity string
 
 const (
@@ -41,7 +41,7 @@ const (
 // route: >= SeverityHigh blocks automatically, the milder tiers mark
 // the call suspicious and only those escalate. The legacy shell rules
 // ride Tiered=false: their severity is a label (the reviewer/ladder
-// lane routes them, unchanged since card t_c2b52cb5).
+// lane routes them, unchanged since.
 type Finding struct {
 	Detector string   `json:"detector"`
 	Severity Severity `json:"severity"`

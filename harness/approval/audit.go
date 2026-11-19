@@ -51,7 +51,7 @@ type AuditRow struct {
 	Error          string   `json:"error,omitempty"`
 	LatencyMs      int64    `json:"latency_ms"`
 
-	// The safeagents lane (card t_e3cd4381). Findings carries every
+	// The safeagents lane. Findings carries every
 	// structured detector hit with its severity tier - the legacy shell
 	// rules (tiered=false) and the request-only set (tiered=true).
 	// Monitor marks a log-only dry run: the row is a WOULD-BLOCK

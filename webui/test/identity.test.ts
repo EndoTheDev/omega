@@ -78,7 +78,7 @@ function proseWindow(prefix: string, first: number, count: number): ChatRowWire[
     // the shape follows the ROW ID, not the slot in the window: a sliding
     // window re-lists the same rows, and a store row never changes its
     // role or block type (the address is (id, role: block type), cards
-    // t_a356fcc7 + t_a20fbad7)
+    // +)
     const cycle = (first + n) % 3;
     if (cycle === 0) rows.push(userRow(id, `q${id}`));
     else if (cycle === 1) rows.push(thinkingRow(id, `think ${id}`));
@@ -286,13 +286,13 @@ test("chat.ts: prose rows are addressed by store id; the positional sig is gone"
   );
   assert.doesNotMatch(chatSource, /\bconst sig = /, "no positional sig variable");
   // the address rule lives in ONE place: omega.ts transcriptAddress,
-  // which the REST restore path resolves too (card t_a20fbad7). chat.ts
+  // which the REST restore path resolves too. chat.ts
   // DELEGATES - a local spelling here would let the two paths drift. The
   // shape carries the BLOCK TYPE beside the role: one store row lands as
   // several wire rows (a reasoning block and the answer block share the
   // row id), and an id-only address aliased them into one object whose
   // `kind` flipped on every paint - the reactive write loop of card
-  // t_a356fcc7.
+  //.
   assert.match(chatSource, /transcriptAddress\(row\.id, `\$\{row\.role\}:\$\{block\.type\}`/, "the canvas delegates the store-id address");
   assert.match(chatSource, /transcriptAddress\(undefined, `\$\{row\.role\}:\$\{block\.type\}`, ctx\.ordinals, consume\)/, "and the id-less slot address");
   assert.doesNotMatch(chatSource, /`row:\$\{row\.id\}`/, "no second spelling of the id address");

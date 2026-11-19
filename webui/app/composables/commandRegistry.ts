@@ -11,7 +11,7 @@ export interface PaletteCommand {
   id: string;
   title: string;
   hint?: string;
-  /** card t_8ad7ab33: the row's one-line what-it-does, rendered under the
+  /**
       title. The / reference set carries it (a command list is a reference:
       a name alone does not say what the verb does) - never the hint column,
       which stays keybindings-only. */
@@ -49,7 +49,7 @@ export interface PaletteCommandDeps {
    * honest one.
    */
   draftFocused?: boolean;
-  /** card t_8ad7ab33: the "/" verb executor. The palette carries the shell
+  /**
       command REFERENCE (name + description per command, from commands.ts -
       one list, never a copy), and a picked row runs that verb against the
       active chat tab. Absent = the rows render but picking one is a no-op
@@ -129,7 +129,7 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
       run: () => deps.clearSavedLayout(),
     },
   );
-  // card t_8ad7ab33: the "/" shell command reference closes the list -
+  //
   // name + description per command, straight from commands.ts (the ONE
   // shell set: the composer's slash palette and this list can never
   // drift). /help opens this palette, so the list it opens must BE the

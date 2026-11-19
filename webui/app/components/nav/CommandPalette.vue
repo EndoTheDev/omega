@@ -42,7 +42,7 @@
         @click="run(c)">
         <span class="command-text">
           <span class="command-title">{{ c.title }}</span>
-          <!-- card t_8ad7ab33: the reference set carries a one-line
+          <!--
                description under the title. The rows that have none (the
                openable dockables, the shell toggles) render title-only,
                exactly as before. -->

@@ -285,14 +285,14 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		assistantEvent := core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
-		// Async agent loop (t_f3f953d0, phase 1; escalation card
-		// t_1501cb04): partition the completion's calls.
+		// Async agent loop 
+		//): partition the completion's calls.
 		// Immediate-yield calls (Yield: true - delegate.task, minutes
-		// by nature) END the turn (ruling 1) - registered in the
+		// by nature) END the turn (rule 1) - registered in the
 		// durable pending-calls table and dispatched on their own
 		// goroutines, they never block this run again. Every other
-		// call executes INLINE under the inline budget (Endo ruling
-		// 2026-11-08): finishes in budget -> the result lands in-turn
+		// call executes INLINE under the inline budget (
+		//): finishes in budget -> the result lands in-turn
 		// exactly as the fast path always did, zero overhead; over
 		// budget -> the RUNNING call converts to a pending dispatch
 		// (the executor keeps executing out-of-band, the turn ends,
@@ -300,7 +300,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		// restarts or duplicates the call.
 		//
 		// The approval gate reads this turn's conversation snapshot
-		// (card t_e3cd4381): a detector judging CALL PROVENANCE needs
+		//: a detector judging CALL PROVENANCE needs
 		// the human's own words, and this is the one place that has
 		// them.
 		conversation := conversationSnapshot(messages)
@@ -543,7 +543,7 @@ type inlineExec struct {
 	result     core.ToolResult
 	finishedAt time.Time
 
-	// conversation is this turn's message snapshot (card t_e3cd4381):
+	// conversation is this turn's message snapshot:
 	// the approval gate's provenance input. Copied before the execs
 	// start, so a run goroutine appending later turns can never race
 	// the gate's read.
@@ -711,7 +711,7 @@ func pendingPlaceholderContent(tool string) string {
 }
 
 // conversationSnapshot copies the run's message history for the
-// approval gate (card t_e3cd4381): the gate judges a call's PROVENANCE
+// approval gate: the gate judges a call's PROVENANCE
 // against the human's own words, and the loop is the one place that has
 // them. A copy, because the run goroutine keeps appending while the
 // gate reads.
@@ -731,7 +731,7 @@ func gateCall(ctx context.Context, ap agent.ApprovalProvider, name string, args 
 }
 
 // dispatchYieldCall runs ONE yield-class call outside any turn (async
-// agent loop, ruling 2): the loop already flushed the assistant
+// agent loop, rule 2): the loop already flushed the assistant
 // message and registered the call durably; this goroutine outlives the
 // run on purpose - its ctx is the run context with the cancellation
 // removed (a run end must not eat a dispatched call) plus the call's
@@ -743,7 +743,7 @@ func gateCall(ctx context.Context, ap agent.ApprovalProvider, name string, args 
 func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions, conversation []core.Message) {
 	// A dispatched call outlives the RUN on purpose (the turn ended by
 	// dispatching it), so its ctx drops the run context's cancellation -
-	// but NOT the user's stop (card t_caa67135): the run's stop latch
+	// but NOT the user's stop: the run's stop latch
 	// cuts the call too, with core.ErrUserStopped as the cause. Without
 	// it a stopped turn left its shell running to settle into a wake
 	// turn minutes later - the loop resurrected a conversation the

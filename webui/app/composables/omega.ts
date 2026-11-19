@@ -147,7 +147,7 @@ export interface ToolItem {
   id?: string;
   output?: string;
   result?: string;
-  // the smart gate's decision record (card t_1b3e2a8b): the verdict
+  // the smart gate's decision record: the verdict
   // line stamped on the call's result, rendered on this row. Absent =
   // no machine decision (benign, manual mode, unresolved escalation).
   gate?: string;
@@ -251,7 +251,7 @@ export function toolCallAnchorMs(
 // result, error state and elapsed onto it. Thin items (empty content)
 // render nothing. Pure: every call mints its own items.
 //
-// Async agent loop phase 3 (pending chips, ruling 6): a call whose
+// Async agent loop phase 3 (pending chips, rule 6): a call whose
 // result row is ABSENT from the transcript renders as the PENDING
 // status, not a completed line with no output. The backend only
 // persists a call without its result when the call is yield-class
@@ -262,7 +262,7 @@ export function toolCallAnchorMs(
 // (a result may sit anywhere after its call), then the mapping.
 //
 // The PURITY is the defect the stateful twin below fixes (card
-// t_a20fbad7): a reload or a tab remount refetches this wire and gets
+//): a reload or a tab remount refetches this wire and gets
 // fresh literals, so every restored row remounts. createRestoreTranscript
 // runs the same mapping over a keyed cache; a caller with no identity to
 // keep still wants this entry point.
@@ -282,10 +282,10 @@ export function renderTranscriptItems(
 // keyed v-for destroys and re-creates the row - worse, the incoming tail
 // row can inherit an existing row's object (a row wearing another row's
 // meter anchor, fold pin and streaming bit). The canvas paint learned
-// this first (card t_494639c8). The REST restore keyed by NOTHING - every
+// this first. The REST restore keyed by NOTHING - every
 // refetch minted fresh literals - so every session the canvas panel does
 // not cover (a second tab, any session after a reload) still remounted
-// every row on every load (card t_a20fbad7, audit F5). Both paths resolve
+// every row on every load. Both paths resolve
 // a row's address through this ONE function:
 //
 //   row:<store row id>:<shape>   the store has named the row
@@ -361,7 +361,7 @@ interface RestorePaint {
 // swap the object, because the streaming bubble's meter would restart.
 // Items in a cache are reactive proxies: the paint writes them IN PLACE
 // (a delta mutating content/streaming/elapsedMs), and those writes must
-// invalidate the readers that watch those fields (the t_078a2c35 law,
+// invalidate the readers that watch those fields (the law,
 // the same one the canvas items ride).
 function itemAt<T extends TranscriptItem>(
   paint: RestorePaint | null,
@@ -507,7 +507,7 @@ function mapTranscriptItems(
     switch (it.kind) {
       case "user": {
         // a user turn whose ONLY payload is attachments still renders
-        // (card t_8a569163): the reference chips are the message
+        //: the reference chips are the message
         if (!(it.content || it.images?.length || it.attachments?.length)) break;
         const m = itemAt<MessageItem>(paint, it.id, wireShape(it.kind), index, () => ({
           kind: "message",
@@ -541,7 +541,7 @@ function mapTranscriptItems(
         // items mount final (the driver adopts the streaming ones).
         // A streaming segment also carries its elapsed-so-far: the
         // remounted meter counts on from it instead of restarting at
-        // the mount moment (card t_95385aba).
+        // the mount moment.
         m.streaming = it.running ? true : undefined;
         m.elapsedMs = it.running ? it.elapsed_ms : undefined;
         out.push(m);
@@ -621,7 +621,7 @@ function mapTranscriptItems(
             JSON.stringify(it.tool_call.arguments, null, 2)
           : undefined;
         // a RUNNING or PENDING call meters from its open wall clock
-        // when the wire carries one (card t_6bad9f6f round 3): a
+        // when the wire carries one: a
         // yielded call pushes no delta, so a restored payload is
         // arbitrarily old and its elapsed_ms only tells how long the
         // call had run when the payload was built - the stamp makes
@@ -673,10 +673,10 @@ export function awaitsWake(it: TranscriptItem | undefined): boolean {
 }
 
 // applyTurnTotals stamps each turn's ANSWER row with the turn's wall-clock
-// total (card t_3a857a2d): the span from the user message ARRIVING to the
+// total: the span from the user message ARRIVING to the
 // final answer LANDING, subtracted from the two timestamps the transcript
-// already carries (the store's created_at on both rows). Endo's ruling
-// (2026-11-15): wall-clock truth - thinking, tool runs, smart-gate waits
+// already carries (the store's created_at on both rows). 
+//: wall-clock truth - thinking, tool runs, smart-gate waits
 // and his own answer latency all bill into the total, so the badge is the
 // turn's honest bottom line (his sleep-30 turn reads ~51s, not the last
 // segment's 841ms).
@@ -715,7 +715,7 @@ export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
 // is the turn's ANSWER, and the answer's is the span between the turn's two
 // row stamps.
 //
-// WRITE LAW (card t_a356fcc7): this runs inside the canvas PAINT, over the
+// WRITE LAW: this runs inside the canvas PAINT, over the
 // transcript's REACTIVE cached items, so every assignment it makes is a
 // reactive write on the very objects the paint handed out. A write that
 // changes a value invalidates every computed and effect that read it, and

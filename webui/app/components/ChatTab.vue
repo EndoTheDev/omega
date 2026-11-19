@@ -148,7 +148,7 @@
 </template>
 
 <script setup lang="ts">
-  // ONE chat tab (card t_4f0e88f2): the chat component is dockable now.
+  // ONE chat tab: the chat component is dockable now.
   // chat-last 2a: the transcript renders FROM the canvas view-model -
   // the chat panel's snapshot + deltas, item-mapped with identity so a
   // repaint does not remount the pane. The per-tab transcript copies
@@ -193,7 +193,7 @@
     type ToolItem,
   } from "../composables/omega";
   import type { DockTab } from "../composables/dock";
-  // card t_e4280de7: consecutive tool rows collapse into ONE group
+  //
   // block (render-site view, the transcript itself stays flat)
   import { groupToolRuns, isToolRun, foldAddress, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
@@ -236,7 +236,7 @@
   host.ensureState(stateKey, sessionId.value, isEphemeral || undefined);
   const state = computed(() => host.states.get(stateKey));
 
-  // --- the tab's VIEW record (card t_15572849) -------------------------
+  // --- the tab's VIEW record -------------------------
   //
   // DESIGN, settled: the view state lives on the store record keyed by the
   // tab (ChatState.view), never in this instance and never behind
@@ -279,14 +279,14 @@
     return address ? `group:${address}` : undefined;
   }
 
-  // --- the session's remembered context (card t_9de5b009) ---
+  // --- the session's remembered context ---
   //
   // The pinned model belongs to the SESSION, not to the app: reopening
   // restores what it last used, a mid-session change updates the row (the
   // app PATCHes on our emit). A bound tab adopts the row's pin.
   //
   // The session's WORKSPACE pin left this component with its chip (card
-  // t_8fd38f88): the workdir selector lives in the status bar's left zone
+  //): the workdir selector lives in the status bar's left zone
   // now, and app.vue writes the same two targets it used to - the row
   // (bound) or the draft intent (unbound). ChatTab only carries the state
   // the send consumes.
@@ -327,14 +327,14 @@
     if (!(panelMatches.value && panelPayload.value)) return null;
     return canvasTranscript.apply(panelPayload.value);
   });
-  // the live chip tail (card t_896cf5a8): a running call's streamed
+  // the live chip tail: a running call's streamed
   // output rides the row whose tool call id matches - read AT THE ROW
-  // (ToolCallLine, card t_64d14d2b), keyed by the row's own call id. The
+  // (ToolCallLine, keyed by the row's own call id. The
   // store is reactive, so a landed chunk repaints the one row that owns
   // the call. The derivation below is a PURE projection: no write, no
   // chip read - so a chunk never re-derives the transcript, its blocks or
   // the activity line, and no assignment of ours can re-arm the pane
-  // (card t_a356fcc7's class, now structurally impossible here).
+  //.
   const restoreItems = computed(() => state.value?.restored ?? []);
   const transcript = computed(() => canvasItems.value ?? restoreItems.value);
   const statusLine = computed(() => state.value?.statusLine ?? "");
@@ -442,7 +442,7 @@
   });
   let tick: ElapsedMeter | null = null;
 
-  // THE PHASE ANCHOR IS STORED (card t_15572849): the activity line is
+  // THE PHASE ANCHOR IS STORED: the activity line is
   // narration of the RUN, so a dock-tab switch - which unmounts this pane -
   // must not restart its clock. The anchor (which run, which phase, when it
   // started) lives on the tab's view record; a mount into the SAME run's
@@ -556,7 +556,7 @@
     recordScroll();
   }
 
-  // --- the view record's scroll half (card t_15572849) -----------------
+  // --- the view record's scroll half -----------------
   //
   // The scrollport is per INSTANCE (two panes may render the same session),
   // but the reader's PLACE is per TAB: a dock-tab switch unmounts this
@@ -579,7 +579,7 @@
     // the shrink-clamp guard's fuel (resumesFollow) is the height BEFORE the
     // restore write: without this priming the restore's own scroll event
     // would compare against a stale height and could read as a reader
-    // decision (the followWrite law, card t_31c64042)
+    // decision (the followWrite law,
     lastScrollHeight = el.scrollHeight;
     pinned.value = view.followPinned;
     jumpPill.value = pillVisible(el.scrollTop, el.clientHeight, el.scrollHeight);
@@ -737,9 +737,9 @@
     // with the first swap and leave the settled column deaf)
     // the RO targets start observing after the first paint batch - a
     // registration fire rides the pinned gate, so priming this way never
-    // forces a mount-time jump (card t_bef3f45e). The restored view comes
+    // forces a mount-time jump. The restored view comes
     // FIRST: the latch it sets is what the registration fire reads (card
-    // t_15572849 - a reader parked in the history is not yanked to the tail
+    // - a reader parked in the history is not yanked to the tail
     // by their own return to the tab).
     nextTick(() => {
       restoreScroll();

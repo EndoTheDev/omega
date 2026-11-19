@@ -52,7 +52,7 @@ export function groupToolRuns(
 }
 
 // foldAddress is a tool row's DURABLE address for its manual fold pin
-// (card t_15572849): the same identity ladder the child key rides, with
+//: the same identity ladder the child key rides, with
 // NO slot floor. The fold pin is the READER's state and it now lives on
 // the tab's view record so a dock-tab switch (which unmounts the whole
 // pane) cannot drop it - which means the address must survive a remount
@@ -68,7 +68,7 @@ export function foldAddress(item: { callId?: string; id?: string }): string | un
 }
 
 // toolChildKey: the v-for key for a group's CHILD rows (card
-// t_64212867). The container is keyed by its head item, so a container
+//). The container is keyed by its head item, so a container
 // can survive while its membership shifts - a variant anchor split, or
 // a paint that re-serves an older head object. An index key then hands
 // one call's ToolCallLine instance (its fold pin, its running meter) to

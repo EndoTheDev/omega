@@ -81,12 +81,12 @@
     answerMs?: number;
     gate?: string;
     variant?: VariantBlock | null;
-    // the TOOL CALL id (card t_64d14d2b): the row reads its own live
+    // the TOOL CALL id: the row reads its own live
     // tail from the chips store by this key - a landed chunk repaints
     // exactly this row, and the transcript derivation stays pure.
     // Absent on an id-less call (nothing to attach to) - no tail.
     callId?: string;
-    // this row's DURABLE fold address (card t_15572849): the tab's view
+    // this row's DURABLE fold address: the tab's view
     // record keys the reader's manual open/close pin by it, so the pin
     // survives the dock-tab switch that unmounts the whole pane. Derived
     // once, upstream, by toolGroup.ts foldAddress - absent on a row
@@ -113,7 +113,7 @@
     props.answerMs != null ? formatDurationMs(props.answerMs) : "",
   );
 
-  // the live chip tail (cards t_896cf5a8 + t_64d14d2b): the chips topic's
+  // the live chip tail (cards +): the chips topic's
   // streamed output for THIS row's call, read from the store here instead
   // of merged onto the item by the transcript derivation. The store is
   // reactive per call id, so a landed chunk repaints exactly the row that
@@ -123,14 +123,14 @@
   const liveText = computed(() => chipDisplay(liveChip.value) || undefined);
   const liveSettled = computed(() => liveChip.value?.settled === true);
 
-  // --- auto open/close (/tools auto parity, card t_868633b3) ---
+  // --- auto open/close (/tools auto parity, ---
   // The settings knob (auto | expanded | collapsed) decides what a row
   // does on its own: auto expands a running call and collapses it once
   // it settles. A manual summary click PINS the row - its open state is
   // the USER's, and mode flips and status transitions recompute around
   // it, never over it.
   //
-  // The pin is stored, not remembered (card t_15572849): the pane unmounts
+  // The pin is stored, not remembered: the pane unmounts
   // on every dock-tab switch (DockPane renders only the ACTIVE tab), so an
   // instance-local pin died with the instance and the row came back closed.
   // The pin lives on the tab's view record, addressed by the row's DURABLE

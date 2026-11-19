@@ -137,7 +137,7 @@ func (g *Gate) Gate(ctx context.Context, toolName string, args map[string]any) (
 }
 
 // GateWithConversation is the agent.GateProvenance upgrade (card
-// t_e3cd4381): the loop hands the run's conversation so the safeagents
+//): the loop hands the run's conversation so the safeagents
 // detectors can ask the provenance question - does the host this call
 // reaches appear in the HUMAN's own words? A gate consulted the plain
 // way sees no conversation, so nothing is sourced and every
@@ -173,7 +173,7 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 		risk = Assess(p)
 	}
 
-	// The safeagents lane (card t_e3cd4381): request-only detectors over
+	// The safeagents lane: request-only detectors over
 	// EVERY tool call. In the log-only soak a hit is recorded as a
 	// WOULD-BLOCK and the call proceeds exactly as it would have.
 	call := Call{Tool: toolName, Args: args}
@@ -402,7 +402,7 @@ func truncTo(s string, n int) string {
 }
 
 // detectorLane is the safeagents lane's escalation path (card
-// t_e3cd4381): a HIGH finding blocks on its own (the cheap regex
+//): a HIGH finding blocks on its own (the cheap regex
 // catches the obvious), a suspicious one passes the evidence-only
 // judge and then the human - the judge/human see only the gray zone.
 // The judge can only ADD a block: its finding rides the record and the

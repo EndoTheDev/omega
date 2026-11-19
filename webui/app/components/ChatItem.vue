@@ -62,7 +62,7 @@
     retryable?: boolean;
     sessionId?: string;
     gateCard?: PendingVerdictCard | null;
-    // card t_15572849: this row's durable fold address (toolGroup.ts
+    //
     // foldAddress) - the tool line keys its manual open/close pin by it on
     // the tab's view record, so the pin survives the pane's unmount
     foldKey?: string;

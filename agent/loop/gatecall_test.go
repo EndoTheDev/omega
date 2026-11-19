@@ -1,6 +1,6 @@
 package loop
 
-// The approval seam's provenance handoff (card t_e3cd4381): a gate that
+// The approval seam's provenance handoff: a gate that
 // judges CALL PROVENANCE needs the human's own words, and the loop is the
 // one place that has them. Pinned here: the loop hands the conversation to
 // a provenance-aware gate, and a plain ApprovalProvider keeps working

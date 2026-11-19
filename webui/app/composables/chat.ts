@@ -52,7 +52,7 @@ import { isLive, isStreaming } from "./toolStatus.ts";
 // The chat actions are module-qualified on the wire.
 const CHAT_MODULE = "http_channel";
 
-/** ChatViewState is the tab's VIEW record (card t_15572849): the values a
+/** ChatViewState is the tab's VIEW record: the values a
     dock-tab switch destroys. DockPane renders ONE outlet for the ACTIVE tab
     and there is no KeepAlive anywhere in the tree, so every switch unmounts
     the pane and takes the scrollport, the follow latch, the fold pins and
@@ -150,7 +150,7 @@ export interface ChatState {
   // same /settings payload SettingsTab renders) - no default, no seed; an explicit
   // clear in the chip wins over the seed.
   workspaceIntent: string;
-  // the tab's VIEW record (card t_15572849): scroll place + follow
+  // the tab's VIEW record: scroll place + follow
   // latch, fold pins, the activity phase anchor, the loaded-view
   // witness. A dock-tab switch unmounts the pane, so the view state
   // cannot live in the instance - it lives here, keyed by the tab.
@@ -234,11 +234,11 @@ export interface ChatHost {
   /** mount-time restore of one tab's view: persisted history rebuild +
       telemetry, reading the detail's live-run flag to attach. Refetch
       is skipped while this state itself is attached/busy (a refetch
-      would clobber the live view with a mid-flight snapshot), and - card
-      t_15572849 - while the state already holds this session's content
-      and no run has moved the session row since it was restored (the
-      dock-tab switch's remount is exactly that case). force = the truth
-      moved for a reason the row stamp cannot see yet. */
+      would clobber the live view with a mid-flight snapshot), and while
+      the state already holds this session's content and no run has moved
+      the session row since it was restored (the dock-tab switch's remount
+      is exactly that case). force = the truth moved for a reason the row
+      stamp cannot see yet. */
   load(key: string, sessionId: string, force?: boolean): Promise<void>;
   /** subscribe to the session's live run for THIS tab's state (the
       duplicate-tab path: the other tab already streams locally) */
@@ -536,7 +536,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // each run states its own ending (async agent loop phase 3): the yielded flag from
     // a PREVIOUS run must not arm the pending watcher off this one's streams
     st.lastFinishReason = "";
-    // a fresh transport interaction is a fresh RUN (card t_15572849):
+    // a fresh transport interaction is a fresh RUN:
     // the activity line's phase anchor records this number, so a pane
     // that mounts into the same phase key ("thinking") can tell "the
     // same stretch, keep counting" from "an earlier run's clock"
@@ -719,7 +719,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     }
   }
 
-  // --- the restore path's identity (card t_a20fbad7) ------------------
+  // --- the restore path's identity ------------------
   //
   // st.restored used to be rebuilt from scratch by every load(): a
   // remount, a tab switch, a variant select each refetched the
@@ -766,7 +766,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     const st = ensureState(key, sessionId);
     // a stream live on THIS state owns its feed.
     if (busyKeys.value.has(key) || st.attached) return;
-    // the loaded-view reuse (card t_15572849): a dock-tab switch unmounts
+    // the loaded-view reuse: a dock-tab switch unmounts
     // the pane and the mount calls load() again. The state already carries
     // this session's content - refetching it costs a REST round trip and
     // re-renders the view for nothing. The refusal is EVIDENCE-BASED, never
@@ -789,7 +789,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       // state's cache, so a refetch re-uses the object of every row it
       // already rendered (unchanged rows keep their component instance).
       st.restored = restoreFor(st).apply(detail.items, sessionId);
-      // the branch points ride the restore (t_a62eeb43): the switcher
+      // the branch points ride the restore: the switcher
       // and the fork affordance read this block. Absent key = plain
       // session, an empty list keeps the shape total.
       st.variants = detail.variants ?? [];
@@ -1122,11 +1122,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // row id when persisted, else an explicit id-less slot), mutated in
 // place, reused in the rebuilt array.
 //
-// IDENTITY LAW (card t_494639c8). A prose row's address is its STORE
+// IDENTITY LAW. A prose row's address is its STORE
 // ROW ID, never its position. The rule itself lives in ONE place -
 // omega.ts transcriptAddress - because the REST restore path
 // (createRestoreTranscript) paints the same rows from the same wire and
-// must resolve the same address (card t_a20fbad7). The payload is a
+// must resolve the same address. The payload is a
 // sliding window - the
 // newest 40 rows (agent/api/chat_panel.go) - so one append past the
 // window shifts every surviving index by one. A positional key missed
@@ -1153,7 +1153,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // (sweepSlots), so an id-less row that left the canvas leaves no object
 // behind for a later row to inherit.
 //
-// REACTIVE ITEMS (t_078a2c35). Cache items are reactive proxies: an
+// REACTIVE ITEMS. Cache items are reactive proxies: an
 // in-place write (a delta mutating content/streaming/elapsedMs)
 // invalidates exactly the render effects that read those fields
 // (ChatItem's :item-id, ChatMessage's variantLabel). Under the id law a
@@ -1245,13 +1245,13 @@ export function createCanvasTranscript(): CanvasTranscript {
   // over it - a CHANGED reactive write on every paint of an unchanged
   // payload, which invalidated the effects that read it and re-armed the
   // paint that made it: the pane spun, painting itself, until the tab died
-  // (card t_a356fcc7). It also silently dropped the reasoning row from the
+  //. It also silently dropped the reasoning row from the
   // live pane (the same object cannot be both). The type is stable across
   // the window's slide, so identity survives exactly as the id law wants;
   // the ordinal below is still the id-less row's, where the shape already
   // carries it. The spelling itself lives in ONE place - omega.ts
   // transcriptAddress - because the REST restore path resolves the same
-  // addresses from the same wire (card t_a20fbad7).
+  // addresses from the same wire.
   function rowAddress(row: ChatRowWire, block: ChatBlockWire, ctx: Paint): string {
     return transcriptAddress(row.id, `${row.role}:${block.type}`, ctx.ordinals);
   }
@@ -1423,8 +1423,8 @@ export function createCanvasTranscript(): CanvasTranscript {
         blockRunning ? "running"
         : callId && !resultIds.has(callId) ? "pending"
         : "done";
-      // a LIVE call meters from its open wall clock (card t_6bad9f6f
-      // round 3), resolved ONCE PER ITEM (card t_a356fcc7): the anchor is
+      // a LIVE call meters from its open wall clock 
+      // round 3), resolved ONCE PER ITEM: the anchor is
       // `now - started_at` at FIRST SIGHT, so a rebuild whose fresh
       // identity cache meets a payload older than the call's yield still
       // counts from the call's real start instead of zero. It is NOT

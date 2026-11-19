@@ -10,7 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// The evidence-only judge (card t_e3cd4381, half 2).
+// The evidence-only judge.
 //
 // The judging model sees EXACTLY three things: the human's task text,
 // the pending tool call, and the deterministic findings. It never sees
