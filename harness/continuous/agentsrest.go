@@ -472,10 +472,12 @@ func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Reque
 	ar.writeJSON(w, http.StatusOK, sess)
 }
 
-// handleAgentSessions serves GET /agents/{name}/sessions (the agent's own session list
-// - the default list never shows these rows) and POST /agents/{name}/sessions: create a
-// session bound to this agent. Sessions are bound at creation and never switch agents,
-// so there is no PATCH - a re-binding is a new session.
+// handleAgentSessions serves GET /agents/{name}/sessions (the agent's own session list)
+// and POST /agents/{name}/sessions: create a session bound to this agent. A NAMED
+// agent's rows stay in that agent home's own store and never appear in the human's
+// list; a POST as the DEFAULT agent instead creates the caller's own sidebar-listed
+// conversation on the main store. Sessions are bound at creation and never switch
+// agents, so there is no PATCH - a re-binding is a new session.
 func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
