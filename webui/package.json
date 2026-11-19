@@ -7,7 +7,8 @@
     "build": "nuxt build",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "test": "node --test \"test/*.test.ts\""
+    "test": "node --test \"test/*.test.ts\"",
+    "knip": "npx --yes knip@5.88.1 --include exports,files,types,duplicates"
   },
   "dependencies": {
     "@xterm/addon-fit": "^0.11.0",
