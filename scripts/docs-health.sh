@@ -77,6 +77,10 @@ die() {
 #   - bin/skills/learn-skill/SKILL.md: coupled to the validator script it
 #     documents, not to its own directory (a doc coupled to itself is
 #     structurally never due).
+#   - scripts/release-notes.overrides.md: the hand-written prose the notes
+#     script reads, so it is coupled to that script. dist/ is NOT mapped:
+#     it is the script's generated output (NOTES_OUT_DIR, gitignored since
+#     card t_ab24b59d) - a generated artifact is not a doc to keep fresh.
 mapping_table() {
   cat <<'MAP'
 docs/api.md|agent/|api/|cmd/
@@ -88,10 +92,11 @@ docs/pipeline.md|scripts/|.github/workflows/
 docs/release-gate.md|scripts/journeys/|scripts/train-pass.sh|scripts/review-at-close.sh|scripts/fence-test.sh|.github/workflows/release.yml
 docs/approvals.md|harness/approval/|agent/
 bin/skills/learn-skill/SKILL.md|bin/skills/learn-skill/scripts/
+scripts/release-notes.overrides.md|scripts/release-notes.sh
 docs/architecture.md
 docs/troubleshooting.md,docs/extraction-recipe.md,docs/project-trust.md
 AGENTS.md,.agents/COMMIT.md,.agents/DESIGN.md,.agents/REVIEW.md
-README.md,CONTRIBUTING.md,harness/README.md,scripts/journeys/README.md,.github/PULL_REQUEST_TEMPLATE.md
+README.md,CONTRIBUTING.md,.agents/ISSUES.md,harness/README.md,scripts/journeys/README.md,.github/PULL_REQUEST_TEMPLATE.md
 MAP
 }
 
