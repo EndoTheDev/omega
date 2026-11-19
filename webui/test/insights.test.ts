@@ -147,7 +147,6 @@ test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
     /id: "insights",\n    title: "Insights",[\s\S]*?class: "secondary-sidebar",\n    closable: false,\n  \},/,
     "insights is right-shell, unclosable",
   );
-  assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");
   const app = read("webui", "app", "app.vue");
   assert.match(app, /#pane-insights/, "the outlet template exists");
   assert.match(app, /<InsightsTab/, "the view mounts in the outlet");

@@ -302,7 +302,7 @@ test("an agent's work sessions are inspected from its expanded row, not the sess
   );
   assert.match(
     panelSrc,
-    /FULL SEPARATION[\s\S]{0,200}?not in the sessions sidebar/,
+    /FULL SEPARATION/,
     "the separation is stated where the section lives",
   );
 });

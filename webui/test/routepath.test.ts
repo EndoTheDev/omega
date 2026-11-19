@@ -144,7 +144,7 @@ describe("/settings landing wiring (app.vue)", () => {
   it("the refocus FALLBACK releases the landing, on live dock state", () => {
     const refocus = appSrc.match(/function refocusFrom\([\s\S]*?\n  \}\n/)?.[0] ?? "";
     const fallback =
-      refocus.slice(refocus.indexOf("no chat focus in this gesture")) || "";
+      refocus.slice(refocus.indexOf("const keep =")) || "";
     assert.ok(fallback.length > 0, "the fallback branch is where the release lives");
     assert.match(fallback, /settingsRoute\.value = false/);
     assert.match(fallback, /settingsRoute\.value && !settingsTabMounted\(\)/);

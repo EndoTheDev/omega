@@ -75,8 +75,13 @@ test("app.vue hosts the terminal outlet - any pane slot by union membership", ()
 test("the pane claims (reattach-else-spawn) and never gates", () => {
   assert.match(
     tabVue,
-    /POST["'` ]+["'`]?\/terminal\/sessions/,
+    /const CLAIM = "\/terminal\/sessions"/,
     "the claim rides POST /terminal/sessions",
+  );
+  assert.match(
+    tabVue,
+    /fetch\(url, \{ method: "POST" \}\)/,
+    "and the method is POST",
   );
   assert.doesNotMatch(
     tabVue,

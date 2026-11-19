@@ -89,7 +89,7 @@ const RETROFIT: Array<{
     rel: "harness/files/ui/FilesTab.vue",
     label: "files",
     module: null,
-    rules: [/narrow \(card t_a2fdc630\): the tree gets the flag passed down/],
+    rules: [/:narrow="narrow"/],
   },
 ];
 

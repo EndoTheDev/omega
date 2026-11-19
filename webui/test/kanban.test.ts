@@ -730,8 +730,8 @@ test("delete: drawer-level control, a confirm that names the card, optimistic re
     "exactly one delete emit, in the confirm handler",
   );
   assert.match(drawerVue, /function confirmDelete\(\) \{\s*disarmDelete\(\);\s*emit\("delete"\);/, "the confirm disarms, then emits");
-  assert.match(drawerVue, /there is NO undo/, "the no-undo ruling is stated where the control lives");
-  assert.match(drawerVue, /would need card resurrection/, "and names WHY undo cannot exist");
+  assert.match(drawerVue, /There is deliberately NO undo/, "the no-undo ruling is stated where the control lives");
+  assert.match(drawerVue, /cannot resurrect a deleted card/, "and names WHY undo cannot exist");
   assert.doesNotMatch(drawerVue, /undo-|showUndo|emit\("undo"\)/i, "no half-built undo affordance");
 
   // the wire: DELETE through the capability route, card leaves the list first

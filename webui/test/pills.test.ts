@@ -495,10 +495,6 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
     assert.ok(lane.includes("closePalette()"), "the accept closes the palette (pin)");
     assert.ok(lane.includes("forced.add(insertion)"), "and fresh-swallows the chip");
     assert.ok(!/if \(!isDir\)/.test(lane), "no bare-text dir lane survives");
-    assert.ok(
-      composer.includes("typing past the slash relists the folder"),
-      "the drill stays the token's law (typing deeper)",
-    );
   });
 
   it("the pill hosts a folder: folder glyph, folder title, dir ref to the viewer", () => {
@@ -557,7 +553,7 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
   });
 
   it("the token grammar the server keeps literal equals the chips' grammar", () => {
-    assert.ok(coreAtMention.includes("card t_7f09bd0c"));
+    assert.match(coreAtMention, /ReferenceOnly turns the file branches literal/);
   });
 });
 

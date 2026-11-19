@@ -146,7 +146,7 @@ describe("browserLogic: the refused-embed fallback", () => {
 
   it("the honesty note lives in the logic file (probe: headers only, never content)", () => {
     const logic = read("../harness/browser/ui/browserLogic.ts");
-    assert.match(logic, /Chromium fires the load event/);
+    assert.match(logic, /modern Chromium fires the load/);
     assert.match(logic, /the probe reads headers, never content/);
   });
 });

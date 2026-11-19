@@ -1040,7 +1040,7 @@ test("only a REAL selection clamps, measured fresh, on the scroll event", () => 
   );
   assert.match(
     tab,
-    /watch\(clampId, \(\) => \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*clampHold = null;/,
+    /watch\(clampId, \(\) => \{\s*clampHold = null;/,
     "a new selection drops the old section's end",
   );
 });

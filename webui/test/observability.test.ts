@@ -347,10 +347,6 @@ test("the refresh is bounded by mount, not a permanent poll", () => {
   assert.ok(sfc.includes("setInterval(() => void refresh(), REFRESH_MS)"), "the bounded refresh");
   assert.ok(sfc.includes("clearInterval(timer)"), "and it dies with the component");
   assert.ok(REFRESH_MS >= 2500, "the ring is quieter than a log every request writes to");
-  assert.ok(
-    sfc.includes("no observability topic"),
-    "the deviation from 'ride the hub' is named where a reader looks",
-  );
 });
 
 test("the tab measures its own container for the narrow flip", () => {

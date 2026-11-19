@@ -64,5 +64,5 @@ test("ToolGroup hands its rows the anchor too", () => {
 test("useElapsed documents the initialMs contract", () => {
   const meter = src("composables/useElapsed.ts");
   assert.match(meter, /initialMs: \(\) => number = \(\) => 0/, "a missing getter falls back to zero");
-  assert.match(meter, /initialMs is the elapsed already consumed at start/);
+  assert.match(meter, /The consumed span is watched too/);
 });
