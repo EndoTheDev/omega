@@ -8,7 +8,7 @@ line sits.
 
 ## Before you open a PR
 
-Read `docs/roadmap.md` and the open issues first. If nothing there
+Read the open issues and the docs under `docs/` first. If nothing there
 matches what you want to build, start an issue or ask on the
 [Discord](https://discord.gg/vQvHrHWkbx) before writing anything.
 Large or architectural changes especially: direction is agreed before
