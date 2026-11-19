@@ -6,7 +6,10 @@
 #
 #   G1  run-lock exclusivity   - a foreign suite's lock blocks the sweep,
 #                                the gate's own lock (matching pid) lets it
-#                                through, a mismatched claimant stands down
+#                                through, a mismatched claimant stands down,
+#                                a recycled pid (live, not a suite) is stale
+#                                and swept through, an unidentifiable record
+#                                stands down (card t_b000c0e3)
 #   G2  attached-client probe  - a session with a command in flight is kept
 #   G3  idle window            - a freshly started session is kept
 #
@@ -47,6 +50,8 @@ mkdir -p "$STATE" "$STUBBIN"
 cleanup() {
   [ -n "${PYB:-}" ] && kill "$PYB" 2>/dev/null
   [ -n "${LANE:-}" ] && kill "$LANE" 2>/dev/null
+  [ -n "${SUITE_PID:-}" ] && kill "$SUITE_PID" 2>/dev/null
+  [ -n "${RECYCLED_PID:-}" ] && kill "$RECYCLED_PID" 2>/dev/null
   rm -rf "$TMP" 2>/dev/null
   true
 }
@@ -116,14 +121,33 @@ drop_lock() {
   rm -rf "$LOCK.d" "$LOCK.pid" 2>/dev/null
 }
 
+# a LIVE process whose argv NAMES .../journeys/run.sh = a genuine suite holder
+# to the ownership check. `bash -c 'sleep 60' <path>` exec-optimises into a bare
+# `sleep 60` (argv0 never reaches the process table), so the loop body keeps
+# bash in argv. Never read the pid through $(...) - the command substitution's
+# subshell takes the background job with it and the fixture reads as dead.
+SUITE_PID=""
+spawn_suite_holder() {
+  bash -c 'while :; do sleep 1; done' "$TMPP/scripts/journeys/run.sh" &
+  SUITE_PID=$!
+  for _ in $(seq 1 100); do kill -0 "$SUITE_PID" 2>/dev/null && break; sleep 0.05; done
+}
+kill_fixture() { # $1 = pid
+  [ -n "${1:-}" ] || return 0
+  kill "$1" 2>/dev/null
+  wait "$1" 2>/dev/null
+  return 0
+}
+
 reset_log() { : > "$LOG"; }
 closes() { grep -c -- ' close$' "$LOG" 2>/dev/null || true; }
 closed_names() { sed -n 's/^--session \(.*\) close$/\1/p' "$LOG" 2>/dev/null | sort | tr '\n' ' '; }
 
 # drive the real script. The stub dir is prepended per invocation, never
 # exported: the last case must see the host's real socket table.
-sd() { # extra env assignments are passed as VAR=val in "$@"
-  local assigns=() rc=0
+sd_script() { # $1 = the script to drive; then VAR=val assignments, then args
+  local script="$1" assigns=() rc=0
+  shift
   while [ "$#" -gt 0 ] && [ "${1#*=}" != "$1" ]; do assigns+=("$1"); shift; done
   env "${assigns[@]+"${assigns[@]}"}" \
     PATH="$STUBBIN:$PATH" \
@@ -131,10 +155,12 @@ sd() { # extra env assignments are passed as VAR=val in "$@"
     JOURNEY_DAEMON_STATE="$STATE" \
     JOURNEY_LOCK="$LOCK" \
     STUB_LOG="$LOG" \
-    bash "$SWEEP" "$@" > "$TMPP/out.raw" 2>&1 || rc=$?
+    bash "$script" "$@" > "$TMPP/out.raw" 2>&1 || rc=$?
   tr -d '\r' < "$TMPP/out.raw"
   return "$rc"
 }
+
+sd() { sd_script "$SWEEP" "$@"; }
 
 base_sessions="old-idle fresh attached omega-journey"
 mk_session old-idle 1800 59101
@@ -142,9 +168,14 @@ mk_session fresh 60 59102
 mk_session attached 1800 59103
 mk_session omega-journey 30 59104
 
-# --- A: a foreign suite holds the lock ---------------------------------------
+# --- A: a genuine suite holder holds the lock --------------------------------
+# The recorded pid is a LIVE process whose argv names .../journeys/run.sh, so
+# the ownership check convicts it as a suite: the stand-down below is the
+# "genuine holder" leg, not merely a number that happens to be alive.
 reset_log
-hold_lock "$$"
+drop_lock
+spawn_suite_holder
+hold_lock "$SUITE_PID"
 out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103")"
 rc=$?
 [ "$rc" = 0 ] && ok || bad "A: exit $rc, want 0 (stand down). output: $out"
@@ -153,9 +184,14 @@ case "$out" in
   *) bad "A: stand-down reason missing. output: $out" ;;
 esac
 [ "$(closes)" = 0 ] && ok || bad "A: closed $(closes) session(s) while a suite held the lock: $(closed_names)"
+kill_fixture "$SUITE_PID"; SUITE_PID=""
+drop_lock
 
 # --- B: the gate's own lock -> close idle, keep live -------------------------
+# Gate mode reads the caller's own lock record, so this case seats it itself.
 reset_log
+drop_lock
+hold_lock "$$"
 out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" \
          JOURNEY_GATE_PID="$$" JOURNEY_SESSION="omega-journey" --gate)"
 rc=$?
@@ -173,6 +209,8 @@ esac
 
 # --- C: a mismatched claimant cannot use gate mode ---------------------------
 reset_log
+drop_lock
+hold_lock "$$"
 out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" \
          JOURNEY_GATE_PID=1 JOURNEY_SESSION="omega-journey" --gate)"
 rc=$?
@@ -193,6 +231,81 @@ rc=$?
 [ "$(closed_names)" = "old-idle " ] && ok \
   || bad "D: standalone closed '$(closed_names)', want 'old-idle ' only (no gate exemption outside the gate)"
 [ -e "$LOCK.d" ] && bad "D: the stand-alone sweep left its lock dir behind" || ok
+
+# --- I: a recycled pid (LIVE, but not a suite) is stale -----------------------
+# The failure this card exists for: a dead suite's dir whose number the host
+# since handed to an unrelated live process. Under the old pid-liveness rule
+# this stood down forever ("a journey suite holds the run lock") while no suite
+# ran, so the idle-daemon sweep never ran outside a suite. It must reap the
+# stale dir, take the lock and sweep.
+reset_log
+drop_lock
+sleep 60 &
+RECYCLED_PID=$!
+mkdir -p "$LOCK.d"
+printf '%s\n' "$RECYCLED_PID" > "$LOCK.d/pid"
+out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" \
+         JOURNEY_LOCK_IMPL=mkdir JOURNEY_SESSION="omega-journey")"
+rc=$?
+[ "$rc" = 1 ] && ok || bad "I: exit $rc, want 1 (a recycled-pid lock must not block the sweep). output: $out"
+[ "$(closed_names)" = "old-idle " ] \
+  && ok || bad "I: closed '$(closed_names)', want 'old-idle ' (the sweep never ran under the stale lock)"
+case "$out" in
+  *"holds the run lock"*) bad "I: the sweep stood down on a live non-suite pid. output: $out" ;;
+  *"reaping a stale run lock"*) ok ;;
+  *) bad "I: the reap was not reported. output: $out" ;;
+esac
+kill_fixture "$RECYCLED_PID"; RECYCLED_PID=""
+drop_lock
+
+# --- J: the witness can fail - the OLD rule still wedges on I ----------------
+# A copy reduced back to `kill -0` must stand down on the same fixture, or case
+# I proves nothing about the ownership check.
+reset_log
+drop_lock
+LEGACY="$TMPP/legacy-sweep.sh"
+sed 's|^  if lock_holder_reapable "\$holder"; then$|  if ! kill -0 "$holder" 2>/dev/null; then|' \
+  "$SWEEP" > "$LEGACY"
+if cmp -s "$SWEEP" "$LEGACY"; then
+  bad "J: the reduction changed nothing, so the canary would run the fixed rule twice - vacuous"
+elif grep -q 'if ! kill -0 "$holder" 2>/dev/null; then' "$LEGACY"; then
+  sleep 60 &
+  RECYCLED_PID=$!
+  mkdir -p "$LOCK.d"
+  printf '%s\n' "$RECYCLED_PID" > "$LOCK.d/pid"
+  out="$(sd_script "$LEGACY" "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" \
+           JOURNEY_LOCK_IMPL=mkdir JOURNEY_SESSION="omega-journey")"
+  rc=$?
+  [ "$rc" = 0 ] && ok || bad "J: the legacy rule exit $rc, want 0 (a live recycled pid must wedge it). output: $out"
+  [ "$(closes)" = 0 ] && ok || bad "J: the legacy rule swept anyway: $(closed_names)"
+  case "$out" in
+    *"holds the run lock"*) ok ;;
+    *) bad "J: the legacy rule did not report the stand-down. output: $out" ;;
+  esac
+  kill_fixture "$RECYCLED_PID"; RECYCLED_PID=""
+else
+  bad "J: could not reduce the script to the old rule - case I would not be falsifiable"
+fi
+drop_lock
+
+# --- K: an unidentifiable record is HELD, never reaped -----------------------
+# Three shapes of "cannot prove this is not a live suite": an empty record, a
+# junk record, and the mkdir-then-write window (dir with no pid file yet).
+# Reaping any of them could tear a live suite's lock and interleave two suites.
+for shape in empty junk nopid; do
+  reset_log
+  drop_lock
+  mkdir -p "$LOCK.d"
+  case "$shape" in
+    empty) : > "$LOCK.d/pid" ;;
+    junk) printf 'not-a-pid\n' > "$LOCK.d/pid" ;;
+  esac
+  out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" JOURNEY_LOCK_IMPL=mkdir)"
+  rc=$?
+  [ "$rc" = 0 ] && ok || bad "K/$shape: exit $rc, want 0 (stand down). output: $out"
+  [ "$(closes)" = 0 ] && ok || bad "K/$shape: an unidentifiable record closed $(closes): $(closed_names)"
+done
+drop_lock
 
 # --- E: dry run decides, closes nothing --------------------------------------
 reset_log
