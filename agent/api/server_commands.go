@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -43,6 +44,34 @@ type commandDispatchResponse struct {
 	Name    string           `json:"name,omitempty"`
 	Content string           `json:"content,omitempty"`
 	Actions []core.CmdAction `json:"actions,omitempty"`
+}
+
+// compactAction is the /compact intent. The capsule declares it (it owns the
+// summarizer, no store); the dispatch below runs it (it owns session shape).
+const compactAction = "run_compact"
+
+// runCompact folds the session a dispatch names and answers with what the fold actually
+// did. Every branch names a real outcome or a real reason - a command that did nothing
+// says so, in its own words.
+func (s *Server) runCompact(ctx context.Context, sessionID string) (string, error) {
+	switch {
+	case sessionID == "":
+		return "nothing folded: no session is bound to this chat yet", nil
+	case isEphemeralID(sessionID):
+		return "nothing folded: ephemeral sessions keep no history", nil
+	}
+	out, err := s.compactSession(ctx, sessionID)
+	if err != nil {
+		if errors.Is(err, errNoFoldFace) {
+			return "", errors.New("this store cannot hold a context boundary")
+		}
+		return "", err
+	}
+	if !out.Folded {
+		return "nothing folded: " + out.Why, nil
+	}
+	return fmt.Sprintf("folded %d messages into a summary - the context now starts at message %s, and the last %d stay verbatim",
+		out.Rows, out.Start, out.Kept), nil
 }
 
 func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +134,28 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "command failed: "+dErr.Error(), http.StatusInternalServerError)
 			return
 		}
-		writeJSON(w, http.StatusOK, commandDispatchResponse{Kind: "command", Text: result.Text, Actions: result.Actions})
+		text := result.Text
+		// The host interprets the directive: a capsule owns the summarizer and no store,
+		// so /compact declares the fold and this surface - which owns session shape - runs
+		// it. The action is consumed here; nothing downstream has an executor for it.
+		actions := make([]core.CmdAction, 0, len(result.Actions))
+		runFold := false
+		for _, a := range result.Actions {
+			if a.Type == compactAction {
+				runFold = true
+				continue
+			}
+			actions = append(actions, a)
+		}
+		if runFold {
+			line, fErr := s.runCompact(ctx, req.SessionID)
+			if fErr != nil {
+				http.Error(w, "command failed: "+fErr.Error(), http.StatusInternalServerError)
+				return
+			}
+			text = line
+		}
+		writeJSON(w, http.StatusOK, commandDispatchResponse{Kind: "command", Text: text, Actions: actions})
 		return
 	}
 

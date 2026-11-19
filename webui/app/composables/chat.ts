@@ -792,13 +792,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         }
         st.statusLine = `[skill: ${st.pendingSkill!.name}] armed - the next send carries it`;
       } else {
-        // the first line that carries TEXT: several commands open with a blank line, which reads as nothing happened
-        const first =
-          (res.text || `${name}: done`)
-            .split("\n")
-            .map((l) => l.trim())
-            .find((l) => l !== "") ?? `${name}: done`;
-        st.statusLine = first.length > 160 ? first.slice(0, 157) + "..." : first;
+        // the first line that carries TEXT: several commands open with a blank line, which reads as nothing happened.
+        // An answer with no text is an answer with NO TEXT - the fabricated "done" is precisely how /compact read as
+        // a success while it ran nothing at all.
+        const first = (res.text ?? "")
+          .split("\n")
+          .map((l) => l.trim())
+          .find((l) => l !== "");
+        st.statusLine = !first
+          ? `${name}: no answer from the server`
+          : first.length > 160
+            ? first.slice(0, 157) + "..."
+            : first;
       }
     } catch (e) {
       st.statusLine = `${name}: ${e instanceof Error ? e.message : String(e)}`;

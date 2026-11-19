@@ -80,6 +80,32 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 	return result, nil
 }
 
+// FoldNow folds because a human asked, not because the budget ran out: the token gate
+// is the automatic trigger and does not apply here. It answers the messages the NEW
+// context should carry - the summary first, then the tail the fold keeps verbatim - so
+// a caller holding a session can move its context boundary to the last len(out)-1 rows.
+// nil means there was nothing to summarize (a conversation under the keep-first/
+// keep-last floor, a disabled compactor): the caller must not move its boundary for a
+// fold that kept nothing.
+func (c *Compactor) FoldNow(ctx context.Context, messages []core.Message) ([]core.Message, error) {
+	if !c.config.Enabled {
+		return nil, nil
+	}
+	keepFirst := c.config.KeepFirst
+	keepLast := c.config.KeepLast
+	start := len(messages) - keepLast
+	if keepLast <= 0 || start <= keepFirst {
+		return nil, nil
+	}
+	summary, err := c.summarize(ctx, messages[keepFirst:start])
+	if err != nil {
+		return nil, fmt.Errorf("compactor: %w", err)
+	}
+	out := make([]core.Message, 0, len(messages)-start+1)
+	out = append(out, core.NewSystem(core.ContextFoldPrefix+summary+core.ContextFoldSuffix))
+	return append(out, messages[start:]...), nil
+}
+
 // summarize calls the provider to summarize a slice of messages.
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder

@@ -89,6 +89,94 @@ func TestCompactSummarizes(t *testing.T) {
 	}
 }
 
+// TestFoldNowIgnoresBudget pins the manual fold's trigger. The token gate exists for
+// the LOOP's automatic fold; a human typing /compact is the trigger, so the same short
+// conversation the budget leaves alone still folds - and the rows it keeps verbatim are
+// the tail the caller's context boundary has to land on.
+func TestFoldNowIgnoresBudget(t *testing.T) {
+	provider := agent.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "manual summary"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	c := &Compactor{
+		provider: provider,
+		config: agent.CompactionConfig{
+			Enabled:       true,
+			Threshold:     0.6,
+			ContextWindow: 32768,
+			KeepFirst:     1,
+			KeepLast:      2,
+		},
+	}
+	msgs := []core.Message{
+		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
+		core.NewAssistant("four"), core.NewUser("five"),
+	}
+	auto, err := c.Compact(context.Background(), msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(auto) != len(msgs) {
+		t.Fatalf("automatic fold = %d rows, want the budget to leave all %d alone", len(auto), len(msgs))
+	}
+
+	out, err := c.FoldNow(context.Background(), msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("manual fold = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
+	}
+	if got := agent.MessageText(out[0]); !strings.Contains(got, "manual summary") {
+		t.Fatalf("fold head = %q, want the summary the provider answered", got)
+	}
+	if _, ok := out[0].(core.System); !ok {
+		t.Fatalf("fold head is %T, want the system summary row", out[0])
+	}
+	for i, want := range []string{"four", "five"} {
+		if got := agent.MessageText(out[i+1]); got != want {
+			t.Fatalf("kept row %d = %q, want %q - the tail rides verbatim", i, got, want)
+		}
+	}
+}
+
+// TestFoldNowFloor pins the refusal: a conversation whose whole length is the keep-first/
+// keep-last floor has no middle, so there is no summary to be had and no fold to write.
+func TestFoldNowFloor(t *testing.T) {
+	c := &Compactor{
+		provider: agent.NewFakeProvider("test"),
+		config: agent.CompactionConfig{
+			Enabled: true, KeepFirst: 1, KeepLast: 2,
+		},
+	}
+	out, err := c.FoldNow(context.Background(), []core.Message{
+		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
+	})
+	if err != nil {
+		t.Fatalf("FoldNow: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("fold = %d rows, want nothing to fold (1+2 keeps the whole 3-row conversation)", len(out))
+	}
+}
+
+// TestFoldNowDisabled pins the switched-off compactor: no summary, so no fold.
+func TestFoldNowDisabled(t *testing.T) {
+	c := &Compactor{
+		provider: agent.NewFakeProvider("test"),
+		config:   agent.CompactionConfig{Enabled: false, KeepFirst: 1, KeepLast: 1},
+	}
+	out, err := c.FoldNow(context.Background(), []core.Message{
+		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
+	})
+	if err != nil {
+		t.Fatalf("FoldNow: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("fold = %d rows, want nothing (compaction is off)", len(out))
+	}
+}
+
 // TestSummarizeDoctrinePrompt pins the billion-context KEEP/DROP doctrine as the. The
 // doctrine is the deliverable - the controlled evidence credited it with ~62% of the
 // re-fetch reduction - so a rewrite that silently drops a KEEP/DROP class or leaks the

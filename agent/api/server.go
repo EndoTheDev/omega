@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1649,6 +1650,75 @@ type compactorFace interface {
 func (s *Server) compactor() compactorFace {
 	svc, _ := s.LiveServices().Resolve("compactor").(compactorFace)
 	return svc
+}
+
+// manualCompactorFace is the on-demand fold a human asks for (/compact): the same
+// mounted service, with the token budget out of the way and the new context's rows
+// answered back instead of a summary buried in a message list.
+type manualCompactorFace interface {
+	FoldNow(ctx context.Context, messages []core.Message) ([]core.Message, error)
+}
+
+func (s *Server) manualCompactor() manualCompactorFace {
+	svc, _ := s.LiveServices().Resolve("compactor").(manualCompactorFace)
+	return svc
+}
+
+// errNoFoldFace: the store cannot hold a context boundary.
+var errNoFoldFace = errors.New("session store has no session-context surface")
+
+// compactOutcome is what a manual fold actually did.
+type compactOutcome struct {
+	Folded bool
+	Start  string // the message the next context begins at
+	Rows   int    // messages the fold removed from the live context
+	Kept   int    // messages the next context keeps verbatim
+	Why    string // the refusal, when Folded is false
+}
+
+// compactSession folds a session the human asked to compact. The session PERSISTS - a
+// fold moves the context boundary, it never starts a new conversation. Nothing is
+// written when the compactor has no summary to offer: a boundary that drops the middle
+// and keeps nothing in its place is worse than no fold at all.
+func (s *Server) compactSession(ctx context.Context, id string) (compactOutcome, error) {
+	scx, ok := s.store.(agent.SessionContextStore)
+	if !ok {
+		return compactOutcome{}, errNoFoldFace
+	}
+	view, err := s.store.GetActiveView(ctx, id)
+	if err != nil {
+		return compactOutcome{}, err
+	}
+	path := storedMessages(view.Path)
+	if len(path) == 0 {
+		return compactOutcome{Why: "this conversation has no messages yet"}, nil
+	}
+	c := s.manualCompactor()
+	if c == nil {
+		return compactOutcome{Why: "the compaction module is not mounted"}, nil
+	}
+	folded, err := c.FoldNow(ctx, path)
+	if err != nil {
+		return compactOutcome{}, err
+	}
+	if len(folded) == 0 {
+		return compactOutcome{Why: "the compactor had nothing to summarize (a short conversation, or compaction is off)"}, nil
+	}
+	// foldSummary reads the head the compactor wrote; the rows after it are the tail the
+	// fold kept verbatim, and they are what the boundary has to sit on.
+	summary := foldSummary(folded)
+	kept := len(folded) - 1
+	start := len(path) - kept
+	if summary == "" {
+		return compactOutcome{}, errors.New("the compactor answered a fold without a summary")
+	}
+	if start <= 0 || start >= len(path) {
+		return compactOutcome{}, fmt.Errorf("fold kept %d of %d rows - no boundary to write", kept, len(path))
+	}
+	if err := scx.SetSessionContextStart(ctx, id, core.MsgID(view.Path[start].ID), summary); err != nil {
+		return compactOutcome{}, err
+	}
+	return compactOutcome{Folded: true, Start: core.MsgID(view.Path[start].ID), Rows: start, Kept: kept}, nil
 }
 
 // handleSessionNew serves POST /sessions/{id}/new. A conversation the HUMAN owns

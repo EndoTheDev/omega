@@ -128,4 +128,42 @@ describe("palette dispatch: the tab's session rides the wire", () => {
       wire.restore();
     }
   });
+
+  it("an answer with no text reads as no answer, never as a fabricated done", async () => {
+    // /compact was the specimen: the wire answered no text at all and the status line
+    // said "/compact: done", so a command that ran nothing looked like a success.
+    const wire = stubFetch(() => json({ kind: "command" }));
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s-1");
+      await host.command("c1", "/compact");
+      const line = host.states.get("c1")!.statusLine;
+      assert.doesNotMatch(line, /done/, "the client never invents a completion");
+      assert.match(line, /no answer/, "an empty answer says that it was empty");
+    } finally {
+      wire.restore();
+    }
+  });
+
+  it("a fold's own report is what the operator reads", async () => {
+    const wire = stubFetch(() =>
+      json({
+        kind: "command",
+        text: "folded 24 messages into a summary - the context now starts at message 137, and the last 10 stay verbatim",
+      }),
+    );
+    try {
+      const host = createChatHost(deps());
+      host.ensureState("c1", "s-1");
+      await host.command("c1", "/compact");
+      assert.deepEqual(wire.calls[0]!.body, {
+        name: "/compact",
+        args: "",
+        session_id: "s-1",
+      });
+      assert.match(host.states.get("c1")!.statusLine, /folded 24 messages .* message 137/);
+    } finally {
+      wire.restore();
+    }
+  });
 });
