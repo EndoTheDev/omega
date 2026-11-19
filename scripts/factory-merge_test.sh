@@ -155,7 +155,7 @@ new_repo() {
   git -C "$(mixpath "$REPO")" config commit.gpgsign false
   mkdir -p "$REPO/scripts" "$REPO/bin/shims" "$REPO/core"
   cp "$ROOT/scripts/train-pass.sh" "$ROOT/scripts/factory-merge.sh" \
-     "$ROOT/scripts/factory-prune.sh" "$REPO/scripts/"
+     "$ROOT/scripts/factory-prune.sh" "$ROOT/scripts/lib-wt.sh" "$REPO/scripts/"
   cp "$ROOT/bin/shims/git" "$REPO/bin/shims/git"
   chmod +x "$REPO/scripts/"*.sh "$REPO/bin/shims/git"
   echo "base" >"$REPO/base.txt"
@@ -351,6 +351,79 @@ OUT="$(cd "$REPO/.worktrees/t_c10" && env -u FM_REPO \
 RC=$?
 has "$OUT" "MERGED t_c10" && ok || bad "S13: the entry did not resolve the main checkout from a worktree: $OUT"
 [ "$RC" = "0" ] && ok || bad "S13: rc was $RC, wanted 0"
+
+# ---- 14. an SPA landing ends on the embed-lane bundle commit -----------
+# The train's gate list rebuilds and commits api/static/ ON TOP of the merge,
+# so dev ends one commit past the merge commit. The end-state check accepts
+# that chain - the merge commit, optionally followed by the bundle commit
+# whose parent it is - and a clean SPA landing must not read as divergence.
+
+cp "$ROOT/scripts/embed-lane.sh" "$REPO/scripts/"
+chmod +x "$REPO/scripts/embed-lane.sh"
+mkdir -p "$REPO/api/static"
+echo "bundle-v1" >"$REPO/api/static/index.html"
+git -C "$(mixpath "$REPO")" add -A
+git -C "$(mixpath "$REPO")" commit -q -m "chore: committed bundle baseline"
+cat >"$HARNESS/bin/embed-build" <<'SH'
+#!/usr/bin/env bash
+# stands in for webui/scripts/build.sh: the bundle content CHANGES, so the
+# lane writes its commit on top of the merge
+printf 'bundle-%s\n' "$$-$(date +%s%N)" > api/static/index.html
+SH
+chmod +x "$HARNESS/bin/embed-build"
+export EMBED_LANE_BUILD_CMD="$(cygpath -u "$HARNESS/bin/embed-build" 2>/dev/null || printf '%s' "$HARNESS/bin/embed-build")"
+
+new_card t_spa webui/app/pages/spa.vue done
+spa_base="$(dev_sha)"
+# The lane commit is landed by the GATE LIST (train-pass runs the embed lane
+# as a gate), so this leg drives the real embed-lane as the gate command.
+GATES='scripts/embed-lane.sh fixture-spa' merge t_spa
+unset GATES
+unset EMBED_LANE_BUILD_CMD
+spa_tip="$(dev_sha)"
+has "$OUT" "MERGED t_spa" && ok || bad "S14: a clean SPA landing did not report MERGED: $OUT"
+[ "$RC" = "0" ] && ok || bad "S14: rc was $RC, wanted 0 (a bundle commit on top is the documented end state)"
+[ "$spa_tip" != "$spa_base" ] && ok || bad "S14: dev did not move"
+# dev ends at the bundle commit: one parent, whose own parent is the merge
+[ "$(git -C "$(mixpath "$REPO")" rev-list --parents -n1 "$spa_tip" | wc -w | tr -d ' ')" = "2" ] \
+  && ok || bad "S14: dev does not end at a single-parent bundle commit"
+spa_merge="$(git -C "$(mixpath "$REPO")" rev-parse "$spa_tip^1" 2>/dev/null)"
+[ "$(git -C "$(mixpath "$REPO")" rev-list --parents -n1 "$spa_merge" | wc -w | tr -d ' ')" = "3" ] \
+  && ok || bad "S14: the bundle commit's parent is not a two-parent merge commit"
+[ "$(git -C "$(mixpath "$REPO")" rev-parse "$spa_merge^1")" = "$spa_base" ] \
+  && ok || bad "S14: the merge commit does not sit on the pre-landing tip"
+has "$OUT" "MERGED t_spa $(printf '%s' "$spa_merge" | cut -c1-12) on dev" \
+  && ok || bad "S14: the MERGED line does not name the MERGE commit: $OUT"
+has "$OUT" "(+ embed-lane bundle $(printf '%s' "$spa_tip" | cut -c1-12))" \
+  && ok || bad "S14: the MERGED line does not name the bundle commit: $OUT"
+[ "$(dev_sha)" = "$(origin_sha)" ] && ok || bad "S14: the bundle commit was not pushed"
+[ -d "$REPO/.worktrees/t_spa" ] && bad "S14: card worktree survived the prune" || ok
+
+# ---- 15. a real divergence still fails the end-state check -------------
+# Synthetic divergence: the train "lands" by appending a plain single-parent
+# commit to dev - no merge commit anywhere in the chain. The check must FAIL
+# loudly, not read the move as a landing.
+
+cat >"$REPO/scripts/train-pass.sh" <<'SH'
+#!/usr/bin/env bash
+# divergence stub: moves dev without a merge commit
+root="$(git rev-parse --show-toplevel)"
+echo "divergence" >>"$root/base.txt"
+git -C "$root" commit -q -am "divergence: not a landing"
+exit 0
+SH
+chmod +x "$REPO/scripts/train-pass.sh"
+# The stub replaces a TRACKED file: commit it, or the clean-tree precondition
+# refuses before the end-state check this leg is here to exercise.
+git -C "$(mixpath "$REPO")" commit -q -am "fixture: divergence train stub"
+
+new_card t_div core/div.go done
+merge t_div
+has "$OUT" "FAILED t_div" && ok || bad "S15: a divergent end state did not FAIL: $OUT"
+[ "$RC" = "6" ] && ok || bad "S15: rc was $RC, wanted 6"
+hasnt "$OUT" "MERGED t_div" && ok || bad "S15: a divergent landing reported MERGED"
+has "$OUT" "without a merge commit" && ok || bad "S15: the FAILED line does not name the cause: $OUT"
+cp "$ROOT/scripts/train-pass.sh" "$REPO/scripts/train-pass.sh"
 
 echo "factory-merge_test: $pass ok, $fail fail"
 [ "$fail" = "0" ]

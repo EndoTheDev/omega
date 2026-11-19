@@ -63,7 +63,9 @@
 #   TRAIN_GATES_CMD  forwarded - the test override for the gate list
 #
 # Greppable lines (factory-prune.sh conventions):
-#   MERGED <id> <sha>            landed by this run
+#   MERGED <id> <sha>            landed by this run; <sha> is the MERGE
+#                                commit, and an SPA landing adds
+#                                "(+ embed-lane bundle <sha>)"
 #   REBUILD-DUE <id> ...         the landing touched runtime bytes
 #   REBUILD-NOT-DUE <id> ...     docs/test-only landing
 #   EYEBALL <id> ...             UI in range - the imagery receipt is owed
@@ -255,16 +257,34 @@ if [ "$post" = "$pre" ]; then
   exit 6
 fi
 
-# ---- verify the two-parent merge commit, as the train does -------------
-if ! git rev-parse -q --verify "$post^2" >/dev/null 2>&1; then
-  echo "FAILED $ID $BASE moved to $post without a merge commit (single parent) - inspect by hand"
+# ---- verify the landing chain, as the train does -----------------------
+# The documented end state is the train's two-parent merge commit, OPTIONALLY
+# followed by the embed-lane bundle commit the gate list lands on top of it:
+# an SPA landing ends at the bundle commit. Reading the tip alone as the
+# landing reads every clean SPA merge as divergence. A tip with no merge
+# commit in its chain, or a merge commit not on the pre-landing tip, is a
+# real divergence and fails by name.
+two_parent() { git rev-parse -q --verify "$1^2" >/dev/null 2>&1; }
+landing='' bundle=''
+if two_parent "$post"; then
+  landing="$post"
+elif two_parent "$post^1"; then
+  landing="$(git rev-parse "$post^1")"
+  bundle="$post"
+fi
+if [ -z "$landing" ]; then
+  echo "FAILED $ID $BASE moved to $post without a merge commit (no two-parent landing in the chain) - inspect by hand"
   exit 6
 fi
-sha="$(git rev-parse HEAD)"
-short="$(printf '%s' "$sha" | cut -c1-12)"
+if [ "$(git rev-parse "$landing^1")" != "$pre" ]; then
+  echo "FAILED $ID the merge commit $landing does not sit on the pre-merge tip $pre - inspect by hand"
+  exit 6
+fi
+short="$(printf '%s' "$landing" | cut -c1-12)"
+tip="$(printf '%s' "$post" | cut -c1-12)"
 marker="$(git for-each-ref --format='%(refname)' "refs/train/*-$ID" 2>/dev/null | sort | tail -1)"
 
-echo "MERGED $ID $short on $BASE${marker:+ (marker $marker)}"
+echo "MERGED $ID $short on $BASE${bundle:+ (+ embed-lane bundle ${bundle:0:12})}${marker:+ (marker $marker)}"
 
 # ---- the prune closer --------------------------------------------------
 prune_card || echo "NOTE prune of $ID reported held state (the card is landed; furniture can be swept later)"
@@ -277,9 +297,9 @@ ui="$(printf '%s\n' "$changed" \
   | grep -E '^(webui/app/|harness/[^/]+/ui/|api/[^/]+/ui/)' || true)"
 if [ -n "$product" ]; then
   n="$(printf '%s\n' "$product" | grep -c . )"
-  echo "REBUILD-DUE $ID $n runtime file(s) in ${pre:0:12}..${short} - the tick's rebuild booking, not this script's"
+  echo "REBUILD-DUE $ID $n runtime file(s) in ${pre:0:12}..${tip} - the tick's rebuild booking, not this script's"
 else
-  echo "REBUILD-NOT-DUE $ID (no runtime bytes in ${pre:0:12}..${short} - docs/test-only landing)"
+  echo "REBUILD-NOT-DUE $ID (no runtime bytes in ${pre:0:12}..${tip} - docs/test-only landing)"
 fi
 if [ -n "$ui" ]; then
   echo "EYEBALL $ID UI in range - the imagery receipt (screenshots of the served surface) is owed before the rebuild is called good"
