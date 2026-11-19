@@ -1,21 +1,13 @@
-// omega webui: pure browser-tab logic. The honesty note the card demands (do not paper
-// over): a cross-origin iframe's DOM is unreadable AND modern Chromium fires the load
-// event for a REFUSED embed (the frame renders Chrome's own error surface), so neither
-// "did it load" nor "can I read it" can say "refused" from the client side. The honest
-// signal is the harness/browser probe (GET /browser/frameable): the capsule reads the
-// TO-BE-EMBEDDED page's X-Frame-Options / CSP frame-ancestors headers server-side and
-// answers refuse / allow / cannot-say. The tab refuses ONLY on a negative verdict; a
-// cannot-say (offline probe, exotic host) keeps the frame and the late-load window as
-// the slow path. No proxy exists in v1: the probe reads headers, never content.
+// omega webui: pure browser-tab logic. A cross-origin iframe's DOM is unreadable, and
+// modern Chromium fires the load event for a REFUSED embed, so the client cannot detect
+// refusal itself; the honest signal is harness/browser's probe (GET /browser/frameable),
+// which reads the target's X-Frame-Options / CSP frame-ancestors server-side. Refuse ONLY on a
+// negative verdict (cannot-say keeps the late-load window); the probe reads headers, never content.
 
-/**
- * the fallback timer: a load this late is a refused/failed embed.
- */
+/** the late-load window: a load this late is a refused/failed embed. */
 export const FALLBACK_AFTER_MS = 4000;
 
-/**
- * the persist grace: a frame-load waits this many ms before writing the resume point.
- */
+/** a frame-load waits this many ms before writing the resume point (a refused embed's error page fires load too). */
 export const PERSIST_GRACE_MS = 300;
 
 /** the verdict's wire shape (harness/browser's GET /browser/frameable) */
@@ -23,11 +15,7 @@ export interface ProbeVerdictBody {
   frameable?: boolean | null;
 }
 
-/**
- * classify the probe: refused -> the fallback now, ok -> the frame proceeds, unknown
- * (null/absent - a probe that cannot say) -> the iframe path keeps its late-load
- * window.
- */
+/** null/absent = cannot-say (offline probe, exotic host): keep the late-load window, do not refuse. */
 export function classifyProbe(
   body: unknown,
 ): "refused" | "ok" | "unknown" {
@@ -38,12 +26,7 @@ export function classifyProbe(
   return "unknown";
 }
 
-/**
- * normalize what the user typed into a navigable URL.
- * Empty input stays empty (the bar does nothing); a schemeless input gets the https://
- * prefix (the address bar law every real browser uses); anything else passes through
- * verbatim - validation is the server route's shape check, never a gate here.
- */
+/** schemeless input gets https://, anything else passes verbatim - the server route validates, never here. */
 export function normalizeUrl(input: string): string {
   const u = input.trim();
   if (u === "") return "";
@@ -51,26 +34,17 @@ export function normalizeUrl(input: string): string {
   return "https://" + u;
 }
 
-/**
- * the in-frame history (basic back/forward): the pane keeps its OWN stack of committed
- * addresses, because cross-origin frame history cannot be read.
- * Consecutive duplicates collapse (a reload never grows the stack).
- */
+/** cross-origin frame history cannot be read, so the pane keeps its OWN stack; consecutive duplicates collapse. */
 export interface NavHistory {
   urls: string[];
   idx: number;
 }
 
-/** the fresh stack (one shape, never a null dance) */
 export function emptyNav(): NavHistory {
   return { urls: [], idx: -1 };
 }
 
-/**
- * push a navigated address: the forward tail dies (a fresh navigation from a back step
- * rewrites it, the browser-law behavior) and a consecutive duplicate never stacks
- * twice.
- */
+/** the forward tail dies on a fresh navigation from a back step; a consecutive duplicate never stacks twice. */
 export function pushNav(h: NavHistory, url: string): NavHistory {
   if (url === "") return h;
   if (h.urls[h.idx] === url) return h;
@@ -79,14 +53,13 @@ export function pushNav(h: NavHistory, url: string): NavHistory {
   return { urls, idx: urls.length - 1 };
 }
 
-/** step idx by delta over the stack. */
+/** null when the step would leave the stack: the buttons render disabled. */
 export function stepNav(h: NavHistory, delta: number): NavHistory | null {
   const i = h.idx + delta;
   if (i < 0 || i >= h.urls.length) return null;
   return { urls: h.urls, idx: i };
 }
 
-/** whether back/forward render enabled: the edges are dead buttons. */
 export function canStep(h: NavHistory, delta: number): boolean {
   const i = h.idx + delta;
   return i >= 0 && i < h.urls.length;

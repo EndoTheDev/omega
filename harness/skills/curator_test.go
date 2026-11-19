@@ -221,7 +221,8 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	}
 }
 
-// TestCuratorArchiveRollbackByteExact: the staleness archive undoes through the same.
+// TestCuratorArchiveRollbackByteExact: the staleness archive undoes
+// byte-exactly, and its rollback leaves no archived copy behind.
 func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)

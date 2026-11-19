@@ -19,9 +19,7 @@
         @click="activate(entry, $event)"
         @keydown.enter.prevent="activate(entry)"
         @keydown.space.prevent="activate(entry)">
-        <!--
-          VS Code-style row glyph: folder open/closed by expand state, files by.
-        -->
+        <!-- VS Code-style row glyph: folders by expand state, files by kind. -->
         <Icon
           class="glyph"
           :name="rowGlyphIcon(entry)"
@@ -38,7 +36,7 @@
           v-if="!entry.is_dir"
           class="size">{{ entry.size_bytes }}</span>
       </div>
-      <!-- a failed expansion renders NOTHING in the tree body. -->
+      <!-- an expanded branch renders its rows; a failed expansion renders nothing. -->
       <FileTree
         v-if="entry.is_dir && isOpen(entryPath(entry)) && !isLoading(entryPath(entry))"
         :entries="childrenOf(entryPath(entry))"
@@ -72,15 +70,13 @@
   // every branch expansion roots on the focused session's RESOLVED root.
   const focusedSession = inject(FOCUSED_SESSION_KEY, null);
 
-  // File tree: one row per entry, the folder icon toggles expand in place, and
-  // expanding a directory lazy-loads exactly one level via /files/browse.
+  // one row per entry; expanding a directory lazy-loads exactly one level via /files/browse.
   const props = defineProps<{
     entries: FileEntry[];
     base: string;
     depth: number;
-    // the module-UI narrow flag: passed DOWN by the measuring host (FilesTab) - a
-    // recursive child never observes its own width (each instance would measure its
-    // indent, not the pane); one measurable root owns the flip, descendants inherit it.
+    // the narrow flag is passed DOWN by the measuring host (FilesTab): a recursive child
+    // would measure its own indent, not the pane.
     narrow?: boolean;
   }>();
 
@@ -99,9 +95,8 @@
 
   const indent = computed(() => `${props.depth * 4 + 8}px`);
 
-  // hover indent guides: every level ul carries ONE hairline as an
-  // absolutely-positioned:before overlay (never flow content - the reveal is
-  // opacity-only, zero layout shift).
+  // hover indent guides: one hairline per level, an absolutely-positioned :before overlay
+  // (never flow content, so the reveal cannot shift layout).
   const guideStyle = computed(() =>
     props.depth > 0
       ? ({ "--guide-x": `${props.depth * 4 + 6}px` } as Record<string, string>)
@@ -141,16 +136,11 @@
 </script>
 
 <style scoped>
-  /* narrow: measured by the host (FilesTab passes the flag down - never a. */
+  /* narrow: measured by the host (FilesTab), never by the tree itself. */
   .files-tree.narrow .size {
     display: none;
   }
 
-  /*
-   * hover indent guides: a hairline per nesting level, an absolute:before OVERLAY on
-   * the branch (never flow content - the reveal cannot shift layout), shown purely by
-   * CSS:hover on the tree containers.
-   */
   .files-tree {
     position: relative;
   }

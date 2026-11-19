@@ -19,15 +19,13 @@ func (p *Plugin) Description() string {
 	return "system prompt builder: base prompt plus module prompt sections and user overrides"
 }
 
-// Provides lists the seams this plugin mounts.
 func (p *Plugin) ConfigKey() string { return "" }
 
+// Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"prompt"} }
 
-// Requires lists seams that must be mounted before this plugin.
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable opts the prompt builder into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
 // MountWithAPI implements agent.APIPlugin: the prompt_builder seam, one registration.

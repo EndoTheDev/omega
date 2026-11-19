@@ -3,10 +3,7 @@
     ref="rootEl"
     class="cron-list"
     :class="{ narrow: narrow }">
-    <!--
-      the UNIVERSAL band - the Files pattern lands on every tab.
-      Rendered BEFORE the scroll body: scrolling never moves it.
-    -->
+    <!-- the UNIVERSAL band: rendered BEFORE the scroll body, so scrolling never moves it. -->
     <TabBand title="Cron">
       <div class="band-search">
         <SearchInput
@@ -33,9 +30,7 @@
           :size="13" />
       </button>
     </TabBand>
-    <!--
-      the editor panel: one at a time, above the rows so the scroll never moves it.
-    -->
+    <!-- the editor panel: one at a time, above the rows, so the scroll never moves it. -->
     <div
       v-if="editor"
       class="cron-editor">
@@ -91,12 +86,9 @@
             placeholder="journal (empty = dated journal file)" />
         </label>
         <!--
-          rulings 1-2: agent and model are COMBOBOXES.
-          Picking is the fast path; TYPING stays legal both ways - a job may reference
-          an agent home or a model that no longer exists, and the editor never strands
-          that edit.: an EMPTY field is the inheritance chain - the agent inherits the
-          main agent, the model inherits the agent's own model (which itself may
-          inherit).
+          agent and model are COMBOBOXES: picking is the fast path, typing stays legal (a
+          job may reference an agent home or a model that no longer exists), and an EMPTY
+          field is the inheritance chain - agent from main, model from the agent's own.
         -->
         <div
           v-for="f in COMBO_FIELDS"
@@ -317,9 +309,7 @@
         </div>
       </li>
       </ul>
-      <!--
-        the row anatomy law - the filter HIDES rows, it never changes their shape.
-      -->
+      <!-- the row anatomy law: the filter HIDES rows, it never changes their shape. -->
       <p
         v-else-if="query.trim()"
         class="panel-status">
@@ -382,7 +372,6 @@
     type ModelCatalog,
   } from "./edit";
 
-  // Module-owned UI: the cron scheduler's job set, from GET /cron/jobs.
   const jobs = ref<(CronJobWire & { kind?: string; minutes?: number; deliver?: string; model?: string; file?: string })[]>([]);
   const loaded = ref(false);
   const error = ref("");
@@ -403,17 +392,15 @@
   // editorSeq invalidates an in-flight options callback when the open editor changes.
   let editorSeq = 0;
 
-  // the field option sources --------------------- Rulings 1-2. Each source loads once
-  // per panel mount (re-armed on a failed answer); a source that is down degrades its
-  // ONE control, never the edit.
+  // each option source loads once per mount (re-armed on a failed answer); a source that
+  // is down degrades its ONE control, never the edit.
   type ComboField = "agent" | "model";
 
   const agentOptions = ref<FieldOption[]>([]);
   const modelOptions = ref<FieldOption[]>([]);
   const skillOptions = ref<FieldOption[]>([]);
-  // modelCurrent is the model this omega RUNS (GET /models' `current`). Empty when the
-  // catalog never answered - the chain then names the source without a value instead of
-  // inventing one.
+  // the model this omega RUNS (GET /models' `current`); empty when the catalog never
+  // answered, so the chain names the source without inventing a value.
   const modelCurrent = ref("");
   const optionErrors = ref<Record<"agent" | "model" | "skills", string>>({
     agent: "",
@@ -440,7 +427,6 @@
     return false;
   }
 
-  // applyModelSource is applySource for the catalog answer, which carries the run.
   function applyModelSource(settled: PromiseSettledResult<ModelCatalog>): boolean {
     if (settled.status === "fulfilled") {
       modelOptions.value = settled.value.options;
@@ -456,7 +442,6 @@
     return false;
   }
 
-  // ensureOptions loads the three sources once.
   function ensureOptions(): Promise<void> {
     if (optionsInflight) return optionsInflight;
     if (optionsReady.value) return Promise.resolve();
@@ -478,9 +463,8 @@
     return optionsInflight;
   }
 
-  // the comboboxes (rulings 1-2) ----------------------------------- One open control
-  // at a time; the typed text IS the field's value, so picking is only a shortcut and a
-  // value the registry does not list still saves (the never-strand-an-edit law).
+  // one open control at a time; the typed text IS the field's value, so picking is only a
+  // shortcut and a value the registry does not list still saves.
   const COMBO_FIELDS: { field: ComboField; label: string; placeholder: string }[] = [
     { field: "agent", label: "agent", placeholder: "the main agent" },
     {
@@ -496,7 +480,6 @@
   });
   const comboQuery = ref("");
 
-  // comboRows is the open control's list.
   function comboRows(field: ComboField): FieldOption[] {
     const source = field === "agent" ? agentOptions.value : modelOptions.value;
     return filterFieldOptions(source, comboQuery.value);
@@ -563,7 +546,6 @@
     }
   }
 
-  // optionStatus is the empty-list line.
   function optionStatus(field: "agent" | "model" | "skills"): string {
     const err = optionErrors.value[field];
     if (err) {
@@ -574,8 +556,8 @@
     return "no match";
   }
 
-  // unknownNote: a typed value the registry does not list. Free text is
-  // legal here, so the note informs without blocking the save.
+  // free text is legal here, so a typed value the registry does not list is noted without
+  // blocking the save.
   function unknownNote(field: ComboField): string {
     if (!editor.value || optionErrors.value[field]) return "";
     const value = (
@@ -587,7 +569,7 @@
     return "not in the registry - kept as typed";
   }
 
-  // the inheritance chain ------------------------ ONE mechanism for both surfaces.
+  // the inheritance chain: one mechanism for both combo surfaces.
   const CHAIN_IDLE: ChainValue = {
     inherited: false,
     value: "",
@@ -609,9 +591,8 @@
       : modelChain(chain, agentOptions.value, modelCurrent.value);
   }
 
-  // the skills multi-select ------------------------------ STRICT. A job's pinned name
-  // the registry cannot serve is dropped from the draft and NAMED on screen - visible,
-  // never silent.
+  // STRICT: a job's pinned skill the registry cannot serve is dropped from the draft and
+  // NAMED on screen - visible, never silent.
   const skillsOpen = ref(false);
   const skillQuery = ref("");
   const skillsDropped = ref<string[]>([]);
@@ -628,7 +609,6 @@
     if (skillsOpen.value) skillQuery.value = "";
   }
 
-  // setChips writes the chip list back into the draft's comma voice.
   function setChips(next: string[]) {
     if (!editor.value) return;
     editor.value.draft.skills = skillsVoice(next);
@@ -647,9 +627,8 @@
     setChips(withoutSkill(skillChips.value, name));
   }
 
-  // applyStrictSkills trims a loaded job to the registry's own set. It
-  // runs once the registry answers, so a strict load never races the
-  // fetch; an unanswered registry leaves the value exactly as loaded.
+  // runs once the registry answers, so a strict load never races the fetch; an unanswered
+  // registry leaves the value exactly as loaded.
   function applyStrictSkills() {
     if (!editor.value || optionErrors.value.skills) return;
     const chips = parseSkills(editor.value.draft.skills);
@@ -678,9 +657,8 @@
   }
 
   function startEdit(j: CronJobWire & { kind?: string; minutes?: number; deliver?: string; model?: string; file?: string }) {
-    // the strict-skills callback below must land on THIS editor only: a
-    // sequence token, not an object identity - editor is a ref, so its
-    // value is a reactive PROXY and never === the raw object assigned
+    // the strict-skills callback must land on THIS editor only: a sequence token, not an
+    // object identity - editor is a ref, so its value is a reactive PROXY, never ===.
     editorSeq += 1;
     const token = editorSeq;
     editor.value = {
@@ -771,8 +749,8 @@
     }
   }
 
-  // the per-job toggle ---------------------------- ONE click commits. busy holds the
-  // committing key so a stacked double-click cannot overlap writes.
+  // one click commits; busy holds the committing key so a stacked double-click cannot
+  // overlap writes.
   const busy = ref<string | null>(null);
 
   function onToggle(j: CronJobWire) {
@@ -780,7 +758,6 @@
     apply(j);
   }
 
-  // the commit: POST the toggle.
   async function apply(j: CronJobWire) {
     const target = !j.enabled;
     busy.value = cronKeyOf(j);
@@ -794,14 +771,14 @@
     }
   }
 
-  // narrow adaptation, the module-UI recipe.
+  // the module-UI narrow recipe: this component measures itself, then flips the flag.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
   onMounted(() => {
     if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
-    // (same rAF deferral as the shell's useNarrow: the flip changes the
-    // observed layout itself, so the callback must not mutate this frame)
+    // rAF deferred: the flip changes the observed layout, so the callback must not
+    // mutate this frame
     resizeObs = new ResizeObserver((entries) => {
       const pending = entries
         .map((e) => Math.round(e.contentRect.width))
@@ -813,9 +790,8 @@
       });
     });
     resizeObs.observe(rootEl.value);
-    // mount measures NOW: a tab remount in place produces no further
-    // resize entry, so the class must not wait for the next width
-    // change (the shell's useNarrow does the same on mount)
+    // mount measures NOW: an in-place remount produces no resize entry, so the class
+    // cannot wait for a width change
     narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
   });
   onBeforeUnmount(() => {
@@ -823,7 +799,6 @@
     resizeObs = null;
   });
 
-  // shortTime renders the RFC3339 next fire as a local, compact date-time.
   function shortTime(rfc3339: string): string {
     const t = new Date(rfc3339);
     if (Number.isNaN(t.getTime())) return rfc3339;
@@ -895,11 +870,7 @@
     margin: 0;
     padding: 0;
   }
-  /*
-   * the job editor panel.
-   * It anchors under the band (above the scroll body, the band's own law) so edits
-   * never scroll away; the fields ride a 2-wide grid, the textarea spans.
-   */
+  /* the job editor panel: anchored under the band, above the scroll body, so edits never scroll away. */
   .cron-editor {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));
@@ -993,12 +964,8 @@
     font-size: 10.5px;
     color: var(--text-dim, #8a8a92);
   }
-  /*
-   * the inheritance chain's visible half.
-   * `blocked` is the chain the fire can never satisfy (a wake leaning on the main
-   * agent, which never wakes) and speaks in the danger voice, the same state save.go
-   * refuses.
-   */
+  /* the inheritance chain's visible half: `blocked` is the chain the fire can never satisfy (a wake
+     leaning on the main agent, which never wakes) - the same state save.go refuses. */
   .cron-field-head {
     display: flex;
     align-items: center;
@@ -1153,9 +1120,7 @@
     max-height: 180px;
     overflow-y: auto;
   }
-  /*
-   * the row checkboxes are SELECTION boxes, not switches.
-   */
+  /* the row checkboxes are SELECTION boxes, not switches. */
   .cron-editor-field .cron-skill-row input {
     margin: 0;
     padding: 0;
@@ -1188,17 +1153,13 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /*
-   * narrow: the module-UI recipe.
-   * The rows are already single-column; what dies first at ~300px is horizontal
-   * breathing room - the head's name/sub pair wraps and the chrome condenses so a long
-   * schedule line never elides.
-   */
+  /* narrow: the module-UI recipe. The rows are already single-column; what dies first at
+     ~300px is horizontal breathing room - the head's name/sub pair wraps so a long schedule
+     line never elides. */
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
   }
   .cron-list.narrow .cron-editor-grid {
     grid-template-columns: 1fr;
   }
-  /* the narrow name shrunk to 11.5px under the old bespoke anatomy. */
 </style>

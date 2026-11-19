@@ -1,29 +1,14 @@
-// omega webui: the observability tab's PURE half
-// face side of the observability arc). The tab renders two reads of the
-// observability capsule (harness/observability/routes.go):
+// omega webui: the observability tab's PURE half. Two reads of the observability capsule
+// (harness/observability/routes.go):
+//   GET /observability/events?session=&level=&limit= -> {events, buffered, capacity}
+//   GET /observability/logs?lines= -> {path, lines} (404 when there is no log file)
 //
-//	GET /observability/events?session=&level=&limit=
-// > {events: Event[], returned, buffered, capacity}
-//	     Event = {seq, time, session?, type, level, tool?, turn?,
-//	              duration_ms?, summary, error?}
-//	GET /observability/logs?lines=
-// > {path, lines: string[]} (404 when there is no log file)
-//
-// The ring is bounded at 1024 and one page is capped at PageMax=1000,
-// so a single unfiltered page IS the whole live history - that is why
-// the errors-only toggle filters CLIENT-side (an instant chip, the
-// severity-chips precedent on the Logs strip) while the SESSION scope is
-// a server parameter (the ring's Page selects the newest N of that
-// session; filtering the newest N of everything would starve a quiet
-// session).
-//
-// Everything here is DOM-free so the node suite can pin it: the wire
-// guards, the filter, the render cap and the two formatters.
-// webui/test/observability.test.ts is the pin.
+// The ring is bounded at 1024 and one page caps at PageMax=1000, so an unfiltered page IS
+// the whole live history - hence errors-only filters CLIENT-side while the SESSION scope
+// is a server parameter (filtering the newest N of everything would starve a quiet
+// session). DOM-free so the node suite can pin it (webui/test/observability.test.ts).
 
-/** the capsule's structured stream read */
 export const EVENTS_PATH = "/observability/events";
-/** the capsule's raw tail read */
 export const LOGS_PATH = "/observability/logs";
 
 /** one page: the capsule's PageMax ceiling, i.e. essentially the ring */
@@ -32,13 +17,10 @@ export const EVENTS_LIMIT = 1000;
 export const RENDER_CAP = 300;
 /** the tail's line count (the route defaults to the same 200) */
 export const TAIL_LINES = 200;
-/** the bounded refresh while the tab is mounted (the Logs strip's 2.5s poll is the. */
+/** the bounded refresh while the tab is mounted: one 5s read, never a poll per record */
 export const REFRESH_MS = 5000;
 
-/**
- * One ring record, exactly as the capsule serializes it.
- * `level` is DERIVED server-side (never configured): info, warn or error.
- */
+/** one ring record, exactly as the capsule serializes it; `level` is DERIVED server-side (info, warn, error). */
 export interface ObservatoryEvent {
   seq: number;
   time: string;
@@ -67,10 +49,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const num = (v: unknown): number | undefined =>
   typeof v === "number" && Number.isFinite(v) ? v : undefined;
 
-/**
- * normalizeEvent guards one record.
- * A malformed payload never crashes the pane (the shell's wire law).
- */
+/** a malformed payload never crashes the pane: null, and the read drops the record. */
 export function normalizeEvent(raw: unknown): ObservatoryEvent | null {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const e = raw as Record<string, unknown>;
@@ -96,7 +75,6 @@ export function normalizeEvent(raw: unknown): ObservatoryEvent | null {
   return out;
 }
 
-/** parseEventsPayload reads the events body. */
 export function parseEventsPayload(body: unknown): EventsPayload {
   const b = (body && typeof body === "object" && !Array.isArray(body)
     ? body
@@ -114,7 +92,6 @@ export function parseEventsPayload(body: unknown): EventsPayload {
   };
 }
 
-/** parseLogsPayload reads the tail body. */
 export function parseLogsPayload(body: unknown): LogsPayload {
   const b = (body && typeof body === "object" && !Array.isArray(body)
     ? body
@@ -123,7 +100,6 @@ export function parseLogsPayload(body: unknown): LogsPayload {
   return { path: str(b.path), lines };
 }
 
-/** eventsQuery builds the read's query string. */
 export function eventsQuery(session: string, limit: number = EVENTS_LIMIT): string {
   const qs = new URLSearchParams();
   if (session) qs.set("session", session);
@@ -131,12 +107,10 @@ export function eventsQuery(session: string, limit: number = EVENTS_LIMIT): stri
   return qs.toString();
 }
 
-/** logsQuery is the tail's query string. */
 export function logsQuery(lines: number = TAIL_LINES): string {
   return `lines=${lines}`;
 }
 
-/** describeReadError turns an HTTP status into the pane's sentence. */
 export function describeReadError(path: string, status: number): string {
   if (status === 404) {
     return path === EVENTS_PATH
@@ -146,11 +120,7 @@ export function describeReadError(path: string, status: number): string {
   return `GET ${path}: ${status}`;
 }
 
-/**
- * isErrorEvent is the errors-only test: the derived level is the one truth (a record
- * can carry an `error` and still read as error - the server derives it, the tab never
- * re-derives).
- */
+/** the derived level is the one truth: a record with `error` text still reads by its level, never re-derived here. */
 export function isErrorEvent(e: ObservatoryEvent): boolean {
   return e.level === "error";
 }
@@ -166,14 +136,11 @@ export function visibleEvents(
   return picked.slice(Math.max(0, picked.length - bound)).reverse();
 }
 
-/** errorCount feeds the meta line's "N errors of M" reading. */
 export function errorCount(events: readonly ObservatoryEvent[]): number {
   return events.filter(isErrorEvent).length;
 }
 
-/**
- * formatEventTime renders the record's RFC3339Nano stamp as the row's clock reading.
- */
+/** the row's clock reading; an unparseable stamp renders verbatim rather than "Invalid Date". */
 export function formatEventTime(iso: string): string {
   if (!iso) return "-";
   const at = new Date(iso);
@@ -182,18 +149,13 @@ export function formatEventTime(iso: string): string {
   return `${pad(at.getHours())}:${pad(at.getMinutes())}:${pad(at.getSeconds())}`;
 }
 
-/**
- * formatDuration renders the derived pair duration.
- * A record whose pair was missed carries no duration at all - an em dash, never a
- * fabricated zero.
- */
+/** a missed pair carries no duration at all - an em dash, never a fabricated zero. */
 export function formatDuration(ms?: number): string {
   if (ms === undefined || ms < 0) return "-";
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-/** shortSession is the row's session attribution in the all-sessions scope. */
 export function shortSession(id?: string): string {
   if (!id) return "-";
   return id.length > 8 ? id.slice(0, 8) : id;

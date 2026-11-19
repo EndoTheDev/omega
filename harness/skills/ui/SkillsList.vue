@@ -3,13 +3,7 @@
     ref="rootEl"
     class="skills-list"
     :class="{ narrow: narrow }">
-    <!--
-      the UNIVERSAL band (the shared TabBand).
-      The band renders BEFORE the scroll body (structurally pinned, never sticky):
-      scrolling the list never moves it.: the compact in-band search (TabBand's
-      shared.band-search seat) - the query filters the LOADED inventory by name or
-      description, client-side, hide-rows-only.
-    -->
+    <!-- the UNIVERSAL band (shared TabBand): rendered before the scroll body, structurally pinned, never sticky; the in-band search filters the loaded inventory client-side. -->
     <TabBand title="Skills">
       <div class="band-search">
         <SearchInput
@@ -36,10 +30,7 @@
           :size="13" />
       </button>
     </TabBand>
-    <!--
-      the editor panel: one at a time, above the rows (the CronJobs editor's place -
-      scrolling never moves it mid-edit).
-    -->
+    <!-- the editor panel: one at a time, above the rows, so scrolling never moves it mid-edit. -->
     <div
       v-if="editor"
       class="skill-editor">
@@ -108,7 +99,6 @@
         class="panel-status">
         loading
       </p>
-      <!-- v0.14.1 registry-browser: the shared RegistryList (one pattern, three. -->
       <RegistryList
         v-else
         kind="skills"
@@ -142,7 +132,7 @@
   import { isNarrowWidth } from "./narrow";
   import { refreshSkills, type SkillInfo } from "./refresh";
   import { filterSearchableRows } from "./search";
-  // the skill editor chain (pure module - the cron edit.ts convention).
+  // the editor chain is a pure module, like the cron tab's edit.ts.
   import {
     deleteSkill,
     emptyDraft,
@@ -152,7 +142,6 @@
     type SkillDraft,
   } from "./edit";
 
-  // Module-owned UI: the loaded skill inventory, from GET /skills, plus the per-skill.
   const skills = ref<SkillInfo[]>([]);
   const fold = ref<string[]>([]);
   const loaded = ref(false);
@@ -162,9 +151,8 @@
   const toggleError = ref<string | null>(null);
   const toggleable = ref(false);
 
-  // rows are a computed (the AgentsPanel shape): RegistryList binds `rows` straight
-  // into the template, where an unwrap gives the array - a plain function would make
-  // the `v-if="rows.length"` gate read the ARITY (0), and the list would never render.
+  // rows is a computed, not a function: RegistryList binds it into the template, where a
+  // plain function would make `v-if="rows.length"` read the ARITY (0) and never render.
   const rows = computed(() => {
     const set = new Set(fold.value);
     return skills.value.map((s) => ({
@@ -196,7 +184,7 @@
     applyInventory(await refreshSkills());
   }
 
-  // server truth lands on the tab: the skills list always.
+  // a null field means that read was not carried; keep the local value, never clear it.
   function applyInventory(u: Awaited<ReturnType<typeof refreshSkills>>): void {
     skills.value = u.skills;
     if (u.fold !== null) fold.value = u.fold;
@@ -305,14 +293,14 @@
     }
   }
 
-  // narrow adaptation, the module-UI recipe.
+  // the module-UI narrow recipe: this component measures itself, then flips the flag.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
   onMounted(() => {
     if (typeof ResizeObserver === "undefined" || !rootEl.value) return;
-    // (same rAF deferral as the shell's useNarrow: the flip changes the
-    // observed layout itself, so the callback must not mutate this frame)
+    // rAF deferred: the flip changes the observed layout, so the callback must not
+    // mutate this frame
     resizeObs = new ResizeObserver((entries) => {
       const pending = entries
         .map((e) => Math.round(e.contentRect.width))
@@ -324,9 +312,8 @@
       });
     });
     resizeObs.observe(rootEl.value);
-    // mount measures NOW: a tab remount in place produces no further
-    // resize entry, so the class must not wait for the next width
-    // change (the shell's useNarrow does the same on mount)
+    // mount measures NOW: an in-place remount produces no resize entry, so the class
+    // cannot wait for a width change
     narrow.value = isNarrowWidth(Math.round(rootEl.value.getBoundingClientRect().width));
   });
   onBeforeUnmount(() => {
@@ -369,10 +356,6 @@
 </script>
 
 <style scoped>
-  /*
-   * the root stops being a flat scroll child - the TabBand stays fixed, the body owns
-   * the scroll (structurally, never sticky).
-   */
   .skills-list {
     flex: 1;
     min-height: 0;
@@ -393,7 +376,7 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  /* the editor panel - the CronJobs editor's shape (anchored under the band, above. */
+  /* the editor panel: anchored under the band, above the scrolling body. */
   .skill-editor {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));

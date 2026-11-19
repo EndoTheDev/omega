@@ -3,18 +3,16 @@ package approval
 type Config struct {
 	Mode string `yaml:"mode"`
 	Model string `yaml:"model"`
-	// SmartPolicy is the operator policy text the reviewer sees
-	// (Q2/Q8: trusted operator configuration, never command text).
+	// SmartPolicy is operator policy text for the reviewer - trusted config, never command
+	// text.
 	SmartPolicy string `yaml:"smart_policy"`
-	// Monitor is the safeagents detector set's rollout mode (card
-	//): "log-only" (or empty) records WOULD-BLOCK findings
-	// in the audit log and never blocks - the soak every new detector
+	// Monitor is the safeagents detector set's rollout mode: "log-only" (or empty) records
+	// WOULD-BLOCK findings in the audit log and never blocks - the soak every new detector
 	// ships through; "enforce" lets the severity tiers decide.
 	Monitor string `yaml:"monitor"`
-	// JudgeFailClosed flips the evidence-only judge's failure law
-	//: false (the default) fails OPEN - an
-	// unreachable judge adds nothing and the human still decides;
-	// true fails CLOSED - the call is refused.
+	// JudgeFailClosed flips the evidence-only judge's failure law: false (the default) fails
+	// OPEN - an unreachable judge adds nothing and the human still decides; true fails
+	// CLOSED - the call is refused.
 	JudgeFailClosed bool `yaml:"judge_fail_closed"`
 
 	HTTPHost string `yaml:"-"`

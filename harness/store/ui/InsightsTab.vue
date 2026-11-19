@@ -1,18 +1,10 @@
 <template>
   <section class="pane insights">
-    <!--
-      the UNIVERSAL band (the shared TabBand).
-      The band renders before the.insights-scroll body: scrolling the dashboard never
-      moves it.
-    -->
+    <!-- the UNIVERSAL band (shared TabBand), rendered BEFORE the insights-scroll body so scrolling never moves it. -->
     <TabBand
       title="Insights"
       :title-attr="data ? `${data.period}${data.period_start ? ': ' + data.period_start + ' — ' + data.period_end : ''}` : undefined">
-      <!--
-        (audit M1): the window selector rides the themed listbox (BandSelect).
-        The fixed literals below are the devProxy contract (nuxt.config devProxy keys
-        /insights?days=7|30|90|0).
-      -->
+      <!-- the window selector rides the themed listbox (BandSelect); the literals are the devProxy contract (nuxt.config keys /insights?days=7|30|90|0). -->
       <BandSelect
         class="insights-days"
         :model-value="days ?? INSIGHTS_DEFAULT_DAYS"
@@ -64,9 +56,7 @@
         </dl>
       </section>
 
-      <!--
-        activity by day: one registry row per weekday, the honest CSS bar rides the.
-      -->
+      <!-- activity by day: one row per weekday, the CSS bar in the #side slot. -->
       <h3 class="insights-group">activity by day</h3>
       <RegistryList
         kind="insights"
@@ -128,7 +118,7 @@
   const data = ref<InsightsPayload | null>(null);
   const loading = ref(false);
   const loadError = ref<string | null>(null);
-  // initial window = 7 days (see./defaultWindow.ts).
+  // the initial window is the shared default (see ./defaultWindow.ts).
   const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
 
   const WINDOW_OPTIONS = [
@@ -146,10 +136,9 @@
     data.value ? [...data.value.daily].sort((a, b) => a.count - b.count) : [],
   );
 
-  // the registry-browser row models (v0.14.3, the skills/tools pattern on the /insights
-  // report's blocks): every block renders through the shared RegistryList - read-only
-  // rows (no fold), the #side slot carries the honest CSS bar + count the plain name
-  // line can't.
+  // every block renders through the shared RegistryList: read-only rows (no fold); the
+  // #side slot carries the CSS bar and count that the plain name
+  // line cannot.
   const dailyRows = computed<RegistryRow[]>(() =>
     daily.value.map((d) => ({
       name: d.day,
@@ -237,7 +226,7 @@
     gap: 10px;
     padding: 4px 14px 10px;
   }
-  /* (audit M1): the window select rides the shared BandSelect chip now. */
+  /* the window select is the shared BandSelect chip: it never shrinks. */
   .insights-days {
     flex-shrink: 0;
   }

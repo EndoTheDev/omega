@@ -161,7 +161,7 @@
     beginEmbed(u);
   }
 
-  // step is the history belt: the buttons never lie (canStep's disabled edge),.
+  // step is the history belt: the buttons never lie (canStep's disabled edge).
   function step(delta: number) {
     const next = stepNav(nav.value, delta);
     if (!next || !canStep(nav.value, delta)) return;
@@ -416,7 +416,7 @@
     border-color: var(--accent);
     color: var(--accent);
   }
-  /* narrow recipe: module-owned threshold (./narrow.ts, pinned to agree with the. */
+  /* narrow: the module-owned threshold (./narrow.ts, pinned to agree with the shell's copy). */
   .browser-tab.narrow .band-tool[aria-label="browser back"],
   .browser-tab.narrow .band-tool[aria-label="browser forward"] {
     display: none;

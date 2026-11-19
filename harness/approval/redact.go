@@ -4,16 +4,12 @@ import (
 	"regexp"
 )
 
-// Egress hygiene (design Q7 + the reference's boundary): two passes
-// run over the reviewed text before any third party sees it.
-//
-//  1. Schema stripping: answer-schema fragments (the six question
-//     keys, their wire types) are cut from the command text - a
-//     command that quotes the gate's own answer vocabulary at the
-//     reviewer is the parse-divergence/self-advocacy class, and the
-//     model must judge the OPERATIONS, never the framing.
-//  2. Credential redaction: key-shaped material never leaves the
-//     machine, even to the configured reviewer.
+// Egress hygiene: two passes run over the reviewed text before any third party sees it.
+//  1. Schema stripping cuts answer-schema fragments (the six question keys, their wire
+//     types) - a command quoting the gate's own answer vocabulary at the reviewer is the
+//     parse-divergence/self-advocacy class, and the model must judge the OPERATIONS.
+//  2. Credential redaction: key-shaped material never leaves the machine, even to the
+//     configured reviewer.
 
 var schemaPairRes = schemaPairPatterns()
 
@@ -22,9 +18,8 @@ func schemaPairPatterns() []*regexp.Regexp {
 	keys := []string{"verdict", "policy_allows", "blast_radius", "self_advocating",
 		"reads_secrets", "sends_outbound", "choice", "confidence",
 		"probabilities", "noul", "score", "answers", "questions",
-		// the evidence-only judge's own answer vocabulary (card
-		//): a call quoting `block: 0.9` at the judge is the
-		// same parse-divergence/self-advocacy class, so it is cut too.
+		// the evidence-only judge's own answer vocabulary: a call quoting `block: 0.9` at
+		// the judge is the same parse-divergence/self-advocacy class, so it is cut too.
 		"block"}
 	out := make([]*regexp.Regexp, 0, len(keys))
 	for _, k := range keys {
@@ -34,8 +29,7 @@ func schemaPairPatterns() []*regexp.Regexp {
 	return out
 }
 
-// stripSchemaFragments removes answer-schema fragments from the
-// reviewed text. Idempotent; the OPERATIONS in the command stay.
+// stripSchemaFragments removes answer-schema fragments; idempotent, the OPERATIONS stay.
 func stripSchemaFragments(text string) string {
 	for _, re := range schemaPairRes {
 		text = re.ReplaceAllString(text, "")

@@ -1,7 +1,5 @@
-// must agree with the shell's NARROW_MAX_PX = 360
-// (webui/app/composables/narrow.ts) - pinned by webui/test/modulenarrow.test.ts.
+// NARROW_MAX_PX must agree with the shell's copy (webui/app/composables/narrow.ts); webui/test/modulenarrow.test.ts pins every copy.
 
-/** narrow below this rendered width */
 export const NARROW_MAX_PX = 360;
 
 export function isNarrowWidth(px: number): boolean {

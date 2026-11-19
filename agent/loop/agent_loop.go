@@ -17,22 +17,20 @@ import (
 // defaultMaxTurns caps the conversation loop when no explicit cap is set.
 const defaultMaxTurns = 100
 
-// maxOverflowRetries caps how many times a turn is retried after a context overflow.
 const maxOverflowRetries = 1
 
 // Loop is the standard turn-based conversation loop.
 type Loop struct{}
 
-// Run executes the conversation loop. The caller is responsible for closing the events
-// channel.
+// Run executes the conversation loop; the caller closes the events channel.
 func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	tools := opts.Tools
 	if tools == nil {
 		tools = map[string]core.Tool{}
 	}
 
-	// Merge tool providers. Existing tools take precedence over
-	// provider tools; provider tools take precedence over extension tools.
+	// Merge tool providers: existing tools win over provider tools, provider tools over
+	// extension tools.
 	for _, tp := range opts.ToolProviders {
 		if tp == nil {
 			continue
@@ -50,8 +48,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		tools = merged
 	}
 
-	// Run-scoped deny (agent.WithDeniedTools): the merged registry - the caller's map. A
-	// fresh map: the deny must never shrink a map the caller still owns.
+	// Run-scoped deny (agent.WithDeniedTools) plus the config opt-out, filtered into a FRESH
+	// map: a deny must never shrink a map the caller still owns.
 	denied := agent.DeniedTools(ctx)
 	if len(opts.DisabledTools) > 0 {
 		if len(denied) == 0 {
@@ -71,28 +69,19 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		tools = filtered
 	}
 
-	// Toolless run (agent.WithToolless).
 	if agent.Toolless(ctx) {
 		tools = map[string]core.Tool{}
 	}
 
-	// The tools block is computed ONCE per run, off the finished registry.
-	// Two laws ride here:
-	//
-	// toolSchemas sorts by name, so the serialized tools[] is
-	//     byte-identical on every call (a map's iteration order is
-	//     randomized per range - unsorted, the block reshuffled every
-	//     turn).
-	// The tool set is fixed for the run (ToolProviders are consulted
-	//     once, above), so one computation serves every turn. Anything
-	//     that changes with the MESSAGES belongs after it, never in it.
-	//
-	// Why it matters on the wire: prefix caches (ollama cloud, every
-	// OpenAI-compatible prompt cache) reuse only a byte-identical prompt
-	// PREFIX and re-prefill from the first differing token. A reshuffled
-	// tools[] made the divergence land at the START of the block, so the
-	// cached prefix collapsed to the system prompt alone and the tools
-	// block plus the resent history re-prefilled every turn.
+	// The tools block is computed ONCE per run, off the finished registry, and two laws ride
+	// here. toolSchemas SORTS by name, so the serialized tools[] is byte-identical on every
+	// call - a map's range order is randomized, and unsorted the block reshuffled each turn.
+	// The tool set is fixed for the run (ToolProviders are consulted once, above), so one
+	// computation serves every turn; anything that varies with the MESSAGES belongs after it.
+	// Why it matters on the wire: prefix caches (ollama cloud, every OpenAI-compatible prompt
+	// cache) reuse only a byte-identical prompt PREFIX and re-prefill from the first differing
+	// token, so a reshuffled tools[] collapsed the cached prefix to the system prompt alone and
+	// re-prefilled the tools block plus the resent history every turn.
 	schemas := toolSchemas(tools)
 
 	maxTurns := opts.MaxTurns
@@ -136,8 +125,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Logger.Printf("agent loop starting, model=%s, turns=%d", start.ModelName, maxTurns)
 	}
 
-	// The yield harness reads the ledger off the run context for its downstream consumers
-	// (the compactor's never-fold law reads the same live table off ctx).
+	// Publish the ledger on the run ctx: downstream consumers (the compactor's never-fold law)
+	// read the same live table.
 	if opts.YieldLedger != nil {
 		ctx = agent.WithYieldLedger(ctx, opts.YieldLedger)
 	}
@@ -145,21 +134,17 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	turns := 0
 	overflowRetries := 0
 
-	// The run's home id: yield-class calls dispatch only for a run with a HOME. Every
-	// session type is a home with the same async shape: store-backed sessions re-enter
-	// through the durable table, `eph-` homes through the serving shell's memory-backed
-	// lane (restart eats their pending results - the eph mode's own contract), agent homes
-	// through their own wake machinery. A sessionless run (empty id - no home anywhere)
-	// still degrades every Yield tool to loop-back: blocking beats a result with nowhere
-	// to go.
+	// The run's home id: yield-class calls dispatch only for a run with a HOME. Store-backed
+	// sessions re-enter through the durable table, `eph-` homes through the serving shell's
+	// memory lane (restart eats their pending results - the eph contract), agent homes through
+	// their own wake machinery. A sessionless run still degrades every yield tool to loop-back:
+	// blocking beats a result with nowhere to go.
 	sessionID := agent.SessionIDFromContext(ctx)
 	yieldReady := opts.YieldLedger != nil && opts.YieldWake != nil && sessionID != ""
 
-	// Turn-copy persistence: the run's new input persists here first, then one assistant.
-	// The caller wraps the TurnSink (with its session id and any head-parent pin) and the
-	// messages it is adding with this send around the run context; a sink without input
-	// persists turns only. Persistence failures log and move on - a dead store never kills
-	// a live run.
+	// Turn-copy persistence: the run's new input persists here first, then each assistant
+	// message. A sink without input persists turns only. Persistence failures log and move on -
+	// a dead store never kills a live run.
 	sink := agent.RunTurnSink(ctx)
 	for _, msg := range agent.PersistInput(ctx) {
 		persistTurnMessage(ctx, sink, opts.Logger, msg, "user input")
@@ -195,11 +180,10 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			messages = compacted
 		}
 
-		// Still-pending sibling placeholders: until a yield-class call's result re-enters,
-		// the provider context must not show its assistant call unanswered - strict wires
-		// reject the pairing. The placeholder is EPHEMERAL (never persisted, re-derived every
-		// turn; the durable pending state is the pending-calls table) and idempotent - an
-		// answered call id, placeholder or real result, never gets a second row.
+		// Still-pending sibling placeholders: until a yielded call re-enters, the provider
+		// context must not show its assistant call unanswered - strict wires reject the pairing.
+		// The placeholder is EPHEMERAL (never persisted, re-derived every turn; durable state is
+		// the pending-calls table) and idempotent - an answered id never gets a second row.
 		if opts.YieldLedger != nil && sessionID != "" {
 			messages = appendPendingPlaceholders(messages, opts.YieldLedger.Pending(sessionID))
 		}
@@ -242,9 +226,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			if opts.Logger != nil {
 				opts.Logger.Errorf("stream error: %s", streamErr)
 			}
-			// A context overflow error triggers one auto-compaction and retry of the turn. Skip
-			// the retry when response content was already streamed: the user saw it, and
-			// retrying would duplicate it.
+			// A context overflow triggers one auto-compaction and retry of the turn, skipped when
+			// content was already streamed: the user saw it and a retry would duplicate it.
 			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
 				if opts.Logger != nil {
@@ -285,24 +268,17 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		assistantEvent := core.AssistantMessageEvent{Type: "assistant_message", Message: assistant}
 		opts.Events <- assistantEvent
 
-		// Async agent loop 
-		//): partition the completion's calls.
-		// Immediate-yield calls (Yield: true - delegate.task, minutes
-		// by nature) END the turn (rule 1) - registered in the
-		// durable pending-calls table and dispatched on their own
-		// goroutines, they never block this run again. Every other
-		// call executes INLINE under the inline budget (
-		//): finishes in budget -> the result lands in-turn
-		// exactly as the fast path always did, zero overhead; over
-		// budget -> the RUNNING call converts to a pending dispatch
-		// (the executor keeps executing out-of-band, the turn ends,
-		// the result re-enters on settle) - the conversion never
-		// restarts or duplicates the call.
+		// Partition the completion's calls. Immediate-yield calls (yield=true - delegate.task,
+		// minutes by nature) END the turn (rule 1): registered in the durable pending-calls
+		// table and dispatched on their own goroutines, they never block this run again. Every
+		// other call executes INLINE under the inline budget: finishes in budget, the result
+		// lands in-turn exactly as the fast path always did, zero overhead; over budget, the
+		// RUNNING call converts to a pending dispatch (the executor keeps executing out-of-band,
+		// the turn ends, the result re-enters on settle) - the conversion never restarts or
+		// duplicates the call.
 		//
-		// The approval gate reads this turn's conversation snapshot
-		//: a detector judging CALL PROVENANCE needs
-		// the human's own words, and this is the one place that has
-		// them.
+		// The approval gate reads this turn's conversation snapshot: a detector judging CALL
+		// PROVENANCE needs the human's own words, and this is the one place that has them.
 		conversation := conversationSnapshot(messages)
 		results := make([]core.ToolResult, len(toolCalls))
 		completed := make([]time.Time, len(toolCalls))
@@ -348,9 +324,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			inlineExecs = append(inlineExecs, ex)
 		}
 
-		// Register the pending calls in the durable table BEFORE the run can end. A Register
-		// failure degrades that call back to loop-back - blocking beats a result with nowhere
-		// to go.
+		// Register the pending calls in the durable table BEFORE the run can end; a Register
+		// failure degrades that call back to loop-back - blocking beats a result with no home.
 		if len(pending) > 0 {
 			var registered []yieldItem
 			for _, item := range pending {
@@ -386,14 +361,12 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			pending = registered
 		}
 
-		// Execute the inline half. Without the yield harness the call blocks to completion
-		// exactly as before (the documented degradation - no budget, no conversion). With the
-		// harness the call runs under the inline budget: the per-call ctx is detached from
-		// the run's cancellation and capped by the yield timeout (a converted call must
-		// outlive the run - the dispatched law), while a run stop still cancels every
-		// STILL-INLINE call through the watcher - today's stop semantics inside the inline
-		// window. Converted calls are dispatched law from their conversion on: a run end must
-		// not eat them.
+		// Execute the inline half. Without the yield harness the call blocks to completion (the
+		// documented degradation - no budget, no conversion). With it, the per-call ctx is
+		// detached from the run's cancellation and capped by the yield timeout (a converted call
+		// must outlive the run - the dispatched law), while a run stop still cancels every
+		// STILL-INLINE call through the watcher. Converted calls are dispatched law from their
+		// conversion on: a run end must not eat them.
 		var watchDone chan struct{}
 		for _, ex := range inlineExecs {
 			if yieldReady {
@@ -406,14 +379,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			} else {
 				ex.ctx = ctx
 			}
-			// Call identity for the run output tap: the tool streams its live output through
-			// core.EmitToolOutput and the chunk must name WHICH call it belongs to - the loop is
-			// the only place that knows.
+			// Call identity for the run output tap: the tool streams live output via
+			// core.EmitToolOutput, and only the loop knows which call a chunk belongs to.
 			ex.ctx = core.WithToolCall(ex.ctx, ex.call.ID, ex.call.Name)
 			if ex.cancel != nil {
-				// The user-stop latch cuts this call too, and it stays registered past the run's
-				// end: an escalated call is a pending dispatch by then, and a human stop must still
-				// kill the work it started.
+				// The user-stop latch cuts this call too, and stays registered past the run's end:
+				// an escalated call is a pending dispatch by then, and a human stop must still kill
+				// the work it started.
 				ex.offStop = opts.Stop.OnStop(ex.cancel)
 			}
 			go ex.run()
@@ -455,8 +427,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		executed := 0
 		for _, i := range loopback {
 			msg := results[i]
-			// Wall-clock the tool actually ran: dispatch (the call event) to completion. Unknown
-			// tools report none - they never ran.
+			// Wall-clock the tool ran: dispatch (the call event) to completion; unknown tools
+			// never ran and report none.
 			if start, ok := meter.callStart(toolCalls[i].ID); ok && !completed[i].IsZero() {
 				msg.Timing = &core.Timing{ElapsedMs: completed[i].Sub(start).Milliseconds()}
 			}
@@ -467,8 +439,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			executed++
 		}
 
-		// Dispatch the pending calls OUTSIDE the turn: each on its own goroutine, outliving
-		// this run - the turn ends below and every conversation goroutine goes home.
+		// Dispatch the pending calls OUTSIDE the turn, each on its own goroutine outliving this
+		// run.
 		for _, item := range pending {
 			if item.call.ID == "" {
 				continue
@@ -509,22 +481,20 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	}
 }
 
-// defaultYieldTimeout caps a dispatched yield-class call's wall clock when the host
-// carries no override - the same law the serving channel's run cap holds over a run (a
-// hung call must never outlive the process's interest in it).
+// defaultYieldTimeout caps a dispatched yield-class call's wall clock when the host carries no
+// override: a hung call must never outlive the process's interest in it.
 const defaultYieldTimeout = 15 * time.Minute
 
-// inlineToolBudget is the inline window every tool call gets before the RUNNING call.
+// inlineToolBudget is the inline window a tool call gets before the RUNNING call converts.
 var inlineToolBudget = 2 * time.Second
 
-// inlineExec is one tool call executing inline under the inline budget. The run
-// goroutine executes the gate and the tool; the budget timer (armed when execution
-// starts, so a gate's human deliberation never escalates) may convert the RUNNING call
-// mid-flight. The mutex is the conversion boundary: registration into the pending-calls
-// ledger happens under it and the executor takes it on completion - a converted call is
-// durable in the table before any result can arrive (the flush-before-result law), and
-// the conversion never restarts or duplicates the call: the already running goroutine
-// IS the dispatched executor from that point.
+// inlineExec is one tool call executing inline under the inline budget. The run goroutine
+// executes the gate and the tool; the budget timer (armed when execution starts, so a gate's
+// human deliberation never escalates) may convert the RUNNING call mid-flight. The mutex is
+// the conversion boundary: registration into the pending-calls ledger happens under it and the
+// executor takes it on completion, so a converted call is durable in the table before any
+// result can arrive (the flush-before-result law), and the conversion never restarts or
+// duplicates the call - the already running goroutine IS the dispatched executor.
 type inlineExec struct {
 	idx          int
 	call         core.ToolCall
@@ -543,19 +513,16 @@ type inlineExec struct {
 	result     core.ToolResult
 	finishedAt time.Time
 
-	// conversation is this turn's message snapshot:
-	// the approval gate's provenance input. Copied before the execs
-	// start, so a run goroutine appending later turns can never race
-	// the gate's read.
+	// conversation is this turn's message snapshot, the approval gate's provenance input,
+	// copied before the execs start so a later turn's append can never race the gate's read.
 	conversation []core.Message
 
-	// done receives exactly one resolution: true = inline result,
-	// false = converted to a pending dispatch (the wake carries the
-	// result later).
+	// done receives exactly one resolution: true = inline result, false = converted to a
+	// pending dispatch (the wake carries the result later).
 	done chan bool
-	// offStop deregisters the user-stop hook the loop attaches to this call's detached. It
-	// stays registered for the call's whole life - a converted call outlives the run, and
-	// the human's stop must still cut it.
+	// offStop deregisters the user-stop hook attached to this call's detached ctx. It stays
+	// registered for the call's whole life - a converted call outlives the run, and the human's
+	// stop must still cut it.
 	offStop func()
 }
 
@@ -613,10 +580,9 @@ func (ex *inlineExec) run() {
 }
 
 // convert is the budget's expiry edge: the RUNNING call becomes a pending dispatch.
-// Registration into the pending-calls ledger happens under the mutex the executor takes
-// on completion, so the row is durable before any result can arrive
-// (flush-before-result); a Register failure leaves the call inline - blocking beats a
-// result with nowhere to go.
+// Registration happens under the mutex the executor takes on completion, so the row is
+// durable before any result can arrive (flush-before-result); a Register failure leaves the
+// call inline - blocking beats a result with nowhere to go.
 func (ex *inlineExec) convert() {
 	ex.mu.Lock()
 	if ex.finished {
@@ -647,10 +613,9 @@ func (ex *inlineExec) convert() {
 }
 
 // settleOut delivers a converted call's completion through the dispatched executor's
-// settle-then-inject path (phase-1 machinery, reused - no second executor): the ledger
-// row the conversion registered leaves FIRST, then the wake injects the result - a
-// crash between the two errs toward losing one re-entry, never a duplicate injection on
-// the next boot.
+// settle-then-inject path (no second executor): the ledger row the conversion registered
+// leaves FIRST, then the wake injects the result - a crash between the two loses one
+// re-entry, never a duplicate injection on the next boot.
 func (ex *inlineExec) settleOut(result string, err error, gateLine string) {
 	content, isErr, timedOut := result, false, false
 	switch {
@@ -677,8 +642,8 @@ func (ex *inlineExec) settleOut(result string, err error, gateLine string) {
 	deliverYieldResult(ex.opts, ex.sessionID, res)
 }
 
-// commitInline lands a completed call's result in this turn (the
-// gate-error path - the budget is not armed yet, no conversion race).
+// commitInline lands a completed call's result in this turn (the gate-error path - the budget
+// is not armed yet, so there is no conversion race).
 func (ex *inlineExec) commitInline(res core.ToolResult) {
 	ex.mu.Lock()
 	ex.finished = true
@@ -688,8 +653,8 @@ func (ex *inlineExec) commitInline(res core.ToolResult) {
 	ex.done <- true
 }
 
-// stopInline forwards a run stop to a still-inline call.
-// Converted calls are dispatched law - a run end must not eat them.
+// stopInline forwards a run stop to a still-inline call; converted calls are dispatched law,
+// so a run end must not eat them.
 func (ex *inlineExec) stopInline() {
 	ex.mu.Lock()
 	defer ex.mu.Unlock()
@@ -698,11 +663,10 @@ func (ex *inlineExec) stopInline() {
 	}
 }
 
-// pendingPlaceholderContent fills the still-pending sibling slot on the provider wire.
-// The wording is unmistakable by rule: the old "dispatched, result re-enters" line
-// got a live agent to consult a skill and MANUALLY SPAWN A DUPLICATE of a call that was
-// already running - the marker now names the tool and forbids the workaround in plain
-// words.
+// pendingPlaceholderContent fills the still-pending sibling slot on the provider wire. The
+// wording is unmistakable by rule: an earlier "dispatched, result re-enters" line got a live
+// agent to consult a skill and MANUALLY SPAWN A DUPLICATE of a call already running, so the
+// marker now names the tool and forbids that workaround in plain words.
 func pendingPlaceholderContent(tool string) string {
 	if tool == "" {
 		tool = "the tool"
@@ -710,18 +674,15 @@ func pendingPlaceholderContent(tool string) string {
 	return "[pending: " + tool + " is already running. Do NOT re-run, re-dispatch, or work around it. The result arrives as a new message. End your turn or do other work.]"
 }
 
-// conversationSnapshot copies the run's message history for the
-// approval gate: the gate judges a call's PROVENANCE
-// against the human's own words, and the loop is the one place that has
-// them. A copy, because the run goroutine keeps appending while the
-// gate reads.
+// conversationSnapshot copies the run's message history for the approval gate: the gate judges
+// a call's PROVENANCE against the human's own words, and the loop is the one place that has
+// them. A copy, because the run goroutine keeps appending while the gate reads.
 func conversationSnapshot(messages []core.Message) []core.Message {
 	return append([]core.Message(nil), messages...)
 }
 
-// gateCall consults the approval seam. A gate that judges provenance
-// (agent.GateProvenance) receives the conversation snapshot; one that
-// does not keeps the plain consult - the documented floor, no
+// gateCall consults the approval seam. A gate that judges provenance (agent.GateProvenance)
+// receives the conversation snapshot; one that does not keeps the plain consult - no
 // provenance, every non-allowlisted host reads as novel.
 func gateCall(ctx context.Context, ap agent.ApprovalProvider, name string, args map[string]any, conversation []core.Message) (string, error) {
 	if gp, ok := ap.(agent.GateProvenance); ok {
@@ -730,24 +691,17 @@ func gateCall(ctx context.Context, ap agent.ApprovalProvider, name string, args 
 	return ap.Gate(ctx, name, args)
 }
 
-// dispatchYieldCall runs ONE yield-class call outside any turn (async
-// agent loop, rule 2): the loop already flushed the assistant
-// message and registered the call durably; this goroutine outlives the
-// run on purpose - its ctx is the run context with the cancellation
-// removed (a run end must not eat a dispatched call) plus the call's
-// own wall clock. On settling, the entry leaves the pending-calls
-// table FIRST, then the synthetic core.YieldResult enters the home's
-// input path (the wake) - settle-then-inject, so a crash between the
-// two steps errs toward losing a result's re-entry instead of a duplicate
-// injection on the next boot.
+// dispatchYieldCall runs ONE yield-class call outside any turn (rule 2): the loop already
+// flushed the assistant message and registered the call durably, and this goroutine outlives
+// the run on purpose - its ctx is the run context with the cancellation removed (a run end
+// must not eat a dispatched call) plus the call's own wall clock. On settling, the
+// pending-calls entry leaves FIRST, then the synthetic core.YieldResult enters the home's
+// input path (the wake): settle-then-inject, so a crash loses one re-entry, never duplicates.
 func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions, conversation []core.Message) {
-	// A dispatched call outlives the RUN on purpose (the turn ended by
-	// dispatching it), so its ctx drops the run context's cancellation -
-	// but NOT the user's stop: the run's stop latch
-	// cuts the call too, with core.ErrUserStopped as the cause. Without
-	// it a stopped turn left its shell running to settle into a wake
-	// turn minutes later - the loop resurrected a conversation the
-	// human had already ended.
+	// A dispatched call outlives the RUN on purpose (the turn ended by dispatching it), so its
+	// ctx drops the run context's cancellation - but NOT the user's stop: the run's stop latch
+	// cuts the call too, with core.ErrUserStopped as the cause. Without it a stopped turn left
+	// its shell running to settle into a wake turn minutes later.
 	callCtx, cancelCall := context.WithCancelCause(context.WithoutCancel(runCtx))
 	defer cancelCall(nil)
 	if off := opts.Stop.OnStop(func() { cancelCall(core.ErrUserStopped) }); off != nil {
@@ -801,21 +755,18 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 	deliverYieldResult(opts, sessionID, res)
 }
 
-// deliverYieldResult hands one settled out-of-band call's result to the wake: the
-// pending-calls ledger row leaves FIRST, then the wake injects the result - a crash
-// between the two errs toward losing one re-entry, never a duplicate injection on the
-// next boot. The one delivery path for dispatched calls (immediate-yield) and converted
-// calls alike - phase-1 machinery, reused, never a second executor.
+// deliverYieldResult hands one settled out-of-band call's result to the wake: the pending-calls
+// ledger row leaves FIRST, then the wake injects the result - a crash between the two loses one
+// re-entry, never a duplicate injection on the next boot. THE one delivery path for dispatched
+// (immediate-yield) and converted calls alike - never a second executor.
 func deliverYieldResult(opts agent.LoopOptions, sessionID string, res core.YieldResult) {
 	if err := opts.YieldLedger.Settle(sessionID, res.ToolCallID); err != nil && opts.Logger != nil {
 		opts.Logger.Errorf("pending-call settle %s (%s): %v", res.ToolName, res.ToolCallID, err)
 	}
 	if opts.Stop.Stopped() {
-		// The user ended this turn. The settled call is an ORPHAN: its result never
-		// re-enters, because a wake turn here would resurrect the conversation the human just
-		// stopped (and, on a shell, feed the log of a process that should have died with the
-		// turn). The row is settled FIRST so the never-fold law and the pending placeholders
-		// both see a dry home.
+		// The user ended this turn, so the settled call is an ORPHAN: its result never re-enters,
+		// because a wake turn would resurrect the conversation the human just stopped. The row is
+		// settled FIRST so the never-fold law and the pending placeholders both see a dry home.
 		if opts.Logger != nil {
 			opts.Logger.Printf("yield result for %s (%s) discarded: the run was stopped by the user", res.ToolName, res.ToolCallID)
 		}
@@ -851,7 +802,6 @@ func appendPendingPlaceholders(messages []core.Message, pending []agent.PendingC
 	return messages
 }
 
-// indexOfToolCall finds a call's index by id.
 func indexOfToolCall(calls []core.ToolCall, id string) int {
 	for i, c := range calls {
 		if c.ID == id {
@@ -861,7 +811,7 @@ func indexOfToolCall(calls []core.ToolCall, id string) int {
 	return -1
 }
 
-// isOverflowError reports whether a provider error indicates the context window was.
+// isOverflowError reports whether a provider error says the context window was exceeded.
 func isOverflowError(err string) bool {
 	lower := strings.ToLower(err)
 	for _, phrase := range []string{"context length", "context_length", "too long", "token limit", "maximum context"} {
@@ -872,9 +822,8 @@ func isOverflowError(err string) bool {
 	return false
 }
 
-// persistTurnMessage writes one finished message through the run's TurnSink.
-// Persistence failures log and move on - a dead store never kills a live run, the
-// channel surfaces the reload gap instead of an error frame mid-stream.
+// persistTurnMessage writes one finished message through the run's TurnSink. Failures log and
+// move on - a dead store never kills a live run; the channel surfaces the reload gap instead.
 func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.LoggerProvider, msg core.Message, stage string) {
 	if sink == nil {
 		return
@@ -885,7 +834,6 @@ func persistTurnMessage(ctx context.Context, sink agent.TurnSink, logger agent.L
 	}
 }
 
-// phaseMeter tracks the turn's timing phases on the persistence record.
 type phaseMeter struct {
 	lastThink, lastResp, openAt time.Time
 	callStarts                  map[string]time.Time
@@ -942,11 +890,10 @@ func (m *phaseMeter) delta(last, now time.Time) time.Duration {
 	return 0
 }
 
-// toolSchemas converts a tools map to the provider schema list, sorted by tool name.
-// The sort is load-bearing, not cosmetic: a map's range order is randomized, so an
-// unsorted list serializes the tools[] block in a different order on every call, and a
-// prefix cache re-prefills from the first differing token onward. Sorted, the block is
-// a stable prefix, so only the new tail of the conversation pays.
+// toolSchemas converts a tools map to the provider schema list, SORTED by tool name. The sort
+// is load-bearing, not cosmetic: a map's range order is randomized, so an unsorted list
+// serializes the tools[] block differently on every call and a prefix cache re-prefills from
+// the first differing token onward. Sorted, the block is a stable prefix.
 func toolSchemas(tools map[string]core.Tool) []llm.ToolSchema {
 	if len(tools) == 0 {
 		return nil

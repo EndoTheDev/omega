@@ -226,7 +226,7 @@ func (lo *cliLoop) run() error {
 	}
 }
 
-// readMultiline collects a `"""` block until the closing line arrives on the same.
+// readMultiline collects a `"""` block until the closing `"""` line arrives.
 func (lo *cliLoop) readMultiline(lines <-chan string) string {
 	lo.printf("%s(multiline: finish with \"\"\" on its own line)%s\n", lo.s(ansiDim), lo.s(ansiReset))
 	var block []string

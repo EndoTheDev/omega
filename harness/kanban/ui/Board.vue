@@ -4,12 +4,8 @@
     class="board"
     :class="{ narrow: narrow }"
     :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }">
-    <!--
-      the UNIVERSAL band (the shared TabBand).
-      The board scroll columns start BELOW the band - scrolling never moves it.: the
-      band keeps the TabBand FAMILY contract - title + board chip + count | filter, the
-      shape the cron and agents bands hold.
-    -->
+    <!-- the UNIVERSAL band (shared TabBand): the columns start BELOW it, so scrolling never moves it,
+         and it keeps the family contract - title + board chip + count | filter. -->
     <TabBand title="Kanban">
       <template #lead>
         <template v-if="boards.length > 0">
@@ -30,7 +26,7 @@
               title="keep the old name"
               @click="cancelRename">cancel</button>
           </template>
-          <!-- (audit M1): the switcher rides the themed listbox (BandSelect). -->
+          <!-- the switcher is the shared BandSelect listbox. -->
           <BandSelect
             v-else
             class="board-switch-select"
@@ -71,11 +67,8 @@
       role="status">
       {{ notice }}
     </p>
-    <!--
-      the zero-board empty state (0.17.3 make-over): zero boards is a LEGAL registry,
-      so the panel must not render a grid over nothing - it offers the one way back, a
-      board name.
-    -->
+    <!-- zero boards is a LEGAL registry: the panel must not render a grid over nothing, so it
+         offers the one way back - a board name. -->
     <div
       v-if="registryKnown && boards.length === 0"
       class="board-empty">
@@ -180,11 +173,8 @@
               class="col-create-body"
               placeholder="body (optional)"
               aria-label="new card body" />
-            <!--
-              0.17.3 make-over: the assignee is a COMBOBOX fed by the agent registry.
-              Typing stays legal: a card may name a worker the registry no longer
-              lists, and the form must never strand that card.
-            -->
+            <!-- the assignee is a COMBOBOX fed by the agent registry; typing stays legal, since a
+                 card may name a worker the registry no longer lists. -->
             <div class="col-create-combo">
               <input
                 v-model="createAssignee"
@@ -396,7 +386,7 @@
   const registryKnown = ref(false);
   const newBoardName = ref("");
 
-  // the filter seat (0.17.3 make-over) ------------------------------ ONE input, TWO.
+  // the filter seat: ONE input, TWO scopes.
   const query = ref("");
   const scope = ref<SearchScope>("board");
   const visibleTasks = computed(() => filterTasks(tasks.value, query.value));
@@ -406,11 +396,10 @@
     boardCount(visibleTasks.value.length, tasks.value.length, filtering.value),
   );
 
-  // the chip's dropdown ladder (BandSelect).
+  // the chip's dropdown ladder rides BandSelect.
   const boardMenu = computed(() => boardMenuOptions(boards.value, confirmingRemove.value));
 
   async function fetchBoards() {
-    // The mounted fetch runs ONCE, so a miss under suite load left no switcher chip.
     const fetched = await fetchBoardsRetry(fetch);
     if (!fetched) return; // absent capability or every attempt missed
     boards.value = fetched;
@@ -419,7 +408,6 @@
   }
 
   function switchBoard(pick: string) {
-    // the dropdown carries the board VERBS too.
     const want = boardMenuPick(pick);
     if (want.kind === "rename") {
       startRename();
@@ -445,13 +433,14 @@
     fetchBoard();
   }
 
-  // the scope chip only RENDERS while a query runs, so an emptied seat must not leave.
+  // the scope chip only RENDERS while a query runs, so an emptied seat must fall back to
+  // this board rather than leave a stale all-boards scope behind.
   watch(query, (q) => {
     if (q.trim() !== "" || scope.value === "board") return;
     toggleScope();
   });
 
-  // create board (0.17.3): the empty state's only control --------
+  // create board: the empty state's only control.
   async function submitCreateBoard() {
     const name = newBoardName.value.trim();
     if (!name) return;
@@ -477,9 +466,8 @@
     }
   }
 
-  // rename (0.17.3): the band's rename control swaps the selector for an input. The row
-  // keeps its id server-side, so the cards never move - only the name they are reached
-  // under.
+  // rename: the band's rename control swaps the selector for an input. The row keeps its
+  // id server-side, so the cards never move - only the name they are reached under.
   const renaming = ref(false);
   const renameDraft = ref("");
 
@@ -488,9 +476,8 @@
     disarmRemove();
     renaming.value = true;
     renameDraft.value = boardName.value;
-    // the menu pick that starts this UNMOUNTS the chip and mounts the
-    // input, so the focus move must wait for the patch (nextTick) - an rAF
-    // raced the render and left the name unselected about half the time
+    // the menu pick that starts this UNMOUNTS the chip and mounts the input, so the focus
+    // move waits for the patch (nextTick) - an rAF raced the render and lost the selection
     void nextTick(() => {
       boardEl.value?.querySelector<HTMLInputElement>(".board-rename-input")?.select();
     });
@@ -529,12 +516,10 @@
     }
   }
 
-  // board removal: destructive, so the confirm is an armed second click on the. The
-  // server is the law: DeleteBoard refuses the default board, the current pointer
-  // target and boards still holding tasks, and the refusal text surfaces verbatim in
-  // the notice line.: the control is the dropdown's remove row now, so the arm closes
-  // the popup with it - the notice line names the second click (the one trail the
-  // closed popup cannot show) and the window is wide enough to reopen the menu.
+  // board removal: destructive, so the confirm is an armed second click. The server is the
+  // law - DeleteBoard refuses the default board, the current pointer target and boards
+  // still holding tasks - and its refusal text surfaces verbatim in the notice line. The
+  // arm rides the notice line too: the popup closes with the pick, but the trail must not.
   const REMOVE_ARM_MS = 10000;
   const confirmingRemove = ref(false);
   const notice = ref("");
@@ -562,8 +547,6 @@
     if (!canRemoveBoard(boardName.value)) return;
     if (!confirmingRemove.value) {
       confirmingRemove.value = true;
-      // the arm rides the notice line too: the menu row relabels, but the
-      // popup closes with the pick, so the trail must outlive it
       armNotice = `click "confirm remove" in the board menu again to remove "${boardName.value}"`;
       setNotice(armNotice);
       // disarm on timeout: the second click lands only while the warning still shows
@@ -587,7 +570,8 @@
       }
       setNotice(`board "${name}" removed`);
       selected.value = null; // the drawer's card belonged to the gone board
-      // refresh the registry first; the removed row must leave the switcher even if.
+      // refresh the registry first: the removed row must leave the switcher even if the
+      // read fails.
       try {
         const res = await fetch("/boards");
         if (res.ok) {
@@ -604,10 +588,9 @@
     }
   }
 
-  // notification board select --- The shell's task-notification click focuses this. The
-  // stash covers the mount race: the tab focus mounts the board component on the tick
-  // AFTER the shell published, so the mount consumes the stash once; the event covers
-  // the already-mounted case (the consumer clears the stash it supersedes).
+  // a task-notification click focuses this board. The stash covers the mount race (the tab
+  // focus mounts the component on the tick AFTER the shell published, so the mount consumes
+  // it once); the event covers the already-mounted case and clears the stash it supersedes.
   const BOARD_SELECT_EVENT = "omega-select-board";
   function consumeBoardStash(): string | undefined {
     const w = window as unknown as { __omegaBoardSelect?: string };
@@ -630,14 +613,13 @@
     window.removeEventListener(BOARD_SELECT_EVENT, onBoardSelect);
   });
 
-  // live refresh: the 5s poll is DEAD -------------- The board re-reads its own.
+  // live refresh: no poll - the board re-reads on the shell's canvas delta.
   const CANVAS_DELTA_EVENT = "omega-canvas-delta";
-  // The same event also carries a RESET pulse (id "reconnect"): the shell
-  // fires it from its reconnect catch-up, because a delta that landed
-  // while this page's socket was down is never replayed - without the
-  // pulse the board would stay stale until some later mutation happened
-  // to fire. The literal is duplicated from composables/canvas.ts
-  // (CANVAS_RESET_ID) on purpose: module UI imports no shell code.
+  // The same event carries a RESET pulse (id "reconnect"), fired from the shell's reconnect
+  // catch-up: a delta that landed while this page's socket was down is never replayed, and
+  // without the pulse the board would stay stale until some later mutation. The literal is
+  // duplicated from composables/canvas.ts (CANVAS_RESET_ID) on purpose - module UI imports
+  // no shell code.
   const CANVAS_RESET_ID = "reconnect";
   interface CanvasDeltaPanel {
     id?: string;
@@ -657,7 +639,7 @@
     const detail = (ev as CustomEvent<CanvasDeltaPanel>).detail;
     if (!detail || typeof detail !== "object") return;
     if (detail.id === CANVAS_RESET_ID) {
-      // a reconnect: the registry AND the list may have moved while the socket was.
+      // a reconnect: the registry AND the list may have moved while the socket was down.
       void reloadAll();
       return;
     }
@@ -699,9 +681,8 @@
     if (drag.value && drag.value.moved) return; // a live drag owns the list
     const seq = ++fetchSeq;
     try {
-      // status=all: the board grid carries the archived lane too (no status is filtered
-      // out of the grid), so it can never default to the active-only view the list tool
-      // shows.
+      // status=all: the grid carries the archived lane too, so it can never default to the
+      // active-only view the list tool shows.
       const res = await fetch(tasksPath(boardName.value, scope.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
@@ -715,7 +696,6 @@
     }
   }
 
-  // the grid renders the FILTERED list.
   const cols = computed(() => columns(visibleTasks.value));
 
   // the running heartbeat chip. The tick NEVER fetches - it only re-dates `now`, which
@@ -741,8 +721,8 @@
   let resizeObs: ResizeObserver | null = null;
   onMounted(() => {
     if (typeof ResizeObserver === "undefined" || !boardEl.value) return;
-    // (same rAF deferral as the shell's useNarrow: the flip changes the
-    // observed layout itself, so the callback must not mutate this frame)
+    // rAF deferred: the flip changes the observed layout, so the callback must not
+    // mutate this frame
     resizeObs = new ResizeObserver((entries) => {
       const pending = entries
         .map((e) => Math.round(e.contentRect.width))
@@ -760,9 +740,8 @@
     resizeObs = null;
   });
 
-  // lane rails: any lane folds to a rail, and an EMPTY lane folds itself. Pins are
-  // component state, not persisted: the lane set is a view of the current board, and a
-  // pin that outlived its lane would be exactly the override-fighting-reality shape the
+  // any lane folds to a rail, and an EMPTY lane folds itself. Pins are component state, not
+  // persisted: a pin that outlived its lane would be the override-fighting-reality shape the
   // law forbids.
   const lanePins = ref<LanePins>({});
   const laneCounts = computed(() => {
@@ -789,10 +768,9 @@
     frozenLanes.value = frozen;
   }
 
-  // rails are a horizontal-scroll affordance only. An open create form also holds the
-  // lane in its column shape: a rail cannot be unfolded (an empty lane is always
-  // folded), so the create form is the ONE way to grow a lane from nothing - it must be
-  // able to open, and it is an editor rather than a resting lane.
+  // rails are a horizontal-scroll affordance only. An open create form also holds its lane
+  // in column shape: a rail cannot be unfolded, so the form is the ONE way to grow a lane
+  // from nothing.
   function isLaneFolded(status: string, count: number): boolean {
     if (narrow.value) return false;
     if (createOpen.value === status) return false;
@@ -874,13 +852,10 @@
     }
   }
 
-  // drag-and-drop reorder: a card is draggable with the pointer; during the drag the
-  // board's list itself is reordered live, and the drop PATCHes the same pair the live
-  // view rendered - {status, after_id} - so the optimistic view is exactly what the
-  // server persisted. A drag that never clears the threshold stays a click (the
-  // drawer). The click that trails a real drag is suppressed, and a canvas delta that
-  // arrives mid-drag never re-reads the list (fetchBoard's guard) so the gesture keeps
-  // the view it is building.
+  // drag-and-drop reorder: the list is reordered live during the drag, and the drop PATCHes
+  // the same pair the live view rendered - {status, after_id} - so the optimistic view is
+  // exactly what persisted. A drag that never clears the threshold stays a click, and a
+  // canvas delta mid-drag never re-reads the list (fetchBoard's guard).
   interface DragState {
     id: string;
     fromStatus: string;
@@ -899,7 +874,6 @@
   function updateDropTarget(x: number, y: number) {
     const d = drag.value;
     if (!d || !boardEl.value) return;
-    // the pointer rides elementsFromPoint.
     const colEl = document
       .elementsFromPoint(x, y)
       .flatMap((el) => (el instanceof Element ? [el.closest(".board-col")] : []))
@@ -1023,7 +997,8 @@
       selected.value = d.task;
       detailComments.value = d.comments ?? [];
       detailEvents.value = d.events ?? [];
-      // fold the fresh detail back into the board row - a move in the drawer must not.
+      // fold the fresh detail back into the board row: a move in the drawer must not leave
+      // the grid stale.
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = { ...d.task, board: tasks.value[i].board };
     } catch (e) {
@@ -1115,9 +1090,8 @@
     }
   }
 
-  // the assignee combobox (0.17.3 make-over) ------------------------ The create.
-  // Picking is the fast path; TYPING stays legal both ways: a card may name a worker
-  // the registry no longer lists, and the form must never strand that card.
+  // the assignee combobox: picking is the fast path, typing stays legal (a card may name a
+  // worker the registry no longer lists), and the form must never strand that card.
   const agentOptions = ref<AgentOption[]>([]);
   const agentOptionsError = ref("");
   let agentsInflight: Promise<void> | null = null;
@@ -1223,20 +1197,15 @@
     overflow: hidden;
   }
   /*
-   * the head row is the shared TabBand now - the band's own padding/lead replace the
-   * old.board-head geometry; only the action-group spacing rides here (the band look is
-   * shared).: the slot holds exactly two things - the filter seat and its scope chip -
-   * so the gap is the chip's HUG, and the SLOT is the flexible one: the chip is fixed,
-   * the input gives up the width.
-   * (TabBand ships flex-shrink: 0 for tabs whose actions are buttons; a band that grows
-   * an inline seat must let the seat absorb the pane.) / /
+   * the head row is the shared TabBand: only the action-group spacing rides here. The slot
+   * holds the filter seat and its scope chip, so the chip is fixed and the input gives up
+   * the width (TabBand ships flex-shrink: 0, which an inline seat must relax to absorb).
    */
   .board :deep(.tab-band-actions) {
     gap: 3px;
     flex-shrink: 1;
     min-width: 0;
   }
-  /* the switcher is the shared BandSelect chip. */
   .board-switch-select :deep(.model-chip) {
     padding: 2px 6px;
     font-size: 11.5px;
@@ -1246,10 +1215,8 @@
   .board-switch-select :deep(.model-list li:nth-last-child(2)) {
     border-top: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
   }
-  /*
-   * the armed remove ROW: the marker class rides BandSelect's `cls` seam, and the tint
-   * is the second-click warning the band used to carry / /
-   */
+  /* the armed remove ROW: BandSelect's `cls` seam carries the marker; the tint is the
+     second-click warning. */
   .board-switch-select :deep(.model-list li.armed) {
     color: var(--err);
     font-weight: 600;
@@ -1258,15 +1225,12 @@
     font-size: 10.5px;
     opacity: 0.5;
   }
-  /*
-   * a NARROW pane with a live filter.
-   * This is the width where "title + chip + count | filter + chip" cannot all be one
-   * row.
-   */
+  /* a NARROW pane with a live filter: the width where "title + chip + count | filter + chip"
+     cannot all be one row, so the count drops. */
   .board.narrow:has(.board-scope-chip) .board-switch-count {
     display: none;
   }
-  /* 0.17.3 make-over: the rename seat takes the selector's place. */
+  /* the rename seat takes the selector's place. */
   .board-rename-input {
     font: inherit;
     font-size: 11.5px;
@@ -1305,7 +1269,6 @@
     font-weight: 600;
     opacity: 0.95;
   }
-  /* the zero-board empty state (0.17.3). */
   .board-empty {
     flex: 1;
     min-height: 0;
@@ -1517,7 +1480,7 @@
     min-height: 40px;
     resize: vertical;
   }
-  /* the assignee combobox (0.17.3 make-over). */
+  /* the assignee combobox, floating over the card body. */
   .col-create-combo {
     position: relative;
     display: flex;
@@ -1699,9 +1662,7 @@
   .card-moves {
     flex: none;
   }
-  /*
-   * the assignee as a CHIP: a bordered token reads as a person, not as stray "@name".
-   */
+  /* the assignee as a CHIP: a bordered token reads as a person, not as stray "@name". */
   .card-assignee-chip {
     border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
     border-radius: var(--r-chip);
@@ -1713,7 +1674,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* the board a mixed-scope row came from (0.17.3). */
+  /* the board a mixed-scope row came from. */
   .card-board-chip {
     flex: none;
     border: 1px dashed color-mix(in srgb, currentcolor 26%, transparent);

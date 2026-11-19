@@ -1,7 +1,5 @@
 package api
 
-// The HTTP channel's serving skeleton.
-
 import (
 	"context"
 	"embed"
@@ -21,7 +19,7 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
-// webuiFS is the embedded SPA at the FS root, so the FileServer at "/" finds.
+// webuiFS is the embedded SPA at the FS root, where the FileServer at "/" looks.
 var webuiFS, _ = fs.Sub(staticFS, "static")
 
 // Server is the serving shell around the base API server.
@@ -30,17 +28,14 @@ type Server struct {
 	httpSrv *http.Server
 	version string
 	startedAt time.Time
-	// themes serves GET /themes backed by the OMEGA_HOME/themes folder, watched.
-	// Nil-safe: no home configured means an empty list and no watcher.
+	// themes serves GET /themes from the OMEGA_HOME/themes folder, watched; nil-safe.
 	themes *themeRegistry
-	// healthMu guards healthProvider, the cached provider reachability verdict: the
-	// monitor goroutine writes it, every health read copies it. Nil until the first probe
-	// lands - the health body then carries no provider fact.
+	// healthMu guards healthProvider, the cached provider reachability verdict: the monitor
+	// goroutine writes it, every health read copies it. Nil until the first probe lands.
 	healthMu       sync.Mutex
 	healthProvider *agentapi.HealthProvider
-	// logSeeded is test observability, nil in production. A test appends only after that
-	// baseline, so it cannot race the seed and watch its line get swallowed. Set before
-	// the follower starts; read once, never written back.
+	// logSeeded is test observability, nil in production: a test appends only after that
+	// baseline, set before the follower starts and never written back.
 	logSeeded chan struct{}
 }
 
@@ -51,10 +46,8 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	mux.HandleFunc("/health", s.handleHealth)
 	mux.HandleFunc("/ws", s.handleSocket)
 	mux.HandleFunc("/themes", s.handleThemes)
-	// v0.12 E2: the module toggle surface.
 	mux.HandleFunc("GET /modules", s.handleModules)
 	mux.HandleFunc("PUT /modules/{name}", s.handleModuleToggle)
-	// v0.14.1: the registry-browser toggle surface.
 	mux.HandleFunc("GET /disabled", s.handleDisabled)
 	mux.HandleFunc("PUT /disabled/skills", s.handleDisabledSkills)
 	mux.HandleFunc("PUT /disabled/tools", s.handleDisabledTools)
@@ -65,14 +58,14 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	mux.HandleFunc("/extensions", s.handleExtensions)
 	// SPA + module REST: the built webui is embedded in the binary and served at "/".
 	mux.HandleFunc("/", s.handleModuleOrSPA)
-	// v0.14.1 audit p10: the unauthenticated surface is loopback-local, so cross-origin.
+	// The unauthenticated surface is loopback-local, so cross-origin writes are the threat.
 	s.httpSrv = &http.Server{Handler: &hostGuard{next: s.Server.Handler()}}
 	return s
 }
 
 // SetPublicHosts hands the Host guard the operator-declared public identities
-// (server.public_hosts): a reverse proxy or tunnel forwards the browser's domain as
-// Host, which never matches the bind, so the domain must be declared to pass.
+// (server.public_hosts): a tunneled browser domain arrives as Host, never matching the
+// bind, so the declaration is what lets it pass.
 func (s *Server) SetPublicHosts(hosts []string) {
 	if g, ok := s.httpSrv.Handler.(*hostGuard); ok && len(hosts) > 0 {
 		set := make(map[string]bool, len(hosts))
@@ -83,7 +76,6 @@ func (s *Server) SetPublicHosts(hosts []string) {
 	}
 }
 
-// rewireSeams computes the capsule mux (the module vocab is the shell's) and hands.
 func (s *Server) rewireSeams(ctx *core.Context) error {
 	modmux, roots := moduleRouter(ctx.ModuleRoutes)
 	return s.Server.RewireSeams(ctx, modmux, roots)
@@ -114,7 +106,7 @@ func spaHandler(fsys fs.FS) http.Handler {
 					return
 				}
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
-				_, _ = w.Write(b) // best-effort static response
+				_, _ = w.Write(b)
 				return
 			}
 		}
@@ -127,25 +119,23 @@ func (s *Server) Handler() http.Handler {
 	return s.httpSrv.Handler
 }
 
-// Serve runs the HTTP server on addr until ctx is cancelled, then shuts down. It
-// returns the ListenAndServe error, or nil on a clean shutdown.
+// Serve runs the HTTP server on addr until ctx is cancelled, then shuts down.
 func (s *Server) Serve(ctx context.Context, addr string) error {
 	s.httpSrv.Addr = addr
-	// the Host/Origin guard learns the bind here (before the listener accepts anything) -
-	// the allowed-Host set is derived from it, and a bind the guard cannot defend refuses
-	// to start instead of failing open
+	// the Host/Origin guard learns the bind here, before the listener accepts anything:
+	// the allowed-Host set derives from it, and an undefendable bind refuses to start
 	if g, ok := s.httpSrv.Handler.(*hostGuard); ok {
 		if err := g.bind(addr); err != nil {
 			return err
 		}
 	}
 	go s.themes.watch(ctx)
-	// the push channel's heartbeat: started here, after the listener is
-	// up (the goroutine fence - mount never starts background work).
+	// The push channel's heartbeat starts only here, once the listener is up: mount never
+	// starts background work.
 	go s.pushHealth(ctx)
 	go s.followLogs(ctx)
-	// the provider reachability probe: one model-list round trip a minute, cached for the
-	// health body's provider fact - never on the 5s heartbeat frame.
+	// The provider reachability probe: one model-list round trip a minute, never on the
+	// 5s heartbeat frame.
 	go s.monitorHealth(ctx)
 	errCh := make(chan error, 1)
 	go func() {
@@ -168,5 +158,5 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	// The same body the health topic pushes (api/ws.go).
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.healthState()) // best-effort response body
+	_ = json.NewEncoder(w).Encode(s.healthState())
 }
