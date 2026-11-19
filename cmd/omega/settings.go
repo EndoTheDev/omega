@@ -459,6 +459,19 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value: cfg.Approvals.SmartPolicy, Live: true,
 					Default: def.Approvals.SmartPolicy,
 					Help:    "trusted text the reviewer reads beside every command: describe routine operations that should not interrupt you; applies live; a policy edit also re-keys the gate cache"},
+				// The safeagents detector set's rollout (card t_e3cd4381).
+				// New detectors ship in the log-only soak: findings land
+				// in the audit log as WOULD-BLOCK and no call is touched
+				// until a real-run soak shows no false-positive pile.
+				{Key: "approvals.monitor", Label: "new detectors", Type: "select",
+					Options: []string{approval.MonitorLogOnly, approval.MonitorEnforce},
+					Value:   cfg.Approvals.Monitor, Live: true,
+					Default: def.Approvals.Monitor,
+					Help:    "log-only = host-provenance and reach detectors report would-block in the audit log without blocking (the soak); enforce = severity tiers decide: high blocks, milder tiers ask you"},
+				{Key: "approvals.judge_fail_closed", Label: "judge fails closed", Type: "toggle",
+					Value: cfg.Approvals.JudgeFailClosed, Live: true,
+					Default: def.Approvals.JudgeFailClosed,
+					Help:    "the evidence-only judge unreachable: off = it adds nothing and your card still decides (fail open); on = the call is refused"},
 			},
 		},
 	}
@@ -647,7 +660,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "sessions.summarize_after_hours":
 			err = setInt(&cfg.Sessions.SummarizeAfterHours, key, raw, 0, math.MaxInt32) // 0 = the default
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
-			"logging.enabled":
+			"logging.enabled", "approvals.judge_fail_closed":
 			err = setBool(cfg, key, raw)
 		case "compaction.threshold":
 			err = setFloat(&cfg.Compaction.Threshold, key, raw, 0.05, 1)
@@ -680,6 +693,15 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			cfg.Approvals.Mode = m
 		case "approvals.smart_policy":
 			err = setStringField(cfg, key, raw)
+		case "approvals.monitor":
+			var m string
+			if err = setString(&m, key, raw, trim); err != nil {
+				return err
+			}
+			if !approval.ValidMonitor(m) {
+				return fmt.Errorf("%s: must be log-only or enforce, got %q", key, m)
+			}
+			cfg.Approvals.Monitor = m
 		case "provider.compaction_model", "provider.summarizer_model",
 			"provider.skills_model", "provider.approvals_model":
 			// card t_fc0b2f2d: the per-subsystem model slots live in
@@ -999,6 +1021,8 @@ func setBool(cfg *Config, key string, raw any) error {
 		cfg.Memory.UserProfileEnabled = b
 	case "logging.enabled":
 		cfg.Logging.Enabled = b
+	case "approvals.judge_fail_closed":
+		cfg.Approvals.JudgeFailClosed = b
 	default:
 		return fmt.Errorf("unknown setting: %s", key)
 	}

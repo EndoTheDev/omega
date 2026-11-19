@@ -26,6 +26,90 @@ or an unparsable static form. It decides nothing - it only decides
 WHO looks next. A false ask costs one click (manual) or one cached
 forward pass (smart); a false pass costs whatever the command does.
 
+Every hit is also a structured FINDING with a severity (`low` /
+`medium` / `high`). On this legacy lane the severity is a label - the
+routing above is unchanged - and it rides the audit row for the eval
+reader.
+
+## The request-only detector set (safeagents)
+
+`detectcall.go` adds a second, request-only set that runs over EVERY
+tool call (not just `shell.run`) and costs no network call and no
+model call. It asks two questions only a request can answer:
+
+- **Provenance.** Does the host this call reaches appear in the
+  HUMAN's own words? The model's assistant turns are excluded by
+  ruling - a host the model wrote earlier is no more sourced than one
+  it writes now, so self-citation is not provenance. An empty
+  conversation (a one-shot run, a gate consulted without the loop's
+  handoff) sources nothing.
+- **Reach.** A host only counts in a call that can reach it: the tool
+  name matches `fetch|browse|browser|web|http|url|download`, or a
+  command line carries `curl`, `wget`, `nc`, `ssh`, `git clone`,
+  `pip install`, `/dev/tcp/`, `requests.`, `httpx.` (plus the clients
+  the legacy detector already knows). URL hosts count anywhere in a
+  reaching call - the code names the URL a line before opening it -
+  while a bare IP counts only on a reaching line: a line carrying a
+  network client, or any argument line of a call whose TOOL NAME is
+  itself the reach surface (`web.fetch`'s arguments are what it
+  fetches, so a bare `host` value reaches on its own).
+
+The allowlist is fixed: `github.com`, `pypi.org`, `pythonhosted.org`,
+`huggingface.co`, `hf.co`, `npmjs.org`, `crates.io`, `localhost`,
+`127.0.0.1`, and the RFC 2606 / RFC 6761 reserved names
+(`example.com/.net/.org`, `.example`, `.test`, `.invalid`,
+`.localhost`) which no one can register.
+
+Two precision rulings keep the corpus quiet:
+
+- digits after `=` are a version, not an address (`pkg==0.5.1.4`), and
+  every octet must fit a byte;
+- argument values are DECODED before matching (a JSON payload carried
+  as a string is decoded once, and a decoded newline is a line
+  boundary) - matching raw wire text would let an escaped `\n` in
+  front of `cat` read as `ncat`.
+
+The Cohere-report behaviours the set names: `/proc/*/environ` reads,
+`curl --noproxy`, the Kubernetes service-account token path,
+`unshare`/`nsenter` namespace escape, `.netrc` reads, and reads of the
+agent harness's own credential surface.
+
+**Severity decides the route.** A `high` finding blocks on its own
+(the cheap regex catches the obvious: no model, no human). A `medium`
+finding marks the call SUSPICIOUS and only those escalate - judge
+first, then the human. Nothing is cached on this lane: the block path
+costs no model call, and a judge-augmented escalation is situational.
+
+**The rollout is log-only.** `approvals.monitor` defaults to
+`log-only`: every finding is recorded in the audit log as a
+WOULD-BLOCK and the call proceeds exactly as it would have. That is
+the soak every new detector ships through; `enforce` flips it once a
+real-run soak shows no false-positive pile.
+
+## The evidence-only judge
+
+When a suspicious call escalates, the judge reads EXACTLY three
+things: the human's task text, the pending tool call, and the
+deterministic findings. It never sees the worker agent's reasoning -
+an agent that wants a call to run would argue its case there. The
+prompt declares the task and the call as DATA, not instructions, and
+tells the judge that prose addressing it is evidence against the
+call.
+
+The ratchet is Go's: the judge answers one probability (`block`) and
+the threshold decides. A block ADDS a finding; no answer ever lifts a
+deterministic one. A dead judge fails OPEN by default - it adds
+nothing and the human still decides - and fails CLOSED when
+`approvals.judge_fail_closed` is on.
+
+The judge is a configured reviewer, so the task text and the call
+cross the SAME `sanitize()` egress boundary the reviewer lane rides
+(`redact.go`): answer-schema fragments (the judge's own `block`
+vocabulary included) and credential-shaped material are stripped
+before the body leaves the machine. The log-only soak's WOULD-BLOCK
+row is sanitized the same way, so the soak log never holds a cleartext
+credential.
+
 ## The reviewer (smart mode)
 
 One forward pass against the configured provider's `/v1/systemone`
@@ -95,6 +179,14 @@ data source - the corpus regression (`TestDetectorCorpus`,
 ladder table tests, adversarial canaries) pins the expected behavior;
 the audit log measures it in production.
 
+The request-only set's rows carry three extra fields: `findings` (one
+record per detector hit: name, severity, tiered, detail), `monitor`
+(true on a log-only dry run - the row is a WOULD-BLOCK measurement and
+nothing about the call changed), and `judge` / `judge_block` (the
+evidence-only judge's state: `blocked`, `cleared`, `unavailable` or
+`not-consulted`, with its probability). A monitor row's `decided_by`
+reads `monitor`; an enforced block reads `detector`.
+
 ## Config keys
 
 ```yaml
@@ -102,6 +194,10 @@ approvals:
   mode: manual # off | manual | smart (default manual)
   smart_policy: | # trusted operator policy the reviewer reads
     ...
+  monitor: log-only # log-only (default) | enforce - the request-only
+                    # detector set's rollout: soak first, then enforce
+  judge_fail_closed: false # the evidence-only judge unreachable:
+                           # false = fail open, the human still decides
 ```
 
 The decision model moved to provider settings: the

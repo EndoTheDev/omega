@@ -341,6 +341,12 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		// (the executor keeps executing out-of-band, the turn ends,
 		// the result re-enters on settle) - the conversion never
 		// restarts or duplicates the call.
+		//
+		// The approval gate reads this turn's conversation snapshot
+		// (card t_e3cd4381): a detector judging CALL PROVENANCE needs
+		// the human's own words, and this is the one place that has
+		// them.
+		conversation := conversationSnapshot(messages)
 		results := make([]core.ToolResult, len(toolCalls))
 		completed := make([]time.Time, len(toolCalls))
 		// lane per call: 0 = executing, 1 = resolved inline, 2 =
@@ -374,12 +380,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				}
 			}
 			ex := &inlineExec{
-				idx:       i,
-				call:      call,
-				tool:      tool,
-				opts:      opts,
-				sessionID: sessionID,
-				done:      make(chan bool, 1),
+				idx:          i,
+				call:         call,
+				tool:         tool,
+				opts:         opts,
+				sessionID:    sessionID,
+				conversation: conversation,
+				done:         make(chan bool, 1),
 			}
 			if yieldReady {
 				ex.budget = inlineToolBudget
@@ -408,12 +415,13 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 						opts.Logger.Errorf("pending-call table rejected %s (%s): %v - executing loop-back", item.call.Name, item.call.ID, err)
 					}
 					ex := &inlineExec{
-						idx:       indexOfToolCall(toolCalls, item.call.ID),
-						call:      item.call,
-						tool:      item.tool,
-						opts:      opts,
-						sessionID: sessionID,
-						done:      make(chan bool, 1),
+						idx:          indexOfToolCall(toolCalls, item.call.ID),
+						call:         item.call,
+						tool:         item.tool,
+						opts:         opts,
+						sessionID:    sessionID,
+						conversation: conversation,
+						done:         make(chan bool, 1),
 					}
 					if yieldReady {
 						ex.budget = inlineToolBudget
@@ -531,7 +539,7 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			if yieldTimeout <= 0 {
 				yieldTimeout = defaultYieldTimeout
 			}
-			go dispatchYieldCall(ctx, item.call, item.tool, sessionID, yieldTimeout, opts)
+			go dispatchYieldCall(ctx, item.call, item.tool, sessionID, yieldTimeout, opts, conversation)
 		}
 
 		outstanding := len(pending) + escalated
@@ -617,6 +625,12 @@ type inlineExec struct {
 	result     core.ToolResult
 	finishedAt time.Time
 
+	// conversation is this turn's message snapshot (card t_e3cd4381):
+	// the approval gate's provenance input. Copied before the execs
+	// start, so a run goroutine appending later turns can never race
+	// the gate's read.
+	conversation []core.Message
+
 	// done receives exactly one resolution: true = inline result,
 	// false = converted to a pending dispatch (the wake carries the
 	// result later).
@@ -640,7 +654,7 @@ func (ex *inlineExec) run() {
 	}
 	var gateLine string
 	if ex.opts.Approvals != nil {
-		line, gerr := ex.opts.Approvals.Gate(ex.ctx, ex.call.Name, ex.call.Arguments)
+		line, gerr := gateCall(ex.ctx, ex.opts.Approvals, ex.call.Name, ex.call.Arguments, ex.conversation)
 		if gerr != nil {
 			res := core.NewToolResult(gerr.Error(), ex.call.ID, true)
 			res.Gate = line
@@ -795,6 +809,26 @@ func pendingPlaceholderContent(tool string) string {
 	return "[pending: " + tool + " is already running. Do NOT re-run, re-dispatch, or work around it. The result arrives as a new message. End your turn or do other work.]"
 }
 
+// conversationSnapshot copies the run's message history for the
+// approval gate (card t_e3cd4381): the gate judges a call's PROVENANCE
+// against the human's own words, and the loop is the one place that has
+// them. A copy, because the run goroutine keeps appending while the
+// gate reads.
+func conversationSnapshot(messages []core.Message) []core.Message {
+	return append([]core.Message(nil), messages...)
+}
+
+// gateCall consults the approval seam. A gate that judges provenance
+// (agent.GateProvenance) receives the conversation snapshot; one that
+// does not keeps the plain consult - the documented floor, no
+// provenance, every non-allowlisted host reads as novel.
+func gateCall(ctx context.Context, ap agent.ApprovalProvider, name string, args map[string]any, conversation []core.Message) (string, error) {
+	if gp, ok := ap.(agent.GateProvenance); ok {
+		return gp.GateWithConversation(ctx, name, args, conversation)
+	}
+	return ap.Gate(ctx, name, args)
+}
+
 // dispatchYieldCall runs ONE yield-class call outside any turn (async
 // agent loop, ruling 2): the loop already flushed the assistant
 // message and registered the call durably; this goroutine outlives the
@@ -805,7 +839,7 @@ func pendingPlaceholderContent(tool string) string {
 // input path (the wake) - settle-then-inject, so a crash between the
 // two steps errs toward losing a result's re-entry instead of a duplicate
 // injection on the next boot.
-func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions) {
+func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Tool, sessionID string, timeout time.Duration, opts agent.LoopOptions, conversation []core.Message) {
 	// A dispatched call outlives the RUN on purpose (the turn ended by
 	// dispatching it), so its ctx drops the run context's cancellation -
 	// but NOT the user's stop (card t_caa67135): the run's stop latch
@@ -827,7 +861,7 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 
 	content, isErr, timedOut, gateLine := "", false, false, ""
 	if opts.Approvals != nil {
-		line, gerr := opts.Approvals.Gate(ctx, call.Name, call.Arguments)
+		line, gerr := gateCall(ctx, opts.Approvals, call.Name, call.Arguments, conversation)
 		gateLine = line
 		if gerr != nil {
 			content, isErr = gerr.Error(), true

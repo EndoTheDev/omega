@@ -23,6 +23,84 @@ type Risk struct {
 	// ride the audit row ("rules") and the reviewer prompt
 	// ("flagged_as").
 	Reasons []string
+	// Findings carries the same hits as structured records (card
+	// t_e3cd4381): one per reason, each with its severity tier. These
+	// are the LEGACY shell rules - Tiered=false, so their routing is
+	// untouched (a hit still means "interrupt", exactly as before);
+	// the severity is what the audit row and the approval surface read.
+	Findings []Finding
+}
+
+// Severity is a detector finding's tier (card t_e3cd4381).
+type Severity string
+
+const (
+	SeverityLow    Severity = "low"    // informational: the chip, never a decision
+	SeverityMedium Severity = "medium" // suspicious: escalate (judge, then human)
+	SeverityHigh   Severity = "high"   // blocks on its own - no model, no human needed
+)
+
+// Finding is one detector hit. Detector is the stable greppable name
+// (audit row, judge payload, the approval surface's chip text); Detail
+// names the concrete evidence (the host, the path) and never carries
+// credential material.
+//
+// Tiered marks the safeagents detector set, whose SEVERITY decides the
+// route: >= SeverityHigh blocks automatically, the milder tiers mark
+// the call suspicious and only those escalate. The legacy shell rules
+// ride Tiered=false: their severity is a label (the reviewer/ladder
+// lane routes them, unchanged since card t_c2b52cb5).
+type Finding struct {
+	Detector string   `json:"detector"`
+	Severity Severity `json:"severity"`
+	Tiered   bool     `json:"tiered,omitempty"`
+	Detail   string   `json:"detail,omitempty"`
+}
+
+// severityRank orders the tiers; unknown values rank below low so a
+// malformed finding can never outrank a real one.
+func severityRank(s Severity) int {
+	switch s {
+	case SeverityHigh:
+		return 3
+	case SeverityMedium:
+		return 2
+	case SeverityLow:
+		return 1
+	}
+	return 0
+}
+
+// MaxSeverity returns the loudest tier across findings ("" when none).
+func MaxSeverity(findings []Finding) Severity {
+	best := Severity("")
+	for _, f := range findings {
+		if severityRank(f.Severity) > severityRank(best) {
+			best = f.Severity
+		}
+	}
+	return best
+}
+
+// reasonSeverity assigns the legacy shell rules their informational
+// tier. Routine development traffic (a package install, a git branch,
+// a redirect write) reads milder than the machine's destructive set -
+// the label tells the truth about the rule, it does not change what
+// the rule does.
+var reasonSeverity = map[string]Severity{
+	"system-control":       SeverityHigh,
+	"process-control":      SeverityHigh,
+	"file-writes":          SeverityHigh,
+	"network-egress":       SeverityHigh,
+	"secret-material":      SeverityHigh,
+	"privilege-escalation": SeverityHigh,
+	"dynamic-exec":         SeverityHigh,
+	"script-execution":     SeverityHigh,
+	"unparsable-command":   SeverityHigh,
+	"command-substitution": SeverityMedium,
+	"package-managers":     SeverityMedium,
+	"git-history":          SeverityMedium,
+	"redirect-writes":      SeverityLow,
 }
 
 // wordSet is one rule's command vocabulary: basename form of words
@@ -157,7 +235,15 @@ func Assess(p Parsed) Risk {
 		out = append(out, r)
 	}
 	sort.Strings(out)
-	return Risk{WouldInterrupt: true, Reasons: out}
+	findings := make([]Finding, 0, len(out))
+	for _, r := range out {
+		sev, ok := reasonSeverity[r]
+		if !ok {
+			sev = SeverityMedium // an unmapped rule still interrupts; label it suspicious
+		}
+		findings = append(findings, Finding{Detector: r, Severity: sev})
+	}
+	return Risk{WouldInterrupt: true, Reasons: out, Findings: findings}
 }
 
 // assessSegment is the per-segment rule pass.

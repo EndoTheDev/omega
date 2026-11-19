@@ -416,6 +416,19 @@ type ApprovalProvider interface {
 	Gate(ctx context.Context, toolName string, args map[string]any) (string, error)
 }
 
+// GateProvenance is the optional upgrade to ApprovalProvider (card
+// t_e3cd4381, the model-capabilities pattern): a gate that judges a
+// call's PROVENANCE needs the conversation the call belongs to, and the
+// loop is the one place that holds it. The loop hands the run's message
+// snapshot with every gated call; what COUNTS as provenance is the
+// gate's own law (the approval capsule reads human-authored turns only -
+// a host the model wrote earlier is no more sourced than one it writes
+// now). A gate that does not implement this keeps the plain consult:
+// no provenance, the documented floor.
+type GateProvenance interface {
+	GateWithConversation(ctx context.Context, toolName string, args map[string]any, conversation []core.Message) (string, error)
+}
+
 // bindNeed resolves one offer under key and asserts the consumer face
 // against it. Absence is the documented floor (nil rides, the
 // defaulting law - the loop's nil-safe degradation applies); a PRESENT

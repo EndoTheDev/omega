@@ -505,6 +505,15 @@ type KanbanConfig struct {
 type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
 	SmartPolicy string `yaml:"smart_policy"`
+	// Monitor is the safeagents detector set's rollout (card
+	// t_e3cd4381): "log-only" (or empty) reports WOULD-BLOCK findings
+	// and never blocks - the soak; "enforce" lets the severity tiers
+	// decide.
+	Monitor string `yaml:"monitor"`
+	// JudgeFailClosed flips the evidence-only judge's failure law:
+	// false (the default) fails open - the human still decides;
+	// true refuses the call.
+	JudgeFailClosed bool `yaml:"judge_fail_closed"`
 }
 
 // ProcessConfig configures the background process registry (card
@@ -579,7 +588,8 @@ func DefaultConfig() Config {
 		// an illegal empty func behind). approval.NormalizedMode
 		// still treats empty as manual for yaml that wrote "".
 		Approvals: ApprovalConfig{
-			Mode: "manual",
+			Mode:    "manual",
+			Monitor: approval.MonitorLogOnly,
 		},
 	}
 }
@@ -1013,6 +1023,9 @@ func (c Config) Validate() error {
 	if !approval.ValidMode(c.Approvals.Mode) {
 		return fmt.Errorf("config: approvals.mode must be off, manual, or smart, got %q", c.Approvals.Mode)
 	}
+	if !approval.ValidMonitor(c.Approvals.Monitor) {
+		return fmt.Errorf("config: approvals.monitor must be log-only or enforce, got %q", c.Approvals.Monitor)
+	}
 	return nil
 }
 
@@ -1134,12 +1147,14 @@ func providerSection(c Config) provider.Config {
 func approvalSection(c Config) approval.Config {
 	host, key, model := approvalSlot(c)
 	return approval.Config{
-		Mode:        c.Approvals.Mode,
-		Model:       model,
-		SmartPolicy: c.Approvals.SmartPolicy,
-		HTTPHost:    host,
-		APIKey:      key,
-		Home:        omegaHome(),
+		Mode:            c.Approvals.Mode,
+		Model:           model,
+		SmartPolicy:     c.Approvals.SmartPolicy,
+		Monitor:         c.Approvals.Monitor,
+		JudgeFailClosed: c.Approvals.JudgeFailClosed,
+		HTTPHost:        host,
+		APIKey:          key,
+		Home:            omegaHome(),
 	}
 }
 

@@ -251,14 +251,16 @@ scheduler keeps standing.
 ## The approval gate
 
 The approval capsule (`harness/approval/`, ship-dark default
-`manual`) takes two config.yaml knobs (full story:
+`manual`) takes four config.yaml knobs (full story:
 [approvals.md](approvals.md)); the decision model rides the provider
 settings (the `approvals_model` slot, above):
 
-| Key                      | Default  | Meaning                                                         |
-| ------------------------ | -------- | --------------------------------------------------------------- |
-| `approvals.mode`         | `manual` | `off` \| `manual` \| `smart`. Empty = manual                    |
-| `approvals.smart_policy` | -        | The operator policy text the reviewer sees (never command text) |
+| Key                        | Default    | Meaning                                                                                                                  |
+| -------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `approvals.mode`           | `manual`   | `off` \| `manual` \| `smart`. Empty = manual                                                                             |
+| `approvals.smart_policy`   | -          | The operator policy text the reviewer sees (never command text)                                                         |
+| `approvals.monitor`        | `log-only` | `log-only` \| `enforce`. The request-only detector set's rollout: log-only records WOULD-BLOCK and never blocks (the soak) |
+| `approvals.judge_fail_closed` | `false` | The evidence-only judge unreachable: `false` fails open (the human still decides), `true` refuses the call               |
 
 ## The shell registry
 
