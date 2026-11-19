@@ -1,20 +1,8 @@
-// omega webui: THE MODULE-STATE STORE. ONE reactive copy
-// of GET /modules for the whole page, because two surfaces now read it and
-// they must never disagree:
-// the settings tab's MODULES section (the rows + their live toggles),
-// the dock's runtime gate (dockables.ts moduleGated): a module-owned
-//     dockable whose module is OFF leaves the strip, and returns the moment
-//     it mounts again.
-//
-// One fetch at boot + the toggle responses feed it; there is NO polling
-// timer. The toggle response IS the refreshed payload (the server answers
-// PUT /modules/:name with the whole introspection), so a settings click
-// updates the dock in the same tick the row flips.
-//
-// The last-known OFF set is cached (MODULE_CACHE_KEY) and hydrated
-// SYNCHRONOUSLY at boot, before the dock's first render: a reload with a
-// module disabled must not paint the chip for the ~1ms a fetch takes and
-// then drop it. The boot fetch reconciles the cache with the runtime.
+// THE MODULE-STATE STORE: ONE reactive copy of GET /modules for the page, because the
+// settings MODULES section and the dock's runtime gate must never disagree. One boot
+// fetch plus the toggle responses feed it - NO polling. The OFF set is hydrated
+// SYNCHRONOUSLY from cache before the dock's first render (a disabled module must not
+// paint its chip for the ~1ms a fetch takes, then drop it); the boot fetch reconciles.
 
 import { ref, type Ref } from "vue";
 import {
@@ -30,26 +18,19 @@ export const MODULE_CACHE_KEY = "omega.modules-off";
 
 const rows = ref<ModuleRow[]>([]);
 const refusals = ref<ModuleRefusal[]>([]);
-/** a live payload has landed this page. */
 const known = ref(false);
 const disabled = ref<ReadonlySet<string>>(new Set());
 
 let cacheStore: Storage | null = null;
 let inflight: Promise<ModulesPayload> | null = null;
 
-/** the settings section's rows (the live /modules introspection) */
 export const moduleRows: Ref<ModuleRow[]> = rows;
-/** the refusal ledger tail the section prints under the list */
 export const moduleRefusals: Ref<ModuleRefusal[]> = refusals;
-/** whether a live payload has landed this page */
 export const modulesKnown: Ref<boolean> = known;
 /** the module names the runtime reports disabled - the gate's off set */
 export const modulesOff: Ref<ReadonlySet<string>> = disabled;
 
-/**
- * hydrateModuleState: the SYNCHRONOUS boot read of the cache.
- * A corrupt cache is no cache.
- */
+/** the SYNCHRONOUS boot read of the cache; must run before the dock's first render */
 export function hydrateModuleState(store: Storage): void {
   cacheStore = store;
   const raw = store.getItem(MODULE_CACHE_KEY);
@@ -65,13 +46,11 @@ export function hydrateModuleState(store: Storage): void {
   disabled.value = new Set(names);
 }
 
-/** the cache write: the off set, nothing else (the rows are server truth the next. */
 function cacheOff(): void {
   if (!cacheStore) return;
   cacheStore.setItem(MODULE_CACHE_KEY, JSON.stringify([...disabled.value]));
 }
 
-/** applyModules: the ONE way a payload lands in the store. */
 export function applyModules(payload: ModulesPayload): void {
   rows.value = payload.modules;
   refusals.value = payload.refusals;
@@ -82,11 +61,7 @@ export function applyModules(payload: ModulesPayload): void {
   cacheOff();
 }
 
-/**
- * loadModules: GET /modules through the store.
- * Concurrent callers share one request (settings may open while the boot read is in
- * flight); a later call re-reads, so reopening the section stays fresh.
- */
+/** GET /modules through the store; concurrent callers share one request */
 export async function loadModules(): Promise<ModulesPayload> {
   if (inflight) return inflight;
   inflight = fetchModules()
@@ -101,11 +76,8 @@ export async function loadModules(): Promise<ModulesPayload> {
 }
 
 /**
- * commitModuleToggle: the ONE write path (the settings row's pill).
- * The response is the refreshed introspection, applied here - never a second fetch,
- * never a local guess.
- * A refusal throws with the server's ledger text; the caller re-reads through
- * loadModules to surface the ledger.
+ * THE write path. The response is the refreshed introspection, applied here - never a
+ * second fetch. A refusal throws with the ledger text; the caller re-reads to surface it.
  */
 export async function commitModuleToggle(
   name: string,

@@ -1,6 +1,5 @@
 import { reactive } from "vue";
 import MarkdownIt from "markdown-it";
-// Syntax highlighting: highlight.js core + a curated language set, not the full.
 import hljs from "highlight.js/lib/core";
 import go from "highlight.js/lib/languages/go";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -36,14 +35,12 @@ hljs.registerLanguage("c", cLang);
 hljs.registerLanguage("cpp", cpp);
 hljs.registerLanguage("diff", diff);
 
-// omega webui: typed client for the http_channel API.
 
 export interface OmegaImage {
   media_type: string;
   base64: string;
 }
 
-// OmegaAttachment mirrors core.Attachment: the non-image lane's reference record.
 export interface OmegaAttachment {
   kind: string;
   name: string;
@@ -51,17 +48,15 @@ export interface OmegaAttachment {
   path: string;
 }
 
-// MAX_CHAT_FILE_BYTES mirrors the backend's per-file cap (maxChatFileBytes =
-// maxChatImageBytes, 10 MB): the client refuses the same number the server would, so an
-// oversize pick never leaves the browser.
+// mirrors the backend's per-file cap (10 MB), so an oversize pick never leaves the browser.
 export const MAX_CHAT_FILE_BYTES = 10 * 1024 * 1024;
 
 export interface OmegaMessage {
   role: "user" | "assistant" | "system";
   content: string;
   images?: OmegaImage[];
-  // non-image file references: the /attach-file answer echoed back - the store persists
-  // them, the agent reads the files through its own tools, providers never see them
+  // non-image references the store persists; the agent reads them with its own tools and
+  // providers never see them
   attachments?: OmegaAttachment[];
 }
 
@@ -85,26 +80,20 @@ export interface Session {
   workspace?: string;
 }
 
-// LastRunStats is one completed run's average rates, stored on the session row at run.
-// Server-computed (chunk counts never leave the server any other way), absent on
-// sessions that never ran.
+// one completed run's average rates, server-computed; absent on sessions that never ran.
 export interface LastRunStats {
   tokens_per_second?: number;
   chunks_per_second?: number;
 }
 
-// TranscriptDetail is the GET /sessions/{id}/transcript payload.
 export interface TranscriptDetail {
   session: Session;
   running?: boolean;
   items: TranscriptWireItem[];
-  // variants block: branch points with >=2 sibling runs. ABSENT for sessions without
-  // variants - a plain session must render exactly as it always did, so no default
-  // fills it client-side.
+  // branch points with >=2 sibling runs; ABSENT for plain sessions, so no default fills it in.
   variants?: VariantBlock[];
 }
 
-// VariantBlock is one wire branch point (agent.BranchInfo).
 export interface VariantBlock {
   message_id: string;
   siblings?: string[];
@@ -112,10 +101,8 @@ export interface VariantBlock {
   active: number;
 }
 
-// the transcript component contract (shared by restore AND live) --- The chat renderer
-// speaks exactly these item shapes. One contract, two sources, no reload-side
-// reconstruction - the reconstruction loop this replaced was the origin of the
-// reload-order / thinking-merge / lost-duration bug class.
+// the transcript component contract, shared by restore AND live: one contract, two sources,
+// no reload-side reconstruction (the origin of the reload-order / merge bug class).
 export interface MessageItem {
   kind: "message";
   role: "user" | "assistant";
@@ -123,8 +110,7 @@ export interface MessageItem {
   id?: string;
   streaming?: boolean;
   images?: OmegaImage[];
-  // non-image references on user messages - rendered as type-icon chips (name + size),
-  // never thumbnailed.
+  // non-image references on user messages: type-icon chips (name + size), never thumbnailed.
   attachments?: OmegaAttachment[];
   time?: string;
   finalMs?: number;
@@ -147,17 +133,12 @@ export interface ToolItem {
   id?: string;
   output?: string;
   result?: string;
-  // the smart gate's decision record: the verdict
-  // line stamped on the call's result, rendered on this row. Absent =
-  // no machine decision (benign, manual mode, unresolved escalation).
+  // line stamped on the call's result, rendered on this row (absent = no machine decision)
   gate?: string;
   finalMs?: number;
   answerMs?: number;
   elapsedMs?: number;
 }
-// inline transport markers do not exist anymore (chat-last 2a): a dead stream's reason
-// renders in the statusLine above the composer; the transcript belongs to the canvas
-// panel never to transport state.
 export interface VerdictItem {
   kind: "verdict";
   callId?: string;
@@ -174,7 +155,6 @@ export interface VerdictItem {
   answerText?: string;
 }
 
-// VerdictOptionItem is one pick row.
 export interface VerdictOptionItem {
   label: string;
   description?: string;
@@ -185,10 +165,6 @@ export type TranscriptItem =
   | ToolItem
   | VerdictItem;
 
-// TranscriptWireItem is one server-rendered transcript item, in the wire order. The
-// shapes mirror what the live SSE path delivers per item kind (thinking text, response
-// text, the tool_call frame's nested meta, the tool_result frame's outcome), so restore
-// and live converge on the component contract above.
 export type TranscriptWireItem =
   | { kind: "user"; id?: string; content: string; time?: string; images?: OmegaImage[]; attachments?: OmegaAttachment[] }
   | {
@@ -202,11 +178,8 @@ export type TranscriptWireItem =
     }
   | {
       kind: "thinking";
-      // the stored assistant message's row id. The server serves it
-      // (agent/api/server_transcript.go builds the thinking and text
-      // items of one StoredMessage from the SAME id), and the restore
-      // path uses it as this row's ADDRESS - never as a rendered id
-      // (see mapTranscriptItems)
+      // the stored message's row id IS this row's address - never a rendered id (one
+      // StoredMessage builds both items from it).
       id?: string;
       content: string;
       thinking_ms?: number;
@@ -230,9 +203,7 @@ export type TranscriptWireItem =
       answer_ms?: number;
     };
 
-// toolCallAnchorMs derives a tool row's meter offset at PAINT time. Always non-negative
-// - a reader clock behind the server's (a remote bind) degrades to 0, never to a
-// negative meter.
+// a tool row's meter offset at PAINT time; never negative (a reader clock behind the server's clamps to 0).
 export function toolCallAnchorMs(
   startedAt: string | undefined,
   elapsedMs: number | undefined,
@@ -244,67 +215,28 @@ export function toolCallAnchorMs(
   return elapsedMs;
 }
 
-// renderTranscriptItems maps a transcript payload into the components'
-// item shapes. user/message/thinking become bubbles; a tool_call opens
-// a tool line keyed by its id and the matching tool_result (matched by
-// tool_call_id, exactly like a live tool_result frame) fills the
-// result, error state and elapsed onto it. Thin items (empty content)
-// render nothing. Pure: every call mints its own items.
-//
-// Async agent loop phase 3 (pending chips, rule 6): a call whose
-// result row is ABSENT from the transcript renders as the PENDING
-// status, not a completed line with no output. The backend only
-// persists a call without its result when the call is yield-class
-// (dispatched out-of-band, its result re-enters as a later wake turn)
-// - and its result row, once it settles, lands right after the call's
-// turn in wire order, so a call visible in the window always sees its
-// settled result in the same window. Two passes: result ids first
-// (a result may sit anywhere after its call), then the mapping.
-//
-// The PURITY is the defect the stateful twin below fixes (card
-//): a reload or a tab remount refetches this wire and gets
-// fresh literals, so every restored row remounts. createRestoreTranscript
-// runs the same mapping over a keyed cache; a caller with no identity to
-// keep still wants this entry point.
+// maps a transcript payload into the components' item shapes: a tool_call opens a tool line
+// keyed by its id and the matching tool_result fills its result, error state and elapsed; thin
+// items render nothing. A call whose result row is ABSENT renders as PENDING, not a done line:
+// the backend only persists a call without its result when the call is yield-class. Pure -
+// every call mints its own items; createRestoreTranscript is the keyed twin.
 export function renderTranscriptItems(
   items: TranscriptWireItem[] | null | undefined,
 ): TranscriptItem[] {
   return mapTranscriptItems(items, null);
 }
 
-// --- the render identity: ONE address rule for both render paths ------
-//
-// A transcript row's identity across refetches is its ADDRESS, and the
-// address is never its position. The chat panel is a sliding window (the
-// newest 40 rows, agent/api/chat_panel.go), so ONE append past the window
-// moves every surviving index: keyed positionally, every surviving row
-// misses its cache entry, mints a new object, gets a new key, and the
-// keyed v-for destroys and re-creates the row - worse, the incoming tail
-// row can inherit an existing row's object (a row wearing another row's
-// meter anchor, fold pin and streaming bit). The canvas paint learned
-// this first. The REST restore keyed by NOTHING - every
-// refetch minted fresh literals - so every session the canvas panel does
-// not cover (a second tab, any session after a reload) still remounted
-// every row on every load. Both paths resolve
-// a row's address through this ONE function:
-//
+// IDENTITY LAW - ONE address rule for both render paths. A row's identity across refetches is
+// its ADDRESS, never its position. The chat panel is a sliding window (40 rows,
+// agent/api/chat_panel.go), so ONE append past it moves every surviving index: keyed
+// positionally, every row misses its cache entry and the keyed v-for destroys it - worse, the
+// tail row can inherit an existing row's object (another row's meter anchor, fold pin and
+// streaming bit). Both paths resolve a row's address through this ONE function:
 //   row:<store row id>:<shape>   the store has named the row
-//   live:<shape>:<ordinal>       it has not yet (a live stream's
-//                                in-flight rows carry no id - core.ChatRow.ID)
-//
-// <shape> is the row's rendered shape ("assistant:text",
-// "assistant:thinking", "user:text", ...). The restore path needs it: one
-// stored assistant message renders TWO items (thinking + text) under the
-// SAME store id on the wire (agent/api/server_transcript.go builds both
-// from one StoredMessage), so the id alone is not unique there. On the
-// canvas an id names exactly one row and the suffix is a no-op.
-//
-// The ordinal counts ID-LESS rows of the shape only, so a head slide (a
-// persisted row leaving the payload) never moves it and the open tail
-// (which grows at the END) does not move it either. Slots are swept at the
-// end of every paint: an id-less row's object dies with the payload that
-// stopped carrying its row, so a later row of the same shape can never
-// inherit it.
+//   live:<shape>:<ordinal>       it has not yet (in-flight rows carry no id)
+// <shape> is needed because one stored message renders TWO items under the SAME id.
+// The ordinal counts ID-LESS rows only, so a head slide never moves it; slots are
+// swept per paint.
 export function transcriptAddress(
   id: string | undefined,
   shape: string,
@@ -317,10 +249,7 @@ export function transcriptAddress(
   return `live:${shape}:${ordinal}`;
 }
 
-// wireShape names one wire item's rendered shape - the suffix of its
-// address. The canvas derives the same strings as `<row role>:<block
-// type>` (chat.ts), so a row painted by either path lands on one address
-// space. Pure.
+// one wire item's shape, the suffix of its address; chat.ts derives the same `<role>:<type>` strings.
 export function wireShape(kind: TranscriptWireItem["kind"]): string {
   switch (kind) {
     case "user":
@@ -336,15 +265,10 @@ export function wireShape(kind: TranscriptWireItem["kind"]): string {
   }
 }
 
-// wireId is the store row id a wire item carries, when its kind carries
-// one at all (a tool_call names its CALL id instead). Pure.
 function wireId(it: TranscriptWireItem): string | undefined {
   return "id" in it ? it.id : undefined;
 }
 
-// RestorePaint is one restore pass's working set: the two caches plus the
-// bookkeeping an id-less row's slot needs. `ordinals` restarts every
-// paint (an ordinal counts what THIS payload carries); `slots` does not.
 interface RestorePaint {
   cache: Map<string, TranscriptItem>;
   slots: Map<string, TranscriptItem>;
@@ -353,16 +277,10 @@ interface RestorePaint {
   lastIdOfShape: ReadonlyMap<string, number>;
 }
 
-// itemAt returns the item one wire row paints into. With no paint (the
-// pure entry point) it mints, exactly as it always did. With a paint it
-// resolves the row's ADDRESS and reuses the object that address owns; an
-// id-bearing row that is its shape's LAST id-bearing row ADOPTS the slot
-// its own live object sits in - the live -> persisted transition must not
-// swap the object, because the streaming bubble's meter would restart.
-// Items in a cache are reactive proxies: the paint writes them IN PLACE
-// (a delta mutating content/streaming/elapsedMs), and those writes must
-// invalidate the readers that watch those fields (the law,
-// the same one the canvas items ride).
+// the item one wire row paints into: resolve the row's ADDRESS and reuse the object it owns.
+// An id-bearing row that is its shape's LAST id-bearing row ADOPTS the slot its live object
+// sits in - the live -> persisted transition must not swap the object, or the meter restarts.
+// Cached items are reactive proxies, so in-place writes invalidate their readers.
 function itemAt<T extends TranscriptItem>(
   paint: RestorePaint | null,
   id: string | undefined,
@@ -396,9 +314,6 @@ function itemAt<T extends TranscriptItem>(
   return fresh;
 }
 
-// itemByKey is the same reuse for the rows whose identity is their CALL id
-// (a tool line and the verdict card its result settles are addressed by
-// it), or by a slot while the call has no id yet.
 function itemByKey<T extends TranscriptItem>(
   paint: RestorePaint | null,
   key: string,
@@ -421,8 +336,6 @@ function itemByKey<T extends TranscriptItem>(
   return fresh;
 }
 
-// callKey addresses a row by its CALL id, or by a slot while the call has
-// none: a payload index is never an address.
 function callKey(
   prefix: "tc" | "verdict",
   callId: string,
@@ -433,11 +346,6 @@ function callKey(
   return { key: `${prefix}:${transcriptAddress(undefined, wireShape("tool_call"), paint.ordinals)}`, live: true };
 }
 
-// lastIdOfShape indexes each shape's LAST id-bearing row in this payload:
-// the only row of that shape allowed to adopt a live slot. The store
-// names the open tail last, so a row that just gained an id is its
-// shape's newest id-bearing row; an earlier row of the shape is a
-// different row and must never take the object. Pure.
 function lastIdOfShape(items: TranscriptWireItem[] | null | undefined): Map<string, number> {
   const last = new Map<string, number>();
   items?.forEach((it, i) => {
@@ -446,12 +354,7 @@ function lastIdOfShape(items: TranscriptWireItem[] | null | undefined): Map<stri
   return last;
 }
 
-// RestoreTranscript is the restore path's render source: the same mapping
-// renderTranscriptItems performs, over the items it built on the previous
-// pass. Every row whose address it has seen keeps its object, so a
-// refetch (a remount, a tab switch, a variant select) UPDATES rows in
-// place instead of remounting them - the per-row components keep their
-// fold pins, meters and selection. One instance per chat state.
+// the restore path's render source: the same mapping over the previous pass's items, so a refetch updates in place.
 export interface RestoreTranscript {
   apply(items: TranscriptWireItem[] | null | undefined, session?: string): TranscriptItem[];
 }
@@ -464,8 +367,6 @@ export function createRestoreTranscript(): RestoreTranscript {
     apply(items, next) {
       const sid = next ?? "";
       if (sid !== session) {
-        // another conversation took the pane over: identities are
-        // worthless across sessions - both caches reset
         session = sid;
         cache.clear();
         slots.clear();
@@ -486,10 +387,6 @@ export function createRestoreTranscript(): RestoreTranscript {
   };
 }
 
-// mapTranscriptItems is the one mapping body: both render paths (the pure
-// renderTranscriptItems and createRestoreTranscript) run it, so the
-// restore path and the canvas can never drift on item shape - only the
-// identity policy differs (mint per call, or reuse by address).
 function mapTranscriptItems(
   items: TranscriptWireItem[] | null | undefined,
   paint: RestorePaint | null,
@@ -506,8 +403,6 @@ function mapTranscriptItems(
     const it = items[index]!;
     switch (it.kind) {
       case "user": {
-        // a user turn whose ONLY payload is attachments still renders
-        //: the reference chips are the message
         if (!(it.content || it.images?.length || it.attachments?.length)) break;
         const m = itemAt<MessageItem>(paint, it.id, wireShape(it.kind), index, () => ({
           kind: "message",
@@ -537,11 +432,7 @@ function mapTranscriptItems(
         m.time = it.time;
         m.finalMs = it.response_ms;
         m.id = it.id;
-        // only the merge's live tail streams from restore - persisted
-        // items mount final (the driver adopts the streaming ones).
-        // A streaming segment also carries its elapsed-so-far: the
-        // remounted meter counts on from it instead of restarting at
-        // the mount moment.
+        // only the merge's live tail streams from restore; a streaming segment's elapsed-so-far lets a remounted meter count on.
         m.streaming = it.running ? true : undefined;
         m.elapsedMs = it.running ? it.elapsed_ms : undefined;
         out.push(m);
@@ -549,11 +440,7 @@ function mapTranscriptItems(
       }
       case "thinking": {
         if (!it.content) break;
-        // the wire carries the stored message's row id here too (the
-        // same row as the text item beside it), and it is this row's
-        // ADDRESS. It is deliberately NOT stamped onto the item: an id
-        // on a rendered thinking item moves variantAnchors' head
-        // resolution (a different law from this card's).
+        // the id here is this row's ADDRESS, never stamped: an id on a thinking item moves variantAnchors' head resolution.
         const think = itemAt<ThinkingItem>(paint, wireId(it), wireShape(it.kind), index, () => ({
           kind: "thinking",
           content: "",
@@ -568,19 +455,9 @@ function mapTranscriptItems(
       }
       case "tool_call": {
         const callId = it.tool_call?.id || "";
-        // a settled call has its result somewhere in the transcript
-        // (wire order: the result lands right after the call's turn);
-        // an ABSENT result on an idle session is the yield-class
-        // pending shape (async agent loop phase 3) - the chip, not an
-        // orphaned done line. The live tail's running bit outranks
-        // both (the run still owns the call); an id-less call keeps
-        // today's done shape (nothing to match a result against).
+        // an ABSENT result on an idle session is the yield-class pending chip, not a done line; running outranks it.
         const pending = !!callId && !resultIds.has(callId);
-        // a verdict call (the dotted wire verb - isVerdictTool) renders
-        // as a verdict card and NO tool line (the card is the
-        // interactive surface AND the technical record - its result
-        // below still settles the card). The matching tool_result is
-        // consumed by the card branch, never by the tool-line map.
+        // a verdict call renders as a verdict card and NO tool line - the card is the surface AND the record.
         if (isVerdictTool(it.tool_call?.name)) {
           const { key, live } = callKey("verdict", callId, paint);
           const built = verdictCardFromToolArgs(it.tool_call?.arguments);
@@ -594,10 +471,7 @@ function mapTranscriptItems(
           card.timeoutS = built.timeoutS;
           card.callId = callId || undefined;
           card.status = "pending"; // settled by the tool_result below
-          // the countdown's anchor: an unanswered call carries the
-          // server's own start stamp, so `issuedAt + timeout_s` is the
-          // deadline on the FIRST sight too, and re-deriving it at every
-          // paint never drifts (a fixed instant)
+          // the countdown's anchor is the server's start stamp, a fixed instant, so re-deriving it never drifts.
           card.issuedAt = verdictIssuedAt(it.started_at);
           if (callId) verdictById.set(callId, card);
           out.push(card);
@@ -620,12 +494,7 @@ function mapTranscriptItems(
           it.tool_call?.arguments ?
             JSON.stringify(it.tool_call.arguments, null, 2)
           : undefined;
-        // a RUNNING or PENDING call meters from its open wall clock
-        // when the wire carries one: a
-        // yielded call pushes no delta, so a restored payload is
-        // arbitrarily old and its elapsed_ms only tells how long the
-        // call had run when the payload was built - the stamp makes
-        // the row count on from the call's real start at every paint
+        // a RUNNING or PENDING call meters from its open wall clock; a yielded call pushes no delta, so restored elapsed_ms is stale.
         t.elapsedMs =
           it.running || pending ?
             toolCallAnchorMs(it.started_at, it.elapsed_ms)
@@ -661,43 +530,20 @@ function mapTranscriptItems(
   return out;
 }
 
-// awaitsWake: this rendered item is an unanswered yield-class call. Two shapes qualify,
-// and they are the SAME contract: a plain tool chip (a dispatched call, no result row)
-// and a pending verdict card. The card was invisible here before: a reload with a card
-// waiting armed no watcher, so the wake's frames landed on nobody and the continuation
-// never painted.
+// an unanswered yield-class call: a tool chip or a pending verdict card, the SAME contract. A
+// pending card must arm a watcher too, or the wake's frames land on nobody and nothing paints.
 export function awaitsWake(it: TranscriptItem | undefined): boolean {
   if (!it) return false;
   if (it.kind === "tool") return isYielded(it.status);
   return it.kind === "verdict" && it.status === "pending";
 }
 
-// applyTurnTotals stamps each turn's ANSWER row with the turn's wall-clock
-// total: the span from the user message ARRIVING to the
-// final answer LANDING, subtracted from the two timestamps the transcript
-// already carries (the store's created_at on both rows). 
-//: wall-clock truth - thinking, tool runs, smart-gate waits
-// and his own answer latency all bill into the total, so the badge is the
-// turn's honest bottom line (his sleep-30 turn reads ~51s, not the last
-// segment's 841ms).
-//
-// ONLY the answer row: a turn's earlier prose segments are PHASES and keep
-// their own measured span, and thinking/tool rows are never touched - the
-// per-phase anatomy is unchanged, the last badge becomes the sum. "Answer"
-// is the turn's LAST assistant message, and only while nothing continues
-// the turn after it: a tool call (or a verdict card, which IS a call)
-// sitting below it means that segment was a phase, not the answer.
-//
-// Computed, not tracked: every paint recomputes from the same two stamps,
-// so the live canvas and a restored transcript render the SAME total and no
-// ticker survives the stream end. Where the stamps are missing (an
-// ephemeral session, a canvas window whose head row it does not carry, an
-// answer the store has not landed yet) the row keeps its own span - the
-// badge degrades to what it always showed, never to a fabricated number.
-//
-// Mutates in place (the transcript's item objects are the render identity -
-// a canvas paint rewrites its cached rows) and is idempotent. Pure
-// otherwise.
+// stamps each turn's ANSWER row with the turn's wall-clock total: user message ARRIVING to
+// final answer LANDING, off the two created_at stamps the transcript already carries. ONLY the
+// answer row - earlier prose segments are PHASES, and a tool call (or a verdict card, which IS a
+// call) below a segment means it was a phase. Recomputed at every paint, so live and restored
+// agree; a missing stamp leaves the row its own span, never a fabricated number. Mutates in
+// place (the item objects ARE the render identity) and is idempotent.
 export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
   let from = 0;
   for (let i = 0; i <= items.length; i++) {
@@ -710,25 +556,15 @@ export function applyTurnTotals(items: TranscriptItem[]): TranscriptItem[] {
   return items;
 }
 
-// stampTurnTotal resolves ONE turn's slice (head user row at `from`, items
-// [from, to)): every assistant segment carries the turn total only while it
-// is the turn's ANSWER, and the answer's is the span between the turn's two
-// row stamps.
-//
-// WRITE LAW: this runs inside the canvas PAINT, over the
-// transcript's REACTIVE cached items, so every assignment it makes is a
-// reactive write on the very objects the paint handed out. A write that
-// changes a value invalidates every computed and effect that read it, and
-// the paint ran BECAUSE one of those computeds is dirty - so a write whose
-// value differs between two paints of the same payload re-arms the paint
-// and the app spins (the clear-then-stamp order did exactly that: the
-// answer's total was written, wiped, written, once per evaluation, forever).
-// Resolve the wanted value FIRST, then assign ONLY on a real change. A
+// WRITE LAW: this runs inside the canvas PAINT, over the transcript's REACTIVE cached items, so
+// every assignment is a reactive write on the objects the paint handed out. A write that changes
+// a value invalidates every computed that read it - and the paint ran BECAUSE one of those
+// computeds is dirty - so a value that differs between two paints of the same payload re-arms
+// the paint and the app spins. Resolve the wanted value FIRST, assign ONLY on a real change: a
 // paint of an unchanged payload must write nothing at all.
 function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void {
   const head = items[from];
   if (!head || head.kind !== "message" || head.role !== "user") return;
-  // the answer is the turn's LAST assistant segment
   let answerAt = -1;
   for (let i = from + 1; i < to; i++) {
     const it = items[i];
@@ -736,9 +572,6 @@ function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void
     answerAt = i;
   }
   if (answerAt < 0) return;
-  // the answer only stands while the turn does not continue past it: a tool
-  // call (or a verdict card, which IS a call) below it means that segment
-  // was a phase, not the answer
   let continues = false;
   for (let i = answerAt + 1; i < to; i++) {
     const kind = items[i]?.kind;
@@ -761,34 +594,24 @@ function stampTurnTotal(items: TranscriptItem[], from: number, to: number): void
   }
 }
 
-// stampMs parses a row stamp (RFC 3339 / ISO 8601 from the store) into epoch. null for
-// anything unparseable - a malformed stamp is a missing stamp, never NaN arithmetic in
-// the label.
+// a row stamp (RFC 3339) as epoch; null for anything unparseable - never NaN in the label.
 function stampMs(stamp: string | undefined): number | null {
   if (!stamp) return null;
   const ms = Date.parse(stamp);
   return Number.isNaN(ms) ? null : ms;
 }
 
-// transcriptHasPending: does this rendered transcript still await a wake run.
 export function transcriptHasPending(items: readonly TranscriptItem[]): boolean {
   return items.some(awaitsWake);
 }
 
-// transcriptPendingCount is the status bar's `N pending` segment over a rendered
-// transcript: the OPEN session's still-awaiting items, never a machine-wide number.
 export function transcriptPendingCount(items: readonly TranscriptItem[]): number {
   let n = 0;
   for (const it of items) if (awaitsWake(it)) n++;
   return n;
 }
 
-// the chat panel's wire vocabulary (chat-last 2a) -------------------- The. The webui
-// chat renderer consumes it - snapshot at load, deltas after - and maps the rows onto
-// the SAME component contract renderTranscriptItems serves for the persisted-restore
-// path. One component contract, two wire sources, zero per-frontend streaming logic.
 
-// ChatBlockWire mirrors core.ChatBlock's json shape.
 export interface ChatBlockWire {
   type: string; // text | thinking | tool_call | tool_result
   content?: string;
@@ -806,7 +629,6 @@ export interface ChatBlockWire {
   thinking_ms?: number;
 }
 
-// ChatRowWire mirrors core.ChatRow.
 export interface ChatRowWire {
   id?: string; // store row id when persisted; live rows carry none
   role: string; // user | assistant | tool
@@ -815,16 +637,12 @@ export interface ChatRowWire {
   blocks?: ChatBlockWire[];
 }
 
-// ChatPayloadWire mirrors core.ChatPayload.
 export interface ChatPayloadWire {
   session?: string;
   running?: boolean;
   rows?: ChatRowWire[];
 }
 
-// normalizeAttachments guards a wire attachments array: rows must carry a string kind.
-// Malformed rows drop, an all-malformed (or absent) array degrades to undefined - a
-// reference record is never half-built (a chip with no name would render a blank).
 export function normalizeAttachments(raw: unknown): OmegaAttachment[] | undefined {
   if (!Array.isArray(raw)) return undefined;
   const out: OmegaAttachment[] = [];
@@ -843,8 +661,6 @@ export function normalizeAttachments(raw: unknown): OmegaAttachment[] | undefine
   return out.length ? out : undefined;
 }
 
-// normalizeChatPayload guards one chat-kind panel's payload: wrong shapes degrade to
-// null (the panel is absent from the render, never a crashed pane).
 export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
   const p = payload as Record<string, unknown>;
@@ -900,7 +716,6 @@ export function normalizeChatPayload(payload: unknown): ChatPayloadWire | null {
   };
 }
 
-// chatPanelOf finds the chat panel descriptor among the canvas panels.
 export function chatPanelOf(panels: CanvasPanel[] | null | undefined): CanvasPanel | null {
   for (const p of panels ?? []) {
     if (p.kind === "chat") return p;
@@ -908,7 +723,6 @@ export function chatPanelOf(panels: CanvasPanel[] | null | undefined): CanvasPan
   return null;
 }
 
-// chatPanelContent sums the assistant prose + thinking content a chat panel's rows.
 export function chatPanelContent(payload: ChatPayloadWire): number {
   let total = 0;
   for (const row of payload.rows ?? []) {
@@ -920,7 +734,6 @@ export function chatPanelContent(payload: ChatPayloadWire): number {
   return total;
 }
 
-// chatPanelMessageCount counts the conversation's message rows the panel's payload.
 export function chatPanelMessageCount(payload: ChatPayloadWire): number {
   let total = 0;
   for (const row of payload.rows ?? []) {
@@ -930,10 +743,7 @@ export function chatPanelMessageCount(payload: ChatPayloadWire): number {
   return total;
 }
 
-// chatPanelPendingCount counts the panel payload's still-pending tool calls. The count
-// is the OPEN session's: the payload names the session it covers, so the caller only
-// reads it while `payload.session === the focused session` (the same gate
-// chatPanelMessageCount rides).
+// still-pending tool calls in the payload, over the OPEN session only (the caller gates on `payload.session`).
 export function chatPanelPendingCount(payload: ChatPayloadWire): number {
   const settled = new Set<string>();
   for (const row of payload.rows ?? [])
@@ -950,33 +760,22 @@ export function chatPanelPendingCount(payload: ChatPayloadWire): number {
   return total;
 }
 
-// verdict cards v1
 
-// VERDICT_TOOL_NAMES is the WIRE vocabulary of the card surface. The flat pre-rename
-// name matches nothing on the wire, and a name list spelled at each call site is how
-// the rename silently killed the surface: the canvas paint (chat.ts) and the REST
-// restore below each carried their own `=== "verdict"`, both went dead with the wire,
-// and nothing failed - the tool line rendered instead of the card, on a green suite
-// (the node suite pinned the mappers, never the name; journey 82's browser half
-// self-skips on a modelless lane). A new dotted verdict verb is added HERE, never as a
-// second comparison at a call site.
+// VERDICT_TOOL_NAMES is the WIRE vocabulary of the card surface. A name comparison at each
+// call site is how a rename silently kills the surface, with nothing failing. Add a new dotted
+// verdict verb HERE, never there.
 export const VERDICT_TOOL_NAMES: readonly string[] = ["verdict.request"];
 
-// isVerdictTool: does this tool_call name issue a verdict card?
 export function isVerdictTool(name: string | undefined): boolean {
   return !!name && VERDICT_TOOL_NAMES.includes(name);
 }
 
-// verdictIssuedAt resolves a card's countdown anchor from the wire's started_at.
 export function verdictIssuedAt(startedAt: string | undefined): number | undefined {
   if (!startedAt) return undefined;
   const at = Date.parse(startedAt);
   return Number.isNaN(at) ? undefined : at;
 }
 
-// verdictCardFromToolArgs builds a card item from a verdict tool call's arguments. Pure
-// - the live stream and the restored transcript both call this; a malformed args blob
-// degrades to an untitled free-text card, never a crashed render.
 export function verdictCardFromToolArgs(args: unknown): VerdictItem {
   const a = (args ?? {}) as Record<string, unknown>;
   const opts: VerdictOptionItem[] = Array.isArray(a.options)
@@ -1006,9 +805,6 @@ export function verdictCardFromToolArgs(args: unknown): VerdictItem {
   };
 }
 
-// verdictFromResultText parses the verdict tool result's JSON.
-// Non-JSON content (a refusal, an error string) means the card never issued: the card
-// is dead, no verdict.
 export function verdictFromResultText(text: string): {
   verdictKind: "" | "answer" | "skip" | "expired";
   picked?: string;
@@ -1035,7 +831,6 @@ export function verdictFromResultText(text: string): {
   }
 }
 
-// PendingVerdictCard is the /verdicts listing row.
 export interface PendingVerdictCard {
   id: string;
   session_id: string;
@@ -1048,7 +843,6 @@ export interface PendingVerdictCard {
   expires_at: number;
 }
 
-// fetchVerdicts lists pending cards.
 export async function fetchVerdicts(sessionId = ""): Promise<{ cards: PendingVerdictCard[]; count: number }> {
   const url = sessionId
     ? `/sessions/${encodeURIComponent(sessionId)}/verdicts`
@@ -1059,9 +853,7 @@ export async function fetchVerdicts(sessionId = ""): Promise<{ cards: PendingVer
   return r.json();
 }
 
-// postVerdict records the user's answer on one card. A 409 (the race was lost:
-// answered, skipped, or expired) throws with the server's reason so the losing surface
-// shows it instead of retrying.
+// records the answer on one card; a 409 (the race was lost) throws the server's reason so the loser shows it.
 export async function postVerdict(
   sessionId: string,
   body: { card_id?: string; option_indexes?: number[]; option_index?: number; option?: string; text?: string; message?: string; skip?: boolean },
@@ -1081,13 +873,7 @@ export async function postVerdict(
   }
 }
 
-// gate questions, answerable --- A pending gate escalation (the shell.run that. These
-// pure helpers are the two answer surfaces' shared vocabulary: which card is which,
-// what body each option posts, and how a losing race reads.
 
-// approveDenyOptions finds the approve/deny pair on a pending card's options. Null when
-// the card is not a gate question (the notification surface renders buttons only for
-// the pair contract).
 export function approveDenyOptions(
   options: VerdictOptionItem[] | undefined,
 ): { approve: number; deny: number } | null {
@@ -1101,7 +887,6 @@ export function approveDenyOptions(
   return approve && deny ? { approve, deny } : null;
 }
 
-// gateAnswerBody builds the POST body for one gate question's option.
 export function gateAnswerBody(
   card: { id?: string; options?: VerdictOptionItem[] },
   kind: "approve" | "deny" | "followup",
@@ -1115,7 +900,6 @@ export function gateAnswerBody(
   return body;
 }
 
-// isSettledRace reads a failed verdict POST.
 export function isSettledRace(message: string): boolean {
   return (
     message.includes("already answered") ||
@@ -1124,7 +908,6 @@ export function isSettledRace(message: string): boolean {
   );
 }
 
-// toolCallCommand reads a tool row's rendered arguments for the shell command.
 export function toolCallCommand(item: ToolItem): string {
   if (!item.output) return "";
   try {
@@ -1135,13 +918,11 @@ export function toolCallCommand(item: ToolItem): string {
   }
 }
 
-// GateBinding is a chat transcript's gate-question layout.
 export interface GateBinding {
   assigned: { item: ToolItem; card: PendingVerdictCard }[];
   standalone: PendingVerdictCard[];
 }
 
-// bindGateQuestions lays the session's pending gate cards onto the rendered transcript.
 export function bindGateQuestions(
   items: TranscriptItem[],
   cards: PendingVerdictCard[],
@@ -1151,9 +932,7 @@ export function bindGateQuestions(
   if (!sessionId) return out;
   const mine = cards.filter((c) => c.session_id === sessionId);
   if (!mine.length) return out;
-  // a verdict-tool card that is pending is THE question this run awaits. Pending is the
-  // whole test: a card is answerable exactly while its call has no result row, and
-  // verdict.request is yield-class, so the run HAS ended while the card waits.
+  // a pending verdict-tool card IS the question this run awaits: answerable exactly while its call has no result row.
   if (items.some((it) => it.kind === "verdict" && it.status === "pending")) {
     return out;
   }
@@ -1187,20 +966,16 @@ export function bindGateQuestions(
   return out;
 }
 
-// chat appearance --- 'chat' is the chronological transcript.
 
 export type Appearance = "chat" | "stacked";
 
 export const APPEARANCE_KEY = "omega.appearance";
 
-// parseAppearance guards the localStorage round-trip.
 export function parseAppearance(v: unknown): Appearance {
   return v === "stacked" ? "stacked" : "chat";
 }
 
-// splitBlocks cuts the transcript where the backend's segmented persistence does. Live
-// streams append into the CURRENT block (the stream never opens one), so while a run is
-// producing, the block that holds its user message also holds the answer underneath it.
+// cuts where the backend's segmented persistence does: a live stream appends into the CURRENT block, so the user block holds the answer.
 export function splitBlocks(items: TranscriptItem[]): TranscriptItem[][] {
   const blocks: TranscriptItem[][] = [];
   for (const item of items) {
@@ -1215,7 +990,6 @@ export function splitBlocks(items: TranscriptItem[]): TranscriptItem[][] {
   return blocks;
 }
 
-// liveRunSlice derives the stacked live-run layout.
 export function liveRunSlice(items: TranscriptItem[]): {
   user: TranscriptItem | null;
   body: TranscriptItem[];
@@ -1235,9 +1009,7 @@ export async function fetchTranscript(id: string): Promise<TranscriptDetail> {
   return r.json();
 }
 
-// variants: switcher + fork navigation --- The server derives the branch tree.
 
-// variantOf resolves ONE assistant bubble's branch point.
 export function variantOf(
   message: MessageItem | null | undefined,
   variants: VariantBlock[] | null | undefined,
@@ -1251,23 +1023,10 @@ export function variantOf(
   return null;
 }
 
-// variantAnchors resolves WHERE a branch block's switcher renders
-// the branch point's siblings are the run HEAD row
-// ids (DeriveTree: the first assistant row of each run), and on the
-// active path exactly one sibling is rendered - but that row can be a
-// THINKING row or a TOOL CALL row (a multi-row replay), which render
-// as ThinkingBlock/ToolCallLine, not bubbles. One anchor per branch,
-// resolved in this order:
-// 1. the head row is an assistant bubble (a plain one-row reply
-//      the classic case) - the bubble anchors, variantOf semantics.
-//   2. head renders as thinking/tool and the run carries a stored TEXT
-//      row - the run's last stored assistant bubble anchors (its id is
-//      not a sibling; variantLabel falls back to the block's active
-//      index, which is this bubble's position).
-//   3. no stored text row - the head row itself anchors (the chip
-//      mounts on its thinking block / tool line).
-// The keyed map is by the anchor item's store id; live items (no id)
-// resolve to nothing - the switcher mounts only on stored rows. Pure.
+// resolves WHERE a branch block's switcher renders. The branch point's siblings are each run's
+// HEAD row id (DeriveTree), and that head can be a thinking or tool row, which renders as a
+// block. One anchor per branch: the head row when it is an assistant bubble; else the run's last
+// stored assistant bubble; else the head row itself. Live items (no id) never anchor.
 export function variantAnchors(
   items: TranscriptItem[],
   variants: VariantBlock[] | null | undefined,
@@ -1321,9 +1080,7 @@ export function variantAnchors(
   return anchors;
 }
 
-// variantLabel is the one-indexed « 2/3 » math: THIS bubble's position
-// among its siblings (its own id when listed, else the block's active
-// index), clamped into range so a stale id can never render 4/3.
+// the one-indexed « 2/3 » math, clamped so a stale id can never render 4/3.
 export function variantLabel(
   v: VariantBlock,
   id?: string,
@@ -1337,7 +1094,6 @@ export function variantLabel(
   return { index: Math.min(Math.max(index, 0), count - 1), count };
 }
 
-// postVariantSelect flips the active variant server-side.
 export async function postVariantSelect(
   sessionId: string,
   body: { message_id: string; select?: number },
@@ -1360,7 +1116,6 @@ export interface ModelsInfo {
   providers?: ModelProviderSection[];
 }
 
-// ModelProviderSection is one grouped-catalog section.
 export interface ModelProviderSection {
   name: string;
   models: string[];
@@ -1368,10 +1123,6 @@ export interface ModelProviderSection {
   error?: string;
 }
 
-// Stream handlers the composer transport paths consume. onUsage/onViewModelDelta are
-// the live ones on every stream; onSession only fires on the auto-create origin stream
-// (a /chat sent with NO session_id - the attach path and session-keyed send streams
-// never do).
 export interface StreamHandlers {
   onUsage?: (usage: {
     promptTokens: number;
@@ -1380,15 +1131,9 @@ export interface StreamHandlers {
   }) => void;
   onRunEnd?: (finishReason: string) => void;
   onSession?: (sessionId: string) => void;
-  /**
-   * one canvas panel descriptor changed (arc 3b: the delta rides every live run stream)
-   * - the caller merges it into its canvas / /
-   */
   onViewModelDelta?: (panel: CanvasPanel) => void;
 }
 
-// parseFrame extracts the JSON payload from one SSE frame ("event. Returns null for
-// frames without parseable data - the caller skips those.
 export function parseFrame(frame: string): unknown | null {
   const dataLine = frame.split("\n").find((l) => l.startsWith("data: "));
   if (!dataLine) return null;
@@ -1399,7 +1144,6 @@ export function parseFrame(frame: string): unknown | null {
   }
 }
 
-// handlePayload dispatches a parsed SSE payload to the stream handlers.
 export function handlePayload(
   payload: unknown,
   handlers: StreamHandlers,
@@ -1426,19 +1170,15 @@ export function handlePayload(
     case "agent_end": {
       // the terminal event: only its arrival makes the stream end CLEAN.
       state.sawEnd = true;
-      // the finish_reason reaches the transport's consumer FIRST (async
-      // agent loop phase 3): "yielded" is not an error shape - it names
-      // a run that handed its last call to the wake path, and the chat
-      // host arms its pending watcher on exactly this frame.
+      // "yielded" is not an error shape - the run handed its last call to the wake path, and the host arms its watcher here.
       handlers.onRunEnd?.(String(p.finish_reason || ""));
-      // A run cancelled through the stop affordance unwinds through the loop's NORMAL.
+      // a cancelled run unwinds through the loop's normal path: surface it as interrupted.
       if (p.finish_reason === "cancelled" && p.error === "context canceled") {
         throw new StreamInterruptedError("run cancelled");
       }
       break;
     }
     case "view_model_delta": {
-      // the canvas contract's delta frame (arc 3b).
       const panel = normalizeCanvasPanel(p.panel);
       if (panel) handlers.onViewModelDelta?.(panel);
       break;
@@ -1448,9 +1188,6 @@ export function handlePayload(
   }
 }
 
-// Per-session stream busy map: a session is busy iff its own stream is live. Pure
-// operations on value-semantic sets - the caller swaps the whole set per change, so the
-// state stays reactive and the logic is unit-testable without a component framework.
 export type BusyMap = ReadonlySet<string>;
 
 export function withBusy(base: BusyMap, id: string, on: boolean): Set<string> {
@@ -1464,24 +1201,17 @@ export function isBusy(b: BusyMap, id: string): boolean {
   return b.has(id);
 }
 
-// Global view concerns (tab-title spinner, statusbar) read ANY live
-// stream from the map - they never gate a session.
 export function anyBusy(b: BusyMap): boolean {
   return b.size > 0;
 }
 
-// runningIds projects the /sessions rows into the busy set the pulse reads: the row's
-// server-owned running flag IS the stream state, so a tab that never held the SSE
-// reconciles against it.
 export function runningIds(list: Pick<Session, "id" | "running">[]): Set<string> {
   const ids = new Set<string>();
   for (const s of list) if (s.running) ids.add(s.id);
   return ids;
 }
 
-// URL <-> session routing (hand-rolled History wiring)
 
-// parseSessionPath extracts the session id from a client route path.
 export function parseSessionPath(p: string): string | null {
   if (!p.startsWith("/chat/")) return null;
   const id = p.slice("/chat/".length);
@@ -1489,41 +1219,27 @@ export function parseSessionPath(p: string): string | null {
   return id;
 }
 
-// sessionPath is the URL for an open session.
 export function sessionPath(id: string): string {
   return `/chat/${id}`;
 }
 
-// SETTINGS_PATH is the client path that names the settings tab. It rides the SAME
-// pathname scheme as /chat/<id> with no id part: settings is a singleton tab, so the
-// path names the VIEW, never a target. The TRAILING SLASH is the contract, not
-// decoration. The server's settings API owns the bare noun (agent/api/server.go
-// registers exact `/settings`, beside `/settings/raw` and `/settings/reset`), and the
-// catch-all hands every path those patterns do not claim to spaHandler, which answers
-// the SPA shell - the same split `/board/` has.
+// the client path naming the settings tab, same scheme as /chat/<id> with no id part. The
+// TRAILING SLASH is the contract: the settings API owns the bare `/settings` noun, and the
+// catch-all hands every unclaimed path to the SPA shell.
 export const SETTINGS_PATH = "/settings/";
 
-// isSettingsPath answers whether a client route path names the settings
-// tab. Exactly the SPA form: the bare noun is the API, never the route.
 export function isSettingsPath(p: string): boolean {
   return p === SETTINGS_PATH;
 }
 
-// settingsAddress answers the value a settings claim hands replaceState.
 export function settingsAddress(search: string): string {
   if (!search || search === "?") return SETTINGS_PATH;
   return `${SETTINGS_PATH}${search.startsWith("?") ? search : `?${search}`}`;
 }
 
-// Modules that ship a MAIN-pane view (a switcher destination, not an inspector panel)
-// claim it by module name - the shell mounts the panel by lookup (app.vue) and never
-// re-exports the module's ownership.
 export const mainViewModules = new Set<string>(["kanban"]);
 
-// session list: pure bucketing / filtering / formatting helpers
 
-// relativeAge renders a compact age for the row meta ("35m", "2h", "3d").
-// Invalid timestamps render "" and the caller hides the label.
 export function relativeAge(iso: string, now: Date = new Date()): string {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return "";
@@ -1535,20 +1251,17 @@ export function relativeAge(iso: string, now: Date = new Date()): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-// formatTokens k-abbreviates above 1000 (2135 -> "2.1k"), passes anything smaller.
 export function formatTokens(n: number): string {
   if (n < 1000) return String(n);
   const k = Math.floor(n / 100) / 10;
   return `${k}k`;
 }
 
-// shortVersion shortens the statusbar build string for DISPLAY only.
 export function shortVersion(v: string): string {
   const m = /^(v[^-\s]+)-0\.\d+-([0-9a-f]+)/.exec(v);
   return m ? `${m[1]} ${m[2].slice(0, 7)}` : v;
 }
 
-// byNewest orders a session group by last activity, newest first.
 function byNewest(a: Session, b: Session): number {
   const ta = Date.parse(a.updated_at);
   const tb = Date.parse(b.updated_at);
@@ -1557,8 +1270,6 @@ function byNewest(a: Session, b: Session): number {
   return tb - ta;
 }
 
-// SessionBuckets is the grouped sidebar list. Every group is sorted by last activity
-// within itself.
 export interface SessionBuckets {
   pinned: Session[];
   today: Session[];
@@ -1567,7 +1278,6 @@ export interface SessionBuckets {
   archived: Session[];
 }
 
-// bucketSessions groups sessions into the sidebar sections.
 export function bucketSessions(
   sessions: Session[],
   now: Date = new Date(),
@@ -1589,7 +1299,6 @@ export function bucketSessions(
       continue;
     }
     if (s.pinned) {
-      // the pinned section owns the row - no day-bucket duplicate
       out.pinned.push(s);
       continue;
     }
@@ -1602,7 +1311,6 @@ export function bucketSessions(
   return out;
 }
 
-// rowMeta renders the row's second line: "<model> - 12 msgs - 3 tools - 2.1k tok".
 export function rowMeta(s: Session): string {
   const parts: string[] = [];
   if (s.model) parts.push(s.model);
@@ -1614,11 +1322,8 @@ export function rowMeta(s: Session): string {
   return parts.join(" - ");
 }
 
-// sidebar: persisted collapsed sections
 
-// parseCollapsedKeys reads a persisted collapsed-sections value. Malformed JSON and
-// non-string entries are ignored - a bad key restores everything expanded, it never
-// blanks the pane.
+// malformed JSON and non-string entries are ignored: a bad key restores everything expanded, never a blank pane.
 export function parseCollapsedKeys(raw: string | null): Set<string> {
   const out = new Set<string>();
   if (!raw) return out;
@@ -1632,22 +1337,18 @@ export function parseCollapsedKeys(raw: string | null): Set<string> {
   return out;
 }
 
-// serializeCollapsedKeys writes the inverse.
 export function serializeCollapsedKeys(set: Iterable<string>): string {
   return JSON.stringify([...set]);
 }
 
-// the only labels a sidebar section can take - anything else in the
-// persisted value is stale (renamed bucket) or corrupt and gets dropped
+// the only labels a section can take; anything else persisted is stale or corrupt and drops.
 export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier", "archived"];
 
-// parseCollapsedLabels is parseCollapsedKeys narrowed to the bucket allowlist.
 export function parseCollapsedLabels(raw: string | null): Set<string> {
   const all = parseCollapsedKeys(raw);
   return new Set([...all].filter((v) => SIDEBAR_BUCKETS.includes(v)));
 }
 
-// sidebar: unified row status (dot / star x state color)
 
 export type RowStatusShape = "dot" | "star";
 export type RowStatusColor = "idle" | "streaming" | "unread";
@@ -1657,9 +1358,7 @@ export interface RowStatus {
   color: RowStatusColor;
 }
 
-// sessionRowStatus derives the sidebar's ONE per-row status element. The session being
-// viewed never reads unread: the open is the read (and the read PATCH confirms it
-// server-side).
+// the viewed session never reads unread: the open is the read (the PATCH confirms it).
 export function sessionRowStatus(
   s: Pick<Session, "id" | "pinned" | "unread">,
   streamingSet: ReadonlySet<string>,
@@ -1675,7 +1374,6 @@ export function sessionRowStatus(
   return { shape, color };
 }
 
-// inspector: file manager helpers
 
 export interface FileEntry {
   name: string;
@@ -1698,9 +1396,6 @@ export interface FilesReadPayload {
   size?: number;
 }
 
-// filesRawUrl builds the raw-byte route for the viewer's preview branches: GET
-// /files/raw streams renderable bytes (image/*, pdf) under the SAME resolution law the
-// read rides, so the session id (never a root) rides here too.
 export function filesRawUrl(
   path: string,
   session?: string,
@@ -1713,9 +1408,7 @@ export function filesRawUrl(
   return `/files/raw?${q.toString()}`;
 }
 
-// FileViewKind is ONE viewer body per content class: the mime decides pdf/image
-// (sniffed bytes, never the extension), binary rides the no-preview state,.md/.markdown
-// text renders as markdown, everything else keeps the line-numbered monospace body.
+// ONE viewer body per content class: the mime decides pdf/image (sniffed bytes, never the extension), else markdown/monospace.
 export type FileViewKind = "markdown" | "pdf" | "image" | "code" | "binary";
 
 export function fileViewKind(name: string, mime: string, binary: boolean): FileViewKind {
@@ -1728,7 +1421,6 @@ export function fileViewKind(name: string, mime: string, binary: boolean): FileV
   return "code";
 }
 
-// bytesLabel renders a byte count the no-preview state announces.
 export function bytesLabel(n?: number): string {
   if (n === undefined || n === null) return "";
   if (n < 1024) return `${n} B`;
@@ -1737,7 +1429,6 @@ export function bytesLabel(n?: number): string {
   return `${Math.round((n / 1024 ** 3) * 10) / 10} GiB`;
 }
 
-// cleanRelPath mirrors the server's path rules so the UI never sends a request.
 export function cleanRelPath(p: string): string | null {
   if (p === "") return "";
   if (p.startsWith("/")) return null;
@@ -1746,22 +1437,14 @@ export function cleanRelPath(p: string): string | null {
   return parts.join("/");
 }
 
-// joinRelPath descends one entry: the clicked name onto its parent dir.
-// The tree component owns path accounting - the UI never tracks a
-// current directory, it only asks "children of X".
 export function joinRelPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name;
 }
 
-// inspector file tree state
 
-// FILETREE_STATE_KEY is the localStorage entry holding the set of expanded tree.
 export const FILETREE_STATE_KEY = "omega.filetree-expanded";
 
-// parseExpandedPaths restores the persisted expanded-directory set: malformed JSON
-// parses empty, and every entry must be a valid relative path (the same rules the
-// backend enforces on /files) - anything else is dropped. Duplicates collapse; order is
-// preserved so deeper levels restore after their parents.
+// malformed JSON parses empty and every entry must be a valid relative path (the backend's /files rules).
 export function parseExpandedPaths(raw: string): string[] {
   let parsed: unknown;
   try {
@@ -1782,15 +1465,13 @@ export function parseExpandedPaths(raw: string): string[] {
   return out;
 }
 
-// serializeExpandedPaths writes the set back: paths are sorted so the stored shape is.
 export function serializeExpandedPaths(paths: Iterable<string>): string {
   const valid = [...paths].filter((p) => p !== "" && cleanRelPath(p) === p);
   valid.sort();
   return JSON.stringify(valid);
 }
 
-// sortFileEntries orders a directory listing. Pure - sorts a copy, never the caller's
-// array.
+// orders a directory listing. Pure - sorts a copy, never the caller's array.
 export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   return [...entries].sort((a, b) => {
     if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
@@ -1798,9 +1479,7 @@ export function sortFileEntries(entries: FileEntry[]): FileEntry[] {
   });
 }
 
-// files tab toolbar <-> file tree seam
 
-// createTargetDir picks where the toolbar creates.
 export function createTargetDir(
   selected?: { path: string; isDir: boolean } | null,
 ): string {
@@ -1810,7 +1489,6 @@ export function createTargetDir(
   return cut >= 0 ? selected.path.slice(0, cut) : "";
 }
 
-// revealAncestors lists the directories that must expand to make a created node.
 export function revealAncestors(path: string): string[] {
   const parts = path.split("/");
   const out: string[] = [];
@@ -1825,19 +1503,13 @@ export interface SelectedNode {
   isDir: boolean;
 }
 
-// fileTreeBus is the ONE seam between the FilesTab toolbar and the FileTree's internal
-// expansion store (the store lives inside the component tree and the tab cannot reach
-// it). FileTree's ROOT instance watches the three fields; the tab mutates them: refresh
-// bump to re-fetch every expanded branch's listing collapse bump to fold every branch
-// reveal set to a just-created rel path; ancestors expand Counters never reset
-// (watch-on-change semantics, like a nonce).
+// the ONE seam to the FileTree's internal expansion store. Counters never reset (like a nonce).
 export const fileTreeBus = reactive({
   refresh: 0,
   collapse: 0,
   reveal: "",
 });
 
-// filesQuery fetches a /files endpoint and unwraps the structured error envelope.
 async function filesQuery<T>(url: string): Promise<T> {
   const r = await fetch(url);
   if (!r.ok) {
@@ -1846,16 +1518,13 @@ async function filesQuery<T>(url: string): Promise<T> {
       const body = await r.json();
       if (body?.error) msg = body.error;
     } catch {
-      // non-JSON failure body: the status-code message stands
     }
     throw new Error(msg);
   }
   return r.json();
 }
 
-// fetchFilesBrowse lists one directory of the RESOLVED root ("", root). session rides
-// the focused chat tab's session id: the server resolves the root from the session row
-// / default_workspace / cwd chain - the client never sends an absolute root.
+// lists one directory of the RESOLVED root; the server resolves it from the session row / default_workspace / cwd chain.
 export function fetchFilesBrowse(path = "", session?: string): Promise<FilesBrowsePayload> {
   const q = new URLSearchParams();
   if (path) q.set("path", path);
@@ -1864,7 +1533,6 @@ export function fetchFilesBrowse(path = "", session?: string): Promise<FilesBrow
   return filesQuery(`/files/browse${suffix}`);
 }
 
-// filesRootName is the header's left label.
 export function filesRootName(root: string): string {
   const base = root.split(/[\\/]/).filter(Boolean).pop();
   return base ?? root;
@@ -1874,8 +1542,7 @@ export function filesHeaderVisible(source: string | undefined): boolean {
   return source === "session" || source === "default";
 }
 
-// fetchWorkspaceFiles lists one ABSOLUTE directory's first-level entries: the read the
-// /files/browse jail (process-CWD-rooted, relative paths) cannot make.
+// the read the /files/browse jail (CWD-rooted, relative paths) cannot make.
 export async function fetchWorkspaceFiles(path: string): Promise<FilesBrowsePayload> {
   const r = await fetch(`/workspaces/files?path=${encodeURIComponent(path)}`);
   if (!r.ok) {
@@ -1893,9 +1560,7 @@ export async function fetchWorkspaceFiles(path: string): Promise<FilesBrowsePayl
   };
 }
 
-// fetchFilesRead previews one file: up to 64 KiB, truncated flag, and binary=true
-// (empty content) for bytes the viewer cannot render as text; mime carries the server's
-// sniffed type so the viewer can spot an image and bind to /files/raw instead.
+// up to 64 KiB, a truncated flag, binary=true for unrenderable bytes; mime is the server's sniff, so /files/raw can bind.
 export function fetchFilesRead(path: string, session?: string): Promise<FilesReadPayload> {
   const q = new URLSearchParams();
   q.set("path", path);
@@ -1903,11 +1568,7 @@ export function fetchFilesRead(path: string, session?: string): Promise<FilesRea
   return filesQuery(`/files/read?${q.toString()}`);
 }
 
-// files tab toolbar: the tab's write half
 
-// filesPost sends one of the file surface's POST routes and unwraps the
-// same structured error envelope filesQuery does - a refused create
-// throws the server's message, never a bare status code.
 async function filesPost(url: string, body: unknown): Promise<void> {
   const r = await fetch(url, {
     method: "POST",
@@ -1920,13 +1581,11 @@ async function filesPost(url: string, body: unknown): Promise<void> {
       const j = (await r.json()) as { error?: string };
       if (j?.error) msg = j.error;
     } catch {
-      // non-JSON failure body: the status-code message stands
     }
     throw new Error(msg);
   }
 }
 
-// postFilesWrite creates or overwrites one file inside the resolved root.
 export function postFilesWrite(
   path: string,
   content: string,
@@ -1935,12 +1594,10 @@ export function postFilesWrite(
   return filesPost("/files/write", session ? { path, content, session } : { path, content });
 }
 
-// postFilesMkdir creates one folder inside the resolved root.
 export function postFilesMkdir(path: string, session?: string): Promise<void> {
   return filesPost("/files/mkdir", session ? { path, session } : { path });
 }
 
-// insights: the webui's /insights parity --- The payload is the insights report.
 export interface InsightsToolRow {
   name: string;
   count: number;
@@ -1974,9 +1631,6 @@ export interface InsightsPayload {
   notable_tools: InsightsNotable;
 }
 
-// fetchInsights reads the cross-session usage analytics. The server's lists are nil Go
-// slices on empty windows - they come over the wire as null (tools) - normalized to []
-// here so the view never reads.length off null.
 export async function fetchInsights(days: number | null = null): Promise<InsightsPayload> {
   const suffix = days === null ? "" : `?days=${days}`;
   const p = await filesQuery<InsightsPayload>(`/insights${suffix}`);
@@ -1987,18 +1641,14 @@ export async function fetchInsights(days: number | null = null): Promise<Insight
   };
 }
 
-// canvas (view-model, arc 3c): the web half of the canvas contract
 
-// CanvasPanelAction is one action a panel may invoke through the action pipe.
 export interface CanvasPanelAction {
   id: string;
   label: string;
   module: string;
 }
 
-// CanvasPanel is one panel descriptor: schema v1 exactly (settled Q2b). The payload is
-// the panel kind's render data, opaque to the contract; v1 renders it plain (JSON
-// display).
+// one panel descriptor: schema v1 exactly; the payload is opaque to the contract.
 export interface CanvasPanel {
   id: string;
   title: string;
@@ -2007,9 +1657,7 @@ export interface CanvasPanel {
   actions: CanvasPanelAction[];
 }
 
-// normalizeCanvasPanel guards one wire descriptor: wrong shapes drop out (a malformed
-// panel is absent, never a crashed render), label-less actions fall back to their id,
-// an absent payload normalizes to null (the plain render's "no payload" state).
+// malformed panels drop, label-less actions fall back to their id, an absent payload is null.
 export function normalizeCanvasPanel(raw: unknown): CanvasPanel | null {
   if (!raw || typeof raw !== "object") return null;
   const p = raw as Record<string, unknown>;
@@ -2037,7 +1685,6 @@ export function normalizeCanvasPanel(raw: unknown): CanvasPanel | null {
   };
 }
 
-// fetchCanvas loads the panel snapshot (GET /ui/canvas): the descriptors verbatim.
 export async function fetchCanvas(): Promise<CanvasPanel[]> {
   const r = await fetch("/ui/canvas");
   if (!r.ok) throw new Error(`canvas: ${r.status}`);
@@ -2051,9 +1698,7 @@ export async function fetchCanvas(): Promise<CanvasPanel[]> {
   return out;
 }
 
-// postCanvasAction sends one action-pipe call (POST /ui/actions). Success resolves the
-// {"result":.} body; the panel updates through the deltas, never through this response
-// (the call may emit none of its own).
+// the panel updates through the deltas, never through this response.
 export async function postCanvasAction(
   mod: string,
   action: string,
@@ -2077,15 +1722,12 @@ export async function postCanvasAction(
   return j.result;
 }
 
-// message hover timestamps
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-// formatMsgTime renders a message timestamp for the hover title. Malformed input
-// renders "" and the caller hides the attribute.
 export function formatMsgTime(iso: string, now: Date = new Date()): string {
   const t = new Date(iso);
   if (Number.isNaN(t.getTime())) return "";
@@ -2101,13 +1743,11 @@ export function formatMsgTime(iso: string, now: Date = new Date()): string {
   return `${t.getFullYear()} ${day} ${hm}`;
 }
 
-// thinking elapsed counter
 
 export const ELAPSED_TICK_MS = 1000;
 
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
-// formatElapsed renders the time since a stream started.
 export function formatElapsed(startedMs: number, nowMs: number): string {
   const delta = Math.max(0, nowMs - startedMs);
   const total = Math.floor(delta / 1000);
@@ -2120,22 +1760,17 @@ export function formatElapsed(startedMs: number, nowMs: number): string {
   return `${m}m ${pad2(s)}s`;
 }
 
-// formatDurationMs renders a server-measured duration.
 export function formatDurationMs(ms: number): string {
   return formatElapsed(0, ms);
 }
 
-// ElapsedMeter drives the live "thinking 12s" summary label.
 export interface ElapsedMeter {
   start(): void;
   stop(): void;
-  // reanchor REPLACES the consumed span the meter counts on from. Monotone: a repeated
-  // or stale (smaller) span is a no-op, so an arriving anchor moves the label once and
-  // can never double-count or walk it backwards.
+  // reanchor REPLACES the consumed span; monotone, so a stale (smaller) span is a no-op.
   reanchor(initialMs: number): void;
 }
 
-// createElapsedMeter takes the tick callback and optional clock parts.
 export function createElapsedMeter(
   onElapsed: (label: string) => void,
   now: () => number = () => Date.now(),
@@ -2164,7 +1799,6 @@ export function createElapsedMeter(
       if (handle === null) handle = timers.set(fire, ELAPSED_TICK_MS);
     },
     stop() {
-      // clear FIRST, then emit - the timer must be gone before the final label lands.
       running = false;
       if (handle !== null) timers.clear(handle);
       handle = null;
@@ -2172,7 +1806,7 @@ export function createElapsedMeter(
       onElapsed(formatElapsed(startedAt, now()));
     },
     reanchor(next: number) {
-      // REPLACE, never add: the offset is the call's elapsed-so-far, so applying.
+      // REPLACE, never add: the offset is the call's elapsed-so-far, not a delta.
       const ms = Math.max(0, next);
       if (!(ms > base)) return;
       base = ms;
@@ -2183,12 +1817,10 @@ export function createElapsedMeter(
   };
 }
 
-// transcript scroll position (jump-to-live pill)
 
 export const SCROLL_NEAR_PX = 40;
 
-// isAtBottom is the shared near-bottom check. A container that cannot scroll counts as
-// at bottom.
+// the shared near-bottom check. A container that cannot scroll counts as at bottom.
 export function isAtBottom(
   scrollTop: number,
   clientHeight: number,
@@ -2199,7 +1831,6 @@ export function isAtBottom(
   return scrollHeight - scrollTop - clientHeight < threshold;
 }
 
-// pillVisible derives the jump-to-live pill.
 export function pillVisible(
   scrollTop: number,
   clientHeight: number,
@@ -2209,9 +1840,7 @@ export function pillVisible(
   return !isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
 }
 
-// resumesFollow decides what a scroll event does to the follow state. The guard
-// compares the scroller's height against the height the LAST scroll event saw: growth
-// since then cannot produce a positive shrink, a fold can.
+// the guard checks against the height the LAST scroll event saw: growth cannot shrink, a fold can.
 export function resumesFollow(
   prevPinned: boolean,
   lastScrollHeight: number,
@@ -2226,18 +1855,13 @@ export function resumesFollow(
   return scrollHeight >= lastScrollHeight && isAtBottom(scrollTop, clientHeight, scrollHeight, threshold);
 }
 
-// scrollFlushTick picks how a notify-driven scroll reaches the layout.
-// requestAnimationFrame is frozen for the lifetime of a hidden document (send -> switch
-// tab/window: the run's body would never follow the tail again until the tab came
-// back).
+// requestAnimationFrame is frozen in a hidden document, so the tail would stop being followed.
 export type ScrollFlushTick = "raf" | "timer";
 export function scrollFlushTick(hidden: boolean): ScrollFlushTick {
   return hidden ? "timer" : "raf";
 }
 
-// markdown rendering (assistant bubbles)
 
-// html:false stays - the sanitizer contract from above.
 function highlightFence(code: string, lang: string): string {
   if (!lang || !hljs.getLanguage(lang)) return "";
   try {
@@ -2248,7 +1872,6 @@ function highlightFence(code: string, lang: string): string {
   }
 }
 
-// True when src ends inside an unclosed fenced block.
 export function endsInOpenFence(src: string): boolean {
   let open = false;
   let marker = "";

@@ -1,6 +1,5 @@
-// omega webui: unit tests for the settings scope tabs (settings tier 3b,
-// ) - the per-agent surface the pane renders instead of
-// the Main registry.
+// omega webui: unit tests for the settings scope tabs - the per-agent
+// surface the pane renders instead of the Main registry.
 //
 // Two layers, same as the other settings suites:
 // the PURE helpers in composables/omega.ts (normalizeSettingsPayload's

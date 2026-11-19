@@ -299,7 +299,7 @@ describe("editorNodes - the editor's DOM plan", () => {
     assert.equal(nodes[0]!.type, "text");
   });
 
-  // a folder reference is a chip exactly like.
+  // a dir token chips like a file token, trailing slash intact.
   it("a dir token chips with its trailing slash intact", () => {
     const draft = "move it into @artifacts_mmo/ please";
     const nodes = editorNodes(draft, opts(draft.length), pillable);

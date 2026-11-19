@@ -1,50 +1,17 @@
-// omega webui: the composer's progressive collapse ladder
-// the Hermes-desktop composer pattern,).
-//
-// THE LADDER - one rung per width band, in order, never two at once:
-//
-// full the model chip shows its WHOLE label, one toolbar row
-// icon the label is DELIBERATELY ABSENT (the chevron stays), one row
+// THE LADDER, one rung per width band, never two at once:
+//   full    the model chip shows its WHOLE label, one toolbar row
+//   icon    the label is DELIBERATELY ABSENT (the chevron stays), one row
 //   stacked the model + effort chips take row one, send keeps row two
+// No rung truncates: a squeezed label died mid-word and a wrapped row stranded controls
+// on a second line, so a label fits whole or is gone - no ellipsis anywhere.
 //
-// No rung truncates. The pre-ladder squeeze shrank the chip first and the
-// label died mid-word ("deepse."), then the row wrapped by accident and
-// stranded controls on a second line (composer 82px -> 112px). A label now
-// fits whole or is gone - the whole law, no ellipsis anywhere.
-//
-// WHY JS AND NOT CONTAINER QUERIES: the shed rung depends on the label's
-// OWN cost, and the label is DATA (a model name of any length). A CSS
-// breakpoint would have to bake one label's width in, and the next model
-// would overflow the rung it was tuned for. So the fit is measured, the
-// same house pattern as composables/narrow.ts (ResizeObserver + one pure
-// predicate the node suite can call directly). The constants below are the
-// box costs around the label; the label, the effort chip and the send come
-// from the live DOM (readComposerRow).
-//
-// MEASURED BUDGETS (dev lane, 1440x900, model "deepseek-v4.1-flash",
-// effort "default", send "send", JetBrains Mono 12px):
-//
-// model chip, whole label.. 178.8 (label 136.8 + 42 chrome)
-// model chip, icon only.. 36.0 (the 6px seat left of the
-//                                             label dies with the label)
-// effort chip, "default".. 92.4 (label 50.4 + 42 chrome)
-// send, "send"... 62.3 (padding 6/16, no border)
-// toolbar gap... 8
-// toolbar padding... 8 + 8
-// composer inset / border.. 12 / 1
-//
-// so the one-row bands need (the number is the composer's own client
-// width: pane - 24 inset - 2 border):
-//
-// full: 136.8 + 42 + 8 + 92.4 + 8 + 62.3 + 16 + 8 slack = 373.5 -> 374
-// icon: 36.0 + 8 + 92.4 + 8 + 62.3 + 16 + 8 slack = 230.7 -> 231
-// stack: max(36.0 + 8 + 92.4, 62.3) + 16 + 8 slack = 160.4 -> 161
-//
-// and the ladder ENDS there: the stacked rung holds down to 161px, which
-// is narrower than any real surface (a 200px pane gives the composer 176,
-// the mobile drawer floors it at 302). A fourth rung - Hermes folds its
-// secondary toggles into a menu at 260px - has nothing to eat here, so
-// omega does not get one. Re-probe before adding it.
+// WHY JS, NOT CONTAINER QUERIES: the shed rung depends on the label's OWN cost, and the
+// label is DATA (a model name of any length), so a breakpoint would bake one label's
+// width in and the next model would overflow the rung tuned for it. The fit is measured
+// instead - the narrow.ts pattern: ResizeObserver + one pure predicate the node suite
+// calls directly.
+// The ladder ENDS at stacked: it holds narrower than any real surface, so a fourth rung
+// would have nothing to eat.
 
 import {
   nextTick,
@@ -55,31 +22,21 @@ import {
   type Ref,
 } from "vue";
 
-/** the ladder's rungs, narrowest last */
 export type ComposerStage = "full" | "icon" | "stacked";
 
-// - the measured box costs (see the table above) -
 /** the model chip around a full label: 14+14 padding, 6 gap, 6 chevron, 2 border */
 export const MODEL_CHIP_FULL_CHROME_PX = 42;
-/** the model chip around the chevron alone: the label's 6px gap seat goes too */
+/** the model chip around a chevron alone: the label's 6px gap seat goes too */
 export const MODEL_CHIP_ICON_PX = 36;
-/** between the model chip and the effort chip inside.model-group */
 export const MODEL_GROUP_GAP_PX = 8;
-/** the toolbar row's item gap */
 export const TOOLBAR_GAP_PX = 8;
-/** the toolbar row's own left/right padding, one side */
 export const TOOLBAR_PAD_PX = 8;
-/**
- * the fit test keeps one toolbar gap of air: a stage never lands on a pixel-exact fit.
- */
+/** one toolbar gap of air, so a stage never lands on a pixel-exact fit */
 export const LADDER_SLACK_PX = 8;
 
 /**
- * the live widths the fit is computed.
- * `rest` is everything on the row besides.model-group (the send, plus the expanded
- * seat's + when fullscreen mounts it into the toolbar) - both are measured, never
- * assumed, because the send's face morphs send <-> stop and the + comes and goes with
- * the expanded state.
+ * `rest` is everything on the row besides .model-group (send, plus the expanded seat's +):
+ * measured, never assumed, because the send morphs send <-> stop and the + comes and goes.
  */
 export interface ComposerRowCosts {
   label: number;
@@ -88,16 +45,13 @@ export interface ComposerRowCosts {
   gaps: number;
 }
 
-/**
- * THE LADDER's band edges, in the same px unit as `composerStageFor`.
- */
+/** THE LADDER's band edges, in the same px unit as `composerStageFor` */
 export interface ComposerStageBands {
   full: number;
   icon: number;
   stacked: number;
 }
 
-/** the three band edges for a row that currently costs `costs` */
 export function composerStageBands(
   costs: ComposerRowCosts,
 ): ComposerStageBands {
@@ -125,10 +79,7 @@ export function composerStageBands(
   };
 }
 
-/**
- * THE LADDER, pure: which rung a composer of `container` px (its own client width).
- * Monotone in width, so a drag crosses one rung at a time - never two firing at once.
- */
+/** THE LADDER, pure: the rung for a composer of `container` px (its own client width); monotone, so a drag crosses one rung at a time */
 export function composerStageFor(
   container: number,
   costs: ComposerRowCosts,
@@ -139,10 +90,6 @@ export function composerStageFor(
   return "stacked";
 }
 
-/**
- * the row's measured costs, or null while the composer is not mounted (or a host
- * stripped a chip - then the caller keeps the rung it has) / /
- */
 export function readComposerRow(
   root: HTMLElement | null,
 ): { container: number; costs: ComposerRowCosts } | null {
@@ -176,13 +123,11 @@ export function readComposerRow(
 }
 
 /**
- * the live rung for a composer root: measures now, then on every resize (the pane drag,
- * the drawer, the fullscreen toggle) - and re-measures whenever `touch` changes, which
- * the caller bumps after a label swap (the model / effort props) since those change the
- * row's cost without changing its width.
- * Delivered on the next frame, never inside the observer's own callback: the rung flips
- * the row's layout, and applying it synchronously re-enters the resize cycle (the
- * benign "ResizeObserver loop" console error - same guard as narrow.ts).
+ * The live rung for a composer root: measures now and on every resize, and again when
+ * `touch` changes (the caller bumps it after a label swap). Delivered on the next frame,
+ * never inside the observer callback: the rung flips the row's layout, so applying it
+ * synchronously re-enters the resize cycle (the "ResizeObserver loop" error - same guard
+ * as narrow.ts).
  */
 export function useComposerLadder(
   root: Ref<HTMLElement | null>,

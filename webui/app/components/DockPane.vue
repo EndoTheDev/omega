@@ -54,9 +54,6 @@
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
-            <!--
-              the SIDEBAR tab strips (left/right edge shells) are icon-only chips.
-            -->
             <Icon
               v-if="tabIcon(t)"
               :name="tabIcon(t)"
@@ -123,7 +120,7 @@
       </template>
     </div>
 
-    <!-- v0.14.4 a GROWN pinned root renders its local split tree in place of the. -->
+    <!-- a GROWN pinned root renders its local split tree in place of its body -->
     <DockSplitNode
       v-if="node.grown"
       :node="node.grown"
@@ -137,7 +134,7 @@
       </template>
     </DockSplitNode>
 
-    <!-- the pane's active tab: rendered by app.vue via the forwarded slot named. -->
+    <!-- the pane's active tab: the slot app.vue forwards by outlet name -->
     <div
       v-if="outletName"
       class="dock-content">
@@ -148,10 +145,8 @@
     </div>
 
     <!--
-      (DOCK-EMPTY-ACTIONS removal): the 15-button component menu that used to be the.
-      Do NOT build a replacement menu here - the 0.17.3 canvas class-law + menu work is
-      the future home for adding views; until then a drop (or the menubar/palette
-      openers) refills the pane.
+      an empty pane's component menu is gone on purpose: the canvas class-law + menu work
+      owns adding views; until then a drop (or a menubar/palette opener) refills the pane.
     -->
     <div
       v-else
@@ -194,9 +189,7 @@
         class="dock-drop-zone"
         :class="{ refused: predicted?.refused }"
         :style="zoneStyle">
-        <!--
-          v0.14.4 the ghost - the exact result a release lands (direction, target.
-        -->
+        <!-- the ghost: the exact result a release lands (direction, target) -->
         <DockGhost
           v-if="predicted"
           :preview="predicted"
@@ -229,13 +222,10 @@
   import { splitFitsZone, type SplitDirection } from "../composables/panes";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
-  // the ONE icon wrapper: every icon in the webui
   import Icon from "./ui/Icon.vue";
   import { glyphKindFor, glyphIcon } from "../../../harness/files/ui/rowicon";
   import { notificationsBadgeText } from "./shell/notificationFeed";
   const DockSplitNode = defineAsyncComponent(() => import("./DockSplit.vue"));
-
-  // MENU_DOCKABLES left this pane with the empty-pane component menu.
 
   const props = defineProps<{
     node: DockPaneNode;
@@ -244,7 +234,6 @@
 
   const api = inject(DOCK_API_KEY)!;
   const openChat = inject(DOCK_CHAT_OPEN_KEY, null);
-  // the focused tab IS the draft conversation.
   const draftFocus = inject(DOCK_DRAFT_FOCUS_KEY, null);
   const draftFocused = computed(() => draftFocus?.value === true);
   const tabTitleFor = inject(DOCK_TAB_TITLE_KEY, null);
@@ -253,35 +242,28 @@
     return tabTitleFor?.(tab) ?? COMPONENT_TITLES[tab.component];
   }
 
-  // the pinned identity is the EDGE MARKER. canvas C2: the SIDEBAR ZONE carries the
-  // same identity, so a pane inside a sidebar's stack reads as a sidebar pane too - one
-  // strip shape (the pinned icon chips below), no split actions, and the
-  // icons-bleeding-at-the-sidebar-bottom class cannot come back through a stack leaf
-  // (the column split that grew the bleed is deleted).
+  // the pinned identity is the EDGE MARKER; the SIDEBAR ZONE carries the same identity, so
+  // a pane inside a sidebar's stack reads as a sidebar pane too - one strip shape, no split
+  // actions.
   const paneZone = computed(() => api.zoneOf(props.node.id));
   const inSidebarZone = computed(() => {
     const z = paneZone.value;
     return z === "left" || z === "right";
   });
   const pinned = computed(() => props.node.edge !== undefined || inSidebarZone.value);
-  // canvas C2 THE SHAPE LAW: which split actions this pane may OFFER. A
-  // sidebar stacks, so its panes offer no side-by-side split at all - the
-  // entry point is gone, never a greyed-out button (the pure split law
-  // refuses the same direction; the menu simply never offers it).
+  // THE SHAPE LAW: which split actions this pane may OFFER. A sidebar stacks, so its panes
+  // offer no side-by-side split at all - the entry point is gone, never a greyed-out button.
   function canSplit(direction: SplitDirection): boolean {
     const z = paneZone.value;
     return z !== null && splitFitsZone(z, direction);
   }
-  // the X renders on EVERY closable-class tab. corrected, stands: the
-  // last-main-pane law protects the PANE (removePane), never the tabs - the census
-  // feeds no X.
+  // the X renders on EVERY closable-class tab: the last-main-pane law protects the PANE
+  // (removePane), never the tabs.
   function tabClosable(t: DockTab): boolean {
     return isClosableTab(t.component);
   }
-  // the SAME condition closeTab's guard reads (dock.ts lastTabLocked) - one
-  // predicate, so the dimmed surface can never drift from the refusal
+  // the SAME predicate closeTab's guard reads, so the dimmed surface cannot drift from it
   const lastTabLocked = computed(() => lastTabLockedIn(props.node));
-  // the X's click path: the hard guard is closeTab's (it refuses the same case).
   function onTabClose(index: number) {
     if (lastTabLocked.value) return;
     api.closeTab(props.node.id, index);
@@ -316,7 +298,7 @@
     return dockableIcon(tab.component);
   }
 
-  // the tab chip's unread badge TEXT.
+  // the tab chip's unread badge TEXT
   function tabBadge(tab: DockTab): string {
     return tab.component === "notifications" ? notificationsBadgeText.value : "";
   }
@@ -393,12 +375,9 @@
   const tabsEl = ref<HTMLElement | null>(null);
   const paneEl = ref<HTMLElement | null>(null); // the pane root (zone-math measurements)
 
-  // active-tab reachability: the tab strip scrolls at narrow pane widths (css
-  // overflow-x on.dock-tabs), so a selection can land on a tab sitting outside the
-  // visible band - the ACTIVE tab must never clip or strand off-viewport. Keep it
-  // honest: whenever the active tab (or the tab list) changes, scroll the strip just
-  // enough to bring the chip fully into view - never scrollLeft further than the fix
-  // needs (no centering churn), and never touch the vertical axis.
+  // active-tab reachability: the strip scrolls at narrow widths, so a selection can land
+  // outside the visible band. Scroll just enough to bring the chip fully into view and never
+  // touch the vertical axis.
   function scrollActiveIntoView(): void {
     const bar = tabsEl.value;
     if (!bar) return;
@@ -416,8 +395,8 @@
     () => scrollActiveIntoView(),
     { flush: "post" },
   );
-  // tabs carry a readable floor now (the css min-widths), so a narrow pane SCROLLS.
-  // Scrolling the strip never changes its box, so this observer cannot re-enter itself.
+  // tabs carry a readable floor, so a narrow pane SCROLLS; scrolling never changes the
+  // strip's box, so this observer cannot re-enter itself.
   let stripObserver: ResizeObserver | null = null;
   onMounted(() => {
     scrollActiveIntoView();
@@ -428,11 +407,8 @@
     }
   });
 
-  // the LIVE hit-test: is the current gesture allowed to drop into THIS pane?
-  // (the window dragend/drop cleanup clears the gesture record) canvas C1:
-  // THE ZONE LAW answers for every tab - the store's seatOk reads the class
-  // law over this pane's zone (a main member never leaves the main pane, a
-  // bottom member never enters it, sidebar views visit every seat).
+  // the LIVE hit-test: is the current gesture allowed to drop into THIS pane? THE ZONE LAW
+  // answers for every tab - the store's seatOk reads the class law over this pane's zone.
   function dropAllowed(): boolean {
     const d = tabDrag.current();
     if (!d) return false;
@@ -507,9 +483,8 @@
       return;
     }
     const d = tabDrag.current();
-    // the split zones self-drop now (VS Code. canvas C2: the read is bounded by the
-    // pane's ZONE - a sidebar has no left/right half at all (its vertical lane is the
-    // whole gesture), so the side-by-side split of a sidebar cannot even be entered.
+    // the split zones self-drop; THE SHAPE LAW bounds the read by the pane's ZONE - a
+    // sidebar has no left/right half at all, so that split cannot even be entered.
     const zone = paneZone.value;
     if (zone === null) return;
     const rawZone = zoneForPointer(zone, e.clientX, e.clientY, bodyRect());
@@ -526,7 +501,7 @@
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;
     dropZone.value = raw;
-    // v0.14.4 the GHOST reads the commit's own formula over the registry's frozen.
+    // the GHOST reads the commit's own formula over the registry's frozen tree
     const drag = tabDrag.current();
     const rect = bodyRect();
     ghostRegistry.record(props.node.id, rect);
@@ -540,10 +515,8 @@
   function onPaneDragLeave(e: DragEvent) {
     if (e.target !== e.currentTarget) return; // bubbling leaves ignore
     if (e.relatedTarget && (e.currentTarget as Node).contains(e.relatedTarget as Node)) return;
-    // a leave clears ONLY this pane's hover state - the GLOBAL gesture record
-    // (tabDrag/ghost) is the composable's now, and a mid-gesture pane exit (crossing a
-    // divider, leaving the window) must not kill the record the next pane's dragover
-    // still reads.
+    // a leave clears ONLY this pane's local hover state: a mid-gesture pane exit must not
+    // kill the global gesture record the next pane's dragover still reads.
     dropHover.value = false;
     dropIdx.value = null;
     refusedIdx.value = null;
@@ -551,9 +524,8 @@
     predicted.value = null;
   }
 
-  // body drop (VS Code): same pane + a SPLIT zone = the pane splits around the. The
-  // pure op refuses its illegal landings as no-ops (locked tabs land nowhere fresh, the
-  // law's split caps hold), so release never tears the layout.
+  // body drop: same pane + a SPLIT zone = the pane splits around it. The pure op refuses its
+  // illegal landings as no-ops, so a release never tears the layout.
   function onPaneDrop(e: DragEvent) {
     e.preventDefault();
     e.stopPropagation(); // the leaf owns the drop; a grown root re-handles nothing
@@ -573,15 +545,12 @@
   }
 
   function clearDrop() {
-    // the global gesture record + every pane's local highlights clear through the
-    // COMPOSABLE's endGesture (the registry's end rides its subscription) - never
-    // through instance-owned state.
+    // the global record and every pane's local highlights clear through the COMPOSABLE's
+    // endGesture, never through instance-owned state.
     endGesture();
   }
-  // dragend/drop/Esc/blur cleanup is COMPOSABLE-owned.
-  // This pane only holds its LOCAL highlight state and clears it through the
-  // gesture-end subscription, so an instance dying mid-gesture cannot orphan the
-  // record.
+  // dragend/drop/Esc/blur cleanup is composable-owned; this pane holds only its local
+  // highlight state, so an instance dying mid-gesture cannot orphan the record.
   const clearLocal = () => {
     dropHover.value = false;
     dropIdx.value = null;

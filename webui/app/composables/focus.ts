@@ -1,15 +1,12 @@
-// omega webui: composer auto-focus. The rules that keep it annoying-free live here as
-// pure predicates so the suite covers them: never steal from a focused text field,
-// never intercept modifier combos or non-printables, only the ACTIVE tab's composer
-// receives (a hidden tab's instance never matches its state key while hidden, so a
-// request aimed there is simply not delivered).
+// composer auto-focus. The rules that keep it annoyance-free live here as pure predicates:
+// never steal from a focused text field, never intercept modifier combos or non-printables,
+// and only the ACTIVE tab's composer receives.
 
 import { ref, type InjectionKey, type Ref } from "vue";
 
-// the focus signal ------------------------------------------------------- app.vue. seq
-// ticks on every request - a re-request of an ALREADY-focused tab (a second
-// type-to-capture burst after a click blurred the textarea) must still deliver, so the
-// consumers watch [focusKey, seq] and check the key.
+// the focus signal. seq ticks on every request, so a re-request of an ALREADY-focused tab (a
+// second type-to-capture burst after a click blurred the textarea) still delivers - consumers
+// watch [focusKey, seq] and check the key.
 
 export interface ComposerFocusSignal {
   focusKey: Ref<string | null>;
@@ -33,10 +30,8 @@ export function createComposerFocusSignal(): ComposerFocusSignal {
 export const COMPOSER_FOCUS_KEY: InjectionKey<ComposerFocusSignal> =
   Symbol("composer-focus");
 
-// does a request deliver to the chat tab bound to stateKey? Takes the SIGNAL itself
-// (focusKey is a Ref - compare.value, never the ref object: a ref === string comparison
-// is always false and the feature ships dead, which no gate catches because vue builds
-// strip types).
+// Compare .value, never the ref object: a ref === string comparison is always false and the
+// feature ships dead, which no gate catches because vue builds strip types.
 export function focusDelivers(
   req: { focusKey: Ref<string | null> },
   stateKey: string,
@@ -44,11 +39,8 @@ export function focusDelivers(
   return stateKey !== "" && req.focusKey.value === stateKey;
 }
 
-// the selectors -------------------------------------------------------
-
-// a printable, un-modified key: exactly one character in `key` (space included. The
-// composer's own Enter-to-send keydown is untouched - it fires on the focused textarea,
-// which the target check below never intercepts anyway.
+// a printable, un-modified key: exactly one character in `key` (space included). The
+// composer's own Enter-to-send fires on the focused textarea, which the target check skips.
 export function isTypeToCaptureKey(e: {
   key: string;
   ctrlKey: boolean;
@@ -59,7 +51,6 @@ export function isTypeToCaptureKey(e: {
   return e.key.length === 1;
 }
 
-// nothing gets stolen while the user is typing somewhere visible.
 export function isEditableTarget(
   t: { tagName?: string; isContentEditable?: boolean } | null,
 ): boolean {
@@ -73,9 +64,8 @@ export function isEditableTarget(
   );
 }
 
-// the full capture gate for one keydown: a modal is up (the delete confirm - its
-// keystrokes belong to the dialog), a non-chat view is showing (board/settings never
-// host the composer), or text is already being typed somewhere -> no capture.
+// the full capture gate: a modal is up (its keystrokes belong to the dialog), a non-chat view
+// is showing, or text is already being typed somewhere -> no capture.
 export function shouldCaptureTyping(
   e: KeyboardEvent,
   gate: { mainView: string; modalOpen: boolean },

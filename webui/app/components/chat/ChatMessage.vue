@@ -30,9 +30,7 @@
           :alt="'attached image ' + (i + 1)"
           @click="openImage(img)" />
       </div>
-      <!--
-        non-image references: type glyph + name + size - never a thumbnail, the bytes.
-      -->
+      <!-- attachments: type glyph + name + size, never an inline render -->
       <div
         v-if="attachments?.length"
         class="msg-files">
@@ -63,24 +61,19 @@
           :variant="variant"
           :item-id="itemId"
           @select="$emit('select', $event)" />
-        <!-- fork affordance: any HISTORICAL message carries it. -->
+        <!-- fork: carried by any HISTORICAL message (itemId), never a streaming one -->
         <button
           v-if="itemId && !streaming"
           class="msg-fork"
           type="button"
           title="fork from here - the next send continues from this message"
           @click.stop="emit('fork')">fork</button>
-        <!--
-          copy message (/copy parity): the click carries the RAW source, never the.
-        -->
         <button
           class="msg-copy"
           type="button"
           :title="copyFailed ? 'copy failed' : copied ? 'copied' : 'copy message'"
           @click.stop="copyMessage">{{ copyFailed ? "failed" : copied ? "copied" : "copy" }}</button>
-        <!--
-          retry affordance: THE NEWEST assistant response carries it, and only when.
-        -->
+        <!-- retry rides only the NEWEST assistant response (the parent sets retryable) -->
         <button
           v-if="retryable && itemId"
           class="msg-retry"
@@ -132,10 +125,9 @@
     variant?: VariantBlock | null;
     time?: string;
     images?: OmegaImage[];
-    // non-image references: rendered as type-glyph chips with name + size - never.
+    // non-image attachments: type-glyph chips, never the bytes
     attachments?: OmegaAttachment[];
-    // server-measured duration from restored history - wins over the
-    // live meter (restored items mount final and never start one)
+    // server-measured, from restored history: beats the live meter
     finalMs?: number;
     turnMs?: number;
     elapsedMs?: number;
@@ -148,9 +140,8 @@
     (e: "retry"): void;
   }>();
 
-  // the sent-message pills --- USER bubbles only. The scan is the shared token model
-  // (pills.ts), not a transcript heuristic: pills exist exactly where the invocation
-  // grammar is.
+  // Pills are USER-only, and the scan is the shared token model (pills.ts), not
+  // a transcript heuristic: pills exist exactly where the invocation grammar is.
   const msgParts = computed(() =>
     props.role === "user" ? splitRefSegments(props.content) : null,
   );
@@ -160,7 +151,6 @@
     openViewerRef?.({ kind: t.kind, name: t.name });
   }
 
-  // Click-to-open: a data URL in a new browser tab is the plain full view.
   function openImage(img: OmegaImage) {
     window.open(dataUrl(img), "_blank");
   }
@@ -187,8 +177,8 @@
     scheduler.cancel();
   });
 
-  // Elapsed counter (first response chunk -> stream_end). Bubbles that arrive
-  // already-final (user messages, restored history) never start and render nothing.
+  // Bubbles that arrive already-final (user messages, restored history) never
+  // start a meter and render nothing.
   const elapsedLabel = useElapsed(
     () => props.turnMs ?? props.finalMs,
     () => props.streaming ?? false,
@@ -197,14 +187,14 @@
 
   const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
 
-  // Copy message: the bubble's RAW text reaches the clipboard - the markdown source for
-  // assistant bubbles, plain text for user ones - never the rendered HTML (codeblock
-  // copy already handles its own raw source).
+  // The bubble's RAW text reaches the clipboard - markdown source for assistant
+  // bubbles, plain text for user ones - never the rendered HTML (codeblock copy
+  // already handles its own raw source).
   const copied = ref(false);
   const copyFailed = ref(false);
   let copyTimer: number | undefined;
   async function copyMessage() {
-    // the ONE copy path - the affordance reflects the real verdict, never a voided.
+    // the ONE copy path: report the real verdict, never a blind "copied"
     const raw = await copyText(props.content);
     if (!raw) {
       copyFailed.value = true;

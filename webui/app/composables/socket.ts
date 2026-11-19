@@ -2,16 +2,14 @@
 
 import { ref, type Ref } from "vue";
 
-// SOCKET_TOPICS is the closed topic set this client speaks, in wire order, and the. The
-// SERVER's closed set is one wider: `logs` (agent/api/sockets.go) still ships and keeps
-// its Go pins, subscription-gated so a page that never asked for it receives no log
-// frames. A `logs` frame is now an unknown topic here and drops silently.
+// the closed topic set this client speaks, in wire order. The SERVER's set is one wider:
+// `logs` still ships (agent/api/sockets.go) but a `logs` frame is an unknown topic here and
+// drops silently.
 export const SOCKET_TOPICS = ["chat", "chips", "canvas", "runs", "health"] as const;
 export type SocketTopic = (typeof SOCKET_TOPICS)[number];
 
 export type SocketStatus = "idle" | "connecting" | "open" | "reconnecting" | "closed";
 
-// SocketEnvelope is one pushed frame: {topic, session, event, seq, data}.
 export interface SocketEnvelope {
   topic: string;
   session?: string;
@@ -20,7 +18,6 @@ export interface SocketEnvelope {
   data?: unknown;
 }
 
-// ChipFrame mirrors agent/api.ChipFrame.
 export interface ChipFrame {
   call_id: string;
   tool?: string;
@@ -33,26 +30,23 @@ export interface ChipFrame {
   elapsed_ms?: number;
 }
 
-// HealthProviderFact is the /health body's provider reachability fact.
 export interface HealthProviderFact {
   reachable?: boolean;
   checked_at?: number;
   detail?: string;
 }
 
-// HealthDatabaseFact is the store seam's liveness ping.
 export interface HealthDatabaseFact {
   healthy?: boolean;
   detail?: string;
 }
 
-// HealthErrorFact is the newest error the server's logger recorded.
 export interface HealthErrorFact {
   message?: string;
   at?: number;
 }
 
-// HealthPush is the /health body the health topic pushes.
+/** the /health body the health topic pushes */
 export interface HealthPush {
   status?: string;
   uptime_seconds?: number;
@@ -74,8 +68,7 @@ export interface SocketHandlers {
   close?(): void;
 }
 
-// parseEnvelope guards one pushed message. A malformed frame (bad JSON, a
-// non-object, a missing topic) degrades to null - the caller skips it
+// guards one pushed message: a malformed frame degrades to null, so the caller skips it
 // instead of crashing the socket loop.
 export function parseEnvelope(raw: unknown): SocketEnvelope | null {
   let value: unknown = raw;
@@ -98,17 +91,17 @@ export function parseEnvelope(raw: unknown): SocketEnvelope | null {
   return out;
 }
 
-// SOCKET_BACKOFF_BASE_MS / SOCKET_BACKOFF_MAX_MS bound the reconnect ladder. capped at
-// 15s, with jitter so a restarted lane never gets a synchronized herd of reconnects.
+// the reconnect ladder's bounds, capped at 15s, with 20% jitter so a restarted lane never
+// gets a synchronized herd of reconnects.
 export const SOCKET_BACKOFF_BASE_MS = 500;
 export const SOCKET_BACKOFF_MAX_MS = 15_000;
 
-// SOCKET_LIVENESS_MS is the quiet-wire budget. A half-open TCP (a wifi flap, a
-// suspended laptop, the devtools offline toggle) never fires `close` - without this the
-// client would sit on a corpse and the reconnect catch-up would never run.
+// the quiet-wire budget. A half-open TCP (wifi flap, suspended laptop, devtools offline)
+// never fires `close`, so without this the client would sit on a corpse and the reconnect
+// catch-up would never run.
 export const SOCKET_LIVENESS_MS = 15_000;
 
-// backoffDelay is the delay before reconnection attempt N (0-based).
+// the delay before reconnection attempt N (0-based)
 export function backoffDelay(attempt: number, rand: () => number = Math.random): number {
   const n = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   const base = Math.min(SOCKET_BACKOFF_MAX_MS, SOCKET_BACKOFF_BASE_MS * 2 ** Math.min(n, 16));
@@ -116,7 +109,6 @@ export function backoffDelay(attempt: number, rand: () => number = Math.random):
   return Math.max(50, Math.round(base + jitter));
 }
 
-// normalizeChipFrame guards one chips payload.
 export function normalizeChipFrame(data: unknown): ChipFrame | null {
   if (!data || typeof data !== "object" || Array.isArray(data)) return null;
   const f = data as Record<string, unknown>;
@@ -133,7 +125,6 @@ export function normalizeChipFrame(data: unknown): ChipFrame | null {
   return out;
 }
 
-// dispatchFrame routes one envelope to its typed handler.
 export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): void {
   switch (env.topic) {
     case "health": {
@@ -172,7 +163,6 @@ export function dispatchFrame(env: SocketEnvelope, handlers: SocketHandlers): vo
   }
 }
 
-// socketURL builds the endpoint from the page's own origin.
 export function socketURL(loc: { protocol: string; host: string } | undefined): string {
   if (!loc) return "/ws";
   const scheme = loc.protocol === "https:" ? "wss:" : "ws:";
@@ -195,7 +185,6 @@ export interface SocketClient {
   topics(): SocketTopic[];
 }
 
-// createSocketClient owns one page's connection.
 export function createSocketClient(
   handlers: SocketHandlers,
   opts: SocketClientOptions = {},
@@ -212,8 +201,7 @@ export function createSocketClient(
   let closedByUser = false;
   let everOpened = false;
 
-  // armLiveness records the last frame and starts the quiet-wire check. Never an
-  // interval.
+  // records the last frame and starts the quiet-wire check; never an interval
   function armLiveness(): void {
     lastFrameAt = Date.now();
     if (liveness !== null) return;
@@ -235,9 +223,8 @@ export function createSocketClient(
         socket.close();
       } catch {
       }
-      // Hand recovery to the ladder NOW. The browser's close EVENT is not a promise: on
-      // a half-open wire it can be deferred until the network returns (measured: the
-      // entire dark window under `ab set offline`) or never arrive.
+      // Hand recovery to the ladder NOW: the browser's close EVENT is not a promise - on a
+      // half-open wire it can be deferred until the network returns, or never arrive.
       if (ws === socket) dropConnection();
     }, delayMs ?? budget());
   }
@@ -266,11 +253,10 @@ export function createSocketClient(
     }
   }
 
-  // dropConnection takes the CURRENT socket out of the client's hands and hands. Both
-  // routes into it - the browser's close event and the liveness cut - must leave
-  // exactly one reconnect pending, never two: `ws = null` plus `schedule`'s own guard
-  // is what keeps the ladder single-file, and the stale-socket guard in onclose is what
-  // stops a late close from stepping it twice.
+  // Takes the CURRENT socket out of the client's hands. Both routes in - the browser's
+  // close event and the liveness cut - must leave exactly ONE reconnect pending: `ws = null`
+  // plus schedule's own guard keeps the ladder single-file, and the stale-socket guard in
+  // onclose stops a late close from stepping it twice.
   function dropConnection(): void {
     ws = null;
     disarmLiveness();

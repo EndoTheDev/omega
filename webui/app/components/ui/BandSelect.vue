@@ -1,5 +1,5 @@
 <template>
-  <!-- omega webui: THE THEMED SELECT. -->
+  <!-- THE THEMED SELECT -->
   <div
     class="model-select band-select"
     :class="{ up: drop === 'up' }"
@@ -50,7 +50,6 @@
   // the app's ONE keyboard arithmetic (the command palette's wrap).
   import { clampIndex } from "../../composables/commandRegistry";
 
-  // The pop opens DOWN by default.
   const props = withDefaults(
     defineProps<{
       options: { value: V; label: string; cls?: string }[];
@@ -73,20 +72,16 @@
     () => props.options.find((o) => o.value === props.modelValue)?.label ?? String(props.modelValue),
   );
 
-  // the KEYBOARD LAW -------- Exactly ONE row is in the tab order (roving tabindex),
-  // arrows walk the rows through clampIndex (the palette's wrap - never a second
-  // modulo), Home/End jump, Enter/Space picks the focused row, Escape closes and hands
-  // focus back to the chip, Tab leaves the popup without stealing the move.
+  // the KEYBOARD LAW: exactly ONE row is in the tab order (roving tabindex), arrows walk
+  // the rows through clampIndex (the palette's wrap - never a second modulo), Home/End jump,
+  // Enter/Space picks the focused row, Escape closes and hands focus back to the chip, Tab
+  // leaves the popup without stealing the move.
   let pickerSeq = 0;
   const listId = `band-select-${++pickerSeq}-list`;
 
-  /** the keyboard cursor - an INDEX. */
   const active = ref(0);
 
-  /**
-   * the seat the roving tabindex sits on - clamped, so a shrinking options list can
-   * never leave the popup with zero tab stops.
-   */
+  /** the seat the roving tabindex sits on - clamped so a shrinking list keeps a tab stop */
   const activeSeat = computed(() => {
     const len = props.options.length;
     if (len === 0) return -1;
@@ -98,12 +93,11 @@
     rowEls[i] = el instanceof HTMLElement ? el : null;
   }
 
-  /** the cursor FOLLOWS focus. */
   function seatOn(i: number) {
     active.value = i;
   }
 
-  /** land the cursor on row `i` and move DOM focus there. */
+  /** land the cursor on row `i` and move DOM focus there */
   function focusRow(i: number) {
     const len = props.options.length;
     if (len === 0) return;
@@ -140,15 +134,15 @@
       case "Enter":
       case " ":
         e.preventDefault();
-        // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue's onKeyCapture jumps
-        // into the chat composer on any PRINTABLE key): activating an option is not
-        // typing, so the keystroke must not bubble out and steal the focus this pop is
-        // about to hand back to the chip.
+        // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue jumps into the chat
+        // composer on any PRINTABLE key): activating an option is not typing, so the
+        // keystroke must not bubble out.
         e.stopPropagation();
         pick(value);
         break;
       case "Escape":
-        // stop here: a host drawer binds Escape to its own close, and closing the pop.
+        // stop here: a host drawer binds Escape to its own close, and this pop is the
+        // inner surface
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -162,10 +156,9 @@
 
   function openNow() {
     open.value = true;
-    // seat on the CURRENT value's row.
+    // seat on the CURRENT value's row
     const seat = props.options.findIndex((o) => o.value === props.modelValue);
     active.value = seat >= 0 ? seat : 0;
-    // the pop mounts on the NEXT tick.
     void nextTick(() => {
       if (open.value) focusRow(activeSeat.value);
     });
@@ -184,8 +177,8 @@
     if (restoreFocus && hadFocus) void nextTick(() => chipEl.value?.focus());
   }
 
-  // click-outside closes the list - the native select gave us this for free, so the
-  // custom one must match its behavior (the ModelSelect contract)
+  // click-outside closes the list: the native select gave that for free, so the custom one
+  // must match (the ModelSelect contract)
   function onDocPointer(e: PointerEvent) {
     if (open.value && root.value && !root.value.contains(e.target as Node))
       close();
@@ -198,21 +191,18 @@
 </script>
 
 <style scoped>
-  /* downward pop: the shared.model-pop anchors bottom. */
   .band-select:not(.up) .model-pop {
     bottom: auto;
     top: calc(100% + 6px);
   }
   /*
-   * seats: the chip is inline (the composer's pattern) - a host can width the ROOT and
-   * the chip follows, but never beyond its pane.
+   * seats: the chip is inline (the composer's pattern) - a host can width the ROOT and the
+   * chip follows, but never beyond its pane.
    */
   .band-select .model-chip {
     max-width: 100%;
   }
-  /*
-   * the KEYBOARD CURSOR: the ACTIVE row is the one the roving tabindex and DOM focus.
-   */
+  /* the ACTIVE row is the one the roving tabindex and DOM focus sit on */
   .band-select .model-list li.active {
     background: var(--z1-raised);
     color: var(--text);

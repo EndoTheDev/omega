@@ -1,5 +1,5 @@
-// omega webui: unit tests for the notifications surface
-// ). Three layers, matching the house patterns:
+// omega webui: unit tests for the notifications surface. Three layers,
+// matching the house patterns:
 // composables/notifications.ts fetch wrappers: URL + body contract
 //   under fetch interception;
 // the pure helpers: age rendering (honest "" on garbage), the live

@@ -7,11 +7,10 @@
 // label beside the BandSelect chip). The node suite has no DOM, so the
 // convergence is pinned structurally on the source - the same
 // contract style tabband.test.ts / sidebar-order.test.ts use:
-// settings: superseded the own-row shape with an
-// in-band seat, then (
-//     option B) moved the filter OUT of the band to a pane-top
-// full-width bar (the VSCode shape), and (Endo,
-// ) removed the band itself - the dock tab already says
+// settings: superseded the own-row shape with an in-band seat, then
+// moved the filter OUT of the band to a pane-top full-width bar (the
+// VSCode shape), and finally removed the band itself - the dock tab
+// already says
 //     "Settings", so the pane renders NO band and the bar heads it
 //     (this file pins that ABSENCE; bandsearch.test.ts owns the
 //     band-search roster, which now scopes to the four module tabs);

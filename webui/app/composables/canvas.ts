@@ -1,9 +1,7 @@
-// omega webui: the canvas store (arc 3c) - the webui's one view-model state. PANEL
-// PRESENCE LIVES HERE, never in a hardcoded list (settled Q5a). The canvas CONTRACT
-// (snapshot 200, delta frames, the action pipe with optimistic pending/error, v1
-// descriptor schema) is the tabbed renderer AND the transcript's shared source
-// (chat-last 2a) and the toast funnel's feed (arc 4b) - v0.14.3 folded the standalone
-// host tab, and moved the module surface into settings; the contract itself stays.
+// the canvas store: the webui's one view-model state, and PANEL PRESENCE LIVES HERE, never
+// in a hardcoded list. The canvas CONTRACT (snapshot 200, delta frames, the action pipe with
+// optimistic pending/error, the v1 descriptor schema) feeds the tabbed renderer, the
+// transcript and the toast funnel.
 
 import { reactive } from "vue";
 import {
@@ -14,7 +12,7 @@ import {
   type CanvasPanelAction,
 } from "./omega.ts";
 
-// action states live per panel+action.
+// action states live per panel+action
 export interface CanvasActionState {
   status: "idle" | "pending" | "error";
   error?: string;
@@ -29,13 +27,9 @@ export interface CanvasStore {
   refresh(): Promise<void>;
 }
 
-// formatCanvasPayload and toastRowOf left with the canvas host tab.
-
-// createCanvasStore holds the app's canvas.
 export function createCanvasStore(): CanvasStore {
   const panels = reactive<CanvasPanel[]>([]);
-  // the action states live in a reactive Map so a pending/error flip
-  // re-renders exactly the invoking button's label + the error line
+  // reactive Map, so a pending/error flip re-renders only the invoking button
   const states = reactive(new Map<string, CanvasActionState>());
   const key = (panelId: string, actionId: string) => `${panelId}\u0000${actionId}`;
 
@@ -104,12 +98,8 @@ export function createCanvasStore(): CanvasStore {
   };
 }
 
-// the module-UI delta seam ----------------------
-
-// A module view that renders beyond a panel's view-model (the kanban board. Module UI
-// imports no shell code, so the event literal is duplicated on both sides ON PURPOSE -
-// the reverse direction is `omega-select-board` (composables/notifications.ts ->
-// harness/kanban/ui/Board.vue), the same discipline.
+// the module-UI delta seam. Module UI imports no shell code, so the event literal is
+// duplicated on both sides ON PURPOSE (the reverse direction is `omega-select-board`).
 export const CANVAS_DELTA_EVENT = "omega-canvas-delta";
 
 function announceDelta(p: CanvasPanel): void {
@@ -117,11 +107,8 @@ function announceDelta(p: CanvasPanel): void {
   window.dispatchEvent(new CustomEvent(CANVAS_DELTA_EVENT, { detail: p }));
 }
 
-// CANVAS_RESET_ID is the reset detail's id: the same event, one more emitter. Boot
-// never fires it: a cold page load mounts its views, which fetch themselves - a boot
-// pulse would only double every read. Consumers match the id (the literal is duplicated
-// on their side, same discipline as CANVAS_DELTA_EVENT); `detail.panel` is absent
-// because a reset is about the page, not one panel.
+// CANVAS_RESET_ID is the reset detail's id. Boot never fires it: a cold page load mounts its
+// views, which fetch themselves, so a boot pulse would only double every read.
 export const CANVAS_RESET_ID = "reconnect";
 
 export function announceCanvasReset(): void {
@@ -131,19 +118,15 @@ export function announceCanvasReset(): void {
   );
 }
 
-// the toast feed ------------------------------
-
-// Panels of kind "toast" are canvas events, not persistent surface.
-// Handlers receive the payload verbatim; decoding is the consumers' domain (the dock
-// knows the record shape, the canvas contract does not).
+// Panels of kind "toast" are canvas events, not persistent surface. Handlers receive the
+// payload verbatim; decoding is the consumers' domain.
 type ToastPanelHandler = (payload: unknown) => void;
 
 const toastHandlers = new Set<ToastPanelHandler>();
 let lastToastFingerprint = "";
 
-// fingerprintOf is the dedupe key: the payload's stable serialization.
-// An unserializable payload degrades to the empty string and still
-// toasts once per distinct string (a toast that never fires is worse).
+// the dedupe key: an unserializable payload degrades to "" and still toasts once per
+// distinct string (a toast that never fires is worse).
 function fingerprintOf(payload: unknown): string {
   try {
     return JSON.stringify(payload) ?? "";
@@ -152,7 +135,6 @@ function fingerprintOf(payload: unknown): string {
   }
 }
 
-// feedToastPanel is the internal funnel.
 function feedToastPanel(p: CanvasPanel): void {
   if (p.kind !== "toast" || p.payload === null || p.payload === undefined) return;
   const fp = fingerprintOf(p.payload);
@@ -161,7 +143,6 @@ function feedToastPanel(p: CanvasPanel): void {
   for (const fn of toastHandlers) fn(p.payload);
 }
 
-// onToastPanel subscribes one toast consumer (the dock's toast stack).
 export function onToastPanel(fn: ToastPanelHandler): () => void {
   toastHandlers.add(fn);
   return () => {
@@ -169,7 +150,7 @@ export function onToastPanel(fn: ToastPanelHandler): () => void {
   };
 }
 
-// emitLocalToast publishes a CLIENT-SIDE toast through the same funnel the canvas.
+// publishes a CLIENT-SIDE toast through the same funnel the canvas uses
 export function emitLocalToast(payload: unknown): void {
   if (payload === null || payload === undefined) return;
   const fp = fingerprintOf(payload);

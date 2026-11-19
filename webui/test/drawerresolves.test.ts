@@ -1,5 +1,4 @@
-// omega webui: the mobile DRAWER resolution law
-// ).
+// omega webui: the mobile DRAWER resolution law.
 //
 // Below 768px the three edge shells collapse into overlay drawers, and
 // each drawer renders its active tab through a v-if/v-else-if chain that

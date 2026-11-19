@@ -1,5 +1,5 @@
 <template>
-  <!-- the command palette OVERLAY. -->
+  <!-- the command palette OVERLAY -->
   <div
     ref="rootEl"
     v-if="open"
@@ -7,10 +7,8 @@
     role="dialog"
     aria-label="Command palette">
     <!--
-      the seat swap.
-      `disabled` is the mobile fallback: below 768px the nav cluster is display:none
-      (the drawer handles rule, nav.test), so there is no seat to fill - the input
-      renders here, in the panel, exactly as it did before the takeover.
+      the seat swap: `disabled` is the mobile fallback - below 768px the nav cluster is
+      display:none, so there is no seat to fill and the input renders here in the panel.
     -->
     <Teleport
       to="#nav-palette-slot"
@@ -42,17 +40,13 @@
         @click="run(c)">
         <span class="command-text">
           <span class="command-title">{{ c.title }}</span>
-          <!--
-               description under the title. The rows that have none (the
-               openable dockables, the shell toggles) render title-only,
-               exactly as before. -->
+          <!-- description under the title; rows without one render title-only -->
           <span
             v-if="c.description"
             class="command-desc">{{ c.description }}</span>
         </span>
-        <!-- the keybinding-hint column: present where a binding exists
-             (none in v1 - the keybindings card owns them), the layout is
-             still VS Code's two-column row so hints land without churn -->
+        <!-- the keybinding-hint column: the layout stays VS Code's two-column row, so a
+             hint lands without churn -->
         <span
           v-if="c.hint"
           class="command-hint">{{ c.hint }}</span>
@@ -85,9 +79,8 @@
   const props = defineProps<{
     open: boolean;
     commands: readonly PaletteCommand[];
-    // the top bar's palette seat is real estate this panel borrows for its field. True
-    // on desktop (the cluster renders there); false below the drawer breakpoint, where
-    // the cluster is display:none and the field must stay in the panel.
+    // the top bar's palette seat is real estate this panel borrows: true on desktop, false
+    // below the drawer breakpoint where the cluster is display:none and the field stays here
     inPlace: boolean;
   }>();
 
@@ -115,9 +108,8 @@
     },
   );
 
-  // crossing the drawer breakpoint moves the field between the bar's seat
-  // and the panel (the Teleport's `disabled` flips, re-mounting the input),
-  // so the palette carries its caret across with it - a live resize must
+  // crossing the drawer breakpoint moves the field between the bar's seat and the panel (the
+  // Teleport re-mounts it), so the palette carries its caret across - a live resize must
   // never leave a field on screen that typing cannot reach.
   watch(
     () => props.inPlace,
@@ -161,17 +153,12 @@
     void c.run();
   }
 
-  // click anywhere OUTSIDE the palette closes it. The overlay has no scrim on purpose
-  // (the panes stay readable behind it), so the "outside" click cannot be caught by an
-  // overlay element - it rides the document, the same seam the settings pickers use.
-  // pointerdown, not click: it lands BEFORE the opening gesture's own click, so a click
-  // that opens the palette can never close it on the way out. The ONE exemption is the
-  // shell's trigger button (`data-palette-trigger`, the nav cluster's Ctrl+K button):
-  // its own click toggles the palette, so closing it here on pointerdown would flicker
-  // closed-then-reopened.: the live field is TELEPORTED into the bar, so it is not a
-  // descendant of rootEl - it is the palette's own surface all the same, and a
-  // pointerdown landing in it (a caret grab, a selection drag) must never close the
-  // palette it belongs.
+  // click anywhere OUTSIDE the palette closes it. The overlay has no scrim on purpose (the
+  // panes stay readable behind it), so the "outside" click rides the document.
+  // pointerdown, not click: it lands BEFORE the opening gesture's own click, so a click that
+  // opens the palette can never close it on the way out. Exemptions: the shell's trigger
+  // button (`data-palette-trigger`) and the TELEPORTED live field, which is the palette's own
+  // surface even though it is not a rootEl descendant.
   function onDocPointer(e: PointerEvent) {
     if (!props.open) return;
     const target = e.target as Element | null;

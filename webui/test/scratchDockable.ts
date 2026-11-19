@@ -27,7 +27,7 @@ export function registerScratchSingleton(): () => void {
   };
 }
 
-/** runs `fn` with a synthetic MAIN-area singleton ("scratch") registered in the. */
+/** runs `fn` with a synthetic MAIN-area singleton ("scratch") in the inventory. */
 export async function withScratchSingleton(
   fn: (id: DockComponentName) => void | Promise<void>,
 ): Promise<void> {

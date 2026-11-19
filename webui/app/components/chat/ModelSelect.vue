@@ -1,12 +1,8 @@
 <template>
   <!--
-    custom dropdown: a native <select> popup is OS chrome that can't be themed - this
-    renders the listbox ourselves on the design tokens.: the flat list became the
-    Hermes-desktop picker - one COLLAPSIBLE section per provider (the grouped /models
-    payload, "default" first, named instances sorted after), searchable across
-    sections, a listing failure shown inline in its section (never a silent drop of the
-    provider), and footer actions: refresh models (re-fetch every provider's catalog),
-    add custom model., edit models.
+    custom dropdown: a native <select> popup is OS chrome and cannot be themed.
+    One COLLAPSIBLE section per provider ("default" first), searchable across
+    sections, a listing failure shown inline in its section rather than dropped.
   -->
   <div
     class="model-select"
@@ -23,11 +19,8 @@
       :aria-controls="open ? listId : undefined"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
-      <!--
-        the label keeps its NAME when the composer's squeeze ladder sheds it: the rung
-        removes the label from the row (out of flow, never truncated mid-word), and the
-        aria-label above is what still announces the current model then
-      -->
+      <!-- the composer's squeeze ladder may shed this label (out of flow, never
+           truncated mid-word); the aria-label above still announces the model -->
       <span class="chip-name">{{ chipText }}</span>
       <span
         class="chev"
@@ -51,11 +44,8 @@
         placeholder="filter models"
         spellcheck="false"
         @keydown="onSearchKey" />
-      <!--
-        the aux INHERIT row: PINNED above the provider sections - never folded into.
-        Only a settings knob marked default_option passes inheritRow; the composer
-        never does.
-      -->
+      <!-- the aux INHERIT row is PINNED above the provider sections, never folded
+           into one; only a settings knob marked default_option passes inheritRow -->
       <button
         v-if="inheritRow"
         type="button"
@@ -233,14 +223,13 @@
     label?: string;
     /**
      * the aux INHERIT row: pins a TOP row above the provider sections that emits.
-     * Off by default, so the composer (which has no default to follow) renders exactly
-     * as before.
+     * Off by default, so the composer (which has no default to follow) is unchanged.
      */
     inheritRow?: boolean;
     /**
-     * qualify marks a model row unusable and says WHY ("not a vision model"): a
-     * rejected row renders DISABLED with the reason as its title and never emits a pick
-     * - it is shown, never hidden, so the catalog reads complete.
+     * qualify marks a model row unusable and says WHY ("not a vision model"): the
+     * row renders DISABLED with the reason as its title and never emits a pick -
+     * shown, never hidden, so the catalog reads complete.
      */
     qualify?: (section: string, model: string) => string | null;
     drop?: "up" | "down";
@@ -251,14 +240,13 @@
     (e: "refresh-models"): void;
   }>();
 
-  // The inherit row's exact label. It is NOT a provider section and must never read as
-  // one: the same word spells the composer grammar's base-provider prefix
-  // ("default:model").
+  // NOT a provider section, and it must never read as one: the same word spells the
+  // composer grammar's base-provider prefix ("default:model").
   const INHERIT_LABEL = "default (inherit from the main model)";
   const INHERIT_CHIP = "default (inherit)";
 
   const chipTitle = computed(() => props.label ?? "Model");
-  // the chip face: the stored value, except that an INHERITED knob reads.
+  // the chip face: the stored value, unless an inherited knob reads its own word
   const chipText = computed(() =>
     props.inheritRow && props.model === AUX_DEFAULT_VALUE
       ? INHERIT_CHIP
@@ -271,7 +259,6 @@
   const chipEl = ref<HTMLButtonElement | null>(null);
   const searchEl = ref<HTMLInputElement | null>(null);
 
-  // - the custom models ("add custom model." store) - localStorage.
   const CUSTOMS_KEY = "omega.model-picker.customs";
   const customs = ref<Record<string, string[]>>(loadCustoms());
 
@@ -350,10 +337,10 @@
     collapsed.value = next;
   }
 
-  // - the pick: the slot grammar. The flat floor also rides "default:" so a pick from
-  // the default section never re-routes a pinned session.
+  // the pick emits the slot grammar: the default section also rides "default:", so a
+  // pick there never re-routes a pinned session.
   function pick(g: ModelProviderSection, m: string) {
-    // a DISABLED-with-reason row never stores anything.
+    // a DISABLED-with-reason row never stores anything
     if (reasonFor(g.name, m) !== null) return;
     emit(
       "update:model",
@@ -368,8 +355,8 @@
     close();
   }
 
-  // the row's disqualification reason, or null when it is pickable. No
-  // qualify hook = no rejected rows (the composer's behavior exactly).
+  // the row's disqualification reason, or null when it is pickable; no qualify
+  // hook = no rejected rows (the composer's behavior exactly).
   function reasonFor(section: string, model: string): string | null {
     return props.qualify ? props.qualify(section, model) : null;
   }
@@ -380,32 +367,28 @@
     return props.model === `${g.name}:${m}`;
   }
 
-  // the KEYBOARD LAW -------------------------------- The rows carried. They are now a
-  // real listbox: exactly ONE row is in the tab order (roving tabindex), arrows walk
-  // the rows through the app's palette arithmetic (clampIndex - the same wrap the
-  // command palette rides), Enter/Space picks the focused row, Escape closes and hands
-  // focus back to the chip, and the ACTIVE row is highlighted so the visible cursor
-  // follows focus. Disabled-with-reason rows stay IN the walk: the reason is
-  // information an AT user must be able to read, Enter on one is simply a no-op.
+  // The rows form a real listbox: exactly ONE row is in the tab order (roving
+  // tabindex), arrows walk them with the app's palette arithmetic (clampIndex),
+  // Enter/Space picks the focused row, Escape closes and hands focus back to the
+  // chip, and the ACTIVE row is highlighted so the visible cursor follows focus.
+  // Disabled-with-reason rows stay IN the walk - the reason is information an AT
+  // user must be able to read, and Enter on one is a no-op.
   let pickerSeq = 0;
   const pickerId = `model-picker-${++pickerSeq}`;
   const listId = `${pickerId}-list`;
 
-  /**
-   * every row the popup paints right now, in VISUAL order - the flat index is the
-   * keyboard's address space and it can never disagree with what the user sees (a query
-   * forces every section open).
-   */
+  /** every row the popup paints now, in VISUAL order: the flat index is the
+   *  keyboard's address space and can never disagree with what the user sees (a
+   *  query forces every section open). */
   const flatRows = computed(() =>
     visibleGroups.value.flatMap((g) =>
       isExpanded(g) ? g.models.map((m) => ({ section: g.name, model: m })) : [],
     ),
   );
 
-  /** the row the keyboard is ON. */
   const activeKey = ref<string | null>(null);
-  // the identity of a row: a model name may itself carry a colon
-  // ("clef:27b"), so the separator can never be a printable character
+  // a model name may itself carry a colon ("clef:27b"), so the separator can never
+  // be a printable character
   const rowKey = (section: string, model: string) =>
     `${section}\u0000${model}`;
 
@@ -451,7 +434,6 @@
     activeKey.value = rowKey(section, model);
   }
 
-  /** land the keyboard on row `i` and move DOM focus there. */
   function focusRow(i: number) {
     const rows = flatRows.value;
     if (i < 0 || i >= rows.length) return;
@@ -507,9 +489,9 @@
       case " ":
         e.preventDefault();
         // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue's onKeyCapture jumps
-        // into the chat composer on any PRINTABLE key): activating an option is not
-        // typing, so the keystroke must not bubble out and steal the focus this pop is
-        // about to hand back to the chip.
+        // into the composer on any PRINTABLE key): activating an option is not typing,
+        // so the keystroke must not bubble out and steal the focus this pop is about
+        // to hand back to the chip.
         e.stopPropagation();
         pickRow(section, model);
         break;
@@ -525,10 +507,8 @@
     }
   }
 
-  /**
-   * a keyboard pick goes through the SAME guard as a click: a disabled row is
-   * information, never an override of the slot's rule.
-   */
+  /** a keyboard pick rides the SAME guard as a click: a disabled row is
+   *  information, never an override of the slot's rule. */
   function pickRow(section: string, model: string) {
     if (reasonFor(section, model) !== null) return;
     const g = visibleGroups.value.find((x) => x.name === section);
@@ -605,7 +585,8 @@
     const below = floor - chip.bottom - 12;
     const above = chip.top - ceil - 12;
     flipDown.value = below >= above;
-    // search + footer + padding + the inherit row: the body keeps the rest, never.
+    // 106px of chrome (search + inherit row + footer + padding); the body keeps the
+    // rest of the room, floored at 120 and capped at 260
     const room = (flipDown.value ? below : above) - 106;
     popRoom.value = {
       "--model-pop-body": `${Math.round(Math.max(120, Math.min(260, room)))}px`,
@@ -618,7 +599,6 @@
     adding.value = false;
     editing.value = false;
     query.value = "";
-    // seat the keyboard on the CURRENT value's row.
     seatOnCurrent();
     placePop();
     nextTick(() => searchEl.value?.focus());
@@ -641,8 +621,8 @@
     if (restoreFocus && hadFocus) void nextTick(() => chipEl.value?.focus());
   }
 
-  // click-outside closes the list - the native select gave us this for free,
-  // so the custom one must match its behavior
+  // click-outside closes the list - the native select gave us this for free, so
+  // the custom one has to match it
   function onDocPointer(e: PointerEvent) {
     if (open.value && root.value && !root.value.contains(e.target as Node))
       close();
@@ -661,17 +641,16 @@
     top: calc(100% + 6px);
   }
   /*
-   * a MEASURED seat (settings) caps the section body to the room its own scrolling.
-   * The composer never sets the var.
+   * a MEASURED seat (settings) caps the section body to the room it has; the
+   * composer never sets the var.
    */
   .model-select.measured .model-body {
     max-height: var(--model-pop-body, 260px);
   }
   /*
-   * the KEYBOARD CURSOR: the ACTIVE row is the one the roving tabindex and DOM focus.
-   * It reads as the hover row, so a keyboard user sees the same affordance a mouse user
-   * gets; a disabled row keeps the highlight too (its reason is information, and Enter
-   * on it is a no-op, never a pick).
+   * the KEYBOARD CURSOR: the ACTIVE row reads as the hover row, so a keyboard user
+   * sees the same affordance a mouse user gets. A disabled row keeps the highlight
+   * too - its reason is information and Enter on it is a no-op, never a pick.
    */
   .model-list li.active {
     background: var(--z1-raised);

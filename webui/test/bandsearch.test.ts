@@ -1,10 +1,9 @@
-// omega webui: the in-band search across the registry tabs
-//): the FOUR module
+// omega webui: the in-band search across the registry tabs: the FOUR module
 // registry tabs - cron, skills, tools, mcp - carry a compact search
 // input in the band's band-tool slot (the sessions sidebar's
 // seat, promoted into TabBand's shared vocabulary), and
-// cron's band carries a refresh tool. (
-// option B) NARROWED that roster: the settings filter LEFT
+// cron's band carries a refresh tool. A later pass NARROWED that roster:
+// the settings filter LEFT
 // the band and became the pane-top full-width bar (the VSCode shape,
 // pinned below and in band-breaks.test.ts). The node suite has no DOM, so:
 // the shared SEAT is pinned on TabBand's source (the geometry laws);

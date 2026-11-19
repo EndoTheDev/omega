@@ -12,26 +12,18 @@ export interface PaletteCommand {
   title: string;
   hint?: string;
   /**
-      title. The / reference set carries it (a command list is a reference:
-      a name alone does not say what the verb does) - never the hint column,
-      which stays keybindings-only. */
+   * The / reference set carries it (a command list is a reference: a name alone does not
+   * say what the verb does); never the hint column, which stays keybindings-only.
+   */
   description?: string;
-  /** extra filter fuel ("browser" finds "open Browser" the same either
-      way; keywords rescue odd voice titles like the modules cockpit) */
+  /** extra filter fuel, rescuing odd voice titles like the modules cockpit */
   keywords?: string;
   dimmed?: boolean;
-  /**
-   * the action.
-   * Local only - the palette never talks to the agent.
-   */
+  /** the action; local only - the palette never talks to the agent */
   run: () => void | Promise<void>;
 }
 
-/**
- * the deps the app wires.
- * One seam, built from app.vue's own flows - the registry never imports app state, so
- * tests fake it whole.
- */
+/** the deps the app wires: one seam built from app.vue's flows; tests fake it whole */
 export interface PaletteCommandDeps {
   openDockable: (id: DockComponentName) => void;
   openChat: () => void;
@@ -43,31 +35,21 @@ export interface PaletteCommandDeps {
   reloadLayout: () => void;
   clearSavedLayout: () => void;
   hiddenDockable?: (id: DockComponentName) => boolean;
-  /**
-   * the focused tab IS the draft conversation, so "New chat" would only focus it again.
-   * The row renders dimmed + aria-disabled (never removed) and the action stays the
-   * honest one.
-   */
+  /** the focused tab IS the draft conversation, so "New chat" renders dimmed, never removed */
   draftFocused?: boolean;
-  /**
-      command REFERENCE (name + description per command, from commands.ts -
-      one list, never a copy), and a picked row runs that verb against the
-      active chat tab. Absent = the rows render but picking one is a no-op
-      (the composer's own slash palette is still the executor). */
+  /** the / reference set from commands.ts (one list, never a copy); absent = a no-op pick */
   runSlashCommand?: (name: string) => void;
 }
 
-// the openable dockable set.
+// the openable dockable set: sidebar and viewer have no meaningful empty instance
 const PALETTE_EXCLUDED = new Set<string>(["sidebar", "viewer"]);
 
-/** the dockable ids the palette derives "open <title>" commands from */
 export function paletteOpenableIds(): DockComponentName[] {
   return DOCKABLES
     .filter((d) => !PALETTE_EXCLUDED.has(d.id))
     .map((d) => d.id);
 }
 
-/** build the v1 command set. */
 export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[] {
   const cmds: PaletteCommand[] = [];
   for (const id of paletteOpenableIds()) {
@@ -129,12 +111,9 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
       run: () => deps.clearSavedLayout(),
     },
   );
-  //
-  // name + description per command, straight from commands.ts (the ONE
-  // shell set: the composer's slash palette and this list can never
-  // drift). /help opens this palette, so the list it opens must BE the
-  // reference it claims to be. Titles stay the literal tokens (never
-  // Title Case): a slash verb is a thing you type, not a phrase.
+  // name + description per command, straight from commands.ts (the ONE shell set, so the
+  // composer's slash palette and this list can never drift). /help opens this palette, so
+  // the list must BE the reference it claims; titles stay the literal tokens.
   for (const c of WEBUI_SHELL_COMMANDS) {
     cmds.push({
       id: "slash:" + c.name.slice(1),
@@ -147,10 +126,8 @@ export function buildPaletteCommands(deps: PaletteCommandDeps): PaletteCommand[]
   return cmds;
 }
 
-/** substring filter (the settled lazy default; subsequence later if it
-    ever annoys): case-insensitive over title + id + description +
-    keywords. The description is reference fuel, not filler - "theme" finds
-    /theme either way, "clipboard" finds it only through the description. */
+/** substring filter, case-insensitive over title + id + description + keywords: the
+    description is reference fuel, not filler ("clipboard" finds /clipboard only through it) */
 export function filterPaletteCommands(
   query: string,
   cmds: readonly PaletteCommand[],
@@ -165,5 +142,5 @@ export function filterPaletteCommands(
   );
 }
 
-// the overlay's keyboard grammar is the composer palette's (clampIndex, commands.ts).
+// the overlay's keyboard grammar is the composer palette's (clampIndex, commands.ts)
 export { clampIndex };

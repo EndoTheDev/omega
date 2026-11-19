@@ -1,9 +1,6 @@
 <template>
-  <!--
-    consecutive tool call rows collapse into ONE group block.
-    Inside, every child row renders EXACTLY what ChatItem's tool branch renders - a
-    group is a container, never a re-render of the rows.
-  -->
+  <!-- consecutive tool calls collapse into ONE group block; a group is only a
+       container - each child row renders what ChatItem's tool branch renders. -->
   <details
     ref="el"
     class="toolgroup">
@@ -35,7 +32,7 @@
           :call-id="item.callId"
           :fold-key="foldAddress(item)"
           :gate="item.gate" />
-        <!-- a pending gate question bound to THIS running tool row. -->
+        <!-- index-aligned with items: the gate question bound to THAT tool row -->
         <GateCard
           v-if="gateCards[i]"
           :card="gateCards[i]!"
@@ -62,30 +59,22 @@
     gateCards: (PendingVerdictCard | null)[];
     sessionId?: string;
     live?: boolean;
-    // this group's DURABLE fold address: ChatTab derives
-    // it from the head row - the same row the container is keyed by - so
-    // the reader's manual open/close survives the dock-tab switch that
-    // unmounts the pane. Absent = no pin (auto only).
+    // this group's DURABLE fold address: ChatTab derives it from the head row -
+    // the row the container is keyed by - so the pin survives the dock switch
+    // that unmounts the pane. Absent = auto only.
     foldKey?: string;
   }>();
 
   const anyError = computed(() => props.items.some((it) => it.status === "error"));
-  // anyActive: any child in the LIVE set, asked through the one shared predicate.
   const anyActive = computed(() => props.items.some((it) => isLive(it.status)));
   const state = computed(() =>
     anyError.value ? "error" : anyActive.value ? "" : "done",
   );
 
-  // auto open/close (the row/block state machine,
-  //     shape): the shared mode decides what the group does on its own;
-  //     a manual summary click PINS the group for the session and mode
-  //     flips + status transitions recompute around it, never over it.
-  //
-  // The pin is stored, not remembered: a dock-tab switch
-  // unmounts the whole pane (DockPane renders only the ACTIVE tab), so the
-  // group's open state lives on the tab's view record, keyed by the group's
-  // durable address (ChatTab derives it from the head row - the same row the
-  // container is keyed by). No address = no pin, as before.
+  // The shared mode decides what the group does on its own; a manual summary
+  // click PINS it and mode/status changes recompute around the pin, never over
+  // it. The pin is stored on the tab's view record - a dock-tab switch unmounts
+  // the pane, so an instance pin would die - by the group's durable address.
   const el = ref<HTMLDetailsElement | null>(null);
   const display = useToolDisplay();
   const folds = inject(CHAT_FOLD_PINS_KEY, null);
@@ -106,9 +95,8 @@
   function applyAuto() {
     if (!el.value) return;
     const pin = pinned.value;
-    // a pin WINS, and on a remount it must be applied to the fresh DOM
-    // (a <details> mounts closed - skipping a pinned group would render
-    // every restored group collapsed,
+    // a pin WINS and must be re-applied to the fresh DOM on remount - a
+    // <details> mounts closed - or every restored group renders collapsed.
     el.value.open =
       pin !== null
         ? pin
@@ -122,10 +110,7 @@
   );
   onMounted(applyAuto);
 
-  // Click fires BEFORE the browser's toggle default action, so !open is
-  // the state the click is about to produce - pin that, and auto never
-  // touches this group again this session (or, with the stored pin, this
-  // tab).
+  // Click fires BEFORE the toggle default, so !open is the state it will produce.
   function onSummaryClick() {
     if (!el.value) return;
     rememberPin(!el.value.open);

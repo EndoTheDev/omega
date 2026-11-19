@@ -23,16 +23,11 @@
       @click="closeOverlays" />
 
     <div class="pane-area">
-      <!-- dock: THE layout tree. -->
       <DockSplit :node="dock.tree.value">
         <template #pane-sidebar>
-          <!--
-            the dock's edge-pane content is desktop chrome.
-            Below 768px it is suppressed (the mobile drawer renders the same content
-            independently - see the MobileDrawer blocks after.pane-area) so a
-            desktop-closed sidebar (the pane pruned from the tree) never blanks the
-            drawer.
-          -->
+          <!-- the edge-pane content is desktop chrome: below 768px the mobile drawer
+               renders the same views independently, so a sidebar pruned from the tree
+               never blanks the drawer -->
           <AppSidebar
             v-if="!isMobile"
             class="pane"
@@ -52,11 +47,8 @@
           />
         </template>
 
-        <!--
-          one ChatTab per chat tab; keyed by the tab's instance key so a DnD move (same
-          pane reorder / cross-pane) remounts cleanly and tab switching never renders
-          another tab's transcript.
-        -->
+        <!-- one ChatTab per chat tab, keyed by the tab's instance key so a DnD move
+             remounts cleanly and a switch never renders another tab's transcript -->
         <template #pane-chat="{ pane, tab }">
           <div :style="{ display: mainView === 'chat' ? 'contents' : 'none' }">
             <ChatTab
@@ -88,9 +80,6 @@
           </div>
         </template>
 
-        <!--
-          the RIGHT sidebar's views are REAL dock tabs (Files / Cron / Skills / Tools.
-        -->
         <template #pane-files>
           <FilesTab
             v-if="!isMobile"
@@ -111,11 +100,8 @@
             module="cron"
             :open="isMobile ? inspectorOpen : false" />
         </template>
-        <!--
-          the terminal tab - the integrated shell (the terminal module's own view rides
-          it; the shell keeps running while a sibling tab activates - the outlet
-          unmounts the SSE, never the pty).
-        -->
+        <!-- the terminal tab: the shell keeps running while a sibling tab activates -
+             the outlet unmounts the SSE, never the pty -->
         <template #pane-terminal>
           <component
             :is="terminalTabView"
@@ -151,24 +137,17 @@
             :open="isMobile ? inspectorOpen : false" />
         </template>
 
-        <!--
-          the agents panel - profile inventory with scaffold (own fetch, inspector
-          family).: the tab renders DETAILS + EDIT on expand.: a row name click opens
-          the agent's most-recent session in a chat tab (window event -> openChatTab
-          below); the per-agent session LIST still never renders here.
-        -->
+        <!-- a row name click opens the agent's most-recent session in a chat tab (window
+             event -> openChatTab); the per-agent session LIST never renders here -->
         <template #pane-agents>
           <AgentsPanel
             v-if="!isMobile"
             class="pane" />
         </template>
 
-        <!--
-          settings is an ON-DEMAND main-area tab now - the menubar gear opens it
-          (VSCode's settings tab), it closes like any tab, and the pane renders here
-          wherever the tab lives (mobile included: the main pane is the one surface
-          that never collapses).
-        -->
+        <!-- settings is an ON-DEMAND main-area tab: the gear opens it, it closes like any
+             tab, and the pane renders wherever the tab lives (mobile included - the main
+             pane is the one surface that never collapses) -->
         <template #pane-settings>
           <SettingsTab
             class="pane"
@@ -197,7 +176,6 @@
             module="kanban"
             :open="isMobile ? inspectorOpen : false" />
         </template>
-        <!-- the extensions/modules inventory tab is GONE. -->
         <template #pane-insights>
           <InsightsTab
             v-if="!isMobile"
@@ -239,7 +217,7 @@
         v-else-if="sidebarDrawerActiveId === 'files'"
         class="pane"
         :open="drawerOpen" />
-      <!-- canvas C1: agents' home is the PRIMARY sidebar now (the seat map. -->
+      <!-- agents' home is the PRIMARY sidebar now (the seat map decides, not this file) -->
       <AgentsPanel
         v-else-if="sidebarDrawerActiveId === 'agents'"
         class="pane" />
@@ -297,13 +275,10 @@
         v-else-if="notificationsPanelView && inspectorDrawerActiveId === 'notifications'"
         class="pane"
         @open="openNotification" />
-      <!--
-        agents is a SHELL-owned view (harness/ continuous ships the component, the.
-      -->
+      <!-- agents is a SHELL-owned view (the component ships from harness/) -->
       <AgentsPanel
         v-else-if="inspectorDrawerActiveId === 'agents'"
         class="pane" />
-      <!-- v0.14.3: the canvas drawer branch left with the tab. -->
       <InspectorPanel
         v-else-if="inspectorDrawerActiveId"
         class="pane"
@@ -311,14 +286,10 @@
         :open="inspectorOpen" />
     </MobileDrawer>
 
-    <!--
-      the BOTTOM drawer.
-      Below 768px the zero-collapse CSS (bottompanel.css) takes the.edge-bottom cell
-      out of flow regardless of tree state - desktop chrome a mobile toggle can't
-      reach.
-      Tabs derive from the live bottom pane or the registry's bottom-home default
-      (logs), same contract as the other drawers.
-    -->
+    <!-- the BOTTOM drawer. Below 768px the zero-collapse CSS (bottompanel.css) takes the
+         .edge-bottom cell out of flow regardless of tree state, so the tree never reaches
+         it. Tabs derive from the live bottom pane or the registry's bottom-home default
+         (logs), the same contract as the other drawers. -->
     <MobileDrawer
       v-if="isMobile"
       side="bottom"
@@ -344,15 +315,13 @@
         @open-module="openModuleTab"
         @set-color-mode="setColorMode"
         @set-theme="setTheme" />
-      <!-- a TAB capsule in the bottom drawer rides its manifest view. -->
+      <!-- a TAB capsule in the bottom drawer rides its manifest view -->
       <component
         :is="observabilityTabView"
         v-else-if="bottomDrawerActiveId === 'observability' && observabilityTabView"
         class="pane"
         :session="focusedSessionId" />
-      <!--
-        the terminal is a TAB capsule too, and it is the drawer's FIRST default.
-      -->
+      <!-- the terminal is a TAB capsule too, and the drawer's FIRST default -->
       <component
         :is="terminalTabView"
         v-else-if="bottomDrawerActiveId === 'terminal' && terminalTabView"
@@ -365,12 +334,9 @@
         :open="bottomDrawerOpen" />
     </MobileDrawer>
 
-    <!--
-      the command palette (Ctrl+K / cluster button) - fixed top-center above every
-      chrome; it never touches the agent.: its FIELD is not rendered here - it
-      teleports into the top bar's palette seat (the in-place takeover), leaving this
-      panel as the results dropdown that hangs below the bar.
-    -->
+    <!-- the command palette: fixed top-center above every chrome, and it never touches the
+         agent. Its FIELD is not rendered here - it teleports into the top bar's palette
+         seat, leaving this panel as the results dropdown hanging below the bar. -->
     <CommandPalette
       :open="paletteOpen"
       :in-place="!isMobile"
@@ -439,9 +405,8 @@
   import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
   import { modulePanels } from "./composables/module-panels.generated";
   import { moduleTabs } from "./composables/module-tabs.generated";
-  // (the shell-ring shrink wave 1). app.vue binds the tab view explicitly: files' ui/
-  // carries two.vue views, so the manifest's module lookup alone cannot pick the tab
-  // body.
+  // app.vue binds the tab views explicitly: files' ui/ carries two.vue views, so the
+  // manifest's module lookup alone cannot pick the tab body.
   import FilesTab from "../../harness/files/ui/FilesTab.vue";
   import AppSidebar from "../../harness/store/ui/AppSidebar.vue";
   import InsightsTab from "../../harness/store/ui/InsightsTab.vue";
@@ -571,8 +536,8 @@
     createComposerFocusSignal,
     shouldCaptureTyping,
   } from "./composables/focus";
-  // arc 3c: the canvas store - the webui's one view-model state. Panel presence lives
-  // in the store, never a hardcoded list (Q5a).
+  // the canvas store: the webui's one view-model state. Panel presence lives in the
+  // store, never a hardcoded list.
   import { announceCanvasReset, createCanvasStore, emitLocalToast } from "./composables/canvas";
   import { normalizeCanvasPanel } from "./composables/omega";
   import {
@@ -620,10 +585,9 @@
   } from "./composables/dockables";
   const healthy = ref(false);
 
-  // the tab capsules' views: static manifest lookups, not imports. A capsule whose ui/
-  // view is gone (deleted capsule, the deletability proof) yields undefined - the
-  // outlet template then hosts nothing, exactly like a panel capsule's InspectorPanel
-  // body after a removal.
+  // the tab capsules' views are static manifest lookups, not imports. A capsule whose ui/
+  // view is gone yields undefined, so its outlet hosts nothing - exactly like a panel
+  // capsule's InspectorPanel body after a removal.
   const terminalTabView = moduleTabs.find((t) => t.module === "terminal")?.component;
   const observabilityTabView = moduleTabs.find(
     (t) => t.module === "observability",
@@ -641,9 +605,9 @@
   const healthDatabaseDetail = ref("");
   const healthLastErrorMessage = ref<string | null>(null);
   const healthLastErrorAt = ref(0);
-  // noteHealthFacts copies a /health body's optional facts into the
-  // popover's refs. One function for all three read paths (boot fetch,
-  // reconnect catch-up, pushed frame) so they can never disagree.
+  // noteHealthFacts copies a /health body's optional facts into the popover's refs. One
+  // function for all three read paths (boot fetch, reconnect catch-up, pushed frame) so
+  // they can never disagree.
   function noteHealthFacts(h: HealthPush): void {
     if (h.provider && typeof h.provider.reachable === "boolean") {
       healthProviderReachable.value = h.provider.reachable;
@@ -683,9 +647,8 @@
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
-  // the BOTTOM drawer's mobile open flag. It never couples to the dock tree: the
-  // closed-flag semantics and the desktop tree state stay untouched below the
-  // breakpoint.
+  // the BOTTOM drawer's mobile open flag - never coupled to the dock tree, so the
+  // desktop tree state stays untouched below the breakpoint.
   const bottomDrawerOpen = ref(false);
   const showThinking = ref(true);
   const appearance = ref<Appearance>("chat");
@@ -708,7 +671,7 @@
   }
   hydrateModuleState(window.localStorage);
   const rawDock = createDock(window.localStorage);
-  // the gate applies to the loaded tree BEFORE the first render, then again.
+  // the gate applies to the loaded tree BEFORE the first render, then again on change.
   rawDock.setModuleGate(currentModuleGate());
   watch(
     () => modulesOff.value,
@@ -775,12 +738,11 @@
     },
   };
   provide(DOCK_API_KEY, dock);
-  // a repaired layout surfaces ONCE at boot - one toast for the whole record, never
-  // one per repair, never a silent default-tree fallback. The record rides the local
-  // emit funnel (canvas.ts emitLocalToast, the same subscriber set + fingerprint dedupe
-  // as the canvas feed); read stays true, so the record never counts unread in the
-  // bell. onMounted puts the emit after the NotificationCenter subscription (children
-  // mount first) - the boot itself never waits.
+  // a repaired layout surfaces ONCE at boot - one toast for the whole record, never one
+  // per repair and never a silent default-tree fallback. It rides the local emit funnel
+  // (canvas.ts emitLocalToast: same subscriber set and fingerprint dedupe as the canvas
+  // feed), and read stays true so it never counts unread in the bell. onMounted puts the
+  // emit after the NotificationCenter subscription (children mount first).
   onMounted(() => {
     const repairs = dock.bootRepairs;
     if (repairs.length === 0) return;
@@ -794,9 +756,8 @@
       read: true,
     });
   });
-  // ONE module-state read at boot. A host with no toggle seam (501) or a transient
-  // failure leaves the gate on the cached set - nothing is hidden that the runtime
-  // never owned.
+  // ONE module-state read at boot. A host with no toggle seam or a transient failure
+  // leaves the gate on the cached set - nothing is hidden that the runtime never owned.
   onMounted(() => {
     loadModules().catch(() => {
     });
@@ -863,9 +824,8 @@
   watch([() => dock.tree.value, bottomWidthMode], () => nextTick(applyBottomWidth));
 
   // the window-narrow give-way. The main pane never dips below its 320px contract floor
-  // and is never overlapped: edge panes collapse until it fits - inspector first, then
-  // the sidebar (dock.narrowSqueeze owns the priority and remembers each hidden pane's
-  // width for its toggle).
+  // and is never overlapped: edge panes collapse until it fits - inspector first, then the
+  // sidebar (dock.narrowSqueeze owns the priority and remembers each hidden width).
   function applyNarrowSqueeze() {
     if (isMobile.value) return;
     const root = document.querySelector<HTMLElement>(".pane-area > .dock-root");
@@ -885,13 +845,12 @@
     () => nextTick(applyNarrowSqueeze),
   );
 
-  // arc 3c: the canvas - one store per page (panels are global state, settled Q10a).
+  // the canvas: one store per page (panels are global state).
   const canvas = createCanvasStore();
 
-  // the webui shell commands --- runCommand is the palette's local executor: "/" never
-  // reaches the agent. The function is hoisted above createChatHost only because it
-  // closes over `host` (retry); invocations happen after both exist, so the TDZ never
-  // bites.
+  // runCommand is the palette's local executor: "/" never reaches the agent. It sits above
+  // createChatHost only because it closes over `host`; invocations happen after both exist,
+  // so the TDZ never bites.
   async function runCommand(stateKey: string, text: string): Promise<boolean> {
     const fields = text.split(/\s+/);
     const name = fields[0] ?? "";
@@ -902,12 +861,9 @@
     };
     switch (name) {
       case "/help": {
-        //
-        // in the reference surface - the command palette (Ctrl+K), whose
-        // list carries every shell command with its description. The
-        // status line answers with the pointer, one line, like every other
-        // notice; the wall of text is gone. Opening (never toggling): /help
-        // always leaves the reference UP, even when it is already open.
+        // the reference surface is the palette (Ctrl+K), whose list carries every shell
+        // command with its description; the status line answers with the pointer. Opening,
+        // never toggling: /help always leaves the reference UP.
         paletteOpen.value = true;
         note("the palette is the command reference - it is open");
         return true;
@@ -987,8 +943,8 @@
         return true;
       }
       case "/new": {
-        // /new never forks a conversation the MACHINERY owns (an agent's canonical. The
-        // human's own conversations fork exactly as they always did: a fresh tab.
+        // /new never forks a conversation the MACHINERY owns (an agent's canonical); the
+        // human's own conversations fork as they always did - a fresh tab.
         const id = focusedSessionId.value;
         if (id) {
           try {
@@ -1008,7 +964,7 @@
               }
             }
           } catch {
-            /* a fold that never landed falls through to the fork. */
+            /* a fold that never landed falls through to the fork */
           }
         }
         openChatTab(null);
@@ -1033,7 +989,7 @@
     }
   }
 
-  // the chat host: every chat tab gets its own stream state keyed.
+  // the chat host: every chat tab gets its own stream state, keyed by its state key.
   const host = createChatHost({
     defaultWorkspace: defaultWorkspaceNow,
     setTabSessionRef: (key, sessionId) => dock.setSessionRef(key, sessionId),
@@ -1049,27 +1005,24 @@
     runCommand: (key, text) => runCommand(key, text),
   });
 
-  // main-view: chat vs the module-owned board (kanban). ponytail: board renders in ONE
-  // pane (the active chat pane); the dockable-contract card gives board its own
-  // component slot later.
+  // main-view: chat vs the module-owned board (kanban). The board renders in ONE pane (the
+  // active chat pane) until it gets its own dockable slot.
   const mainView = ref<"chat" | "board">("chat");
   const boardComponent = computed(
     () => modulePanels.find((p) => p.module === "kanban")?.component,
   );
   const boardHostPane = ref<string>("");
 
-  // the settings path ------- The address bar names the settings tab while it is up.
-  // Settings is still a CLOSABLE main tab, so the claim is a FOCUS claim, never a
-  // pinned view: every chat focus hands the path back and the chat derivation below
-  // resumes.
+  // The address bar names the settings tab while it is up. Settings is still a CLOSABLE
+  // main tab, so the claim is a FOCUS claim, never a pinned view: every chat focus hands
+  // the path back and the chat derivation below resumes.
   const settingsRoute = ref(false);
 
   /**
-   * claimSettingsPath: the settings tab names the address bar now.
-   * The write is the CLAIM, not a side effect of the open - a landing that already
-   * arrived on the path writes nothing (its query carries the deep-linked section, and
-   * that is SettingsTab's to keep), and replaceState is the only history call: the app
-   * never grows the stack.
+   * claimSettingsPath: the settings tab names the address bar now. The write is the CLAIM,
+   * not a side effect of the open - a landing that already arrived on the path writes
+   * nothing (its query carries the deep-linked section, SettingsTab's to keep), and
+   * replaceState is the only history call: the app never grows the stack.
    */
   function claimSettingsPath() {
     settingsRoute.value = true;
@@ -1083,12 +1036,10 @@
   }
 
   /**
-   * landSettingsRoute: the settings path is up.
-   * mainView returns to chat for the same reason the board route sets it: the panes
-   * must render (a /board overlay left up by an earlier landing would shadow the
-   * settings tab the path just opened).
-   * The claim is a no-op write here (the path is already the settings one) - it keeps
-   * the mark in ONE writer, so a landing and a gear open cannot drift.
+   * landSettingsRoute: the settings path is up. mainView returns to chat for the reason the
+   * board route sets it too - the panes must render, or a /board overlay left up by an
+   * earlier landing would shadow the settings tab. The claim here is a no-op write (the
+   * path already is the settings one) and keeps the mark in ONE writer.
    */
   function landSettingsRoute() {
     claimSettingsPath();
@@ -1133,11 +1084,9 @@
     }
   }
 
-  // the notification's board. The channel is the event seam (the stash + CustomEvent in
-  // composables/notifications.ts): module UI imports no shell code, so the selection
-  // crosses as an event the Board component listens on - the stash covers the mount
-  // race (the tab activation mounts the board component on the tick AFTER
-  // openSingleton, but the resolve's fetches usually beat even that).
+  // the notification's board crosses as an event (the stash + CustomEvent in
+  // composables/notifications.ts) because module UI imports no shell code; the stash
+  // covers the mount race, since the tab activates on the tick AFTER openSingleton.
   async function focusNotificationBoard(taskId: string) {
     const board = await resolveTaskBoard(taskId);
     if (!board) return;
@@ -1150,19 +1099,18 @@
 
   provide(DOCK_TAB_TITLE_KEY, (tab) => {
     if (tab.component === "chat") {
-      // ephemeral tabs: the draft marker or a bound `eph-` id never matches a session
-      // row (they are store-invisible) - the tab is named by contract, not by lookup
+      // ephemeral tabs never match a session row (store-invisible): named by contract
       if (tab.sessionRef === EPHEMERAL_DRAFT_REF || tab.sessionRef?.startsWith("eph-")) {
         return "ephemeral";
       }
       if (!tab.sessionRef) return "new chat";
       const s = sessions.value.find((x) => x.id === tab.sessionRef);
-      // a session the SIDEBAR list does not carry (an agent home's session - the only
-      // door to those is the Agents roster) has no label to read; the id prefix names
-      // the tab, so two agent chats never render as two identical "chat" chips.
+      // a session the SIDEBAR list does not carry (an agent home's - the Agents roster is
+      // its only door) has no label: the id prefix names the tab, so two agent chats never
+      // render as two identical "chat" chips.
       return s?.label || `${tab.sessionRef.slice(0, 8)}...`;
     }
-    // the viewer tab is named by its CONTENT (the file base name / the skill name).
+    // the viewer tab is named by its CONTENT (the file base name / the skill name)
     if (tab.component === "viewer" && tab.viewer) {
       return viewerTabTitle(tab.viewer);
     }
@@ -1170,15 +1118,14 @@
     return panel?.dockable?.title ?? null;
   });
 
-  // chat is multi-instance: the '+' / empty-pane "new chat" MUST go through the opener
-  // (a minted key + openTab), never the raw setComponent - a keyless chat tab would
-  // share one state across every keyless tab in the page
+  // chat is multi-instance: "new chat" MUST go through the opener (a minted key +
+  // openTab), never the raw setComponent - a keyless chat tab would share one state with
+  // every other keyless tab in the page.
   provide(DOCK_CHAT_OPEN_KEY, (paneId, sessionId) => openChatTab(sessionId, paneId));
 
-  // the viewer opener - the same provide shape the chat opener rides.
   provide(DOCK_VIEWER_OPEN_KEY, (v) => dock.openViewer(v));
 
-  // module-owned openers (the skills tab's RegistryList row click) hand the open.
+  // module-owned openers (a skills row click) hand the open through this event.
   function onViewerOpenEvent(e: Event) {
     const v = (e as CustomEvent).detail;
     if (validViewerRef(v)) {
@@ -1190,9 +1137,9 @@
     window.removeEventListener(VIEWER_OPEN_EVENT, onViewerOpenEvent),
   );
 
-  // the Agents tab's row click. The open is the ORDINARY chat opener, so a session
-  // already in a tab is focused wherever it lives and only an unbound one mints - never
-  // two tabs on one session.
+  // The Agents tab's row click, through the ORDINARY chat opener: a session already in a
+  // tab is focused wherever it lives and only an unbound one mints - never two tabs on one
+  // session.
   function onChatSessionOpenEvent(e: Event) {
     const id = (e as CustomEvent).detail;
     if (typeof id === "string" && id !== "") openChatTab(id);
@@ -1202,11 +1149,10 @@
     window.removeEventListener(CHAT_SESSION_OPEN_EVENT, onChatSessionOpenEvent),
   );
 
-  // focus + URL --- The URL owns ONLY the focused chat session: focusing a chat tab
-  // replaceStates /chat/<id> (unsaved = /); focus moving to a non-chat tab or pane
-  // leaves the URL at the last focused chat session; layout and tab state NEVER enter
-  // the URL. No pushState - the app never grows the history stack, so popstate only
-  // fires for entries outside the SPA and re-targets via the URL's id.
+  // The URL owns ONLY the focused chat session: focusing a chat tab replaceStates
+  // /chat/<id> (unsaved = /), while focus moving to a non-chat tab or pane leaves the URL
+  // at the last focused chat session. Layout and tab state NEVER enter the URL, and there
+  // is no pushState - popstate only fires for entries outside the SPA.
   const focusedKey = ref<string | null>(null);
   // the pane a NEW chat tab opens into: the last pane whose active tab was focused as a
   // chat (a sidebar/bucket click never steals opens - it is not a chat focus)
@@ -1217,11 +1163,10 @@
   );
   const focusedSessionId = computed(() => focusedChatState.value.sessionId);
 
-  // THE NEW-CONVERSATION DIM.
+  // THE NEW-CONVERSATION DIM, provided once for every door.
   const draftConversationFocused = computed(() =>
     isDraftChatKey(dock.tree.value, focusedKey.value),
   );
-  // one provider for the fact, read by every door.
   provide(DOCK_DRAFT_FOCUS_KEY, draftConversationFocused);
 
   function announceFocusedSession(id: string | null | undefined): void {
@@ -1233,7 +1178,7 @@
     flush: "post",
   });
   // the OPENING announcement: a panel that mounts while a session already has the focus
-  // never sees a change.
+  // never sees a change
   onMounted(() => announceFocusedSession(focusedSessionId.value));
 
   function onFocusedSessionQuery(): void {
@@ -1266,9 +1211,9 @@
   const anyBusyNow = host.anyBusyNow;
   const busyAll = host.busyAll;
 
-  // the status bar's two zones ----------------------- LEFT = work context. The workdir
-  // selector moved here from the composer (the chip died with it) and renders the SAME
-  // value the chip did: the never-blank law lives in composables/defaultWorkspace.ts.
+  // the status bar's LEFT zone = work context. The workdir selector moved here from the
+  // composer chip and renders the same value it did: the never-blank law lives in
+  // composables/defaultWorkspace.ts.
   const focusedChatTab = computed(() =>
     focusedKey.value ? dock.findChatTab(focusedKey.value) : null,
   );
@@ -1285,7 +1230,7 @@
   });
   const barWorkdirTarget = computed(() => focusedChatTab.value !== null);
 
-  // the write half, byte for byte the composer chip's old two targets.
+  // the write half: the row when bound, else the draft's intent.
   function onBarWorkdir(v: string) {
     const loc = focusedChatTab.value;
     if (!loc) return;
@@ -1324,21 +1269,16 @@
         settingsRoute.value = false;
         return;
       }
-      // a settings CHIP click is the tab's own claim on the address bar.
       if (tab?.component === "settings") claimSettingsPath();
     }
     const keep = focusedKey.value && dock.findChatTab(focusedKey.value) ? focusedKey.value : null;
     if (!keep) focusedKey.value = (dock.activeChatTab() ?? dock.firstChatTab())?.tab.key ?? null;
-    // this branch too resolves a CHAT focus, so it is chat's claim on the URL: closing
-    // the settings tab from a /settings/ landing lands here (closeTab's neighbor-focus
-    // through the dock-tree watcher) and must let the path go, or the paused derivation
-    // freezes the URL on the landing and a reload re-opens it. The release reads LIVE
-    // dock state - a landing whose settings tab is still MOUNTED is the landing itself,
-    // not a release (that same watcher fires right after the landing opens its tab) -
-    // and it adopts the tab the dock is SHOWING, so the URL names the chat the user is
-    // looking at, never the boot-resolved one. The mark falls FIRST: the focus
-    // transition then reaches the composer gate below, exactly like the gear's own
-    // open/close.
+    // This branch resolves a CHAT focus, so it is chat's claim on the URL: closing the
+    // settings tab from a /settings/ landing lands here and must let the path go, or the
+    // paused derivation freezes the URL on the landing and a reload re-opens it. The
+    // release reads LIVE dock state - a settings tab still MOUNTED is the landing itself -
+    // and adopts the tab the dock is SHOWING, so the URL names the chat the user is
+    // looking at. The mark falls FIRST so the focus transition reaches the composer gate.
     if (settingsRoute.value && !settingsTabMounted()) {
       settingsRoute.value = false;
       const showing = dock.activeChatTab();
@@ -1378,10 +1318,9 @@
     return dock.ensureMainPane();
   }
 
-  // (journey 98): every /board activation goes through one door. The board folds into
-  // the chat pane outlet, which DockPane renders only while the pane's ACTIVE tab is
-  // chat: a persisted content pane (the browser singleton left in the foreground by a
-  // previous boot) must not shadow the route, or Board.vue never mounts.
+  // every /board activation goes through one door: the board folds into the chat pane
+  // outlet, which DockPane renders only while the pane's ACTIVE tab is chat, so a
+  // persisted content pane must not shadow the route or Board.vue never mounts.
   function resolveBoardRoute() {
     mainView.value = "board";
     const paneId = resolveActivePaneId();
@@ -1391,14 +1330,12 @@
     boardHostPane.value = paneId;
   }
 
-  // openChatTab is THE tab-opener. routing: a session ALWAYS opens in the main pane,
-  // and a tab already bound to that session is FOCUSED wherever it lives - never a
-  // duplicate. canvas C1 THE ROUTING LAW: the target is the ACTIVE center chat pane
-  // (resolveActivePaneId), falling back to the main column; a pane that ASKED for the
-  // tab (a sidebar's own '+' via DOCK_CHAT_OPEN_KEY) is honored only when it is a main
-  // pane - the dock's sessionPane refuses a sidebar, which is the whole point: a
-  // sidebar never hosts a session.: a DRAFT tab (no session binding yet) already open?
-  // Focus it wherever it sits - no duplicate new-chat tab.
+  // openChatTab is THE tab-opener. THE ROUTING LAW: a session ALWAYS opens in the main
+  // pane and a tab already bound to it is FOCUSED wherever it lives - never a duplicate.
+  // The target is the ACTIVE center chat pane (resolveActivePaneId), falling back to the
+  // main column; a pane that ASKED for the tab (a sidebar's "+" via DOCK_CHAT_OPEN_KEY) is
+  // honored only when it is a main pane, so a sidebar never hosts a session. An open DRAFT
+  // tab is focused wherever it sits, never duplicated.
   function openChatTab(sessionId: string | null, paneId?: string) {
     // a chat tab taking the focus is chat's claim on the URL again.
     settingsRoute.value = false;
@@ -1432,11 +1369,10 @@
     // open == read is owned by the ChatTab mount's load.
   }
 
-  // openEphemeralTab: the session sidebar's "+ New Session" dropdown's no-persist.
-  // Always mints fresh (no draft reuse: a plain draft and an ephemeral draft are
-  // different contracts and must not merge).
+  // openEphemeralTab: the sidebar's "+ New Session" - always mints fresh, never reuses a
+  // draft (a plain draft and an ephemeral one are different contracts).
   function openEphemeralTab() {
-    // same claim as openChatTab.
+    // same URL claim as openChatTab.
     settingsRoute.value = false;
     const pane = resolveActivePaneId();
     const key = nextTabKey();
@@ -1489,16 +1425,14 @@
     return id ? sessionPath(id) : "/";
   });
   watch(urlPath, (p) => {
-    // /board is an overlay the URL owns while it is up. The settings tab's claim owns
-    // the path the same way: a reload of /settings/ must not turn into /chat/<id> a
-    // tick later.
+    // /board and the settings claim both own the path while they are up: a reload of
+    // /settings/ must not turn into /chat/<id> a tick later.
     if (mainView.value === "board") return;
     if (settingsRoute.value) return;
     history.replaceState({}, "", p);
   });
-  // A released claim hands the URL back by WRITING what the pause held. The pathname
-  // check keeps the write to the case the claim actually owns: a popstate that already
-  // moved the URL off the settings path is not ours to overwrite.
+  // A released claim hands the URL back by WRITING what the pause held; the pathname check
+  // keeps that write to the case the claim actually owns.
   watch(settingsRoute, (up) => {
     if (up) return;
     if (!isSettingsPath(window.location.pathname)) return;
@@ -1507,17 +1441,17 @@
   // structural changes never steal focus, but a gone focus re-resolves.
   watch(dock.tree, () => refocusFrom(null));
 
-  // composer auto-focus --- focus-on-select. A transition to null never requests;
-  // moving to board/settings never changes focusedKey, so those views never steal.
+  // composer auto-focus on select. A transition to null never requests; moving to
+  // board/settings never changes focusedKey, so those views never steal.
   watch(focusedKey, (key) => {
     // the settings landing keeps the boot chat focus out of the way: the path names
     // settings, so the chat pane must not grab the caret
     if (key && mainView.value === "chat" && !settingsRoute.value) composerFocus.request(key);
   });
 
-  // type-to-capture: with the omega window focused, the first printable key without. A
-  // hidden chat tab never renders a matching instance, so a focused key that is nowhere
-  // on screen simply does not capture.
+  // type-to-capture: the first printable key jumps into the focused chat's composer. A
+  // hidden chat tab renders no matching instance, so a key that is nowhere on screen simply
+  // does not capture.
   function onKeyCapture(e: KeyboardEvent) {
     if (
       !shouldCaptureTyping(e, {
@@ -1546,14 +1480,14 @@
     }
   }
 
-  // the push channel's shell half ------------------- socket is the page's ONE.
+  // socket is the page's ONE push channel.
   let socket: SocketClient | null = null;
   const socketStatus = ref<SocketStatus>("idle");
 
-  // hintNotifications pulls the finished-things + pending-verdict truth on an event
-  // hint, debounced: the verdict hub has no topic of its own (issuance rides the
-  // verdict_issued chat frame, the answer rides tool_result), and a burst of run frames
-  // must not stampede the REST routes.
+  // hintNotifications pulls finished-things + pending-verdict truth on an event hint,
+  // debounced: the verdict hub has no topic of its own (issuance rides the verdict_issued
+  // chat frame, the answer rides tool_result), and a burst of run frames must not stampede
+  // the REST routes.
   let notificationsHint: ReturnType<typeof setTimeout> | null = null;
   function hintNotifications() {
     if (notificationsHint !== null) return;
@@ -1563,10 +1497,9 @@
     }, 1500);
   }
 
-  // onRunEdge folds one runs-topic edge into the shell. A session this page has never
-  // seen is a row created elsewhere (cron, delegate) - the list has no push of its own,
-  // so an unknown id refetches it; a run END refetches it for the persisted telemetry
-  // and the generated label.
+  // onRunEdge folds one runs-topic edge into the shell. A session this page has never seen
+  // is a row created elsewhere (cron, delegate) - the list has no push of its own - so an
+  // unknown id refetches it; a run END refetches for the persisted telemetry and label.
   let sessionsHint: ReturnType<typeof setTimeout> | null = null;
   function hintSessions() {
     if (sessionsHint !== null) return;

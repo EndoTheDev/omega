@@ -18,8 +18,8 @@
 //   3. no border-radius on the handle (the hover band runs edge-to-edge)
 //   4. hover/snap keep their full-band backgrounds (they ARE the line
 //      while the pointer is on the handle)
-// 5. the gutter bridge is GONE (, Endo stroke-cleanup rule
-// ): the ROW divider's:before/:after top/bottom strokes
+// 5. the gutter bridge is GONE (the stroke-cleanup rule): the ROW
+// divider's :before/:after top/bottom strokes
 // read as dashes at the divider's ends - zero rules for
 //      them in the sheet; the cards' own borders carry the seams alone.
 // The pane-area's unconditional:before/:after rails stay dead
