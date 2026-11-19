@@ -1,6 +1,6 @@
 <template>
   <!--
-    the notifications tab - the DURABLE feed/history side of the bell.
+    the notifications tab - the DURABLE feed/history side (toasts are the transient side).
     Same data (GET /notifications), same rendering voice, same row contract: a click
     marks the record read and hands the open intent to app.vue.
   -->

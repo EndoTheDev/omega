@@ -31,7 +31,7 @@
 # (jrn- prefix) and lib.sh deletes it on exit.
 . "${JROOT:?run must export JROOT}/lib.sh"
 
-# --- seam mounted: the bell's pending list answers with the shape ---
+# --- seam mounted: the pending-cards list answers with the shape ---
 payload=$(curl -s "${JOURNEY_BASE_URL}/verdicts")
 printf '%s' "$payload" | grep -qF '"cards"' || \
   die "GET /verdicts answered non-verdict payload (wrong lane or seam unmounted): $payload"

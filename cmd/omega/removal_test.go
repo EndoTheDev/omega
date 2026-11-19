@@ -1073,13 +1073,13 @@ for line in sys.stdin:
 // TestVerdictRemovalProof is the verdict-capsule removal proof, the seventh
 // worked proof in this file. Verdict is the
 // interactive born-capsule: the single-answer hub (ctx.Verdicts), the
-// blocking `verdict` tool, the /verdict TUI command, and the Verdict
+// blocking `verdict` tool, the /verdict command, and the Verdict
 // Cards prompt section all ship from the one Mount - the same object
 // the hub builds is the tool's pause point and every answer surface's
 // write point, which is the whole single-answer race. No canvas panel,
 // no module-qualified actions, no skills: the webui renders the card
-// in the chat stream off the tool call and the bell polls /verdicts,
-// both surfaces guard by construction (a noninteractive run denies
+// in the chat stream off the tool call and the notifications feed polls
+// /verdicts, both surfaces guard by construction (a noninteractive run denies
 // the tool name; the REST routes 501 through their seam-nil guard).
 // The two mounts are the proof:
 //

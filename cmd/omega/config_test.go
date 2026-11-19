@@ -421,8 +421,6 @@ provider:
 	t.Setenv("OMEGA_SKILLS_DIR", "/custom/skills")
 	t.Setenv("OMEGA_HTTP_TIMEOUT", "600")
 	t.Setenv("OMEGA_MAX_TURNS", "200")
-	t.Setenv("OMEGA_THEME", "dark")
-	t.Setenv("OMEGA_NOTIFICATIONS", "none")
 
 	cfg, err := LoadConfig(path)
 	if err != nil {

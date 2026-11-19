@@ -464,7 +464,6 @@ integers below their minimum are ignored (the YAML/default value stays).
 | `OMEGA_TITLE_MODEL`                | `title_model`                                   | (empty)                  |
 | `OMEGA_DB_PATH`                    | `store.db_path`                                 | `<home>/data/omega.db`   |
 | `OMEGA_SKILLS_DIR`                 | `skills.dir`                                    | `<home>/skills`          |
-| `OMEGA_THEME`                      | `theme`                                         | (empty)                  |
 | `OMEGA_LOGGING_FILE`               | `logging.file`                                  | `<home>/omega.log`       |
 | `OMEGA_COMPACTION_ENABLED`         | `compaction.enabled`                            | `true`                   |
 | `OMEGA_MEMORY_ENABLED`             | `memory.enabled`                                | `true`                   |

@@ -42,7 +42,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.Offer("verdicts", p.hub); err != nil {
 		return err
 	}
-	// The answer surface is the capsule's REST face: the bell's pending listing and the
+	// The answer surface is the capsule's REST face: the pending listing and the
 	// answering POST mount and die with the hub.
 	for _, r := range []struct {
 		pattern string

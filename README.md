@@ -23,7 +23,7 @@ embedded, no separate frontend to
 run (`omega serve`). Conversations branch: every retry is a sibling
 variant you can switch between. Agents can ask mid-run via verdict
 cards (single- or multi-choice, or free text), risky shell commands
-pass the approval gate, finished tasks ring a bell, chats can be
+pass the approval gate, finished tasks land in the notifications feed, chats can be
 ephemeral (in-memory only, nothing on disk), and multiple named
 agents run side by side.
 
