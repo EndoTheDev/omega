@@ -283,7 +283,7 @@ Everything else animates through `transition`, not keyframes.
 - **Sessions lock to the primary sidebar** - open a session or hit `new`
   and it opens in the MAIN pane, focusing the existing tab instead of
   reopening.
-- **The new-conversation DIM** (card t_0a9edc72, vera's finding): while the
+- **The new-conversation DIM**: while the
   FOCUSED chat tab IS the draft conversation, every "new conversation" door
   would only focus the tab already on screen, so each renders dimmed and
   disabled - `aria-disabled` + `tabindex -1` and the one global
@@ -439,8 +439,8 @@ every edge shell becomes an
   response appends below. The chip renders only on the NEWEST assistant
   response while the run is idle. Client-side `dropLastExchange`
   transcript surgery is RETIRED - never reintroduce it.
-- Transcript rows are ADDRESSED, never positioned (cards t_494639c8,
-  t_a20fbad7): one rule (`transcriptAddress` in `composables/omega.ts`)
+- Transcript rows are ADDRESSED, never positioned: one rule
+  (`transcriptAddress` in `composables/omega.ts`)
   names a row by its store row id plus its rendered shape, or by an
   explicit slot while the store has not named it yet. Both render paths
   resolve it - the live canvas paint and the REST restore - so a refetch
@@ -450,7 +450,7 @@ every edge shell becomes an
   panel is a sliding window, so one append moved every surviving index.
   Pinned by `webui/test/identity.test.ts` (canvas) and
   `webui/test/transcript.test.ts` (restore).
-- The answer row's elapsed badge is the TURN TOTAL (card t_3a857a2d):
+- The answer row's elapsed badge is the TURN TOTAL:
   prompt arrival to answer completion, subtracted from the two row
   timestamps the transcript already carries (`time` on the user row and
   on the answer row), so thinking, tool runs, smart-gate waits and the
@@ -517,7 +517,7 @@ resolution mirror the one command law every surface follows:
   returns its result text; a skill returns content the NEXT send arms
   as a system preamble). api.md's "Commands" section documents the
   wire.
-- **`/help` is the one REFERENCE-shaped output** (card t_8ad7ab33). It
+- **`/help` is the one REFERENCE-shaped output**. It
   opens the Ctrl+K command palette and answers with a single status
   note ("the palette is the command reference - it is open"). Every
   other shell command keeps the status line: that surface is for
@@ -577,9 +577,9 @@ resolution mirror the one command law every surface follows:
   activity - and the main row additionally carries a `main` badge
   beside its name (the badge also explains why that row carries no
   toggle - it is the home config, always on). The badge rides the row
-  law's NAME LINE through `RegistryList`'s `name-side` slot (card
-  t_0a9edc72: the `side` slot seats things beside the whole text stack,
-  which parked the badge at the subtitle's tail); an empty slot renders
+  law's NAME LINE through `RegistryList`'s `name-side` slot (the `side`
+  slot seats things beside the whole text stack, which is what parked the
+  badge at the subtitle's tail); an empty slot renders
   nothing. One line below the
   subtitle carries the PREVIEW (ruling 5): the agent's
   newest reply in its canonical chat, whitespace-collapsed and
@@ -1038,6 +1038,15 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   pin; pinned by the 23-tool-group journey and `webui/test/toolgroup.test.ts`),
   `ChatTab` (transcript + composer, live-pin layout),
   `ChatItem`.
+- **The live tool-status set has ONE owner**
+  (`webui/app/composables/toolStatus.ts`): `isLive` is the call still in
+  flight, `running` or `pending`, with its two named halves
+  `isStreaming` (`running` only - the bytes are arriving in this
+  process) and `isYielded` (`pending` only - the result re-enters as a
+  later wake turn). A new status (waiting, queued) lands in
+  `toolStatus.ts` and every consumer inherits the answer; no surface
+  spells the set inline, and a caller that needs a narrower half names
+  the predicate and says why at the call site.
 - Sessions: `AppSidebar` (band head with the in-band search, the
   full-width new-session row, pinned section, day buckets, per-row
   pin/status affordance, archive/trash hover actions,
