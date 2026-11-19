@@ -50,12 +50,29 @@ CONFIG="$OMEGA_HOME/config/config.yaml"
 SKILL_DIR="$OMEGA_HOME/skills/$SKILL"
 AGENTS_PANE='document.querySelector(".pane.agents")'
 
-# disabled_names <kind>: the folded names on the wire, JSON array of
-# strings (python - only stdlib).
+# disabled_names <kind>: the folded names on the wire, SPACE-joined (empty
+# when the wire answers nothing - a miss reads as absent, never as an
+# error). The server sorts the names, so the line ENDS with whichever name
+# sorts last: callers must match a WHOLE TOKEN, never a prefix or a suffix
+# of the line. Card t_a68f59b1 is that defect - the fold round-trip
+# asserted the ending-anchored `*"$SKILL"` glob, so a lane whose fold also
+# carried a later-sorting name (`learn-skill` beside `jrn-tgl...`) red'd
+# "GET /disabled lost the disabled skill" while the wire answered it all
+# along, and the row had already rendered the off state from the same read.
 disabled_names() {
   curl -s "$JOURNEY_BASE_URL/disabled" | python3 -c '
 import json, sys
 print(" ".join((json.load(sys.stdin) or {}).get(sys.argv[1], [])))' "$1" 2>/dev/null
+}
+
+# fold_has_name <kind> <name>: 0 when the wire's fold carries <name> as a
+# whole token (never a substring of a longer name, never a position in the
+# line).
+fold_has_name() {
+  case " $(disabled_names "$1") " in
+    *" $2 "*) return 0 ;;
+  esac
+  return 1
 }
 
 # fold_has <name>: non-zero unless config.yaml's `disabled:` fold
@@ -192,16 +209,47 @@ wait_js "(()=>{return [...document.querySelectorAll('.skills-list button.registr
   || die "one click did not switch the toggle (row never showed the off state)"
 
 # (a) the fold persists: the wire answers it AND config.yaml owns it
+# Card t_a68f59b1: the old shape polled with `*"$SKILL"*` (a token match,
+# which found the name) and then RE-READ the wire for the assertion with
+# `*"$SKILL"` - an ENDING-anchored glob against a space-joined, sorted
+# list, which only matches when the name sorts LAST. A lane whose fold
+# also carried `learn-skill` red'd on three train runs while the wire
+# answered the name on every read. The poll now KEEPS the one answer it
+# read and the assertion grades that answer, with the same whole-token
+# match (fold_has_name) every other fold check in this recipe uses.
+# Card t_a68f59b1 (harness gap): a red here printed one fact ("lost the
+# disabled skill") and left the operator guessing between a refused write,
+# a fold that never learned the name, and an optimistic row that flipped
+# anyway. It now names the three witnesses in one line: the wire body it
+# read (with its status), the row's observed state (aria + off class), and
+# the pane's own error line (the row flips from load() while a refused PUT
+# renders over it).
+fold_wire=""
 i=0
 while [ "$i" -lt 20 ]; do
-  assert_contained=$(disabled_names skills)
-  case "$assert_contained" in *"$SKILL"*) break ;; esac
+  fold_wire=$(disabled_names skills)
+  case " $fold_wire " in *" $SKILL "*) break ;; esac
   sleep 0.5
   i=$((i + 1))
 done
-case "$(disabled_names skills)" in
-  *"$SKILL") ;;
-  *) die "GET /disabled lost the disabled skill" ;;
+case " $fold_wire " in
+  *" $SKILL "*) ;;
+  *)
+    row_state=$(jsq "(()=>{
+      const r=[...document.querySelectorAll('.skills-list .registry-row')].find(x=>x.querySelector('.reg-row-name').textContent.trim()==='$SKILL');
+      if(!r) return 'row-missing';
+      const b=r.querySelector('button.registry-toggle');
+      return (b?b.getAttribute('aria-label'):'no-pill')+(r.classList.contains('registry-off')?' [off]':' [on]');
+    })()" 2>&1 | tail -1 | tr -d '\r"')
+    pane_error=$(jsq "(()=>{
+      for(const s of ['.skills-list .registry-error','.skills-list .panel-status']){
+        const e=document.querySelector(s); if(e&&e.textContent.trim()) return e.textContent.trim();
+      }
+      return 'none';
+    })()" 2>&1 | tail -1 | tr -d '\r"')
+    wire_http=$(curl -s -o /dev/null -w '%{http_code}' "$JOURNEY_BASE_URL/disabled")
+    die "GET /disabled lost the disabled skill: wire=[$fold_wire] http=$wire_http row=[$row_state] pane-error=[$pane_error]"
+    ;;
 esac
 fold_has "$SKILL" || die "config.yaml disabled: fold does not persist $SKILL"
 step "ok: (a) fold persisted on the wire and in config.yaml"
@@ -229,9 +277,7 @@ for ns in skills tools agents; do
     -H 'Content-Type: application/json' \
     -d "{\"name\":\"$GHOST\",\"enabled\":false}")
   assert_eq "$code" "404" "$ns unknown-name toggle refused 404"
-  case "$(disabled_names "$ns")" in
-    *"$GHOST"*) die "$ns fold persisted the ghost name (invisible forever)" ;;
-  esac
+  if fold_has_name "$ns" "$GHOST"; then die "$ns fold persisted the ghost name (invisible forever)"; fi
   if fold_has "$GHOST"; then die "config.yaml fold persisted the ghost name"; fi
 done
 step "ok: (c) unknown-name toggles refused 404, nothing persisted"
@@ -275,7 +321,7 @@ body=$(cat "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" 2>/dev/null)
 rm -f "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$"
 assert_eq "$code" "409" "the default-agent disable PUT is refused 409"
 printf '%s' "$body" | grep -q "cannot be disabled" || die "the refusal text lost the law: $body"
-case "$(disabled_names agents)" in *"default"*) die "the default agent landed in the fold (refusal bypassed)" ;; esac
+if fold_has_name agents default; then die "the default agent landed in the fold (refusal bypassed)"; fi
 step "ok: (c) the default agent carries NO toggle, the roster keeps its pills, the wire refuses"
 
 # --- (d) re-enable clears the fold -----------------------------------------
@@ -286,9 +332,7 @@ clicked=$(registry_click ".skills-list" "enable $SKILL" "__arm__")
 assert_eq "$clicked" "1" "the single re-enable click landed"
 wait_js "(()=>{const s=(b)=>{const l=(b&&b.getAttribute('aria-label'))||'';return l==='disable $SKILL'||l.startsWith('disable $SKILL - ')};return [...document.querySelectorAll('.skills-list button.registry-toggle')].some(s)})()" 10 \
   || die "one click did not re-enable (row never back on)"
-case "$(disabled_names skills)" in
-  *"$SKILL"*) die "the fold kept the disabled skill after the re-enable" ;;
-esac
+if fold_has_name skills "$SKILL"; then die "the fold kept the disabled skill after the re-enable: wire=[$(disabled_names skills)]"; fi
 fold_has "$SKILL" && die "config.yaml fold kept the disabled skill after the re-enable"
 step "ok: (d) re-enable cleared the fold (wire + config.yaml)"
 
