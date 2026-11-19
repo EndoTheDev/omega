@@ -6,50 +6,36 @@ import (
 	"strings"
 )
 
-// Shell parsing (design Q7): the reviewer NEVER sees the raw command
-// string - parse-divergence is its own attack class. It sees the
-// shell-parsed, statically-expanded form: quotes resolved, ~ and
-// known vars expanded, command substitutions $(...) and backticks
-// left VISIBLE and surfaced as their own risk signal. Expansion is
-// static: nothing here ever runs the command to learn its form.
+// Shell parsing (design Q7): the reviewer NEVER sees the raw command string.
 
-// Segment is one shell command after the control-operator split
-// (| ; && || & ( ) newlines). Words are the parsed, expanded tokens.
-// Op records how the segment chains to the next ("" = last).
+// Segment is one shell command after the control-operator split (|; && || & newlines).
 type Segment struct {
 	Words        []string
 	Op           string
 	Substitution bool // a $(...) or `...` rides in this segment's words
 }
 
-// Parsed is the reviewer-visible command: the canonical rebuilt form
-// plus its segments. ParseError non-nil means the text never parsed
-// clean (an unclosed quote stays literal) - the caller treats that as
-// would-interrupt, never as safe.
+// Parsed is the reviewer-visible command: the canonical rebuilt form plus its segments.
+// ParseError non-nil means the text never parsed clean (an unclosed quote stays
+// literal) - the caller treats that as would-interrupt, never as safe.
 type Parsed struct {
 	Canonical string
 	Segments  []Segment
 	ParseErr  error
 }
 
-// envLookup resolves one variable name for expansion. The shell tool
-// runs commands under the process environment, so "known vars" are
-// exactly the ones the environment answers; unknown names stay
-// visible (they may be the command's business - do not invent a
-// value for them and never pass through the caller's shell semantics).
+// envLookup resolves one variable name for expansion. The shell tool runs commands
+// under the process environment, so "known vars" are exactly the ones the environment
+// answers; unknown names stay visible (they may be the command's business - do not
+// invent a value for them and never pass through the caller's shell semantics).
 func envLookup(name string) (string, bool) { return os.LookupEnv(name) }
 
-// Parse splits and expands one shell command. Control operators,
-// quotes and substitutions follow POSIX sh rules - the same rules the
-// RunShell tool's `sh -c` applies - so what the reviewer reads is what
-// the shell would execute.
+// Parse splits and expands one shell command.
 func Parse(command string) Parsed {
 	tz := &tokenizer{out: make([]token, 0, 16)}
 	if err := tz.run(command); err != nil {
 		e := fmt.Errorf("shell parse: %w", err)
-		// Fail visible: hand back the raw text as one segment so a
-		// caller that wants to show something can, and let the
-		// error drive the would-interrupt decision.
+		// Fail visible: hand back the raw text as one segment so a caller that wants.
 		return Parsed{
 			Canonical: command,
 			Segments:  []Segment{{Words: []string{command}}},
@@ -70,8 +56,6 @@ func assemble(toks []token) Parsed {
 			if len(cur.Words) > 0 || cur.Op != "" {
 				p.Segments = append(p.Segments, cur)
 			}
-			// an operator with no preceding words: preserve its
-			// shape only if it chains an earlier segment
 			if len(p.Segments) > 0 {
 				// trailing op becomes the PREVIOUS segment's chain
 				p.Segments[len(p.Segments)-1].Op = t.text
@@ -90,9 +74,7 @@ func assemble(toks []token) Parsed {
 	return p
 }
 
-// stringJoin rebuilds the canonical reviewed form: words spaced,
-// segments joined by their chain operators. This is what leaves the
-// machine (plus redaction upstream of it in the reviewer client).
+// stringJoin rebuilds the canonical reviewed form.
 func stringJoin(segs []Segment) string {
 	var sb strings.Builder
 	for i, s := range segs {
@@ -154,8 +136,6 @@ func (tz *tokenizer) run(input string) error {
 		r := rs[i]
 		switch {
 		case r == '\\' && mode != modeSingle && i+1 < len(rs):
-			// a backslash escapes the next char (outside single
-			// quotes); the pair becomes part of the word literal
 			cur.text += string(rs[i+1])
 			i += 2
 			continue
@@ -178,16 +158,11 @@ func (tz *tokenizer) run(input string) error {
 			}
 			i++
 		case mode == modeNormal && (r == '|' || r == ';' || r == '&'):
-			// fd-prefixed redirect forms (2>, 2>>, 2>&1, &>) are
-			// classified BEFORE control operators (t_2919b7a3.1):
-			// '&' inside a redirect is never a background operator.
+			// fd-prefixed redirect forms (2>, 2>>, 2>&1, &>) are classified BEFORE control
+			// operators: '&' inside a redirect is never a background operator.
 			if r == '&' {
 				switch {
 				case isRedirectOpForm(cur.text):
-					// descriptor-dup continuation: 2>&1, 1>&2,
-					// >&3. The digit operand rides immediately;
-					// anything else (2>&log.txt) is a file-dup
-					// write and continues into the word below.
 					cur.text += "&"
 					i++
 					for i < len(rs) && rs[i] >= '0' && rs[i] <= '9' {
@@ -196,9 +171,6 @@ func (tz *tokenizer) run(input string) error {
 					}
 					continue
 				case cur.text == "" && i+1 < len(rs) && rs[i+1] == '>':
-					// stream-both redirect token at a word start
-					// (&>, &>>); the file operand is the next
-					// word (spaced) or rides in fused
 					cur.text = "&>"
 					i += 2
 					if i < len(rs) && rs[i] == '>' {
@@ -209,13 +181,10 @@ func (tz *tokenizer) run(input string) error {
 				}
 			}
 			if isRedirectOpForm(cur.text) || isDupAwaiting(cur.text) {
-				// Fail visible (t_2919b7a3.3): a control operator
-				// arriving while a redirect token still awaits its
-				// operand (2>, >>, 2>&) cannot be classified -
-				// never fold or reshape it silently.
+				// Fail visible: a control operator arriving while a redirect token still awaits its
+				// operand (2>, >>, 2>&) cannot be classified - never fold or reshape it silently.
 				return fmt.Errorf("unclassified redirect shape near %q", cur.text)
 			}
-			// doubled forms first: && || ; | &
 			if i+1 < len(rs) && rs[i+1] == r && (r == '|' || r == '&') {
 				if err := emitOp(string(r) + string(rs[i+1])); err != nil {
 					return err
@@ -229,7 +198,6 @@ func (tz *tokenizer) run(input string) error {
 			i++
 		case mode == modeNormal && (r == '(' || r == ')'):
 			if isRedirectOpForm(cur.text) || isDupAwaiting(cur.text) {
-				// same fail-visible law as the control operators
 				return fmt.Errorf("unclassified redirect shape near %q", cur.text)
 			}
 			if err := emitOp(string(r)); err != nil {
@@ -238,7 +206,6 @@ func (tz *tokenizer) run(input string) error {
 			i++
 		case r == '\n' && mode == modeNormal:
 			consumeWord()
-			// newline splits like ';' between words
 			if len(words) > 0 || cur.text != "" {
 				tz.out = append(tz.out, words...)
 				words = nil
@@ -253,9 +220,6 @@ func (tz *tokenizer) run(input string) error {
 			}
 			i++
 		case r == '~' && mode == modeNormal && cur.text == "":
-			// tilde expansion at a word start: `~` or `~/...` expands
-			// to the home directory; a user-tilde (~name) and ~- stay
-			// literal (POSIX leaves them to the shell's own rule).
 			if i+1 < len(rs) && isUserWord(rs[i+1]) {
 				cur.text += "~"
 				i++
@@ -275,12 +239,9 @@ func (tz *tokenizer) run(input string) error {
 			}
 			switch {
 			case next == "(" || next == "{":
-				// keep visible; the substitution is its own signal
 				sub, ni, err := scanSub(rs, i, mode)
 				if err != nil {
-					// a $( that never closes stays literal text to
-					// word end - visible, and the detector treats
-					// non-termination as substitution-shaped
+					// a $( that never closes stays literal text to word end.
 					cur.text += string(rs[i:])
 					cur.subst = true
 					i = len(rs)
@@ -290,7 +251,6 @@ func (tz *tokenizer) run(input string) error {
 				cur.subst = true
 				i = ni
 			case i+1 < len(rs) && isNameStart(rs[i+1]):
-				// $VAR: expand when the environment knows it
 				j := i + 1
 				for j < len(rs) && isNameRune(rs[j]) {
 					j++
@@ -303,7 +263,6 @@ func (tz *tokenizer) run(input string) error {
 				}
 				i = j
 			default:
-				// positional/other ($?, $#, $@...): keep visible
 				cur.text += "$"
 				i++
 				if i < len(rs) && rs[i] != '"' && rs[i] != ' ' {
@@ -342,9 +301,7 @@ func (tz *tokenizer) run(input string) error {
 	return nil
 }
 
-// isRedirectOpForm reports whether a word is exactly an fd-prefixed
-// redirect operator still waiting for its shape: >, >>, 2>, 21>>, <.
-// One fd number may prefix the operator; nothing else may ride it.
+// isRedirectOpForm reports whether a word is exactly an fd-prefixed redirect operator.
 func isRedirectOpForm(w string) bool {
 	switch strings.TrimLeft(w, "0123456789") {
 	case ">", ">>", "<":
@@ -353,8 +310,8 @@ func isRedirectOpForm(w string) bool {
 	return false
 }
 
-// isDupAwaiting reports an fd-dup redirect whose '&' was consumed but
-// whose operand never arrived (2>&, <&) - the dup form still open.
+// isDupAwaiting reports an fd-dup redirect whose '&' was consumed but whose operand
+// never arrived (2>&, <&).
 func isDupAwaiting(w string) bool {
 	switch strings.TrimLeft(w, "0123456789") {
 	case ">&", "<&":
@@ -375,9 +332,7 @@ func isNameRune(r rune) bool {
 	return isNameStart(r) || r >= '0' && r <= '9'
 }
 
-// scanSub copies an unexpanded $() ${} span (or its backticked
-// double) into out and returns the index past it. Balanced-paren
-// counting for $(); a ${} ends at its brace.
+// scanSub copies an unexpanded $ ${} span (or its backticked double) into out.
 func scanSub(rs []rune, i int, mode int) (string, int, error) {
 	if rs[i+1] == '{' {
 		for j := i + 2; j < len(rs); j++ {
@@ -387,7 +342,6 @@ func scanSub(rs []rune, i int, mode int) (string, int, error) {
 		}
 		return "", 0, fmt.Errorf("unterminated ${")
 	}
-	// $( depth counting
 	depth := 0
 	for j := i + 1; j < len(rs); j++ {
 		switch rs[j] {

@@ -18,21 +18,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// User themes: token overrides for the webui theme picker. A theme is
-// ONE yaml file in OMEGA_HOME/themes (alongside skills/) carrying a
-// name, an optional base, and token overrides. Tokens only - no raw
-// CSS injection (v1 is recoloring, not restyling). The folder is
-// watched with the cron module's mtime-poll pattern: a changed file is
-// picked up without restart, a broken file keeps the previous good set
-// in effect and logs loudly.
+// User themes: token overrides for the webui theme picker.
 
 const themesDirName = "themes"
 
-// defaultThemeFileName is the example theme seeded into a fresh themes
-// folder. The embedded copy is written once - an existing file is an
-// operator's edit and is never overwritten. The file's id ("default")
-// names the BUILT-IN palette in the picker, so the seeded file rides
-// along as the format's teaching copy, not as a selectable theme.
+// defaultThemeFileName is the example theme seeded into a fresh themes folder. The
+// embedded copy is written once - an existing file is an operator's edit and is never
+// overwritten.
 const defaultThemeFileName = "default.yaml"
 
 // defaultThemeSeed is the example theme file shipped with the binary.
@@ -40,9 +32,8 @@ const defaultThemeFileName = "default.yaml"
 //go:embed themes/default.yaml
 var defaultThemeSeed string
 
-// seedDefaultTheme copies the embedded example into dir once. A file
-// already there (fresh or operator-owned) is left untouched - the seed
-// only fills an absence. Errors log loudly and never block startup.
+// seedDefaultTheme copies the embedded example into dir once. Errors log loudly and
+// never block startup.
 func seedDefaultTheme(dir string) {
 	if dir == "" {
 		return
@@ -65,16 +56,10 @@ func seedDefaultTheme(dir string) {
 	log.Printf("[themes] seeded example theme %s (copy + rename a theme file to make your own)", dst)
 }
 
-// themesPollInterval is the folder-watch tick. Package var so tests
-// can shorten it.
+// themesPollInterval is the folder-watch tick.
 var themesPollInterval = 2 * time.Second
 
-// themeTokenKeys is the allowlist of CSS custom properties a theme may
-// override: the color set main.css defines on :root, plus the two
-// layer shadows (shadows are rgba recoloring too). Radii and fonts are
-// deliberately excluded - v1 is recoloring, not restyling. Module
-// components style only through these cascade tokens, so overriding
-// them recolors modules for free (2026-10-19 re-anchor).
+// themeTokenKeys is the allowlist of CSS custom properties a theme may override.
 var themeTokenKeys = map[string]bool{
 	"accent": true, "unread": true,
 	"z0": true, "z1": true, "z1-raised": true, "z2": true,
@@ -83,24 +68,12 @@ var themeTokenKeys = map[string]bool{
 	"shadow-1": true, "shadow-2": true,
 }
 
-// Theme is one user theme as served over GET /themes. A file that
-// fails to parse or validate rides along with Error set and no
-// Tokens - the picker can flag it and the server keeps running.
+// Theme is one user theme as served over GET /themes.
 type Theme struct {
-	// ID is the file name without extension; the apply wire value is
-	// theme:<ID>.
 	ID string `json:"id"`
-	// Name comes from the yaml name field, falling back to the ID.
 	Name string `json:"name"`
-	// Base selects which built-in palette the overrides stack on
-	// ("dark" | "light"); defaults to dark when the yaml omits it.
 	Base string `json:"base,omitempty"`
-	// Tokens maps main.css custom-property names (without the --) to
-	// their values. Empty on an error theme.
 	Tokens map[string]string `json:"tokens,omitempty"`
-	// Error is the loud validation/parse failure, set only on themes
-	// that are unusable. The server keeps serving it so the operator
-	// can see why a dropped file is missing from the picker.
 	Error string `json:"error,omitempty"`
 }
 
@@ -111,9 +84,8 @@ type themeFile struct {
 	Tokens map[string]any `yaml:"tokens"`
 }
 
-// loadThemes parses every *.yaml/*.yml in dir sorted by ID. A missing
-// dir is no themes, not an error (first run, nothing dropped in yet).
-// One broken file never poisons its neighbours.
+// loadThemes parses every *.yaml/*.yml in dir sorted by ID. One broken file never
+// poisons its neighbours.
 func loadThemes(dir string) []Theme {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -183,10 +155,9 @@ func loadTheme(dir, fileName string) Theme {
 	return Theme{ID: id, Name: name, Base: base, Tokens: tokens}
 }
 
-// themeRegistry holds the live theme set behind GET /themes and watches
-// the folder. Reloads replace the whole set: a failed parse keeps the
-// previous good set in effect (the cron watcher's contract), the broken
-// file still shows up flagged with its error.
+// themeRegistry holds the live theme set behind GET /themes and watches the folder.
+// Reloads replace the whole set: a failed parse keeps the previous good set in effect
+// (the cron watcher's contract), the broken file still shows up flagged with its error.
 type themeRegistry struct {
 	mu       sync.Mutex
 	dir      string
@@ -196,9 +167,7 @@ type themeRegistry struct {
 	stop     chan struct{}
 }
 
-// resolveThemesDir mirrors the skills dir resolution: OMEGA_THEMES_DIR
-// wins when set, otherwise themes/ under the instance home. No home
-// configured (bare tests) means no themes surface.
+// resolveThemesDir mirrors the skills dir resolution.
 func resolveThemesDir() string {
 	if d := os.Getenv("OMEGA_THEMES_DIR"); d != "" {
 		return d
@@ -237,8 +206,7 @@ func (r *themeRegistry) reload() {
 	}
 }
 
-// snapshot returns the current set (safe copy of the slice header; the
-// entries are immutable after load).
+// snapshot returns the current set.
 func (r *themeRegistry) snapshot() []Theme {
 	if r == nil {
 		return []Theme{}
@@ -250,9 +218,7 @@ func (r *themeRegistry) snapshot() []Theme {
 	return out
 }
 
-// watch polls the folder until ctx is done or Stop fires, reloading on
-// any add/modify/delete. The fingerprint is the per-file mtime map -
-// the cron watcher's single-file pattern generalized to a folder.
+// watch polls the folder until ctx is done or Stop fires, reloading on any.
 func (r *themeRegistry) watch(ctx context.Context) {
 	if r == nil || r.dir == "" {
 		return
@@ -278,9 +244,7 @@ func (r *themeRegistry) watch(ctx context.Context) {
 	}
 }
 
-// Stop ends the watch loop (tests, embedders). Serve relies on ctx
-// cancellation; Stop covers the case where the server is torn down
-// without one.
+// Stop ends the watch loop (tests, embedders).
 func (r *themeRegistry) Stop() {
 	if r != nil {
 		select {
@@ -291,12 +255,8 @@ func (r *themeRegistry) Stop() {
 	}
 }
 
-// handleThemes serves GET /themes: the list with content inline - one
-// request is enough for the picker to list names and apply tokens.
-// Broken themes ride along flagged with Error; the picker shows only
-// the good ones and the server never falls over. Served from the
-// watcher-refreshed cache, so a dropped or edited file is live without
-// a restart.
+// handleThemes serves GET /themes. Broken themes ride along flagged with Error; the
+// picker shows only the good ones and the server never falls.
 func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -314,10 +274,9 @@ func fingerprintEqual(a, b map[string]int64) bool {
 	return maps.Equal(a, b)
 }
 
-// themeFingerprint maps file name -> mtime (unix nanos) for every
-// theme file in the dir. A read error yields nil: every file counts as
-// changed on the next healthy poll, which reloads. Nil maps compare
-// equal to each other and unequal to any populated map.
+// themeFingerprint maps file name -> mtime (unix nanos) for every theme file in the. A
+// read error yields nil: every file counts as changed on the next healthy poll, which
+// reloads. Nil maps compare equal to each other and unequal to any populated map.
 func themeFingerprint(dir string) map[string]int64 {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

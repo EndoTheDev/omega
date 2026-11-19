@@ -16,8 +16,7 @@ var (
 	_ agent.Plugin       = (*Plugin)(nil)
 )
 
-// stubSectioner contributes canned sections; used to pin the
-// assembler's section rules without pulling in other modules.
+// stubSectioner contributes canned sections.
 type stubSectioner struct {
 	sections []core.PromptSection
 }
@@ -54,8 +53,7 @@ func TestMountSetsPromptBuilder(t *testing.T) {
 	}
 }
 
-// TestBuildPrompt verifies the core structure of the assembled prompt:
-// identity, guidelines, project context, environment, custom, append.
+// TestBuildPrompt verifies the core structure of the assembled prompt.
 func TestBuildPrompt(t *testing.T) {
 	b := NewPromptBuilder(&core.Context{})
 	opts := core.PromptBuildOptions{
@@ -70,7 +68,6 @@ func TestBuildPrompt(t *testing.T) {
 		t.Fatal("BuildPrompt returned ok=false")
 	}
 
-	// Core sections present, in order.
 	for _, want := range []string{
 		"You are an AI coding agent",
 		"## Guidelines",
@@ -88,8 +85,7 @@ func TestBuildPrompt(t *testing.T) {
 	}
 }
 
-// TestBuildPromptNoSections verifies no "## Tools" heading leaks from
-// the assembler when no module contributes one.
+// TestBuildPromptNoSections verifies no "## Tools" heading leaks from the assembler.
 func TestBuildPromptNoSections(t *testing.T) {
 	b := NewPromptBuilder(&core.Context{})
 	prompt, _ := b.BuildPrompt(context.Background(), core.PromptBuildOptions{
@@ -141,8 +137,7 @@ func TestBuildPromptSections(t *testing.T) {
 	}
 }
 
-// TestBuildPromptNilContext verifies the builder tolerates a nil
-// Context: core sections render, nothing else.
+// TestBuildPromptNilContext verifies the builder tolerates a nil Context.
 func TestBuildPromptNilContext(t *testing.T) {
 	b := &PromptBuilder{now: func() time.Time { return time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC) }}
 	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{CWD: "/test/cwd"})

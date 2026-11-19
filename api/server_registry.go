@@ -1,21 +1,7 @@
 package api
 
-// server_registry.go: the registry-browser toggle surface (v0.14.1).
-//
-//	GET  /disabled             the three disabled lists (skills/tools/agents)
-//	PUT  /disabled/skills      {"name": x, "enabled": bool} -> prompt-build exclusion
-//	PUT  /disabled/tools       {"name": x, "enabled": bool} -> registry exclusion
-//	PUT  /disabled/agents      {"name": x, "enabled": bool} -> roster + wake exclusion
-//
-// The settings pane renders the module seam (/modules); this is its
-// sibling for the file/folder REGISTRIES: the host owns config.yaml's
-// `disabled:` fold through core.RegistryToggles - this file renders
-// nothing but the wire (the server-toggle small law, same shape the
-// module surface rode in on). A host without the seam (nil) answers
-// 501 so the tabs can hide their toggles. The channel's own agent
-// re-reads the fresh lists in the toggle's response - the same
-// Context-stays-source-of-truth law RefreshToolProviders carries, one
-// response carries the state so no second GET is needed.
+// server_registry.go: the registry-browser toggle surface (v0.14.1). A host without the
+// seam (nil) answers 501 so the tabs can hide their toggles.
 
 import (
 	"encoding/json"
@@ -28,9 +14,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// disabledLists is the /disabled wire shape: always three lists - a
-// namespace with no entries is [] on the wire, never absent or null
-// (a null .length read crashes the tab, card t_619832ee precedent).
+// disabledLists is the /disabled wire shape: always three lists - a namespace with no
+// entries is [] on the wire, never absent or null.
 type disabledLists struct {
 	Skills []string `json:"skills"`
 	Tools  []string `json:"tools"`
@@ -62,20 +47,15 @@ func (s *Server) handleDisabledTools(w http.ResponseWriter, r *http.Request) {
 	s.handleDisabledToggle(w, r, s.Registries().ToggleTool)
 }
 
-// handleDisabledAgents PUTs one disabled.agents entry (the soft
-// toggle: registration untouched, roster + wake exclusion). The
-// DEFAULT agent's refusal is seated HERE, in the handler, ahead of
-// the seam (card t_2d8deb8c, Endo verbatim: "it cannot be disabled
-// EVER!") - a curl must hit the same wall the UI's locked pill
-// renders, and the fold stays untouched.
+// handleDisabledAgents PUTs one disabled.agents entry (the soft toggle. The DEFAULT
+// agent's refusal is seated HERE, in the handler, ahead of the seam - a curl must hit
+// the same wall the UI's locked pill renders, and the fold stays untouched.
 func (s *Server) handleDisabledAgents(w http.ResponseWriter, r *http.Request) {
 	s.handleDisabledToggle(w, r, guardDefaultAgent(s.Registries()))
 }
 
-// guardDefaultAgent wraps the agents toggle seam with the locked
-// default agent: the disable direction never reaches the seam. The
-// enable direction passes through unchanged (it cleans a stale fold
-// entry, an honest no-op when the name is absent).
+// guardDefaultAgent wraps the agents toggle seam with the locked default agent: the
+// disable direction never reaches the seam.
 func guardDefaultAgent(rt core.RegistryToggles) func(name string, enabled bool) error {
 	return func(name string, enabled bool) error {
 		if !enabled && name == agent.DefaultAgentName {
@@ -85,9 +65,7 @@ func guardDefaultAgent(rt core.RegistryToggles) func(name string, enabled bool) 
 	}
 }
 
-// handleDisabledToggle is the one PUT body all three namespaces share:
-// decode, dispatch through the seam, answer the fresh lists (a
-// toggle's response always carries the state it landed).
+// handleDisabledToggle is the one PUT body all three namespaces share.
 func (s *Server) handleDisabledToggle(w http.ResponseWriter, r *http.Request, toggle func(name string, enabled bool) error) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -114,10 +92,6 @@ func (s *Server) handleDisabledToggle(w http.ResponseWriter, r *http.Request, to
 		http.Error(w, err.Error(), statusForToggleRefusal(err))
 		return
 	}
-	// The live half of the toggle: the seam wrote the fold and updated
-	// the module registries + the Context; the serving agent re-reads
-	// so the next run and the /tools inventory honor it without a
-	// restart (core.LiveSeams law, one re-read per toggle).
 	if s.Agent() != nil {
 		s.Agent().SetDisabledTools(s.Registries().Disabled().Tools)
 	}

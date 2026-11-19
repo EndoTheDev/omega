@@ -1,13 +1,10 @@
 package api
 
-// Ephemeral yield-lane tests (card t_61d3def9, session-type parity):
-// normal, ephemeral and agent sessions share one async yield shape.
-// The `eph-` lane rides the same dispatch + wake machinery over a
-// MEMORY-backed pending-calls table (sessionTypedLedger) - an
-// ephemeral session's pending call never lands in the store, restart
-// eats its results (the mode's own contract, pinned here as
-// boot-recovery behavior), and a home that closed mid-call drops the
-// settled result instead of re-queueing it forever.
+// Ephemeral yield-lane tests. The `eph-` lane rides the same dispatch + wake machinery
+// over a MEMORY-backed pending-calls table (sessionTypedLedger) - an ephemeral
+// session's pending call never lands in the store, restart eats its results (the mode's
+// own contract, pinned here as boot-recovery behavior), and a home that closed mid-call
+// drops the settled result instead of re-queueing it forever.
 
 import (
 	"context"
@@ -22,10 +19,9 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// ephSpyStore wraps the real store and records every pending-call
-// Register that names an `eph-` session - the routing law's witness.
-// A row that never reaches the store cannot be asserted off the
-// table (Settle would have deleted it), so the CALL is the pin.
+// ephSpyStore wraps the real store and records every pending-call Register that names.
+// A row that never reaches the store cannot be asserted off the table (Settle would
+// have deleted it), so the CALL is the pin.
 type ephSpyStore struct {
 	*store.Store
 	mu          sync.Mutex
@@ -41,14 +37,12 @@ func (s *ephSpyStore) Register(pc agent.PendingCall) error {
 	return s.Store.Register(pc)
 }
 
-// TestEphemeralYieldSliceEndToEnd: the session-type parity pin. One
-// ephemeral /chat whose completion calls a yield-class tool: the turn
-// ends yielded (loop-back degradation is gone for eph runs), the
-// settled result re-enters through the wake path as a second run
-// bound to the eph session, the result lands in the registry's
-// history AFTER the assistant that carries the call
-// (flush-before-result), and the DURABLE store never receives the
-// pending call - the eph lane is memory-backed.
+// TestEphemeralYieldSliceEndToEnd: the session-type parity pin. One ephemeral /chat
+// whose completion calls a yield-class tool: the turn ends yielded (loop-back
+// degradation is gone for eph runs), the settled result re-enters through the wake path
+// as a second run bound to the eph session, the result lands in the registry's history
+// AFTER the assistant that carries the call (flush-before-result), and the DURABLE
+// store never receives the pending call - the eph lane is memory-backed.
 func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -57,14 +51,12 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	spy := &ephSpyStore{Store: st}
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
-		// Run 1: one yield-class call - the turn ends yielded.
 		{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "probe", Arguments: map[string]any{"msg": "hi"},
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Run 2 (the wake): answer and close.
 		finalStep("done"),
 	})
 	tools := map[string]core.Tool{"probe": {
@@ -99,7 +91,6 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 		t.Fatal("no agent_end frame in the send's stream")
 	}
 
-	// The wake run lands the synthetic result in the eph registry.
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
@@ -109,8 +100,6 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	if !seen {
 		t.Fatalf("the wake run never landed the probe result in the eph registry (id %s)", id)
 	}
-	// Flush-before-result in the registry: the assistant carrying the
-	// call precedes the result row.
 	callIdx, resultIdx := -1, -1
 	for i, m := range s.eph.history(id) {
 		if as, ok := m.(core.Assistant); ok {
@@ -128,8 +117,7 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 		t.Errorf("order broken: assistant(call) index %d, yield_result index %d", callIdx, resultIdx)
 	}
 
-	// The routing law: no pending call for the eph home ever reached
-	// the durable table, and the memory lane settled clean.
+	// The routing law: no pending call for the eph home ever reached the durable table.
 	spy.mu.Lock()
 	leaks := append([]agent.PendingCall(nil), spy.ephRegister...)
 	spy.mu.Unlock()
@@ -144,17 +132,13 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	if left := st.All(); len(left) != 0 {
 		t.Errorf("durable ledger holds unsettled rows: %+v", left)
 	}
-	// The slice ended clean: no live run, no park.
 	waitFor(t, "wake run finished", func() bool { return !s.runs.active(id) })
 	if s.wakes.parkedNow(id) {
 		t.Error("a 1-wake eph slice parked the home")
 	}
 }
 
-// TestSessionTypedLedgerRoutesByNamespace: the composite table's
-// Register/Pending/Settle route by session id namespace - the eph
-// entry lives only in the memory lane, the durable entry only in the
-// store lane, All() carries both, and each lane settles its own.
+// TestSessionTypedLedgerRoutesByNamespace: the composite.
 func TestSessionTypedLedgerRoutesByNamespace(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -187,7 +171,6 @@ func TestSessionTypedLedgerRoutesByNamespace(t *testing.T) {
 		t.Errorf("All() = %+v, want both lanes' entries", all)
 	}
 
-	// Settle removes from the right lane only.
 	if err := l.Settle("eph-x1", "ce"); err != nil {
 		t.Fatalf("settle eph: %v", err)
 	}
@@ -199,11 +182,10 @@ func TestSessionTypedLedgerRoutesByNamespace(t *testing.T) {
 	}
 }
 
-// TestBootRecoveryDropsEphemeralResidue: the restart-loss contract.
-// The eph lane is memory-backed, so a boot never carries its entries;
-// the one durable shape that can still name an `eph-` session is
-// upgrade residue from a pre-split build. The sweep settles that row
-// and never wakes it - its home died with the restart - while the
+// TestBootRecoveryDropsEphemeralResidue: the restart-loss contract. The eph lane is
+// memory-backed, so a boot never carries its entries; the one durable shape that can
+// still name an `eph-` session is upgrade residue from a pre-split build. The sweep
+// settles that row and never wakes it - its home died with the restart - while the
 // durable sibling row gets its injected timeout wake as always.
 func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	st, err := store.Open(":memory:")
@@ -227,15 +209,9 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The sweep settles every row - the residue included - and launches
-	// the durable home's wake. Synchronous inside NewServer, so both are
-	// read as records right here: polling s.runs.active would sample a
-	// 2-4ms slot with a 10ms timer and let the deadline decide the
-	// verdict (card t_32c3fce2, same class as the sibling wakes_test.go).
 	if left := s.yieldLedger.All(); len(left) != 0 {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
-	// The durable home woke (the existing recovery law).
 	if n := s.wakeLaunchCount("s1"); n != 1 {
 		t.Errorf("boot recovery launched %d durable wake runs, want 1", n)
 	}
@@ -255,11 +231,10 @@ func TestBootRecoveryDropsEphemeralResidue(t *testing.T) {
 	}
 }
 
-// TestWakeDroppedWhenEphemeralHomeGone: a result settling after its
-// eph home closed (or the process restarted around it) is dropped at
-// the launch gate - the re-entry contract died with the home. The
-// queue must not hold it forever; a parked-style note is pointless
-// (there is no transcript to pin it to).
+// TestWakeDroppedWhenEphemeralHomeGone: a result settling after its eph home closed (or
+// the process restarted around it) is dropped at the launch gate - the re-entry
+// contract died with the home. The queue must not hold it forever; a parked-style note
+// is pointless (there is no transcript to pin it to).
 func TestWakeDroppedWhenEphemeralHomeGone(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -271,7 +246,6 @@ func TestWakeDroppedWhenEphemeralHomeGone(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The registry holds no eph-gone record (closed or restarted).
 	s.wakeHome("eph-gone", core.YieldResult{ToolCallID: "c1", ToolName: "probe", Content: "late"})
 
 	s.wakes.mu.Lock()
@@ -285,10 +259,9 @@ func TestWakeDroppedWhenEphemeralHomeGone(t *testing.T) {
 	}
 }
 
-// TestEphemeralLedgerKeepsPendingThroughSettle: the eph lane's rows
-// are readable while the call is still outstanding (the compactor's
-// never-fold law and the wake turn's sibling placeholders read the
-// same table), and settle-then-inject leaves it empty.
+// TestEphemeralLedgerKeepsPendingThroughSettle: the eph lane's rows are readable while
+// the call is still outstanding (the compactor's never-fold law and the wake turn's
+// sibling placeholders read the same table), and settle-then-inject leaves it empty.
 func TestEphemeralLedgerKeepsPendingThroughSettle(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	pc := agent.PendingCall{SessionID: "eph-live", CallID: "c1", ToolName: "probe", DispatchedAt: core.NowISO()}

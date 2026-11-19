@@ -1,10 +1,6 @@
 package api
 
-// Variant-surface tests (t_17365247): retry creates the sibling + the
-// variants block (no doubles on the active path), partials become
-// variants, selection persists and drives the next send's context,
-// fork re-plays at its target, and the wire stays backward compatible
-// for sessions built before the tree existed.
+// Variant-surface tests: retry creates the sibling + the variants block.
 
 import (
 	"context"
@@ -18,8 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// transcriptOf fetches the transcript envelope: status + body of the
-// active path + variants metadata read.
+// transcriptOf fetches the transcript envelope.
 func transcriptOf(t *testing.T, ts *httptest.Server, id string) (int, map[string]any) {
 	t.Helper()
 	resp, err := http.Get(ts.URL + "/sessions/" + id + "/transcript")
@@ -46,8 +41,7 @@ func itemContents(items []any) []string {
 	return out
 }
 
-// idOf finds the transcript id of the first item with the given kind
-// (empty content = first-of-kind).
+// idOf finds the transcript id of the first item with the given kind.
 func idOf(items []any, kind, content string) string {
 	for _, raw := range items {
 		m, _ := raw.(map[string]any)
@@ -82,8 +76,7 @@ func finishRun(t *testing.T, prov *multiProvider, s *Server, sid, answer string)
 	waitFor(t, "run finished "+answer, func() bool { return !s.runs.active(sid) })
 }
 
-// startExchange opens the scripted first send (user "hi") and finishes
-// the first run, cleaning up the stream.
+// startExchange opens the scripted first send (user "hi") and finishes the first run.
 func startExchange(t *testing.T, prov *multiProvider, s *Server, ts *httptest.Server, sid string) {
 	t.Helper()
 	resp, cancel, _ := postChatStream(t, ts, sid)
@@ -115,7 +108,6 @@ func TestRetryCreatesSiblingAndVariantsBlock(t *testing.T) {
 	muteTitles(t, st, "vr1")
 	startExchange(t, prov, s, ts, "vr1")
 
-	// the retry
 	rr := postRetry(t, ts, "vr1")
 	defer rr.Body.Close()
 	finishRun(t, prov, s, "vr1", "second answer")
@@ -145,7 +137,6 @@ func TestRetryCreatesSiblingAndVariantsBlock(t *testing.T) {
 	if active, _ := b["active"].(float64); int(active) != 1 {
 		t.Fatalf("variant active = %v, want 1 (the newest retry)", b["active"])
 	}
-	// the store still carries BOTH runs (the append list stays)
 	msgs := messagesOf(t, st, "vr1")
 	if len(msgs) != 3 {
 		t.Fatalf("store rows = %d, want 3 (user + two runs)", len(msgs))
@@ -159,15 +150,12 @@ func TestRetryCreatesSiblingAndVariantsBlock(t *testing.T) {
 	if users != 1 {
 		t.Fatalf("user rows = %d, want 1 (no duplicate user bubble)", users)
 	}
-	// message items carry their ids (branch-point addressing surface)
 	if idOf(items, "user", "") == "" || idOf(items, "message", "") == "" {
 		t.Fatalf("transcript items missing ids: %+v", items)
 	}
 }
 
-// TestVariantSelectPersistsAndDrivesContext: select variant 1, the
-// transcript reload keeps it, and the next send's context continues
-// that branch - asserted on the exact seam /chat consumes.
+// TestVariantSelectPersistsAndDrivesContext: select variant 1, the transcript reload.
 func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr2")
@@ -177,7 +165,6 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	defer rr.Body.Close()
 	finishRun(t, prov, s, "vr2", "second answer")
 
-	// branch point id, straight from the transcript items
 	_, tx := transcriptOf(t, ts, "vr2")
 	items, _ := tx["items"].([]any)
 	userID := idOf(items, "user", "")
@@ -185,15 +172,13 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 		t.Fatalf("user item carries no id: %+v", items)
 	}
 
-	// PIN (t_c6f13a82, chat-last 2a): the sink goes in BEFORE the
-	// select so the capture sees only the select's repaint.
+	// PIN: the sink goes in BEFORE the select so the capture sees only.
 	var selPainted []core.Panel
 	s.chat.SetPanelUpdate(func(p core.Panel) error {
 		selPainted = append(selPainted, p)
 		return nil
 	})
 
-	// select variant 1 (the first response)
 	code, sel := postJSON(t, ts.URL+"/sessions/vr2/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 0}`, userID))
 	if code != http.StatusOK {
@@ -204,11 +189,9 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	if active, _ := b["active"].(float64); int(active) != 0 {
 		t.Fatalf("select response = %+v, want active 0", b)
 	}
-	// PIN (t_c6f13a82, chat-last 2a): a select is not a run - no run
-	// event or delta carries the swap, and the canvas snapshot serves
-	// the last PUSHED panel state. The select handler must repaint the
-	// focused panel; otherwise the webui's post-select snapshot
-	// refetch keeps the OLD variant rows forever (journey 30 red).
+	// PIN: a select is not a run. The select handler must repaint the focused panel;
+	// otherwise the webui's post-select snapshot refetch keeps the OLD variant rows
+	// forever (journey 30 red).
 	if len(selPainted) == 0 {
 		t.Fatal("variant select never repainted the chat panel")
 	}
@@ -230,8 +213,7 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 		t.Fatalf("reloaded transcript = %v, want variant 1 active (first answer)", items)
 	}
 
-	// the NEXT send's context continues the selected branch: exactly
-	// what /chat feeds the provider through sessionHistory
+	// the NEXT send's context continues the selected branch: exactly what /chat feeds.
 	raw, _ := json.Marshal(map[string]any{"role": "user", "content": "next question"})
 	req := chatRequest{SessionID: "vr2", Messages: []json.RawMessage{raw}}
 	incoming, err := decodeMessages(req.Messages)
@@ -249,16 +231,13 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	}
 }
 
-// TestPartialBecomesVariant: a cancelled run's partial stays its own
-// selectable sibling; the next retry is the next variant; selecting
-// the partial's variant renders it again.
+// TestPartialBecomesVariant: a cancelled run's partial stays its own selectable.
 func TestPartialBecomesVariant(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr3")
 	muteTitles(t, st, "vr3")
 	startExchange(t, prov, s, ts, "vr3")
 
-	// a retry that gets cancelled mid-stream
 	rr := postRetry(t, ts, "vr3")
 	defer rr.Body.Close()
 	prov.send(core.ResponseChunk{Type: "response_chunk", Content: "kept partial"})
@@ -270,7 +249,6 @@ func TestPartialBecomesVariant(t *testing.T) {
 	prov.done()
 	waitFor(t, "cancelled retry finished", func() bool { return !s.runs.active("vr3") })
 
-	// the partial is the active response; both runs are variants
 	_, tx := transcriptOf(t, ts, "vr3")
 	items, _ := tx["items"].([]any)
 	joined := "|" + strings.Join(itemContents(items), "|")
@@ -281,7 +259,6 @@ func TestPartialBecomesVariant(t *testing.T) {
 	if len(variants) != 1 {
 		t.Fatalf("variants = %+v, want the retry branch point", tx["variants"])
 	}
-	// select variant 1 -> the FIRST response renders again
 	userID := idOf(items, "user", "")
 	code, _ := postJSON(t, ts.URL+"/sessions/vr3/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 0}`, userID))
@@ -296,9 +273,7 @@ func TestPartialBecomesVariant(t *testing.T) {
 	}
 }
 
-// TestForkContinuesFromHistoricalMessage: fork at an assistant response
-// chains the fork's message onto it; the fork run's head answers it;
-// the fork chain is its own linear path (no variants block).
+// TestForkContinuesFromHistoricalMessage: fork at an assistant response chains.
 func TestForkContinuesFromHistoricalMessage(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr4")
@@ -327,9 +302,7 @@ func TestForkContinuesFromHistoricalMessage(t *testing.T) {
 	}
 }
 
-// TestForkOfUserTurnCreatesVariant: forking a user turn regenerates
-// (retry pinned there) - a sibling head under that user, no new user
-// bubble.
+// TestForkOfUserTurnCreatesVariant: forking a user turn regenerates.
 func TestForkOfUserTurnCreatesVariant(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr5")
@@ -359,9 +332,7 @@ func TestForkOfUserTurnCreatesVariant(t *testing.T) {
 	}
 }
 
-// TestVariantsGuards: 501 without a store, 404 unknown session, 400 on
-// unknown/invalid message ids and out-of-range selects, plus the
-// /chat retry/fork/fork-session guards.
+// TestVariantsGuards: 501 without a store, 404 unknown session, 400.
 func TestVariantsGuards(t *testing.T) {
 	s := newTestServer()
 	rec := httptest.NewRecorder()
@@ -394,21 +365,16 @@ func TestVariantsGuards(t *testing.T) {
 	if code != http.StatusBadRequest {
 		t.Fatalf("invalid body select = %d, want 400", code)
 	}
-	// out-of-range index (single run: only 0 exists)
 	code, _ = postJSON(t, ts.URL+"/sessions/vg1/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 3}`, userID))
 	if code != http.StatusBadRequest {
 		t.Fatalf("out-of-range select = %d, want 400", code)
 	}
-	// index select on a single-run branch: 0 is the whole extent and
-	// stays a no-op 200 (re-pins the default)
 	code, _ = postJSON(t, ts.URL+"/sessions/vg1/variants",
 		fmt.Sprintf(`{"message_id": %q, "select": 0}`, userID))
 	if code != http.StatusOK {
 		t.Fatalf("single-run re-pin = %d, want 200", code)
 	}
-	// /chat guards: retry+fork conflict; fork without session; fork
-	// target not on the path
 	code, _ = postJSON(t, ts.URL+"/chat", `{"session_id": "vg1", "retry": true, "fork": "`+userID+`"}`)
 	if code != http.StatusBadRequest {
 		t.Fatalf("retry+fork = %d, want 400", code)
@@ -430,9 +396,7 @@ func idOfUser(t *testing.T, ts *httptest.Server, id string) string {
 	return idOf(items, "user", "")
 }
 
-// TestLinearSessionHasNoVariantsBlock: backward compatibility - a
-// session without branch points serves the exact pre-tree envelope
-// (the variants key stays ABSENT off the wire).
+// TestLinearSessionHasNoVariantsBlock: backward compatibility.
 func TestLinearSessionHasNoVariantsBlock(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "vr6")

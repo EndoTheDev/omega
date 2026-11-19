@@ -1,21 +1,4 @@
 // omega webui: the chat host - the composer transport side of chat.
-// chat-last 2a: the CONVERSATION renders from the canvas chat panel
-// (snapshot at load, view_model_delta frames after - batched cadence on
-// the backend, card t_ec45b670). The per-tab transcript copies, the SSE
-// stream driver that composed them incrementally and the restore-side
-// live-run adoption are deleted: the deltas are the streaming render.
-// What survives per tab: the composer transport (a send still POSTs
-// /chat: it binds the auto-created session and carries the fork anchor;
-// stop and retry dispatch through the action pipe), telemetry, the
-// variants block (REST surface, stays) and the restore's fallback
-// transcript for sessions the single chat panel does not cover (the
-// panel holds ONE conversation - the focus law: a live run's session,
-// else the newest unarchived; this falls back to REST for the rest).
-//
-// consequence: stream handlers no longer build rendering state
-// (StreamHandlers carries only usage/session/canvas-delta callbacks);
-// busy stays PER SESSION (the runHub run slot), keyed by the tab's
-// state key locally and by session id server-side.
 
 import { computed, reactive, ref, type ComputedRef, type InjectionKey, type Ref } from "vue";
 import {
@@ -66,8 +49,7 @@ import {
 import { SHELL_COMMAND_NAMES, dispatchCommand } from "./commands.ts";
 import { isLive, isStreaming } from "./toolStatus.ts";
 
-// The chat actions are module-qualified on the wire: http_channel owns
-// the chat panel's stop/retry handlers (the pipe checks module + id).
+// The chat actions are module-qualified on the wire.
 const CHAT_MODULE = "http_channel";
 
 /** ChatViewState is the tab's VIEW record (card t_15572849): the values a
@@ -129,88 +111,44 @@ export const CHAT_FOLD_PINS_KEY: InjectionKey<ChatFoldPins> = Symbol("omega-chat
 
 export interface ChatState {
   key: string;
-  // the bound session id; null while the tab's chat is unsaved
-  // (composer-first) - bare /chat auto-creates it and the id arrives
-  // on the response's leading `session` SSE frame
   sessionId: string | null;
-  // the REST restore's items for this session (GET
-  // /sessions/{id}/transcript rendered): the fallback transcript the
-  // tab shows when the canvas chat panel does not cover it. Rendered
-  // items only - the LIVE view is the canvas panel's job.
   restored: TranscriptItem[];
   // the composer draft lives per state: switching tabs (unmount) keeps
   // half-written input, exactly like a VS Code editor keeps its buffer
   draft: string;
-  // pending image attachments, per tab like the draft: paste/picker/
-  // url-attach collect here and the next send carries them
   attachments: OmegaImage[];
-  // pending NON-IMAGE references (card t_8a569163): the /attach-file
-  // records the composer picked. The bytes already sit in the session's
-  // upload dir; the send echoes the records on the message and the agent
-  // reads the files with its own tools. Per tab, like the draft.
   files: OmegaAttachment[];
-  // the non-activity line above the composer: interrupted runs, pipe
-  // failures, attach failures. Phase narration is derived (activityPhase).
   statusLine: string;
   tokens: number;
   tokensPerSecond: number;
-  // the live run's delta arrivals/s (the canvas cadence proof: the
-  // renderer genuinely repaints on deltas as they come)
   liveDeltasPerSecond: number;
-  // last-known delta rate, from the run that just ended - the idle
-  // state bar's rate display. The durable persisted rate still rides
-  // lastChunksPerSecond (the row's last_run block).
   lastDeltasPerSecond: number;
-  // last-known chunks/s, from the session row's last_run block (or
-  // the run that just ended) - the idle state bar's rate display
   lastChunksPerSecond: number;
-  // a live SSE is bound to THIS state (its own subscription)
   attached?: boolean;
-  // its tab was closed (or its session deleted) while the run was
-  // live: the state stops being rendered - dropped at stream end
   orphan?: boolean;
   // this state already carries the session's full content (a finished
   // live run, or a successful restore) - the unsaved->created flow sets
   // it so the post-create watcher never clobbers the view
   loaded?: boolean;
-  // the session's branch points (t_17365247 wire block, restored with
-  // the transcript and refreshed after every select + run end). Empty
-  // for sessions without variants - the switcher renders nothing then.
   variants: VariantBlock[];
-  // the composer's FORK anchor (t_a62eeb43): a historical message the
-  // next send continues FROM (POST /chat {fork}). Validity is the
-  // view's concern (the anchor must resolve against the rendered
-  // transcript); replay semantics (a user-turn target reruns the turn
-  // immediately) ride the same state.
+  // the composer's FORK anchor. Validity is the view's concern (the anchor must resolve
+  // against the rendered transcript); replay semantics (a user-turn target reruns the
+  // turn immediately) ride the same state.
   forkFrom: string | null;
-  // the run that just ended (or is ending) on this state, and WHY it
-  // ended - the agent_end frame's finish_reason (async agent loop
-  // phase 3): "yielded" names a run whose last call went out-of-band,
-  // and the pending watcher arms on exactly that. Cleared at every
-  // stream start (each run states its own reason).
+  // the run that just ended (or is ending) on this state, and WHY it ended - the
+  // agent_end frame's finish_reason (async agent loop phase 3): "yielded" names a run
+  // whose last call went out-of-band, and the pending watcher arms on exactly.
   lastFinishReason: string;
-  // ephemeral chat (card t_d96a5cd5): this tab's session is a
-  // NO-PERSIST `eph-` session - server memory only, gone at restart,
-  // no sidebar row, the memory tool denied server-side. Close deletes
-  // the server record (the contract: close = gone). Retry/fork/
-  // variants never exist here: the store tree they replay is absent.
+  // ephemeral chat: this tab's session is a NO-PERSIST `eph-` session. Close deletes
+  // the server record (the contract: close = gone). Retry/fork/ variants never exist
+  // here: the store tree they replay is absent.
   ephemeral?: boolean;
-  // armed skill injection (card t_07aed3f9): the /skill command
-  // dispatch resolved a skill's content server-side and holds it here;
-  // the NEXT send carries it as a system preamble. Consumed on submit.
-  // Live-verified on a store-backed session: the preamble persists as a
-  // system row (it rides later sends' context), and
-  // /transcript drops system rows - no visible bubble anywhere.
   pendingSkill: { name: string; content: string } | null;
-  // the draft workspace intent (card t_ea7e6a58): the pre-session
-  // folder the composer chip holds while the tab is unbound. The FIRST
-  // send rides POST /chat {workspace} and the auto-created row is born
-  // pinned - consumed there. A session-bound tab reads the row instead
-  // (this field is inert); an ephemeral draft never applies it.
-  // Card t_30137f67: a fresh unbound state INITIALIZES from the loaded
-  // server.default_workspace (the deps.defaultWorkspace read of the
-  // same /settings payload SettingsTab renders) - no default, no seed;
-  // an explicit clear in the chip wins over the seed.
+  // the draft workspace intent. A session-bound tab reads the row instead (this field
+  // is inert); an ephemeral draft never applies it.: a fresh unbound state INITIALIZES
+  // from the loaded server.default_workspace (the deps.defaultWorkspace read of the
+  // same /settings payload SettingsTab renders) - no default, no seed; an explicit
+  // clear in the chip wins over the seed.
   workspaceIntent: string;
   // the tab's VIEW record (card t_15572849): scroll place + follow
   // latch, fold pins, the activity phase anchor, the loaded-view
@@ -225,11 +163,10 @@ export interface ChatState {
   runSeq: number;
 }
 
-/** EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a
-    composer-first ephemeral tab (card t_d96a5cd5): minted client-side
-    before any send, exchanged for the server's `eph-` id on the leading
-    `session` frame. Never a real session id - the registry namespace
-    prefix is `eph-`. */
+/**
+ * EPHEMERAL_DRAFT_REF is the dock tab's sessionRef marker for a composer-first.
+ * Never a real session id - the registry namespace prefix is `eph-`.
+ */
 export const EPHEMERAL_DRAFT_REF = "ephemeral";
 
 export const DEFAULT_CHAT_STATE: ChatState = {
@@ -254,69 +191,45 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   runSeq: 0,
 };
 
-/** a "/" command send's context (t_7f09bd0c): marks the dispatch as a
-    SEND - a resolving skill arms AND posts the token as a message (the
-    reference pill survives the transcript); without it the dispatch
-    keeps the t_07aed3f9 law (arm, never a transcript row). */
+/**
+ * a "/" command send's context: marks the dispatch as a SEND - a resolving skill arms
+ * AND posts the token as a message (the reference pill survives the transcript);
+ * without it the dispatch keeps the law (arm, never a transcript row).
+ */
 export interface CommandSend {
   model?: string;
   thinking?: number;
   fork?: string;
 }
 
-// the app-level callbacks the host needs - the session LIST, the dock
-// tree and the focus concept stay app-owned.
+// the app-level callbacks the host needs.
 export interface ChatHostDeps {
-  /** write the session id back onto the tab (unsaved -> created) */
   setTabSessionRef(key: string, sessionId: string | null): void;
-  /** sidebar refresh: fetches sessions, feeds the row list + the
-      server-active set back through noteServerActive */
   refreshSessions(): void | Promise<void>;
-  /** the refreshed session row for an id (the durable telemetry + the
-      label read); undefined when the session is unknown */
   sessionRow(sessionId: string): Session | undefined;
-  /** open = read: unmute the sidebar row + stamp the server read time */
   markRead(sessionId: string): void;
-  /** whether THIS state key is the app's focused chat tab (the stream
-      end only unreads the transcript the user watched) */
+  /**
+   * whether THIS state key is the app's focused chat tab.
+   */
   isFocused(key: string): boolean;
-  /** one canvas panel delta arrived on a run stream (arc 3c) - the
-      app-level canvas store merges it; absent = no canvas, the frame
-      is dropped (the snapshot is the catch-up, same as the server) */
   canvasDelta?(panel: CanvasPanel): void;
-  /** the canvas' chat panel descriptor (the renderer's one streaming
-      source); null when the canvas store holds no chat-kind panel yet */
   chatPanel?(): CanvasPanel | null;
-  /** the canvas snapshot refetch - variant selects and action calls
-      repaint the panel through it (the deltas ride run streams only) */
   canvasRefresh?(): void | Promise<void>;
-  /** the webui shell command handler (t_07aed3f9): /theme /fork
-      /retry /variant /copy /new /sessions /panels /extensions /help
-      act locally in the app - never an agent round-trip. False when
-      the command has nothing to act on here (no session, no rows). */
+  /**
+   * the webui shell command handler: /theme /fork /retry /variant /copy /new /sessions
+   * /panels /extensions /help act locally in the app - never an agent round-trip.
+   */
   runCommand?(stateKey: string, text: string): boolean | Promise<boolean>;
-  /** the loaded server.default_workspace (card t_30137f67): a fresh
-      UNBOUND, non-ephemeral state seeds its workspaceIntent from it.
-      The app feeds the value out of the SAME /settings read the
-      Settings tab renders (no second config path); "" or absent means
-      no default configured. A live getter, not a snapshot - the boot
-      read resolves after host creation, and Settings edits apply to
-      the next new session. */
+  /** the loaded server.default_workspace. */
   defaultWorkspace?(): string;
 }
 
 export interface ChatHost {
   states: Map<string, ChatState>;
-  /** busy keyed by STATE key (this page's live streams) */
   busyKeys: Ref<BusyMap>;
-  /** busy keyed by SESSION id: local live streams mapped through their
-      states, plus the server-reported active set (detached runs other
-      windows started - survives this page, like refreshSessions) */
   busyAll: ComputedRef<BusyMap>;
-  /** any live stream anywhere - the tab-title spinner source */
   anyBusyNow: ComputedRef<boolean>;
   ensureState(key: string, sessionId?: string | null, ephemeral?: boolean): ChatState;
-  /** the canvas' chat panel descriptor (view source accessor) */
   chatPanel(): CanvasPanel | null;
   /** mount-time restore of one tab's view: persisted history rebuild +
       telemetry, reading the detail's live-run flag to attach. Refetch
@@ -330,10 +243,12 @@ export interface ChatHost {
   /** subscribe to the session's live run for THIS tab's state (the
       duplicate-tab path: the other tab already streams locally) */
   attach(key: string): Promise<void>;
-  /** the ONE send path (composer submit). Returns false when the
-      per-session gate refused (double send, never double run). The
-      fork anchor is the caller's validity (it resolves against the
-      rendered transcript). */
+  /**
+   * the ONE send path (composer submit).
+   * Returns false when the per-session gate refused (double send, never double run).
+   * The fork anchor is the caller's validity (it resolves against the rendered
+   * transcript).
+   */
   submit(
     key: string,
     text: string,
@@ -341,119 +256,65 @@ export interface ChatHost {
     thinking?: number,
     fork?: string,
   ): Promise<boolean>;
-  /** add picked/pasted images to this tab's pending attachments */
   attachFiles(key: string, images: OmegaImage[]): void;
-  /** upload picked NON-IMAGE files to /attach-file and park the returned
-      references in this tab's pending list (card t_8a569163). A failure
-      lands in statusLine, never a throw. */
+  /**
+   * upload picked NON-IMAGE files to /attach-file and park the returned references.
+   * A failure lands in statusLine, never a throw.
+   */
   attachFileRefs(key: string, files: File[]): Promise<void>;
-  /** remove one pending attachment by index */
   removeAttachment(key: string, index: number): void;
-  /** remove one pending file reference by index */
   removeFileAttachment(key: string, index: number): void;
   /** server-side fetch of an image URL into this tab's attachments */
   attachUrl(key: string, url: string): Promise<void>;
-  /** set / clear the composer's FORK anchor (the view resolved the
-      target against the rendered transcript already) */
+  /**
+   * set / clear the composer's FORK anchor.
+   */
   setFork(key: string, messageId: string | null): void;
-  /** replay a USER-turn anchor immediately (fork of a user message
-      reruns that turn - the same /chat {fork} stream, no messages) */
+  /** replay a USER-turn anchor immediately (fork of a user message reruns that turn. */
   replayFork(key: string, messageId: string, model?: string, thinking?: number): Promise<void>;
-  /** variant navigation (t_a62eeb43): select the 0-based sibling at a
-      branch point, refresh the view (canvas snapshot + restore);
-      false while the session's run slot is taken */
   selectVariant(key: string, messageId: string, index?: number): Promise<boolean>;
-  /** stop THIS tab's bound session's live run - through the chat
-      panel's action pipe (the one canvas route; no REST stop affordance) */
+  /** stop THIS tab's bound session's live run. */
   cancel(key: string): void;
-  /** run a "/" command (t_07aed3f9): shell commands dispatch to the
-      app's local handler; module commands and /<skill-name> dispatch
-      to POST /commands/dispatch (the ctx.CommandHandler chain and the
-      skill content arm - never the agent loop). Returns false when the
-      command surface refused the text outright. A send ctx (card
-      t_7f09bd0c) marks a SEND: a skill dispatch then arms AND posts the
-      token as a message - the reference pill survives the transcript. */
+  /**
+   * run a "/" command: shell commands dispatch to the app's local handler; module
+   * commands and /<skill-name> dispatch to POST /commands/dispatch (the
+   * ctx.CommandHandler chain and the skill content arm - never the agent loop).
+   */
   command(key: string, text: string, send?: CommandSend): Promise<boolean>;
-  /** retry: the chat panel's retry action through the pipe - the
-      server replays the session's last user turn as a sibling variant.
-      False while the gate refused or the pipe call failed. */
   retry(key: string): Promise<boolean>;
-  /** the composer's busy bit for one tab: the per-session run slot
-      (busyAll over its session id), or the unsaved create window */
   composerBusy(key: string): boolean;
-  /** a tab (or an orphaned state) stopped being rendered: state is
-      dropped now unless a run still feeds it - that lands at stream end */
   closeState(key: string): void;
-  /** session deleted: its states go the same way */
   closeSession(sessionId: string): void;
   /** refreshSessions feeds the server-reported active rows in */
   noteServerActive(ids: string[]): void;
-  /** one runs-topic edge: a session's live-run truth moved (busy pulse +
-      the pending waiter's wake event) */
+  /**
+   * one runs-topic edge: a session's live-run truth moved.
+   */
   noteRunState(session: string, active: boolean): void;
   /** one chat-topic frame for the tabs NOT attached to that run's stream */
   noteSocketChat(session: string, event: string, payload: unknown): void;
   /** the socket came back: refetch every open pane through the GET routes */
   reconnectCatchUp(): Promise<void>;
-  /** the card t_30137f67 boot backfill: seed the JUST-LOADED
-      server.default_workspace onto the unbound, non-ephemeral states
-      that were created before the settings read resolved. Only BLANK
-      intents take the seed - states created after the boot read (via
-      ensureState) already carry it, and an intent the composer picked
-      or cleared before it landed stands. Boot-time, idempotent. */
+  /**
+   * the boot backfill: seed the JUST-LOADED server.default_workspace onto.
+   * Boot-time, idempotent.
+   */
   seedDefaultWorkspace(path: string): void;
-  /** the refreshed session row for an id, re-exposed from the deps
-      (card t_cd2f25b0): consumers INJECTED with the host - the Files
-      tab's row-workspace re-root trigger - read rows through the host,
-      not the deps object. Undefined when the session is unknown. */
   sessionRow(sessionId: string): Session | undefined;
 }
 
 export const CHAT_HOST_KEY: InjectionKey<ChatHost> = Symbol("omega-chat-host");
 
-/** the module->shell chat-open event (card t_81109e1c, the Agents tab):
-    a module-owned panel imports no shell code, so a roster row click
-    hands the agent's most-recent SESSION ID over through this window
-    CustomEvent (the viewer precedent) and app.vue runs the ordinary
-    chat opener on it - focus an already-open tab, mint only when no
-    tab holds the session. THE LITERAL IS COPIED in
-    harness/continuous/ui/AgentsPanel.vue; the agents chat test pins
-    both spellings identical. Detail payload: the session id string. */
+/** the module->shell chat-open event. */
 export const CHAT_SESSION_OPEN_EVENT = "omega:open-chat-session";
 
-/** the shell->module FOCUSED-SESSION event (card t_db378a0d, the Agents
-    tab's active row): the shell owns the focused chat tab, so it
-    broadcasts the session id it is showing whenever that changes and a
-    module-owned panel mirrors it (the agents roster marks the agent
-    whose session is the focused one). The reverse direction of
-    CHAT_SESSION_OPEN_EVENT, same seam shape: window CustomEvent, the
-    literal COPIED in harness/continuous/ui/AgentsPanel.vue and pinned
-    identical by the agents feel test. Detail payload: the session id
-    string, "" when no chat tab holds the focus. */
+/** the shell->module FOCUSED-SESSION event. */
 export const FOCUSED_SESSION_EVENT = "omega:focused-session";
 
-/** the module->shell PULL for that same id (card t_db378a0d round 2):
-    the dock renders only the ACTIVE tab's pane slot (DockPane's v-if),
-    so a module panel UNMOUNTS on switch-away and mounts again with no
-    announcement to hear - the shell's watch fired while it was gone and
-    its own mount announce had already run. So the panel ASKS on mount and
-    the shell answers with FOCUSED_SESSION_EVENT carrying the id it is
-    showing right now. Same seam shape and the same copied-literal law;
-    the literal is COPIED in harness/continuous/ui/AgentsPanel.vue and
-    pinned identical by the agents feel test. Detail payload: none. */
+/** the module->shell PULL for that same id. */
 export const FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session";
 
-// --- the ONE composer button's face (t_357cbe9c; retry left in
-// t_95d2bc34) ---
-//
-// stop and send stay in ONE morphing affordance: while this session's
-// run streams the button is the stop control; idle it is send always -
-// the dimmed send at rest (no draft, nothing to send), the enabled send
-// once a draft or attachment is there. The RETRY FACE DROPPED (Endo,
-// 2026-10-26): the replay affordance renders in the newest assistant
-// response's action row now (the msg-retry chip; ChatMessage) - same
-// host.retry() pipe dispatch, no /chat flag, no text resubmit. Pure so
-// the morph states stay testable.
+// the ONE composer button's face --- stop and send stay in ONE morphing affordance.
 
 export type ComposerFace = "stop" | "send";
 
@@ -464,31 +325,26 @@ export function composerFace(
   return "send";
 }
 
-// --- the activity line (card t_e9baac4b) ---
-//
-// Phase-aware narration for the line above the composer, derived PURELY
-// from the rendered transcript + the session's busy gate - no new
-// state. The phase source is the canvas-rendered items (or the restore
-// fallback): a call still open (its result has not landed yet) is the
-// run's activity, else the last streaming item's kind narrates the
-// stream. "thinking" is also what a run shows before anything lands.
+// the activity line --- Phase-aware narration for the line above the composer.
 
 export interface ActivityPhase {
-  /** stable identity - the component restarts its elapsed meter ONLY
-      when this changes (content deltas recompute but never move it) */
+  /**
+   * stable identity - the component restarts its elapsed meter ONLY when this changes
+   * (content deltas recompute but never move it) / /
+   */
   key: string;
-  /** the narration: "thinking", "running web.search", "responding" */
   label: string;
-  /** elapsed ALREADY CONSUMED at observation: a restored still-running
-      tool counts on from the server's elapsed-so-far (live-run merge),
-      the same initialMs contract the ToolCallLine meter runs on */
+  /**
+   * elapsed ALREADY CONSUMED at observation: a restored still-running tool counts on
+   * from the server's elapsed-so-far (live-run merge), the same initialMs contract the
+   * ToolCallLine meter runs on / /
+   */
   initialMs?: number;
 }
 
-// findMessageItem locates a rendered MESSAGE item by its store row id
-// (the variants surface's address - fork + switcher). Canvas-mapped
-// items carry ids for stored rows, live rows carry none and are never
-// found here. Pure.
+// findMessageItem locates a rendered MESSAGE item by its store row id.
+// Canvas-mapped items carry ids for stored rows, live rows carry none and are never
+// found here.
 export function findMessageItem(
   items: TranscriptItem[],
   id: string,
@@ -505,16 +361,11 @@ export function activityPhase(
   busy: boolean,
 ): ActivityPhase | null {
   if (!busy) return null;
-  // newest open tool call + newest streaming item
   let tool: ToolItem | null = null;
   let streaming: ThinkingItem | MessageItem | null = null;
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
-    // isStreaming, NOT isLive - a named decision (composables/toolStatus.ts):
-    // the activity line narrates what the run is DOING at this instant, and
-    // a pending (yielded) call emits no delta until its wake turn arrives.
-    // Narrating it would claim work with no bytes behind it; the phase falls
-    // through to "thinking", which is true of a run waiting on a wake.
+    // isStreaming, NOT isLive - a named decision (composables/toolStatus.ts).
     if (
       tool === null &&
       item?.kind === "tool" &&
@@ -529,8 +380,6 @@ export function activityPhase(
       streaming = item;
     }
   }
-  // a running tool outranks the streaming items: the model's preamble
-  // already streamed - the tool call is what the run is DOING now
   if (tool) {
     const name = tool.name || "tool";
     return {
@@ -545,20 +394,16 @@ export function activityPhase(
   if (streaming) {
     return { key: "responding", label: "responding" };
   }
-  // busy with nothing narrated yet: the run just started (or is between
-  // its tool result and the model's next move) - waiting on the model
-  // IS thinking
   return { key: "thinking", label: "thinking" };
 }
 
-/** the title goroutine writes the session label seconds AFTER the first
-    exchange ends - one delayed refresh picks the label up without a
-    manual reload (the pre-card rule carried over from app.vue). */
+/**
+ * the title goroutine writes the session label seconds AFTER the first exchange ends.
+ */
 const TITLE_REFRESH_MS = 10000;
 
 export function createChatHost(deps: ChatHostDeps): ChatHost {
-  // reactive(Map) wraps values on READ - always keep the wrapped handle
-  // (ensureState does), or state writes stop triggering the view
+  // reactive(Map) wraps values on READ.
   const states = reactive(new Map<string, ChatState>());
   const busyKeys = ref<BusyMap>(new Set());
   const serverBusy = ref<BusyMap>(new Set());
@@ -574,17 +419,12 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     () => busyAll.value.size > 0 || busyKeys.value.size > 0,
   );
 
-  // card t_30137f67: the loaded server.default_workspace (live getter -
-  // the boot read resolves after host creation, Settings edits apply to
-  // the next new session). Absent dep or "" -> no default.
+  // the loaded server.default_workspace.
   const defaultWorkspace = () => deps.defaultWorkspace?.() ?? "";
 
   function seedDefaultWorkspace(path: string) {
     if (!path) return;
     for (const st of states.values()) {
-      // unbound, non-ephemeral, still blank: only the states born
-      // before the settings read resolved get the boot seed. Anything
-      // the composer already picked (or that ensureState seeded) stands.
       if (!st.sessionId && !st.ephemeral && st.workspaceIntent === "")
         st.workspaceIntent = path;
     }
@@ -610,10 +450,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         forkFrom: null,
         ephemeral: !!ephemeral,
         lastFinishReason: "",
-        // card t_30137f67: a new session is born with the configured
-        // default workspace - the chip + intent carry it exactly as if
-        // the user had picked it (plain sticky). Only an unbound,
-        // non-ephemeral draft pins; no default -> "" (today's blank).
+        // a new session is born with the configured default workspace - the chip +
+        // intent carry it exactly as if the user had picked it (plain sticky).
         workspaceIntent: !sessionId && !ephemeral ? defaultWorkspace() : "",
         pendingSkill: null,
         view: emptyChatViewState(),
@@ -623,11 +461,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st = states.get(key) as ChatState;
       return st;
     }
-    // the tab binds the session: an unsaved state that gained its id
-    // (the create path wrote it right after this ensure) adopts it - the
-    // key stays the tab instance's identity. The ephemeral bit NEVER
-    // flips: the server-minted `eph-` id adopting onto an unsaved tab
-    // keeps the no-persist contract attached to the state.
+    // the tab binds the session. The ephemeral bit NEVER flips: the server-minted
+    // `eph-` id adopting onto an unsaved tab keeps the no-persist contract attached to
+    // the state.
     if (sessionId && st.sessionId !== sessionId) st.sessionId = sessionId;
     if (ephemeral !== undefined) st.ephemeral = ephemeral;
     return st;
@@ -638,29 +474,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   }
 
   function noteServerActive(ids: string[]) {
-    // server-reported live runs REPLACE (not union into) the snapshot:
-    // these are the sessions a freshly refreshed page sees as pulsing -
-    // local streams carry their own busy entries in busyKeys
+    // server-reported live runs REPLACE (not union into) the snapshot.
     serverBusy.value = new Set(ids);
   }
 
-  // --- the push channel's chat-host surface (card t_896cf5a8) -----------
-  //
-  // noteRunState is the runs topic's edge: one session's live-run truth
-  // moved. It updates the server-owned busy set (the pulse) and wakes
-  // every pending waiter on that session - the event that replaced the
-  // 2s run-slot poll.
+  // the push channel's chat-host surface ----------- noteRunState is the runs.
   function noteRunState(session: string, active: boolean) {
     if (!session) return;
     serverBusy.value = withBusy(serverBusy.value, session, active);
     if (active) wakePending(session);
   }
 
-  // noteSocketChat feeds one chat frame (the run's SSE event verbatim)
-  // into the tabs that are NOT attached to the run's own stream: usage
-  // telemetry, the canvas delta fallback and the yielded-run arming all
-  // land there. The attached tab's SSE owns its frames - a second
-  // dispatch would double-count the meters.
+  // noteSocketChat feeds one chat frame (the run's SSE event verbatim) into the tabs.
   function noteSocketChat(session: string, event: string, payload: unknown) {
     if (!session) return;
     for (const st of states.values()) {
@@ -700,22 +525,16 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     await Promise.all(loads);
   }
 
-  // makeTransportHandlers builds the SSE handler set one stream runs
-  // with: usage telemetry + delta metering (the live run's repaints/s)
-  // + the canonical canvas forward. NO transcript composition - the
-  // renderer paints from the canvas panel's deltas.
+  // makeTransportHandlers builds the SSE handler set one stream runs.
   function makeTransportHandlers(st: ChatState): StreamHandlers {
     const sentAt = Date.now();
-    // a fresh stream takes the meters over: the last-known idle values
-    // step aside until this run's own numbers arrive
     st.tokens = 0;
     st.tokensPerSecond = 0;
     st.liveDeltasPerSecond = 0;
     st.lastDeltasPerSecond = 0;
     st.lastChunksPerSecond = 0;
-    // each run states its own ending (async agent loop phase 3): the
-    // yielded flag from a PREVIOUS run must not arm the pending
-    // watcher off this one's streams
+    // each run states its own ending (async agent loop phase 3): the yielded flag from
+    // a PREVIOUS run must not arm the pending watcher off this one's streams
     st.lastFinishReason = "";
     // a fresh transport interaction is a fresh RUN (card t_15572849):
     // the activity line's phase anchor records this number, so a pane
@@ -732,9 +551,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       while (deltaTimes.length && now - (deltaTimes[0] ?? now) > 1000) deltaTimes.shift();
       st.liveDeltasPerSecond = deltaTimes.length;
       if (payload) {
-        // the streaming token estimate rides the panel content the
-        // deltas carry (assistant prose + thinking, chars/4) - corrected
-        // by the real usage frame at stream end
         st.tokens = Math.ceil(chatPanelContent(payload) / 4);
       }
     };
@@ -755,15 +571,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     };
   }
 
-  // refreshVariants pulls the session's branch block again - a run that
-  // just forged a sibling (retry, fork, cancel partial) needs no manual
-  // reload for the switcher. Id-ful rows + the rendered items the
-  // variantOf resolution needs come from the same fetch. Returns
-  // whether the fresh transcript still carries PENDING chips (async
-  // agent loop phase 3): a run that ended on settled calls while older
-  // yield-class siblings still await their wake keeps the pending
-  // watcher armed. False when unknown (ephemeral, live run, fetch
-  // fault) - the caller's own yielded flag decides arming then.
+  // refreshVariants pulls the session's branch block again. False when unknown
+  // (ephemeral, live run, fetch fault) - the caller's own yielded flag decides arming
+  // then.
   async function refreshVariants(st: ChatState): Promise<boolean> {
     const sessionId = st.sessionId;
     if (!sessionId || st.ephemeral) return false;
@@ -774,39 +584,23 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.forkFrom = null; // stale anchors retire: resolved against the view
       return transcriptHasPending(renderTranscriptItems(detail.items));
     } catch {
-      // transient fetch failure keeps the previous block
       return false;
     }
   }
 
-  // --- the pending watcher (async agent loop phase 3, rulings 6/7) ---
-  //
-  // A yielded run ENDED - its dispatch went out-of-band and the home
-  // sleeps until the result settles, when the server re-enters it as a
-  // WAKE RUN on the same session (the same pipe a user send takes; the
-  // panel repaints it). The origin /chat stream is over, so without a
-  // subscriber the wake's view_model_delta frames land on nobody and
-  // the pending chip never fills. The watcher closes that gap: ATTACH to
-  // the wake run and ride it (the same reattach flow load() uses) - the
-  // wake streams into the same pane, the chip resolves in place. A wake
-  // that yields again (the model delegated twice) re-arms on its own
-  // ending; still-pending siblings keep the watch across every ride.
-  //
-  // The wake is an EVENT since the push channel landed (card
-  // t_896cf5a8): the socket's runs topic carries the live-run truth, so
-  // noteRunState's active edge rides the wake - nothing polls the run
-  // slot. One arming probe per wait covers the edge that fired in the
-  // gap between the view's fetch and the arming; one budget deadline
-  // retires a waiter whose wake never comes (a parked home, a page that
+  // the pending watcher (async agent loop phase 3, rulings 6/7) --- A yielded run. The
+  // origin /chat stream is over, so without a subscriber the wake's view_model_delta
+  // frames land on nobody and the pending chip never fills. One arming probe per wait
+  // covers the edge that fired in the gap between the view's fetch and the arming; one
+  // budget deadline retires a waiter whose wake never comes (a parked home, a page that
   // lost the socket) and the next reconnect catch-up re-arms it.
   const PENDING_WATCH_MS = 30 * 60 * 1000; // cap: the server's run timeout budget
 
   const pendingWaiters = new Map<string, string>(); // state key -> session id
   const pendingDeadlines = new Map<string, ReturnType<typeof setTimeout>>();
 
-  // pendingInTranscript reads the REST truth once: are any chips still
-  // pending? A fetch fault answers true - a transient blip must not
-  // disarm the watch.
+  // pendingInTranscript reads the REST truth once: are any chips still pending? A fetch
+  // fault answers true - a transient blip must not disarm the watch.
   async function pendingInTranscript(sessionId: string): Promise<boolean> {
     try {
       const detail = await fetchTranscript(sessionId);
@@ -825,9 +619,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     pendingDeadlines.delete(key);
   }
 
-  // armDeadline is the budget guard: one truth recheck per window, never
-  // a loop. Still pending re-arms (a long out-of-band tool may outlive
-  // one window); settled disarms and repaints from the snapshot.
+  // armDeadline is the budget guard: one truth recheck per window, never a loop.
   function armDeadline(key: string, sid: string): void {
     const t = setTimeout(() => {
       pendingDeadlines.delete(key);
@@ -845,9 +637,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     pendingDeadlines.set(key, t);
   }
 
-  // ridePending attaches the wake run and rides it to its end. Its
-  // runStream finally re-arms when the truth still carries pending
-  // chips; a re-entry guard keeps two edges from double-attaching.
+  // ridePending attaches the wake run and rides it to its end.
   async function ridePending(key: string, sid: string): Promise<void> {
     const st = states.get(key);
     if (!st || st.sessionId !== sid) {
@@ -860,8 +650,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     await runStream(st, (handlers) => attachSession(sid, handlers));
   }
 
-  // wakePending: one session's run went live - every armed waiter on
-  // that session rides it. Called from noteRunState (the runs topic).
+  // wakePending: one session's run went live.
   function wakePending(session: string): void {
     if (!session) return;
     for (const [key, sid] of [...pendingWaiters]) {
@@ -869,9 +658,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     }
   }
 
-  // watchPending arms ONE waiter per state key. The arming probe asks
-  // the run slot once (a single GET /events probe, not a poll): a wake
-  // that started before the edge subscription existed is still ridden.
+  // watchPending arms ONE waiter per state key.
   function watchPending(st: ChatState) {
     const sid = st.sessionId;
     if (!sid || pendingWaiters.has(st.key)) return;
@@ -883,11 +670,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     })();
   }
 
-  // runStream drives one transport interaction (the send's POST /chat
-  // or the attach GET /sessions/<id>/events): busy bookkeeping, error
-  // surfacing into statusLine (the transcript belongs to the canvas -
-  // errors are transport concerns, not transcript items), read-marking
-  // for the focused view and the refresh follow-ups.
+  // runStream drives one transport interaction.
   async function runStream(st: ChatState, start: (handlers: StreamHandlers) => Promise<unknown>) {
     busyKeys.value = withBusy(busyKeys.value, st.key, true);
     const handlers = makeTransportHandlers(st);
@@ -896,9 +679,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       await start(handlers);
     } catch (e) {
       if (e instanceof StreamInterruptedError) {
-        // transport death mid-stream: the panel keeps its last paint -
-        // the exit flush (server-side) restores the persisted truth,
-        // this line names the dead transport for the resume affordance
         st.statusLine = "stream interrupted";
       } else if (e instanceof SessionBusyError) {
         // the runHub 409: nothing was run, nothing persisted
@@ -911,44 +691,24 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.attached = false;
       st.lastDeltasPerSecond = st.liveDeltasPerSecond;
       st.liveDeltasPerSecond = 0;
-      // A stream ending on the FOCUSED tab never unreads itself - the
-      // user watched the content live, so it is marked read. A
-      // background stream (this page or another) leaves its row
-      // unread: that is the feature. Ephemeral sessions have no row:
-      // the read-stamp POST would only 204 into nothing.
+      // A stream ending on the FOCUSED tab never unreads itself.
       if (st.sessionId && !st.ephemeral && deps.isFocused(st.key)) deps.markRead(st.sessionId);
-      // refresh once the row carries the run's persisted numbers - the
-      // sidebar's pulse, the title and the durable telemetry feed from it
       await deps.refreshSessions();
       const row = st.sessionId ? deps.sessionRow(st.sessionId) : undefined;
       if (row) {
-        // the run's persisted totals become the state's idle telemetry -
-        // the bar's last-known values and the post-reload display come
-        // from the SAME source (the row), not from the live meter's
-        // instantaneous last-second tick
         const durable = persistedTelemetry(row);
         st.tokens = durable.tokens;
         st.tokensPerSecond = durable.tps;
         st.lastChunksPerSecond = durable.cps;
       }
-      // the title goroutine writes the session label seconds AFTER the
-      // run really ends - the refresh above runs too early to see it.
+      // the title goroutine writes the session label seconds AFTER the run really ends.
       // Ephemeral sessions never grow a row or a label - skip the timer.
       if (!st.ephemeral && (!row || !row.label)) {
         setTimeout(() => {
           deps.refreshSessions();
         }, TITLE_REFRESH_MS);
       }
-      // variants may have moved (a retry's fresh sibling, a fork's new
-      // sub-branch, a cancel's partial) - one fetch, switcher without
-      // a manual reload. The same fetch answers the async question:
-      // do yield-class chips still await their wake?
       const pendingStill = await refreshVariants(st);
-      // async agent loop phase 3: a run that ended yielded - or ended
-      // settled while older yield-class siblings still pend - hands
-      // this tab to the pending watcher, so the wake run that
-      // re-enters the session streams into the same pane and the
-      // chips fill in place. No-op when one already watches.
       if (!st.orphan && (st.lastFinishReason === "yielded" || pendingStill)) {
         watchPending(st);
       }
@@ -1004,9 +764,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 
   async function load(key: string, sessionId: string, force = false): Promise<void> {
     const st = ensureState(key, sessionId);
-    // a stream live on THIS state owns its feed - the panel repaints
-    // (local deltas) are current; refetching now would trade them for
-    // a mid-flight snapshot
+    // a stream live on THIS state owns its feed.
     if (busyKeys.value.has(key) || st.attached) return;
     // the loaded-view reuse (card t_15572849): a dock-tab switch unmounts
     // the pane and the mount calls load() again. The state already carries
@@ -1021,9 +779,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     if (!force && st.loaded && !viewIsStale(st, sessionId)) return;
     try {
       const detail = await fetchTranscript(sessionId);
-      // durable telemetry straight from the persisted row: the token
-      // total and the last-run rates land in the status bar before any
-      // stream runs - reload shows what the session actually has
       const durable = persistedTelemetry(detail.session);
       st.tokens = durable.tokens;
       st.tokensPerSecond = durable.tps;
@@ -1049,18 +804,10 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         st.attached = true;
         await runStream(st, (handlers) => attachSession(sessionId, handlers));
       }
-      // async agent loop phase 3: a restored session whose chips still
-      // pend (a reload inside the home-sleeps window) arms the pending
-      // watcher right here - the wake run that resolves them streams
-      // into this pane and the chips fill in place. A running session
-      // needs no arm: the reattach above rides, and the stream's own
-      // end re-arms on the truth.
       if (!detail.running && transcriptHasPending(st.restored)) {
         watchPending(st);
       }
     } catch {
-      // empty or missing session: keep this tab's previous view rather
-      // than dropping it on a transient fetch failure
     }
   }
 
@@ -1078,22 +825,14 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // active set) blocks a second send locally; the runHub 409 is the
     // backstop for the window the client set cannot see.
     if (st.sessionId && busyAll.value.has(st.sessionId)) return false;
-    // unsaved chat create window: one send at a time per tab
     if (!st.sessionId && busyKeys.value.has(key)) return false;
-    // The create-then-send dance is GONE: a null sessionId POSTs /chat
-    // bare and the server auto-creates the session - the leading
-    // `session` SSE frame carries the id while the run streams. The
-    // conversation paint is the canvas panel's (the run's beginRun
-    // takes the panel over and the user turn rides the first delta).
+    // The create-then-send dance is GONE.
     const images = st.attachments.slice();
     st.attachments = [];
-    // the pending file references ride the SAME user turn (card
-    // t_8a569163): the server persists the records, relocates a staged
-    // draft upload into the session dir, and validates every path
+    // the pending file references ride the SAME user turn.
     const files = st.files.slice();
     st.files = [];
-    // the armed skill (t_07aed3f9) rides THIS send as a system
-    // preamble; one send consumes it
+    // the armed skill rides THIS send as a system preamble; one send consumes it
     const messages: OmegaMessage[] = [
       {
         role: "user",
@@ -1107,15 +846,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.statusLine = `[skill: ${st.pendingSkill.name}] carried with this send`;
       st.pendingSkill = null;
     }
-    // the draft workspace intent (t_ea7e6a58) rides ONLY the bare
-    // create: a first send pins its folder on the auto-created row
-    // (POST /chat {workspace}). Bound sends read the row instead, an
-    // ephemeral mint has no row to pin. Consumed here - the send is
-    // the composer clearing, the intent clears with it.
+    // the draft workspace intent rides ONLY the bare create.
     const ws = !st.sessionId && !st.ephemeral ? st.workspaceIntent : "";
     st.workspaceIntent = "";
-    // the anchor is consumed by the send that carries it (cleared only
-    // when this submit actually fires the forked body)
     if (fork && st.forkFrom === fork) st.forkFrom = null;
     await runStream(st, (handlers) =>
       streamChat(
@@ -1132,9 +865,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         model,
         thinking,
         fork,
-        // ephemeral: no-persist contract on the wire - the server mints
-        // (or continues) the `eph-` session in memory, denies the
-        // memory tool, and never writes the store (card t_d96a5cd5)
+        // ephemeral: no-persist contract on the wire - the server mints (or continues)
+        // the `eph-` session in memory, denies the memory tool, and never writes the
+        // store
         st.ephemeral,
         ws,
       ),
@@ -1142,20 +875,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     return true;
   }
 
-  // retry dispatches the chat panel's retry action through the pipe:
-  // the server replays the session's last user turn as a sibling
-  // variant (detached) - the reattach + panel deltas are the surfaces,
-  // no wire messages from here. The composer's model/thinking chips do
-  // not ride the action (the pipe action carries the session alone) -
-  // the replay takes the session's own run configuration. Triggered
-  // from the newest assistant response's action row (t_95d2bc34; the
-  // composer's retry face retired).
+  // retry dispatches the chat panel's retry action through the pipe. The composer's
+  // model/thinking chips do not ride the action (the pipe action carries the session
+  // alone) - the replay takes the session's own run configuration.
   async function retry(key: string): Promise<boolean> {
     const st = ensureState(key);
     if (composerBusy(key)) return false;
-    // a retry has to land in an EXISTING session - an unsaved tab has
-    // nothing persisted to replay; ephemeral sessions refuse the
-    // affordance the same way the server refuses the flag combination
+    // a retry has to land in an EXISTING session.
     const sessionId = st.sessionId;
     if (!sessionId || st.ephemeral) return false;
     try {
@@ -1165,9 +891,6 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return false;
     }
     st.statusLine = "";
-    // the replay runs detached: subscribe for its deltas as soon as the
-    // runHub shows the slot taken (attachSession 404s benignly if the
-    // busy poll beats us - the reconcile watcher re-attaches then)
     if (!st.attached) {
       st.attached = true;
       await runStream(st, (handlers) => attachSession(sessionId, handlers));
@@ -1180,11 +903,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.attachments = st.attachments.concat(images);
   }
 
-  // attachFileRefs uploads each picked non-image file to /attach-file
-  // (card t_8a569163) and parks the returned reference in the tab's
-  // pending list. ONE file per request is the route's law, so the loop
-  // is sequential and the strip keeps the picker's order. A failed file
-  // lands in statusLine; the rest still upload.
+  // attachFileRefs uploads each picked non-image file to /attach-file and parks.
   async function attachFileRefs(key: string, files: File[]): Promise<void> {
     const st = ensureState(key);
     for (const file of files) {
@@ -1200,18 +919,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     const st = ensureState(key);
     st.files = st.files.filter((_, i) => i !== index);
   }
-  // command runs a "/" draft (t_07aed3f9). Shell commands go to the
-  // app's local handler (deps.runCommand - theme, panes, fork, retry,
-  // copy: never an agent round-trip). Everything else POSTs
-  // /commands/dispatch: the ctx.CommandHandler chain executes the
-  // module's command server-side, or /<skill-name> resolves into the
-  // skill content the next send arms. A failure lands in statusLine,
-  // never as a swallowed throw.
-  //
-  // A send ctx (t_7f09bd0c) changes the skill arm's shape: the send
-  // arms the resolved content AND posts the token as a message in one
-  // beat - the pendingSkill rides the very submit that carries the
-  // pill'd draft, so nothing stale stays armed.
+  // command runs a "/" draft. Shell commands go to the app's local handler
+  // (deps.runCommand - theme, panes, fork, retry, copy: never an agent round-trip). A
+  // failure lands in statusLine, never as a swallowed throw.
   async function command(
     key: string,
     text: string,
@@ -1235,23 +945,18 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       return true;
     }
     try {
-      // the tab's own session rides the dispatch: session-scoped
-      // commands (/export, /label, /branch) act on THIS tab
       const res = await dispatchCommand(name, args, st.sessionId || "");
       if (res.kind === "skill") {
         st.pendingSkill = { name: res.name || name.slice(1), content: res.content || "" };
         if (send) {
-          // the send (t_7f09bd0c): the message posts with the pill'd
-          // token - submit consumes the armed content as the preamble
           await submit(key, text, send.model, send.thinking, send.fork);
           return true;
         }
         st.statusLine = `[skill: ${st.pendingSkill!.name}] armed - the next send carries it`;
       } else {
-        // the first line that carries TEXT: several session commands
-        // (/tree, /sessions, /agents) open their table with a blank line,
-        // and a blank status line reads exactly like nothing happened
-        // (t_d1fe01da)
+        // the first line that carries TEXT: several session commands (/tree, /sessions,
+        // /agents) open their table with a blank line, and a blank status line reads
+        // exactly like nothing happened
         const first =
           (res.text || `${name}: done`)
             .split("\n")
@@ -1284,11 +989,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     st.forkFrom = messageId;
   }
 
-  // replayFork runs a USER-turn fork anchor immediately: the /chat fork
-  // body takes no messages for a user target - replay semantics, the
-  // fresh response appends as a sibling variant. A fork replay is a
-  // SEND (native /chat, model + thinking ride it), not an action-pipe
-  // call - the pipe's replay is the retry face.
+  // replayFork runs a USER-turn fork anchor immediately.
   async function replayFork(
     key: string,
     messageId: string,
@@ -1302,11 +1003,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     );
   }
 
-  // selectVariant flips a branch point's active variant server-side
-  // (t_a62eeb43); the branch data re-reads (the switcher's « n/n » and
-  // the fork chip are server-derived) and the view swaps to the active
-  // path: the canvas snapshot refetch repaints a panel-covered tab,
-  // the restore reload covers the rest.
+  // selectVariant flips a branch point's active variant server-side.
   async function selectVariant(
     key: string,
     messageId: string,
@@ -1326,18 +1023,13 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 
   function cancel(key: string) {
     const st = states.get(key);
-    // the id read at call time: an auto-created session binds mid-send
     if (!st?.sessionId) return;
     postCanvasAction(CHAT_MODULE, "stop", { session: st.sessionId }).catch((e) => {
       st.statusLine = `stop failed: ${e instanceof Error ? e.message : String(e)}`;
     });
   }
 
-  // composerBusy is the PER-SESSION gate: the session's run slot, read
-  // through busyAll (this page's live streams mapped by session + the
-  // server's active set). Two tabs on one live session both show the
-  // streaming state; the second send from either gets the busy
-  // affordance, not a double run.
+  // composerBusy is the PER-SESSION gate.
   function composerBusy(key: string): boolean {
     const st = states.get(key);
     if (!st) return false;
@@ -1356,11 +1048,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     });
   }
 
-  // dropEphemeralServerRecord enforces the close = gone contract: when
-  // the LAST state bound to an `eph-` session stops being rendered, the
-  // server's in-memory record is deleted (card t_d96a5cd5). A miss
-  // (record already gone, another window still bound) is a benign
-  // race / no-op, never an error surfaces to the user.
+  // dropEphemeralServerRecord enforces the close = gone contract. A miss (record
+  // already gone, another window still bound) is a benign race / no-op, never an error
+  // surfaces to the user.
   function dropEphemeralServerRecord(sessionId: string | null, exceptKey: string | null) {
     if (!sessionId || !sessionId.startsWith("eph-")) return;
     for (const [key, s] of states.entries()) {
@@ -1372,8 +1062,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   function closeState(key: string) {
     const st = states.get(key);
     if (!st) return;
-    // a dropped state must not keep a wake waiter (card t_896cf5a8): the
-    // runs edge would otherwise ride a run into nothing
+    // a dropped state must not keep a wake waiter.
     disarmPending(key);
     if (busyKeys.value.has(key)) st.orphan = true;
     else {
@@ -1473,11 +1162,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 // wrote one variant's id onto the other's item is what this card
 // retired).
 
-// VERDICT COUNTDOWN ANCHOR (card t_f13642bc). A card's deadline is a
+// VERDICT COUNTDOWN ANCHOR. A card's deadline is a
 // fact about the CALL, not about the pane that happens to render it.
 // The anchor used to be a Map inside createCanvasTranscript - one per
 // ChatTab instance - so every dock-tab switch re-anchored the card at
-// Date.now() (DockPane renders only the active tab, no KeepAlive: the
+// Date.now (DockPane renders only the active tab, no KeepAlive: the
 // pane remounts, and a card four minutes into a five-minute deadline
 // read 5:00 again - the remaining time misreported in the one surface
 // where it is the point).
@@ -1500,10 +1189,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
 const verdictAnchors = new Map<string, number>();
 const VERDICT_ANCHOR_MAX = 256;
 
-// verdictAnchorMs resolves one card's countdown anchor: the wire's start
-// stamp when it carries one, else this page's first sight of the call id
-// (minted on the spot, once). No call id and no stamp = no anchor: the
-// card renders without a countdown rather than a fabricated one.
+// verdictAnchorMs resolves one card's countdown anchor.
 function verdictAnchorMs(callId: string | undefined, startedAt?: string): number | undefined {
   if (startedAt) {
     const start = Date.parse(startedAt);
@@ -1527,27 +1213,16 @@ export interface CanvasTranscript {
 
 export function createCanvasTranscript(): CanvasTranscript {
   let session = "";
-  // persisted rows: one entry per STORE ROW ID (`row:<id>`) or per stable
-  // wire identity (a call id)
+  // persisted rows: one entry per STORE ROW ID (`row:<id>`) or per stable wire.
   const cache = new Map<string, TranscriptItem>();
-  // id-less rows: one entry per SLOT address (`live:<role>:<block type>:<n>`),
-  // swept at the end of every paint (an id-less row's object dies with the
-  // payload that stopped carrying its row)
+  // id-less rows: one entry per SLOT address (`live:<role>:<block type>:<n>`), swept.
   const slots = new Map<string, TranscriptItem>();
-  // the verdict countdowns anchor at MODULE scope on the call id, never
-  // here: a per-pane Map re-anchored every card on a remount (see
-  // verdictAnchorMs above)
+  // the verdict countdowns anchor at MODULE scope on the call id, never here.
 
-  // paint is one apply()'s working set: the per-payload slot bookkeeping
-  // (an ordinal counts what THIS payload carries, so it starts over
-  // every paint)
   interface Paint {
     resultIds: ReadonlySet<string>;
     ordinals: Map<string, number>;
     usedSlots: Set<string>;
-    // shape ("role:block type") -> the payload index of its LAST
-    // ID-BEARING row: the only row of that shape allowed to adopt a live
-    // slot
     lastIdOfShape: ReadonlyMap<string, number>;
   }
 
@@ -1581,17 +1256,13 @@ export function createCanvasTranscript(): CanvasTranscript {
     return transcriptAddress(row.id, `${row.role}:${block.type}`, ctx.ordinals);
   }
 
-  // lookup returns the item a prose row paints into: its own cached
-  // object, its own live slot, or - across the live -> persisted
-  // transition - the slot object adopted onto the row's id. A row never
-  // receives another row's object: the id path reads only its own key,
-  // adoption is limited to the shape's last ID-BEARING row in the
-  // payload (the store persists the open tail last, so a row that just
-  // gained an id is its shape's newest id-bearing row - an earlier row
-  // of that shape is a different row and never takes the object), the
-  // adopted entry is always an ID-LESS slot (a persisted item is never
-  // parked in `slots`), and sweepSlots drops a slot the moment its row
-  // leaves the payload.
+  // lookup returns the item a prose row paints into. A row never receives another row's
+  // object: the id path reads only its own key, adoption is limited to the shape's last
+  // ID-BEARING row in the payload (the store persists the open tail last, so a row that
+  // just gained an id is its shape's newest id-bearing row - an earlier row of that
+  // shape is a different row and never takes the object), the adopted entry is always
+  // an ID-LESS slot (a persisted item is never parked in `slots`), and sweepSlots drops
+  // a slot the moment its row leaves the payload.
   function lookup<T extends TranscriptItem>(
     row: ChatRowWire,
     block: ChatBlockWire,
@@ -1614,7 +1285,6 @@ export function createCanvasTranscript(): CanvasTranscript {
       const slot = liveAddress(row, block, ctx, false);
       const adopted = slots.get(slot) as T | undefined;
       if (adopted) {
-        // the same logical row, now carrying its store id
         slots.delete(slot);
         cache.set(address, adopted);
         return adopted;
@@ -1625,13 +1295,12 @@ export function createCanvasTranscript(): CanvasTranscript {
     return fresh;
   }
 
-  // peek/put: the tool, verdict and result rows are addressed by the same
-  // law (a call id when the wire carries one, else the row's own address).
-  // A persisted item sits in the cache; an ID-LESS one sits in `slots`, so
-  // the sweep below retires it with the payload that stopped carrying its
-  // row - an id-less row must not hand its object to a later row of its
-  // shape either. `live` is passed explicitly, never derived from the key,
-  // because a call id is a stable wire identity even on an id-less row.
+  // peek/put: the tool, verdict and result rows are addressed by the same law.
+  // A persisted item sits in the cache; an ID-LESS one sits in `slots`, so the sweep
+  // below retires it with the payload that stopped carrying its row - an id-less row
+  // must not hand its object to a later row of its shape either. `live` is passed
+  // explicitly, never derived from the key, because a call id is a stable wire identity
+  // even on an id-less row.
   function peek<T extends TranscriptItem>(key: string, live: boolean, ctx: Paint): T | undefined {
     if (!live) return cache.get(key) as T | undefined;
     ctx.usedSlots.add(key);
@@ -1655,13 +1324,9 @@ export function createCanvasTranscript(): CanvasTranscript {
       it.role = "user";
       it.content = block.content ?? "";
       it.images = block.images;
-      // the non-image references ride the row's text block (card
-      // t_8a569163) - the live turn renders the same chips the restore does
       it.attachments = block.attachments;
       it.id = row.id;
-      // the row's wall clock (card t_3a857a2d): the persisted user row's
-      // stamp is the turn's START - the arrival the turn total measures
-      // from. Absent on a row the store has not landed yet.
+      // the row's wall clock: the persisted user row's stamp is the turn's START.
       it.time = row.time;
       return it;
     }
@@ -1669,37 +1334,24 @@ export function createCanvasTranscript(): CanvasTranscript {
       const it = lookup(row, block, index, ctx, () => reactive({ kind: "thinking", content: "" }) as ThinkingItem);
       it.kind = "thinking";
       it.content = block.content ?? "";
-      // the store id rides the row (a run head can be a thinking row -
-      // the variant switcher anchors on it, t_0df4efd8)
       it.id = row.id;
       it.streaming = running ? true : undefined;
-      // the duration rides the block both ways (card t_95385aba): a
-      // completed reasoning phase keeps its server-measured span, and a
-      // still-streaming one carries the elapsed-so-far its meter counts
-      // on from after a remount - never the mount moment
+      // the duration rides the block both ways: a completed reasoning phase keeps its
+      // server-measured span, and a still-streaming one carries the elapsed-so-far its
+      // meter counts on from after a remount - never the mount moment
       it.finalMs = block.thinking_ms;
       it.elapsedMs = running ? block.elapsed_ms : undefined;
       return it;
     }
     if (row.role === "tool") {
-      // a result row: merge onto its call item (matched by call id,
-      // chronologically adjacent - the panel composes persisted tail +
-      // open items) or onto the verdict card it settles
-      // the result resolves against its call id, whether the call came
-      // from a plain tool line or a verdict card (both sit in the cache
-      // under their call id - one truth per call on the canvas)
       const target = (block.tool_call_id ? cache.get(`tc:${block.tool_call_id}`) : undefined) ??
         (block.tool_call_id ? cache.get(`verdict:${block.tool_call_id}`) : undefined);
       if (target?.kind === "tool") {
         target.result = block.content ?? "";
         target.status = block.is_error ? "error" : "done";
-        // the gate's decision record rides the result onto the call row
         if (block.gate) target.gate = block.gate;
-        // the call settled: the running meter's offset is spent
         if (!blockRunning) target.elapsedMs = undefined;
         target.finalMs = block.elapsed_ms;
-        // the response-return window rides the result beside the call
-        // duration (card t_e27c8347) - the row's second number
         target.answerMs = block.answer_ms;
         return target;
       }
@@ -1712,8 +1364,6 @@ export function createCanvasTranscript(): CanvasTranscript {
         target.issuedAt = undefined;
         return target;
       }
-      // orphan result (the call row left the newest-40 window): render
-      // the bare line rather than erase the tool's work
       const rkey = `result:${rowAddress(row, block, ctx)}`;
       const live = !row.id;
       const it = peek<ToolItem>(rkey, live, ctx) ?? (reactive({ kind: "tool", name: "tool", status: "done" }) as ToolItem);
@@ -1727,33 +1377,17 @@ export function createCanvasTranscript(): CanvasTranscript {
       put(rkey, live, it);
       return it;
     }
-    // role assistant:
     if (block.type === "tool_call") {
       const callId = block.tool_call?.id;
-      // verdict calls render as cards (the card IS the surface, no plain
-      // tool line - the matching result row settles it). The name comes
-      // from ONE predicate (omega.ts isVerdictTool): the wire tool is
-      // the dotted verb `verdict.request`, and the flat pre-rename name
-      // this branch used to spell matches nothing on the wire (card
-      // t_79386e36 - every card degraded to a tool line in silence).
       if (isVerdictTool(block.tool_call?.name)) {
-        // a card without a call id has nothing to settle it: the row's
-        // own address keeps it stable across repaints anyway
         const live = !callId && !row.id;
         const vsig = callId ? `verdict:${callId}` : `verdict:${rowAddress(row, block, ctx)}`;
         const cached = peek<VerdictItem>(vsig, live, ctx);
         if (cached) {
-          // the card is issued; only its anchor moves. A pending card is
-          // ANSWERABLE regardless of the panel's streaming bit: the tool
-          // is yield-class, so the run ending with the card waiting is
-          // the normal path, not the death of it (the retired `stale`
-          // bit read !panelRunning and painted every real card dead).
-          // the anchor is re-derived at every paint (the elapsed-meter
-          // law): a payload that carries the server's start stamp only
-          // on a later delta moves the countdown onto the true clock,
-          // once - a stamp is a fixed instant, so a re-derivation never
-          // drifts. A SETTLED card keeps its spent anchor undefined (the
-          // result row cleared it; nothing re-mints one).
+          // the card is issued; only its anchor moves. the anchor is re-derived at
+          // every paint (the elapsed-meter law): a payload that carries the server's
+          // start stamp only on a later delta moves the countdown onto the true clock,
+          // once - a stamp is a fixed instant, so a re-derivation never drifts.
           if (cached.status === "pending") {
             cached.issuedAt = verdictAnchorMs(callId, block.started_at) ?? cached.issuedAt;
           }
@@ -1762,41 +1396,29 @@ export function createCanvasTranscript(): CanvasTranscript {
         const card = reactive(verdictCardFromToolArgs(block.tool_call?.arguments));
         card.callId = callId;
         card.status = "pending";
-        // anchored whether or not a stream is live: a yielded run's card
-        // is still pending, and its remaining time is the call's truth,
-        // never the panel's running flag (the old gate here is why a
-        // card under a quiet panel showed no countdown at all)
+        // anchored whether or not a stream is live: a yielded run's card is still
+        // pending, and its remaining time is the call's truth, never the panel's
+        // running flag
         card.issuedAt = verdictAnchorMs(callId, block.started_at);
         put(vsig, live, card);
         return card;
       }
-      // the call row is keyed by its CALL id whenever the wire carries one
-      // (the result row merges onto it there); a call with neither a call
-      // id nor a store id gets its own slot - a payload index is never an
-      // address (the slide moves every index, t_494639c8)
+      // the call row is keyed by its CALL id whenever the wire carries one (the result
+      // row merges onto it there); a call with neither a call id nor a store id gets
+      // its own slot - a payload index is never an address
       const live = !callId && !row.id;
       const csig = callId ? `tc:${callId}` : `tc:${rowAddress(row, block, ctx)}`;
       const it = peek<ToolItem>(csig, live, ctx) ?? (reactive({ kind: "tool", name: "tool" }) as ToolItem);
       it.kind = "tool";
       it.name = block.tool_call?.name || "tool";
-      // the chips topic's join key (card t_896cf5a8): the pending chip's
-      // live tail rides the row whose call id matches
       it.callId = callId;
-      // the store id rides the CALL row (a run head can be a tool call
-      // row - the variant switcher anchors on it, t_0df4efd8); the
-      // result merge mutates this same item, so the id stays the call's
+      // the store id rides the CALL row.
       it.id = row.id;
       it.output =
         block.tool_call?.arguments != null ?
           JSON.stringify(block.tool_call.arguments, null, 2)
         : undefined;
-      // async agent loop phase 3 (ruling 6): an unanswered call is
-      // the PENDING chip, never a completed line with no output. The
-      // live tail's running bit outranks it (the block is streaming);
-      // a call with its result row anywhere in the payload (wire
-      // order: right after the call's turn) is settled. An id-less
-      // call keeps the done shape - nothing to match a result
-      // against.
+      // async agent loop phase 3: an unanswered call is the PENDING chip, never.
       it.status =
         blockRunning ? "running"
         : callId && !resultIds.has(callId) ? "pending"
@@ -1820,24 +1442,16 @@ export function createCanvasTranscript(): CanvasTranscript {
       put(csig, live, it);
       return it;
     }
-    // prose (text block): one assistant bubble per response segment -
-    // the backend composes the transcript's segment boundaries, the
-    // renderer stays flat. Streaming is ROW-level truth: the open
-    // text/thinking rows carry status "streaming". The block's own
-    // duration rides it (card t_95385aba): response_ms on a completed
-    // segment (the frozen label survives a remount) and elapsed_ms on
-    // the open one (the remounted meter counts on from the answer's
-    // elapsed-so-far, exactly like a running tool row).
+    // prose (text block): one assistant bubble per response segment. The block's own
+    // duration rides it: response_ms on a completed segment (the frozen label survives
+    // a remount) and elapsed_ms on the open one (the remounted meter counts on from the
+    // answer's elapsed-so-far, exactly like a running tool row).
     const it = lookup(row, block, index, ctx, () => reactive({ kind: "message", role: "assistant", content: "" }) as MessageItem);
     it.kind = "message";
     it.role = "assistant";
     it.content = block.content ?? "";
     it.streaming = running ? true : undefined;
-    // the row's wall clock (card t_3a857a2d): the persisted answer row's
-    // stamp is the turn's END - the same created_at the transcript wire
-    // serves, so a live turn and its restored twin compute one total. An
-    // in-flight answer row carries none (the store has not landed it yet)
-    // and keeps its own segment meter until it does.
+    // the row's wall clock: the persisted answer row's stamp is the turn's END.
     it.time = row.time;
     it.finalMs = block.response_ms;
     it.elapsedMs = running ? block.elapsed_ms : undefined;
@@ -1847,16 +1461,11 @@ export function createCanvasTranscript(): CanvasTranscript {
 
   function apply(payload: ChatPayloadWire): TranscriptItem[] {
     const out: TranscriptItem[] = [];
-    // one push per item object: a merge (the result row onto its call
-    // item, the settled verdict onto its card) RESOLVES to an item the
-    // call row already pushed - re-pushing it would render the line
-    // twice and hand the keyed v-for a duplicate key (t_0df4efd8)
+    // one push per item object: a merge RESOLVES to an item the call row already pushed
+    // - re-pushing it would render the line twice and hand the keyed v-for a duplicate
+    // key
     const pushed = new Set<TranscriptItem>();
     const rows = payload.rows ?? [];
-    // async agent loop phase 3: the settled-call index - every result
-    // row's call id, collected FIRST so a call row anywhere in the
-    // payload knows whether its result landed (the pending-chip
-    // derivation reads it)
     const resultIds = new Set<string>();
     for (const r of rows) {
       if (r?.role !== "tool") continue;
@@ -1865,21 +1474,16 @@ export function createCanvasTranscript(): CanvasTranscript {
       }
     }
     if ((payload.session ?? "") !== session) {
-      // another conversation took the panel over: identities are
-      // worthless across sessions - the cache resets. The verdict
-      // anchors do NOT: they are keyed by call id at module scope, and
-      // a card's remaining time is its call's fact - clearing them here
-      // is what made a tab switch (or a pane retarget) restart a
-      // countdown mid-deadline
+      // another conversation took the panel over. The verdict anchors do NOT: they are
+      // keyed by call id at module scope, and a card's remaining time is its call's
+      // fact - clearing them here is what made a tab switch (or a pane retarget)
+      // restart a countdown mid-deadline
       session = payload.session ?? "";
       cache.clear();
       slots.clear();
     }
-    // the shape's LAST ID-BEARING row is the only row that may adopt a
-    // live slot (see lookup): the store persists the open tail last, so a
-    // row that just gained its id is its shape's newest ID-BEARING row -
-    // the live rows after it are the new open tail. An earlier row of
-    // that shape is a different row and must never take the object.
+    // the shape's LAST ID-BEARING row is the only row that may adopt a live slot.
+    // An earlier row of that shape is a different row and must never take the object.
     const lastIdOfShape = new Map<string, number>();
     rows.forEach((row, i) => {
       const b = row.blocks?.[0];
@@ -1898,15 +1502,10 @@ export function createCanvasTranscript(): CanvasTranscript {
         pushed.add(it);
       }
     }
-    // sweepSlots: a slot lives only while its row is in the payload. A
-    // leftover slot would be an object a later row of the same shape
-    // could inherit although its own row is long gone - the very defect
-    // this card removes, one row down. (The live -> persisted adoption
-    // above runs first, in the payload where the row still arrives.)
+    // sweepSlots: a slot lives only while its row is in the payload.
     sweepSlots(ctx);
-    // the answer row's turn total (card t_3a857a2d): the SAME pass the
-    // restore builder runs, over the same two row stamps - the live pane
-    // and a reloaded transcript cannot disagree
+    // the answer row's turn total: the SAME pass the restore builder runs, over the
+    // same two row stamps - the live pane and a reloaded transcript cannot disagree
     applyTurnTotals(out);
     return out;
   }
@@ -1920,7 +1519,4 @@ export function createCanvasTranscript(): CanvasTranscript {
   return { apply };
 }
 
-// the retry gate moved with the affordance (t_95d2bc34): the newest
-// assistant response's action row carries the chip - ChatTab derives
-// the presence + the target item, ChatMessage renders it.
-// lastUserText stays the transcript-side presence check.
+// the retry gate moved with the affordance.

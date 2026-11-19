@@ -1,14 +1,8 @@
-<!-- omega webui: THE reference pill. One renderer for
-     both pill surfaces: the sent message's inline pill and, since card
-     t_e67c372b, the composer's inline chip - the editor wraps this
-     component non-editable where the token span was (the pill REPLACES
-     the text it represents). A pill is pure data (pills.ts RefToken);
-     the icon is the iconset's (icons.ts), never an emoji or a library.
-     Click opens the target - a file in the viewer, a skill's SKILL.md, a
-     folder's listing (card t_c3fe4ea6): one renderer, skills and folders
-     are addresses like files. The component emits
-     "open"; the surface decides how (both inject the app's viewer
-     open). -->
+<!--
+  omega webui: THE reference pill.
+  A pill is pure data (pills.ts RefToken); the icon is the iconset's (icons.ts), never
+  an emoji or a library.
+-->
 <template>
   <button
     class="ref-pill"
@@ -31,8 +25,6 @@
   const props = defineProps<{ pill: RefToken }>();
   const emit = defineEmits<{ (e: "open"): void }>();
 
-  // skill pills read "/name" (the invocation form); file and dir pills
-  // read the basename - the full relative path is the hover title
   const pillName = computed(() =>
     props.pill.kind === "skill" ? "/" + props.pill.name : props.pill.label,
   );

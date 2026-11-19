@@ -9,12 +9,9 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The per-subsystem model slot (card t_fc0b2f2d): the compaction
-// consult routes through the named provider instance the slot names;
-// the summary text identifies which provider served the call.
+// The per-subsystem model slot.
 
-// slotMessages builds a history whose tiny window forces one summarize
-// call.
+// slotMessages builds a history whose tiny window forces one summarize call.
 func slotMessages() []core.Message {
 	return []core.Message{
 		core.NewUser("first message long enough to exceed the tiny budget"),
@@ -36,8 +33,7 @@ func slotConfig(model string) agent.CompactionConfig {
 	}
 }
 
-// slotFixtures builds the default provider with one named instance;
-// the "big:<model>" slot routes there, everything else stays.
+// slotFixtures builds the default provider with one named instance.
 func slotFixtures() *Compactor {
 	base := agent.NewFakeProvider("base-model",
 		core.ResponseChunk{Type: "response_chunk", Content: "base-summary"},
@@ -51,8 +47,7 @@ func slotFixtures() *Compactor {
 	return &Compactor{provider: base}
 }
 
-// compactedSummary runs one Compact and returns the summary text the
-// consult produced (head/tail messages drop out of the result).
+// compactedSummary runs one Compact and returns the summary text the consult produced.
 func compactedSummary(t *testing.T, c *Compactor) string {
 	t.Helper()
 	out, err := c.Compact(context.Background(), slotMessages())
@@ -95,8 +90,7 @@ func TestCompactSlotUnknownPrefixIsBare(t *testing.T) {
 	}
 }
 
-// An empty slot keeps today's consult (the default instance, its main
-// model).
+// An empty slot keeps today's consult (the default instance, its main model).
 func TestCompactSlotEmpty(t *testing.T) {
 	c := slotFixtures()
 	c.config = slotConfig("")

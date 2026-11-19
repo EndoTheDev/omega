@@ -1,10 +1,4 @@
-// omega webui: the composer's Enter law. Enter sends, Shift+Enter is the
-// native newline (t_631b5362): the final keydown branch guards the send
-// with the shiftKey modifier, so Shift+Enter falls through with default
-// NOT prevented and the textarea breaks the line itself. The palette
-// block stays untouched - while the palette is open, Enter (shift or not)
-// is palette-owned: the highlighted item accepts, no send. Run:
-// node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: the composer's Enter law.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -17,10 +11,8 @@ const composer = readFileSync(
   "utf8",
 );
 
-// --- the onKeydown harness --------------------------------------------
-// AppComposer is a .vue SFC: node cannot import it. The onKeydown source
-// is sliced out verbatim (brace-matched) and evaluated with the exact
-// bindings closure uses - a real behavior test of the real function text.
+// the onKeydown harness -------------------------------------------- AppComposer is
+// a.vue SFC: node cannot import it.
 
 function extractOnKeydown(src: string): string {
   const at = src.indexOf("function onKeydown(e: KeyboardEvent)");
@@ -116,7 +108,7 @@ function build(
   return { onKeydown, sends, accepted, closed, active };
 }
 
-// --- the law -----------------------------------------------------------
+// the law --------------------------------------------------------
 
 describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   it("plain Enter sends and claims the key (preventDefault)", () => {
@@ -128,9 +120,8 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   });
 
   it("Shift+Enter never sends - the editor claims the key and writes the newline as a text node", () => {
-    // EDITOR (t_e67c372b): the contenteditable's own newline inserts a
-    // div node the draft reader cannot read - the branch claims the key
-    // and runs the text insert (pre-wrap renders it).
+    // EDITOR: the contenteditable's own newline inserts a div node the draft reader
+    // cannot read.
     const inserts: string[] = [];
     const { onKeydown, sends } = build({
       insertAtCaret: (text: string) => inserts.push(text),
@@ -143,7 +134,6 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   });
 
   it("the guard is the shiftKey modifier - any other modifier key still sends", () => {
-    // Ctrl/Alt+Enter keep the existing shape: only shift is exempt
     const { onKeydown, sends } = build();
     const e = key("Enter", false);
     (e as unknown as { ctrlKey: boolean }).ctrlKey = true;
@@ -152,8 +142,6 @@ describe("composer Enter law: Enter sends, Shift+Enter breaks the line", () => {
   });
 
   it("Backspace behind a chip hands to the dissolve and never reaches the send law", () => {
-    // the dissolve law is palette-closed-only: a behind-chip caret
-    // dissolves the chip back to its raw text, nothing sends
     const { onKeydown, sends } = build({ dissolveBehindCaret: () => true });
     const e = key("Backspace");
     onKeydown(e);
@@ -179,8 +167,6 @@ describe("palette ownership is unchanged (t_631b5362: palette block untouched)",
   });
 
   it("palette open: Shift+Enter is palette-owned too (no newline, no send)", () => {
-    // documented choice (card: implementer picks): the palette block keeps
-    // ownership of every Enter while open - Shift+Enter accepts the item
     const { onKeydown, sends, accepted } = build({ open: true, items });
     const e = key("Enter", true);
     onKeydown(e);
@@ -211,7 +197,7 @@ describe("palette ownership is unchanged (t_631b5362: palette block untouched)",
   });
 });
 
-// --- the editor's Enter branch (t_e67c372b) ---------------------------
+// the editor's Enter branch ------------------------
 describe("source canary: the editor claims every Enter, the shift modifier is the exemption", () => {
   it("the final branch owns Enter unconditionally, then branches on shiftKey", () => {
     const at = composer.indexOf('if (e.key === "Enter") {');
@@ -223,31 +209,18 @@ describe("source canary: the editor claims every Enter, the shift modifier is th
     assert.match(block, /emit\("send"\)/, "plain Enter sends");
   });
   it("no unshifted send reaches the contenteditable's default newline", () => {
-    // the branch is claimed twice: the palette block and the final
-    // branch both preventDefault; Shift+Enter inserts text
     const outside = composer.slice(composer.indexOf('if (e.key === "Enter") {'));
     assert.ok(outside.includes('e.preventDefault()'), "Enter is always claimed");
   });
 });
-// --- the fullscreen column anatomy (card t_08ef793b) -------------------
-// Endo's settled design (2026-11-02, "card it"): fullscreen = a floating
-// CARD, not a window-sized focus ring - the text region is the tall
-// element (a typeable canvas the placeholder + cursor live in), the
-// control row (+ joins the chips, send anchors right) pins to the card's
-// bottom edge with the compact padding rhythm, and the collapse chevron
-// is a real button in its own gutter. Source canaries on AppComposer.vue
-// + main.css; the compact skeleton is the regression guard.
 const css = readFileSync(
   join(here, "../app/assets/css/main.css"),
   "utf8",
 );
 
-// a CSS block by selector: from the selector to its closing brace
-// (composer rules are flat - no nesting - so this is exact)
+// a CSS block by selector: from the selector to its closing brace.
 function rule(sel: string): string {
-  // anchor at a line start - a suffix selector must not grab an earlier
-  // longer rule's tail (".composer.expanded .composer-row" contains
-  // ".composer-row {")
+  // anchor at a line start - a suffix selector must not grab an earlier longer.
   const anchor = css.indexOf("\n" + sel);
   assert.ok(anchor > -1, `main.css carries ${sel} at a rule start`);
   const end = css.indexOf("}", anchor);
@@ -270,8 +243,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
   });
 
   it("the control row pins to the bottom through the composer-bottom class", () => {
-    // the row grows above the toolbar - the toolbar, last flex child of
-    // the card column, rests on the card's bottom edge
     assert.match(
       css,
       /\.composer\.expanded \.composer-row \{[^}]*flex:\s*1/,
@@ -283,7 +254,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       /align-items:\s*center/,
       "one shared baseline: chips + send center on the row",
     );
-    // the template binds the class to the expanded state only
     assert.match(
       composer,
       /'composer-bottom':\s*expanded/,
@@ -311,7 +281,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       /@click="onCanvasClick"/,
       "wired on the composer root",
     );
-    // the guard: control clicks pass, empty-space clicks focus
     const fn = composer.slice(
       composer.indexOf("function onCanvasClick"),
       composer.indexOf("// the height follows every draft write"),
@@ -327,9 +296,7 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       composer.indexOf("// fullscreen canvas law"),
     );
     assert.match(toggle, /if \(expanded\.value\) ta\.value\?\.focus\(\)/);
-    // the height math must read the POST-class layout: a sync resize on
-    // collapse measures the still-stretched textarea and pins the compact
-    // height to the old 84px cap (live-probed collapse round-trip)
+    // the height math must read the POST-class layout.
     assert.match(toggle, /nextTick\(\(\) => \{/, "resize runs after the class lands");
   });
 
@@ -353,7 +320,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
       /border-color:\s*var\(--stroke\)/,
       "no orange on the pane-sized card",
     );
-    // the compact ruler is untouched
     const compact = rule(".composer:focus-within {");
     assert.match(compact, /rgba\(232,\s*131,\s*58,\s*0\.55\)/);
   });
@@ -369,11 +335,6 @@ describe("fullscreen composer: column anatomy (card t_08ef793b)", () => {
   });
 
   it("the fullscreen mount is an overlay: out of flow over the pane (t_9ff2f621)", () => {
-    // the displacement shape (the card grew IN the pane's flex column and
-    // left .messages a 32px sliver) is retired: out of flow, the history
-    // keeps the pane's whole height underneath and collapsing needs no
-    // refetch and no scroll repair (live-probed round trip: .messages
-    // clientHeight 473 -> 616 -> 473, scrollTop 400 held, zero fetches)
     const at = composer.indexOf("<style scoped>");
     assert.ok(at > -1, "AppComposer carries the overlay's scoped block");
     const overlay = composer.slice(at);
@@ -440,7 +401,7 @@ describe("compact composer regression guard (card t_08ef793b: untouched)", () =>
     assert.doesNotMatch(ta, /margin-right/);
   });
   it("the base editor block carries no fullscreen-only declarations", () => {
-    // the gutter and the stretch live under .composer.expanded only
+    // the gutter and the stretch live under.composer.expanded only
     assert.doesNotMatch(css, /\.composer \.composer-input \{[^}]*margin-right/);
   });
 });

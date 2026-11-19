@@ -1,11 +1,6 @@
 package kanban
 
-// dotted_e2e_test.go: the split's acceptance witness (t_f616ed78).
-// A scripted provider drives kanban.list, kanban.create and
-// kanban.comment through the REAL agent loop - the same wire a model
-// rides - and the assertions read the board store. No server, no
-// REST: the loop's tool dispatch on the dotted names is the surface
-// under test.
+// dotted_e2e_test.go: the split's acceptance witness.
 
 import (
 	"context"
@@ -19,10 +14,7 @@ import (
 )
 
 func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
-	// A FILE-backed board, not :memory:: the loop executes tool calls
-	// concurrently, and every fresh pooled connection to a :memory:
-	// dsn is its own empty database (no boards table under the fan-out).
-	// The file dsn is the production shape.
+	// A FILE-backed board, not:memory: the loop executes tool calls concurrently,.
 	s, err := Open(filepath.Join(t.TempDir(), "kanban.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -39,7 +31,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	}
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises three dotted tools back to back.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "kanban.list", Arguments: map[string]any{},
@@ -56,7 +47,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -83,8 +73,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 3", results)
 	}
 
-	// the store is the truth: list saw the seed, create landed, the
-	// comment stuck
 	tasks, err := board.ListTasks(context.Background(), "", "all")
 	if err != nil {
 		t.Fatal(err)

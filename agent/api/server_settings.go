@@ -10,14 +10,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Config-knob surface for the webui settings pane. Read/write of the
-// host's config goes through the Settings seam supplied by the host:
-// this file knows nothing about config.yaml. A host without the seam
-// (nil settings) answers 501 so the pane can fall back to its
-// client-side settings only.
+// Config-knob surface for the webui settings pane. A host without the seam (nil
+// settings) answers 501 so the pane can fall back to its client-side settings only.
 
-// handleSettings dispatches GET (read the schema + values, or one knob
-// by ?key=) and PUT (apply a values map, re-serve the refreshed schema).
+// handleSettings dispatches GET (read the schema + values, or one knob by ?key=).
 func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -30,11 +26,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "load settings: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		// One-knob read (card t_013b4643): ?key=<dotted path> answers
-		// the knob object exactly as it rides inside its group, so a
-		// script client reads a single value without the group walk.
-		// An unknown key is a 404 naming it - answering the full
-		// payload would make a typo look like a successful read.
+		// One-knob read: ?key=<dotted path> answers the knob object exactly as it rides.
 		if key := r.URL.Query().Get("key"); key != "" {
 			knob, ok := payload.Knob(key)
 			if !ok {
@@ -44,13 +36,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			writeSettingsJSON(w, knob)
 			return
 		}
-		// The SCOPES slice (card t_0a9edc72): the settings pane's scope
-		// refresh needs the per-agent scopes and nothing else, and it
-		// used to re-fetch the whole document for that one field. The
-		// slice is the SAME structure (the host's own Schema()) cut at
-		// the wire - no second registry, no second query path: the
-		// groups ride empty so the client's normalizer keeps its one
-		// shape. An absent/short flag is the full read, unchanged.
+		// The SCOPES slice: the settings pane's scope refresh needs the per-agent scopes.
 		if r.URL.Query().Get("scopes") == "1" {
 			writeSettingsJSON(w, &core.SettingsSchema{
 				Groups: []core.SettingsGroup{},
@@ -78,9 +64,6 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		payload, err := s.settings.Save(body.Values)
 		if err != nil {
-			// both user-input validation failures and write failures
-			// surface as a bad request with the host's message; the
-			// pane shows it inline either way
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -90,12 +73,7 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleSettingsRaw is the whole-document door beside the knob door
-// (card t_a82d39c8): GET answers the config file as YAML text for the
-// pane's export and edit-as-YAML surfaces, PUT validates and persists
-// a submitted document through the host's own write path. It carries
-// no schema: the payload IS the file, so the pane can show what a text
-// editor would.
+// handleSettingsRaw is the whole-document door beside the knob door.
 func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
 	if s.settings == nil {
 		http.Error(w, "settings not configured", http.StatusNotImplemented)
@@ -112,12 +90,11 @@ func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		_, _ = w.Write([]byte(text))
 	case http.MethodPut:
-		// The cap REJECTS, it never truncates: a YAML document cut at a
-		// top-level key boundary still parses, so a truncated body can
-		// pass Validate and be persisted as a silently PARTIAL config
-		// (a JSON body cannot - truncation always breaks the parse, which
-		// is why the house truncating reads are safe). Read one byte past
-		// the cap to tell "exactly at the cap" from "over it".
+		// The cap REJECTS, it never truncates: a YAML document cut at a top-level key
+		// boundary still parses, so a truncated body can pass Validate and be persisted as a
+		// silently PARTIAL config (a JSON body cannot - truncation always breaks the parse,
+		// which is why the house truncating reads are safe). Read one byte past the cap to
+		// tell "exactly at the cap" from "over it".
 		body, err := io.ReadAll(io.LimitReader(r.Body, maxRawConfigBytes+1))
 		if err != nil {
 			http.Error(w, "invalid request: "+err.Error(), http.StatusBadRequest)
@@ -133,9 +110,8 @@ func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
 		}
 		payload, err := s.settings.SaveRaw(string(body))
 		if err != nil {
-			// a document that will not parse or validate is the
-			// caller's text, not a server fault: 400 with the
-			// host's own sentence, exactly like the knob save
+			// a document that will not parse or validate is the caller's text, not a server
+			// fault: 400 with the host's own sentence, exactly like the knob save
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
@@ -145,15 +121,12 @@ func (s *Server) handleSettingsRaw(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// maxRawConfigBytes caps the raw-config PUT body. A config.yaml is a
-// few KB (the shipped example is under 8 KB); the cap exists because
-// the route is unauthenticated loopback and read into memory.
+// maxRawConfigBytes caps the raw-config PUT body.
 const maxRawConfigBytes = 1 << 20
 
-// handleSettingsReset restores the config defaults through the
-// host's Settings seam (card t_a82d39c8). POST because it is a
-// non-idempotent-looking write with no body: the defaults belong to
-// the host, so the client never assembles them.
+// handleSettingsReset restores the config defaults through the host's Settings seam.
+// POST because it is a non-idempotent-looking write with no body: the defaults belong
+// to the host, so the client never assembles them.
 func (s *Server) handleSettingsReset(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -171,9 +144,7 @@ func (s *Server) handleSettingsReset(w http.ResponseWriter, r *http.Request) {
 	writeSettingsJSON(w, payload)
 }
 
-// writeSettingsJSON emits the schema payload with no-store caching:
-// a settings pane that reads a cached GET after a save shows stale
-// values, and the values can change from outside (config.yaml edits).
+// writeSettingsJSON emits the schema payload with no-store caching.
 func writeSettingsJSON(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")

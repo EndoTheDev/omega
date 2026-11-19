@@ -1,8 +1,7 @@
 <template>
-  <!-- fragment (no wrapper element): renders EXACTLY the DOM the flat
-       transcript v-for rendered inline, so the classic chronolog stays
-       pixel-unchanged - the container layouts own the wrappers, this
-       component owns the per-item markup for both appearances -->
+  <!--
+    fragment (no wrapper element): renders EXACTLY the DOM the flat transcript v-for.
+  -->
   <ChatMessage
     v-if="item.kind === 'message'"
     :role="item.role"
@@ -42,8 +41,6 @@
     :gate="item.gate"
     :variant="variant"
     @select="(i) => variant && $emit('select', variant.message_id, i)" />
-  <!-- card t_63204dfd: a pending gate question bound to this running
-       tool row - the three-option card rides the row it froze -->
   <GateCard
     v-if="item.kind === 'tool' && gateCard"
     :card="gateCard"
@@ -61,16 +58,9 @@
   defineProps<{
     item: TranscriptItem;
     showThinking: boolean;
-    // this item's branch block (assistant messages with >=2 sibling
-    // runs) - resolved by ChatTab through variantOf, null elsewhere
     variant?: VariantBlock | null;
-    // the run is idle AND this item is the transcript's newest assistant
-    // response - ChatMessage renders the retry chip inside the action row
     retryable?: boolean;
-    // the chat tab's session id - verdict cards POST answers against it
     sessionId?: string;
-    // card t_63204dfd: the pending gate question bound to THIS tool
-    // row (ChatTab's binding) - the three-option card rides the row
     gateCard?: PendingVerdictCard | null;
     // card t_15572849: this row's durable fold address (toolGroup.ts
     // foldAddress) - the tool line keys its manual open/close pin by it on

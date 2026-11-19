@@ -1,13 +1,9 @@
 package tools
 
-// Lane A of the phantom-results probe (card t_a54ef2ce): the prod
-// agent's skill accused files.grep of serving STALE INDEX rows
-// ("line numbers 0 or column -1", paths that files.read then reports
-// as nonexistent). The probe disproved the index - grep walks the live
-// tree on every call - so these tests pin the property that was
-// accused, in the shape a future regression would break: rows served
-// by grep must track the filesystem between calls, and every content
-// row must carry a real 1-based line number.
+// Lane A of the phantom-results probe. The probe disproved the index - grep walks the
+// live tree on every call - so these tests pin the property that was accused, in the
+// shape a future regression would break: rows served by grep must track the filesystem
+// between calls, and every content row must carry a real 1-based line number.
 
 import (
 	"context"
@@ -19,10 +15,7 @@ import (
 	"testing"
 )
 
-// TestGrepReadsLiveFilesystemNoIndex: nothing about a grep result may
-// outlive the walk. Rewrite the file and the next call sees the new
-// content at the new line; delete it and the path stops appearing.
-// A cache or index layer introduced here would serve the old rows.
+// TestGrepReadsLiveFilesystemNoIndex: nothing about a grep result may outlive the walk.
 func TestGrepReadsLiveFilesystemNoIndex(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "note.md")
@@ -66,11 +59,9 @@ func TestGrepReadsLiveFilesystemNoIndex(t *testing.T) {
 	}
 }
 
-// TestGrepContentRowsAreOneBased: the row format is path:line: text and
-// the line is a real 1-based file line - no zero rows, no phantom
-// trailing row past the last newline. The probe's red flag was a
-// fabricated "line 0 / column -1" table; this pins the real shape so a
-// malformed row can never be served silently.
+// TestGrepContentRowsAreOneBased: the row format is path:line: text and the line is.
+// The probe's red flag was a fabricated "line 0 / column -1" table; this pins the real
+// shape so a malformed row can never be served silently.
 func TestGrepContentRowsAreOneBased(t *testing.T) {
 	cases := []struct {
 		name    string

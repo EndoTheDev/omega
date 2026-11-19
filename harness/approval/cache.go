@@ -11,16 +11,9 @@ import (
 	"sync"
 )
 
-// The verdict cache (design Q8): keyed by (canonical command,
-// resolved-target content hash, policy hash). A repeat of the same
-// command - same static form, same file contents on every referenced
-// target, same policy text - replays the verdict with ZERO model
-// calls. A mutated script re-asks (the TOCTOU bind); a policy edit
-// invalidates the whole cache (every prior key's policy component
-// changes, so every prior key misses).
+// The verdict cache (design Q8).
 
-// Cache is gate-scoped, process-resident, concurrency-safe. Entries
-// are final resolutions, including a recorded replay source.
+// Cache is gate-scoped, process-resident, concurrency-safe.
 type Cache struct {
 	mu sync.RWMutex
 	m  map[string]record
@@ -28,13 +21,10 @@ type Cache struct {
 
 type record struct {
 	outcome Outcome
-	// answers carries the six answers the deciding pass produced, so
-	// the audit row of the replay shows the same shape as the original.
 	answers Answers
-	// stamp is the decision's transcript record (card t_1b3e2a8b):
-	// the replay carries the recorded decision's own line, so a
-	// card-approved resolution replays as "escalated -> approved",
-	// never as an auto verdict.
+	// stamp is the decision's transcript record: the replay carries the recorded
+	// decision's own line, so a card-approved resolution replays as "escalated ->
+	// approved", never as an auto verdict.
 	stamp     string
 	modelUsed string
 	cached    bool
@@ -78,21 +68,14 @@ func (c *Cache) Len() int {
 	return len(c.m)
 }
 
-// contentLimits bounds the hashing pass: a few readable targets per
-// command, modest sizes. The pass never opens device nodes, sockets
-// or directories, and never reads the databases or logs it would be
-// recording into.
+// contentLimits bounds the hashing pass. The pass never opens device nodes, sockets or
+// directories, and never reads the databases or logs it would be recording.
 const (
 	targetCapCount = 16
 	targetCapBytes = 1 << 20
 )
 
-// TargetContentHash hashes the content of the FILES the parsed
-// command names: script arguments (executed content is the TOCTOU
-// substance) and any other named path that already exists as a
-// readable regular file. Missing targets hash as "absent" (the
-// canonical form already carries their name; a future create is the
-// cache's next subject, not this key's).
+// TargetContentHash hashes the content of the FILES the parsed command names.
 func TargetContentHash(segments []Segment) string {
 	var paths []string
 	seen := map[string]bool{}
@@ -138,9 +121,7 @@ func TargetContentHash(segments []Segment) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// isTargetPath picks the words that could name a file: pathy tokens
-// only (contain a slash, a dot-extension, or start with ~). Values
-// like -m or https://host/path stay out (URLs are not local reads).
+// isTargetPath picks the words that could name a file.
 func isTargetPath(w string) bool {
 	if w == "" || strings.Contains(w, "://") {
 		return false
@@ -155,7 +136,6 @@ func isTargetPath(w string) bool {
 		return true // relative path
 	}
 	if strings.Contains(filepath.Clean(w), ".") && strings.ContainsAny(w, ".") {
-		// a bare name with an extension is a plausible file target
 		return true
 	}
 	return false

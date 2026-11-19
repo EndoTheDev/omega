@@ -1,8 +1,6 @@
 package store
 
-// Tree store tests (t_17365247): AppendMessage materializes the tree
-// pointer (explicit wins + validated, derived = active-path leaf), the
-// active view derives, selections persist as variant_select entries.
+// Tree store tests: AppendMessage materializes the tree pointer.
 
 import (
 	"context"
@@ -12,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestAppendDerivesLeafParent: a plain send's appends chain off the
-// active path's leaf, then the head's parent hops to the user.
+// TestAppendDerivesLeafParent: a plain send's appends chain off the active.
 func TestAppendDerivesLeafParent(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -36,7 +33,6 @@ func TestAppendDerivesLeafParent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// u1, a1, u2(parent=2), a2(parent=3): linear chain materialized
 	if p := core.ParentIDOf(rows[2].Message); p != core.MsgID(rows[1].ID) {
 		t.Fatalf("u2 parent = %q, want the a1 row id", p)
 	}
@@ -52,9 +48,8 @@ func TestAppendDerivesLeafParent(t *testing.T) {
 	}
 }
 
-// TestAppendExplicitParentValidated: the retry head's explicit pointer
-// lands verbatim; a dangling pointer is REJECTED, not silently
-// truncated into a chain.
+// TestAppendExplicitParentValidated: the retry head's explicit pointer lands verbatim;
+// a dangling pointer is REJECTED, not silently truncated into a chain.
 func TestAppendExplicitParentValidated(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -74,7 +69,6 @@ func TestAppendExplicitParentValidated(t *testing.T) {
 	if p := core.ParentIDOf(rows[1].Message); p != core.MsgID(rows[0].ID) {
 		t.Fatalf("head parent = %q, want the user id", p)
 	}
-	// dangling: explicit pointer to a foreign row rejects
 	bad := core.NewAssistant("bad")
 	bad.ParentID = "9999"
 	err := s.AppendMessage(ctx, "t2", bad)
@@ -83,15 +77,13 @@ func TestAppendExplicitParentValidated(t *testing.T) {
 	}
 }
 
-// TestRetrySelectPersistAndPathSwap: the full retry-variant round trip
-// at store level - sibling, select, reload, path follows the selection.
+// TestRetrySelectPersistAndPathSwap: the full retry-variant round trip at store level.
 func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	if err := s.CreateSession(ctx, "t3", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	// user + first run
 	if err := s.AppendMessage(ctx, "t3", core.NewUser("who")); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +100,6 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	}
 	retry("first")
 	retry("second")
-	// default active = the newest head
 	view, err := s.GetActiveView(ctx, "t3")
 	if err != nil {
 		t.Fatal(err)
@@ -124,8 +115,7 @@ func TestRetrySelectPersistAndPathSwap(t *testing.T) {
 	if err := s.AppendMessage(ctx, "t3", core.NewVariantSelect(userID, core.MsgID(rows[1].ID))); err != nil {
 		t.Fatal(err)
 	}
-	// a CONTINUATION message from the selected branch chains off the
-	// selected leaf (the fork-send shape: explicit parent = the leaf)
+	// a CONTINUATION message from the selected branch chains off the selected leaf.
 	rows, _ = s.loadRows(ctx, "t3")
 	if p := core.ParentIDOf(rows[2].Message); p != core.MsgID(rows[0].ID) {
 		t.Fatalf("retry head parent wrong: %q", p)
@@ -150,15 +140,13 @@ func pathOf(v core.ActiveView) []string {
 	return out
 }
 
-// TestLegacyRowsRenderLinear: rows seeded without pointers (a
-// pre-branching database) derive one path and no variants block.
+// TestLegacyRowsRenderLinear: rows seeded without pointers (a pre-branching database).
 func TestLegacyRowsRenderLinear(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 	if err := s.CreateSession(ctx, "t4", "", ""); err != nil {
 		t.Fatal(err)
 	}
-	// seed raw rows the way the pre-pointer store wrote them
 	if err := s.AppendMessageRow(ctx, "t4", "user", `{"content":"legacy q"}`, core.NowISO()); err != nil {
 		t.Fatal(err)
 	}

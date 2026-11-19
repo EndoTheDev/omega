@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-// TestRunStopLatchesOnceAndFiresEveryHook pins the latch contract the
-// serving shell's stop path leans on (card t_caa67135): one stop, every
-// registered cancellation forwarded exactly once, a hook registered
-// AFTER the stop still fires, and a deregistered hook goes quiet.
+// TestRunStopLatchesOnceAndFiresEveryHook pins the latch contract the serving shell's
+// stop path leans on: one stop, every registered cancellation forwarded exactly once, a
+// hook registered AFTER the stop still fires, and a deregistered hook goes quiet.
 func TestRunStopLatchesOnceAndFiresEveryHook(t *testing.T) {
 	stop := NewRunStop()
 	var first, second, late, unsub atomic.Int32
@@ -35,8 +34,7 @@ func TestRunStopLatchesOnceAndFiresEveryHook(t *testing.T) {
 		t.Fatalf("a deregistered hook fired %d times", unsub.Load())
 	}
 
-	// Idempotent: a repeated stop (the endpoint's repeat 200) re-fires
-	// nothing.
+	// Idempotent: a repeated stop (the endpoint's repeat 200) re-fires nothing.
 	if stop.Stop() {
 		t.Fatal("the second Stop reported a transition")
 	}
@@ -57,9 +55,8 @@ func TestRunStopLatchesOnceAndFiresEveryHook(t *testing.T) {
 	}
 }
 
-// TestRunStopNilIsInert: hosts with no human at the wheel (cron, the
-// CLI loop, one-shot runs) thread a nil latch - every method must be a
-// no-op, never a panic.
+// TestRunStopNilIsInert: hosts with no human at the wheel (cron, the CLI loop, one-shot
+// runs) thread a nil latch - every method must be a no-op, never a panic.
 func TestRunStopNilIsInert(t *testing.T) {
 	var stop *RunStop
 	if stop.Stopped() {
@@ -77,9 +74,7 @@ func TestRunStopNilIsInert(t *testing.T) {
 	}
 }
 
-// TestRunStopRidesTheContext: the run ctx is how tools and the loop read
-// the latch - including through context.WithoutCancel, which drops the
-// cancellation but keeps the values (the dispatched-call path).
+// TestRunStopRidesTheContext: the run ctx is how tools and the loop read the latch.
 func TestRunStopRidesTheContext(t *testing.T) {
 	stop := NewRunStop()
 	ctx := WithRunStop(context.Background(), stop)

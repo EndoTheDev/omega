@@ -1,19 +1,10 @@
 package continuous
 
-// ledger.go: the evidence ledger (ruling 11). Runtime-owned: rows
-// arrive through the run event spine's observer seam (core
-// Context.AddEventObserver), never through any tool. One row per tool
-// call - tool name, args hash, ok/failed, the cheap verifier - stored
-// in the OWNING process's data dir (datadir.AgentHome isolation puts a
-// wake child's rows in <agent>/data/ledger.db automatically). A wake
-// report cites ledger rows; the shaper strips claim sentences the rows
-// do not back (ruling 11).
-//
-// Verifier scope, kept honest: the cheap check is the file stat ONLY.
-// URL-carrying calls record the URL in the verifier string as a
-// LOCATOR - the row's own ok flag (the tool's result, the fetch's HTTP
-// outcome) is the URL evidence. The verifier never fetches, never
-// stats a URL, never re-checks anything the tool already answered.
+// ledger.go: the evidence ledger. Runtime-owned: rows arrive through the run event
+// spine's observer seam (core Context.AddEventObserver), never through any tool. A wake
+// report cites ledger rows; the shaper strips claim sentences the rows do not back. The
+// verifier never fetches, never stats a URL, never re-checks anything the tool already
+// answered.
 
 import (
 	"context"
@@ -38,8 +29,7 @@ type Ledger struct {
 	db *sql.DB
 }
 
-// Open opens (creating if needed) the ledger for the process's data
-// directory: <data>/ledger.db. :memory: passes through for tests.
+// Open opens (creating if needed) the ledger for the process's data directory.
 func OpenLedger(dataDir string) (*Ledger, error) {
 	if dataDir == ":memory:" {
 		dataDir = ""
@@ -49,7 +39,6 @@ func OpenLedger(dataDir string) (*Ledger, error) {
 		dsn = ":memory:"
 	} else {
 		dsn = filepath.Join(dataDir, "ledger.db")
-		// A fresh home has no data/ yet; the ledger opens cleanly.
 		if err := os.MkdirAll(dataDir, 0o755); err != nil {
 			return nil, fmt.Errorf("ledger data dir: %w", err)
 		}
@@ -66,8 +55,7 @@ func OpenLedger(dataDir string) (*Ledger, error) {
 	return l, nil
 }
 
-// OpenLedgerForHome opens the ledger for an omega home (datadir.AgentHome's
-// answer): <home>/data/ledger.db.
+// OpenLedgerForHome opens the ledger for an omega home (datadir.AgentHome's answer).
 func OpenLedgerForHome(home string) (*Ledger, error) {
 	return OpenLedger(datadir.Dir(home))
 }
@@ -99,7 +87,7 @@ type record struct {
 	Verifier string
 }
 
-// Append writes one row. The wake report cites ids returned here.
+// Append writes one row.
 func (l *Ledger) append(r record) (int64, error) {
 	res, err := l.db.Exec(`INSERT INTO evidence (ts, run_id, tool, args_hash, ok, verifier) VALUES (?, ?, ?, ?, ?, ?)`,
 		r.TS, r.RunID, r.Tool, r.ArgsHash, boolInt(r.OK), r.Verifier)
@@ -109,8 +97,7 @@ func (l *Ledger) append(r record) (int64, error) {
 	return res.LastInsertId()
 }
 
-// List returns the run_id's rows (the report cites these), newest
-// order preserved by id.
+// List returns the run_id's rows (the report cites these), newest order preserved.
 func (l *Ledger) List(ctx context.Context, runID string) ([]record, error) {
 	rows, err := l.db.QueryContext(ctx,
 		`SELECT id, ts, run_id, tool, args_hash, ok, verifier FROM evidence WHERE run_id = ? ORDER BY id`, runID)
@@ -138,8 +125,8 @@ func (l *Ledger) Count(ctx context.Context) (int, error) {
 	return n, err
 }
 
-// All returns every ledger row, id order (append order) preserved -
-// the detail strip's read face. The caller caps what it renders.
+// All returns every ledger row, id order (append order) preserved. The caller caps what
+// it renders.
 func (l *Ledger) All(ctx context.Context) ([]EvidenceRow, error) {
 	rows, err := l.db.QueryContext(ctx,
 		`SELECT id, ts, run_id, tool, args_hash, ok, verifier FROM evidence ORDER BY id DESC`)
@@ -171,8 +158,7 @@ func boolInt(b bool) int {
 // runtime-owned id the tools never see, never mint.
 var spawnRunID = fmt.Sprintf("run-%x-%d", os.Getpid(), time.Now().UnixNano())
 
-// pendingCall carries a tool call from its spine sighting to its
-// result landing.
+// pendingCall carries a tool call from its spine sighting to its result landing.
 type pendingCall struct {
 	name     string
 	argsHash string
@@ -180,11 +166,9 @@ type pendingCall struct {
 	argURL   string
 }
 
-// argPathFor is the cheap check's target (ruling 11): a path-shaped
-// argument if the call carried one, otherwise empty. The STAT happens
-// at result time - a call that CREATES its file must read as an
-// existing file after the call, so the verifier describes the
-// end state the report's claims are about.
+// argPathFor is the cheap check's target. The STAT happens at result time - a call that
+// CREATES its file must read as an existing file after the call, so the verifier
+// describes the end state the report's claims are about.
 func argPathFor(args map[string]any) string {
 	candidates := []string{"path", "file", "file_path", "dir", "directory", "folder"}
 	for _, key := range candidates {
@@ -201,10 +185,7 @@ func argPathFor(args map[string]any) string {
 	return ""
 }
 
-// verify is the cheap post-check: a stat of the call's path argument
-// (no re-execution, no network). The path rides the verdict so a
-// report claim can name the row that backs it. The scope stays honest:
-// the verifier's check is the file stat ONLY (see the header).
+// verify is the cheap post-check.
 func verify(argPath string) string {
 	if argPath == "" {
 		return ""
@@ -215,11 +196,7 @@ func verify(argPath string) string {
 	return "file:missing:" + argPath
 }
 
-// urlVerifier records a URL-carrying call's object (web.fetch's `url`
-// arg). This is NOT a check: the ok flag on the row - the tool's own
-// result, i.e. the fetch's HTTP outcome - is the evidence. The string
-// exists so the report shaper can match a URL claim onto the row that
-// fetched that URL.
+// urlVerifier records a URL-carrying call's object (web.fetch's `url` arg).
 func urlVerifier(argURL string) string {
 	if argURL == "" {
 		return ""
@@ -227,9 +204,7 @@ func urlVerifier(argURL string) string {
 	return "url:" + argURL
 }
 
-// urlFor picks the URL object of a call: web.fetch's `url` key, or the
-// first top-level string argument that already looks like a URL. No
-// key match = no locator (an empty answer, like argPathFor).
+// urlFor picks the URL object of a call.
 func urlFor(args map[string]any) string {
 	if raw, ok := args["url"].(string); ok {
 		if u := strings.TrimSpace(raw); u != "" && strings.IndexByte(u, 0) < 0 {
@@ -258,11 +233,9 @@ func argsHash(args map[string]any) string {
 	return hex.EncodeToString(h.Sum(nil))[:16]
 }
 
-// observer returns the spine subscription: one row per tool call
-// (ruling 11). The observer blocks the run's forward goroutine for one
-// local insert - the spine contract says cheap; this is. Calls arrive
-// wrapped in StreamEvent (provider-stream tier) on their way through
-// the spine.
+// observer returns the spine subscription: one row per tool call. The observer blocks
+// the run's forward goroutine for one local insert - the spine contract says cheap;
+// this is.
 func (l *Ledger) observer() core.EventObserver {
 	pending := map[string]pendingCall{}
 	return func(ev core.Event) {
@@ -288,8 +261,6 @@ func (l *Ledger) observer() core.EventObserver {
 				TS:    core.NowISO(),
 				RunID: spawnRunID,
 				Tool:  p.name,
-				// A file stat where a path argument exists; otherwise the
-				// url locator. OK carries the actual verdict.
 				ArgsHash: p.argsHash,
 				OK:       !e.Message.IsError,
 				Verifier: verify(p.argPath),
@@ -301,8 +272,7 @@ func (l *Ledger) observer() core.EventObserver {
 				row.Tool = "unknown"
 			}
 			if _, err := l.append(row); err != nil {
-				// Evidence never breaks the run; a failed insert is a
-				// hole the report will not cite.
+				// Evidence never breaks the run.
 				_ = err
 			}
 		}

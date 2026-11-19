@@ -1,11 +1,6 @@
 package skills
 
-// edit_test.go: the webui editor's write-face self-check (card
-// t_0a108f16). The provider laws the three operations carry: the
-// loader's parse of what was written is the shape proof; the body
-// owns the markdown while the operator's frontmatter keys survive the
-// update; a removal is backed up + receipted + loud about unknown
-// names.
+// edit_test.go: the webui editor's write-face self-check.
 
 import (
 	"encoding/json"
@@ -36,7 +31,6 @@ func TestSaveSkillCreateComposesFrontmatter(t *testing.T) {
 		t.Errorf("composed frontmatter missing: %q", content)
 	}
 	if strings.Contains(content, "author") {
-		// the editor is the human's voice - no agent authorship stamp
 		t.Errorf("the tab editor never composes an author line: %q", content)
 	}
 	if !strings.HasSuffix(content, "say nothing.\n") {
@@ -186,7 +180,6 @@ func TestDeleteSkillBacksUpReceiptsAndRemoves(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "gone")); !os.IsNotExist(err) {
 		t.Fatalf("the folder must be gone: %v", err)
 	}
-	// the backup keeps the whole tree
 	backupRoot := filepath.Join(dir, ".curator", "backups")
 	backupNames, _ := os.ReadDir(backupRoot)
 	if len(backupNames) != 1 {
@@ -196,7 +189,6 @@ func TestDeleteSkillBacksUpReceiptsAndRemoves(t *testing.T) {
 	if err != nil || !strings.Contains(string(backupData), "kept by the backup") {
 		t.Fatalf("multi-file skill backup missing the tree: %v / %q", err, backupData)
 	}
-	// the ledger carries the receipt (actor webui, action remove)
 	ledgerRaw, err := os.ReadFile(filepath.Join(dir, ".curator", "ledger.jsonl"))
 	if err != nil {
 		t.Fatalf("ledger: %v", err)
@@ -220,7 +212,7 @@ func TestDeleteSkillUnknownIsTheNotFoundLaw(t *testing.T) {
 	}
 }
 
-// --- the wire handlers ---------------------------------------------------
+// the wire handlers ------------------------------------------------
 
 func editorRoutes(t *testing.T) (*Routes, string) {
 	t.Helper()
@@ -231,14 +223,12 @@ func editorRoutes(t *testing.T) (*Routes, string) {
 
 func TestSkillsSaveRouteLaws(t *testing.T) {
 	rt, _ := editorRoutes(t)
-	// POST-only
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/skills/save", nil)
 	rt.handleSkillsSave(rec, req)
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET /skills/save = %d, want 405", rec.Code)
 	}
-	// unknown route validation errors are 400s naming the refusal
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/skills/save", strings.NewReader(`{"name":"../evil","description":"x","content":"body"}`))
 	rt.handleSkillsSave(rec, req)

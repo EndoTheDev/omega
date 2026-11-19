@@ -1,8 +1,4 @@
-// Package store provides the session persistence seam (agent.StoreProvider)
-// via the SQLite implementation in store_impl.go, plus the sessions.search
-// tool that lets the agent search past conversations via FTS5.
-//
-// Seam: store (exclusive), tools (additive).
+// Package store provides the session persistence seam (agent.StoreProvider).
 package store
 
 import (
@@ -39,9 +35,7 @@ func (p *searchToolProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runSearch executes the sessions.search tool: queries the FTS5 index
-// and formats results as "[label] snippet" lines, using the session
-// label when available (falling back to the session ID).
+// runSearch executes the sessions.search tool.
 func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any) (string, error) {
 	query, _ := args["query"].(string)
 	results, err := p.store.SearchMessages(ctx, query)
@@ -62,22 +56,14 @@ func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any)
 	return out, nil
 }
 
-// hygieneToolProvider provides the sessions.hygiene tool: the tool the
-// async cron's hygiene fire (an agent turn) calls to run the pass -
-// the same shape the skills curator rides. The cron module stays
-// store-agnostic (no module imports a module): the wiring is yaml job
-// definition -> agent turn -> THIS tool.
+// hygieneToolProvider provides the sessions.hygiene tool.
 type hygieneToolProvider struct {
 	store *Store
-	// providerFn is the live provider reader, wired at mount. The
-	// model slot is NOT baked here (t_f78acfd6): hygiene() re-reads
-	// the store's live HygieneConfig at call time, so a
-	// summarizer_model flip reaches the next sweep without a mount.
+	// providerFn is the live provider reader, wired at mount.
 	providerFn func() agent.Provider
 }
 
-// provider resolves the live provider seam at call time (nil-safe,
-// mirroring the skills capsule's providerFn discipline).
+// provider resolves the live provider seam at call time.
 func (p *hygieneToolProvider) provider() agent.Provider {
 	if p.providerFn == nil {
 		return nil
@@ -108,16 +94,11 @@ func (p *hygieneToolProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runHygiene executes one tool call. The full pass summarizes BEFORE
-// pruning (the consult reads history that is going nowhere before
-// anything is deleted) and vacuums last, so the report's file sizes
-// state the post-maintenance shape.
+// runHygiene executes one tool call.
 func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]any) (string, error) {
 	if p.store == nil {
 		return "", fmt.Errorf("sessions.hygiene: no store")
 	}
-	// One live snapshot per call (card t_f78acfd6): a settings save
-	// that lands mid-sweep is the NEXT sweep's config.
 	cfg := p.hygiene()
 	action, _ := args["action"].(string)
 	action = strings.TrimSpace(strings.ToLower(action))
@@ -153,17 +134,12 @@ func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]an
 	}
 }
 
-// hygiene returns the store's live hygiene config snapshot (card
-// t_f78acfd6): the tool never holds a mount-time copy.
+// hygiene returns the store's live hygiene config snapshot: the tool never holds.
 func (p *hygieneToolProvider) hygiene() HygieneConfig {
 	return p.store.HygieneConfig()
 }
 
-// consultLine names the model slot the summarizer consulted - the
-// configured slot, or the provider's session model when the slot is
-// empty. The acceptance proof (card t_f78acfd6): change
-// provider.summarizer_model in settings on a running lane and the
-// next sweep's tool output names the new slot, no restart.
+// consultLine names the model slot the summarizer consulted.
 func (p *hygieneToolProvider) consultLine(cfg HygieneConfig) string {
 	slot := cfg.SummarizerModel
 	if slot == "" {

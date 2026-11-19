@@ -1,10 +1,6 @@
 package loop
 
-// The loop's allowance list (three-tier restructure, card t_768c6cc1):
-// agent/loop imports exactly {core, llm, agent, stdlib} - no fourth
-// entry. The loop was opinion-free as a module capsule; the promotion
-// into the mechanism tier is constitutional, and this test is its
-// teeth. Same machinery as core's importability_test.go.
+// The loop's allowance list: agent/loop imports exactly {core, llm, agent, stdlib}.
 
 import (
 	"go/parser"
@@ -15,9 +11,8 @@ import (
 	"testing"
 )
 
-// TestLoopImportsAreExactlyTheAllowance fails on any agent/loop import
-// outside {stdlib, core, llm, agent}. The promotion added no new
-// import rights - the loop imports the parent mechanism, the
+// TestLoopImportsAreExactlyTheAllowance fails on any agent/loop import outside. The
+// promotion added no new import rights - the loop imports the parent mechanism, the
 // substrate, and the contract layer it always did.
 func TestLoopImportsAreExactlyTheAllowance(t *testing.T) {
 	entries, err := os.ReadDir(".")

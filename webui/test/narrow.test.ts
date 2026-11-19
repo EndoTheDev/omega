@@ -1,8 +1,8 @@
 // omega webui: unit tests for the width-driven narrow adaptation
-// (card t_49d0b308). The measured class flip (ResizeObserver) is
+// . The measured class flip (ResizeObserver) is
 // browser code; what the unit suite pins is:
-//   - the pure threshold comparison (both copies agree on one value),
-//   - the CLASS PRESENCE wiring in the two adapted panels
+// the pure threshold comparison (both copies agree on one value),
+// the CLASS PRESENCE wiring in the two adapted panels
 //     (source-level, the composition-test convention).
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -30,8 +30,7 @@ test("isNarrowWidth: the ~300px column is narrow, a main pane is wide", () => {
 });
 
 test("the two narrow thresholds agree (shell + the board's module-owned copy)", () => {
-  // one value: the settings panel and the board flip on the same
-  // rendered width, or the sidebar would show both layouts at once
+  // one value: the settings panel and the board flip on the same rendered width,.
   assert.equal(BOARD_NARROW_MAX_PX, NARROW_MAX_PX);
   for (const px of [0, 100, 300, 360, 400, 640]) {
     assert.equal(boardIsNarrowWidth(px), isNarrowWidth(px), `at ${px}px`);
@@ -46,9 +45,6 @@ test("SettingsTab binds the width-driven narrow class", () => {
   assert.match(src, /narrow: narrow/, "the root class binding");
   assert.match(src, /useNarrow\(rootEl\)/, "the measurement composable");
   assert.match(src, /ref="rootEl"/, "the root carries the observe target");
-  // the narrow rules exist in the stylesheet (card t_ffab9823: NO block
-  // rule on .settings.narrow itself - the root keeps no padding/gap in
-  // narrow either; the rules are per-knob only)
   const css = readFileSync(join(root, "app", "assets", "css", "main.css"), "utf8");
   assert.ok(/\.settings\.narrow \.setting-item/.test(css), "the narrow rules are in");
 });
@@ -69,6 +65,5 @@ test("Board.vue mounts its narrow observer on its root", () => {
   assert.match(src, /narrow: narrow/, "the root class binding");
   assert.match(src, /isNarrowWidth/);
   assert.match(src, /ResizeObserver/);
-  // the compact view's rules are in the module's own styles
   assert.match(src, /\.board\.narrow \.board-scroll/, "stacked columns rule");
 });

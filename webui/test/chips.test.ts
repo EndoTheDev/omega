@@ -1,10 +1,4 @@
-// omega webui: unit tests for the live chip store (card t_896cf5a8,
-// step 5). The pending chip's streaming half: chunks append as they
-// land, the producer's truncation marker rides the STREAMING path (not
-// only the fill), and a fill settles the tail. The render wiring is
-// pinned structurally - the component strings are the honest witness
-// that the store reaches the row.
-// Run: node --test webui/test/ (node >= 23)
+// omega webui: unit tests for the live chip store.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -109,7 +103,7 @@ test("an unknown call id reads nothing (a row with no live tail)", () => {
   assert.equal(chipDisplay(undefined), "", "no tail renders no section");
 });
 
-// --- the render wiring (a dead store passes every pure test) --------------
+// the render wiring (a dead store passes every pure test) -----------
 
 // derivationSource is the transcript derivation's own source: from the
 // computed's declaration to the next computed. The purity pin reads it.

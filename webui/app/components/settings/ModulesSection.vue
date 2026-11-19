@@ -1,13 +1,5 @@
 <template>
-  <!-- card t_81d0901b: the module lifecycle surface is CONFIGURATION, not
-       content - it lives in the settings tab's MODULES section now (the
-       old secondary-pane tab is gone). This component is that section's
-       body: the rows, their live toggles, the expander detail and the
-       refusal tail. It carries NO settings-native row semantics (no
-       modified dot, no per-row reset, no scaffold-set override flag):
-       a module row is a plain toggle + description over persisted config
-       writes, which is why the row law below is the shared registry row
-       (.reg-row), not the settings knob row (.setting-row). -->
+  <!-- the module lifecycle surface is CONFIGURATION, not content. -->
   <div class="settings-modules" :class="{ narrow: narrow }">
     <p class="extensions-summary">{{ summary }}</p>
     <p
@@ -37,10 +29,7 @@
               :size="12" />
           </button>
           <div class="reg-row-main">
-            <!-- card t_561dc4e0: a module with UI opens through its name -
-                 the RegistryList openable-name precedent (t_36ceb99b); the
-                 right control seat stays one wide for the toggle/state,
-                 per the one-control-right law. -->
+            <!-- a module with UI opens through its name. -->
             <button
               v-if="row.hasUi"
               class="extension-name extension-open-name reg-row-name"
@@ -50,10 +39,6 @@
               v-else
               class="extension-name reg-row-name"
               :title="row.description">{{ row.name }}</span>
-            <!-- the row law's subtitle line: the description (ellipsis),
-                 the tool/command counts and the no-UI fact riding the same
-                 dim line - the collapsed row reads two lines, the detail
-                 stays in the expander. -->
             <span class="reg-row-sub">
               <span
                 v-if="row.description"
@@ -65,20 +50,13 @@
                 class="extension-noui">no UI</span>
             </span>
           </div>
-          <!-- the right control seat: the shared TogglePill
-               (card t_d93864e7) for toggleable rows - one switch, top-
-               aligned with the name, no "disabled" text beside it (the
-               pill IS the state, the row dims). ONE click applies
-               (card t_5051d523: the arm step is dead; the consequence text
-               rides the pill's title).
-
-               card t_81d0901b: the load-bearing pair (agent-loop +
-               provider) renders a VISIBLE always-on CHIP, never a disabled
-               control - the seam refuses that toggle
-               (api/server_modules.go: "module <name> is always on"), so
-               this row is only the mirror. Any row the registry reports
-               non-toggleable takes the same chip; the shell ring keeps its
-               own tier-law badge. -->
+          <!--
+            the right control seat: the shared TogglePill for toggleable rows.
+            ONE click applies.: the load-bearing pair (agent-loop + provider) renders a
+            VISIBLE always-on CHIP, never a disabled control - the seam refuses that
+            toggle (api/server_modules.go: "module <name> is always on"), so this row
+            is only the mirror.
+          -->
           <TogglePill
             v-if="seamAvailable && row.toggleable"
             class="module-toggle reg-row-ctrl"
@@ -98,11 +76,11 @@
         <p
           v-if="rowNote(row)"
           class="setting-help module-note reg-row-note">{{ rowNote(row) }}</p>
-        <!-- the expanded detail: the row's own facts, verbatim - the tools
-             it provides (registry-sorted names), the slash commands it
-             registered (registration order), and the panels it ships per
-             the composition manifest. A disabled module has nothing
-             mounted: the sections say so. -->
+        <!--
+          the expanded detail: the row's own facts, verbatim - the tools it provides
+          (registry-sorted names), the slash commands it registered (registration
+          order), and the panels it ships per the composition manifest.
+        -->
         <div
           v-if="isExpanded(row.name)"
           class="extension-detail">
@@ -156,9 +134,6 @@
       class="extensions-status extensions-error">
       {{ toggleError }}
     </p>
-    <!-- Q12: rejections visible as events - the refusal tail rides every
-         response, so a rejected toggle shows its ledger entry right under
-         the list it was refused from. -->
     <p
       v-for="r in moduleRefusals"
       :key="r.at + r.module"
@@ -169,22 +144,7 @@
 </template>
 
 <script setup lang="ts">
-  // the settings tab's MODULES section (card t_81d0901b, which SUPERSEDES
-  // the t_210a0d19 placement - module toggles are configuration, not
-  // content, so the surface lives here instead of the secondary-pane tab
-  // that card introduced). The listing still rides GET /extensions (the
-  // composition-contract ruling in ../shell/extensionsRows.ts: the shell
-  // owns the listing because it aggregates every module) and the live
-  // state + toggles still ride GET/PUT /modules - the WIRE endpoints are
-  // untouched by the move; only the surface changed.
-  //
-  // The row model merges the registry introspection (live state,
-  // toggleable, dependents) into the inventory; expansion reveals each
-  // module's tools, commands and panels, and every toggleable row gets the
-  // shared one-click toggle (card t_5051d523 killed the old two-step
-  // arm/confirm). /help parity: the webui has no slash-command bar, so
-  // this section plus the /modules palette command IS the /extensions
-  // surface.
+  // the settings tab's MODULES section.
   import { computed, ref, watch } from "vue";
   import {
     fetchExtensions,
@@ -192,10 +152,9 @@
     type ModuleRow,
     type OmegaExtension,
   } from "../../composables/omega";
-  // card t_103e30a6: the live module state is the SHARED store now - the
-  // dock's runtime gate reads the same copy, so a row's flip and the
-  // strip's chip can never disagree (one GET at boot + the toggle
-  // responses; this section neither owns nor re-fetches the state).
+  // the live module state is the SHARED store now - the dock's runtime gate reads the
+  // same copy, so a row's flip and the strip's chip can never disagree (one GET at boot
+  // + the toggle responses; this section neither owns nor re-fetches the state).
   import {
     commitModuleToggle,
     loadModules,
@@ -209,19 +168,14 @@
     type PanelRef,
   } from "../shell/extensionsRows";
   import { modulePanels } from "../../composables/module-panels.generated";
-  // card t_502b8e81: the iconset wrapper - the row expander chevron
   import Icon from "../ui/Icon.vue";
   import TogglePill from "../ui/TogglePill.vue";
 
   const props = defineProps<{
-    /** the settings pane's width-driven adaptation: the section follows its
-        host's measurement (no second resize observer here) */
     narrow?: boolean;
   }>();
 
-  // open-module(moduleId): open that module's dock tab - the settings host
-  // owns the dock call. count: the row total, so the section's nav entry
-  // and heading print it without a second fetch.
+  // open-module(moduleId): open that module's dock tab.
   const emit = defineEmits<{
     (e: "open-module", moduleId: string): void;
     (e: "count", count: number): void;
@@ -232,14 +186,9 @@
   const error = ref("");
   const toggleError = ref<string | null>(null);
   const busy = ref<string | null>(null);
-  // false when the host serves no toggle seam (501) - the rows render
-  // from the inventory alone, no switch, the state note explains.
   const seamAvailable = ref(true);
   const stateNote = ref("");
 
-  // the shell's build-time composition facts, reshaped for the row
-  // model: (module, dockable title) pairs from the panel manifest - a
-  // manifest entry without a dockable declaration titles by module name.
   const panelRefs = computed<PanelRef[]>(() =>
     modulePanels.map((p) => ({
       module: p.module,
@@ -257,8 +206,6 @@
     { immediate: true },
   );
 
-  // --- expansion: ephemeral list state (no persistence law - the section
-  // reopens fresh with the pane) ---
   const expanded = ref<Set<string>>(new Set());
   const isExpanded = (name: string) => expanded.value.has(name);
   function toggleExpand(name: string) {
@@ -268,12 +215,10 @@
     expanded.value = next;
   }
 
-  // --- the one-click toggle (card t_5051d523) ------------------------
-  // One activation commits; busy names the in-flight row so a second
-  // click cannot overlap the write.
+  // the one-click toggle ------------------------ One activation commits; busy names
+  // the in-flight row so a second click cannot overlap the write.
 
-  // toggleNote speaks the registry introspection's dialect (ModuleRow):
-  // shrink the merged row to just the fields the note reads.
+  // toggleNote speaks the registry introspection's dialect (ModuleRow).
   const asModuleRow = (row: {
     name: string;
     toggleable: boolean;
@@ -285,10 +230,8 @@
     dependents: row.dependents,
   });
 
-  // rowHint (card t_5051d523): the consequence line ("this also
-  // disables: cron") used to appear only after the first click, as the
-  // arm gate. It now rides the pill's title, where it informs without
-  // ever blocking the switch.
+  // rowHint: the consequence line ("this also disables. It now rides the pill's title,
+  // where it informs without ever blocking the switch.
   const rowHint = (row: {
     name: string;
     state: string;
@@ -302,8 +245,6 @@
     toggleable: boolean;
     dependents: string[];
   }): string => {
-    // resting state: name the dependents while the module runs (the Q3
-    // facts stay visible, not only on hover)
     if (row.toggleable && row.dependents.length > 0) {
       return `dependents: ${row.dependents.join(", ")}`;
     }
@@ -322,17 +263,12 @@
     busy.value = row.name;
     toggleError.value = null;
     try {
-      // the store applies the refreshed introspection itself - the dock's
-      // gate repaints from the same payload in the same tick
       await commitModuleToggle(row.name, checked);
     } catch (err) {
       toggleError.value = err instanceof Error ? err.message : String(err);
-      // Refresh anyway: the refusal ledger is the visible event (Q12)
-      // even when the response body carried no fresh list.
       try {
         await loadModules();
       } catch {
-        // the list stays; the error line stands
       }
     } finally {
       busy.value = null;
@@ -340,8 +276,6 @@
   }
 
   async function load() {
-    // the inventory first (the section's spine), then the introspection;
-    // a toggle seam this host lacks degrades to the bare inventory.
     loading.value = true;
     error.value = "";
     try {
@@ -356,8 +290,6 @@
       seamAvailable.value = true;
       stateNote.value = "";
     } catch (e) {
-      // a warm store (the boot read landed) still serves the rows; only a
-      // cold failure means this host has no toggle seam to show
       seamAvailable.value = modulesKnown.value;
       stateNote.value = e instanceof Error && e.message.includes("501")
         ? "module state unavailable - no toggle seam"
@@ -374,11 +306,6 @@
 </script>
 
 <style scoped>
-  /* the section body. The row geometry (paddings, separators, name and
-     subtitle typography, the right-control seat, the note line) is the
-     shared assets/css/registry-row.css (card t_561dc4e0) - this block
-     keeps the section's own voice only (the summary line, the mono meta,
-     the dim states, the expanded detail). */
   .settings-modules {
     padding: 2px 0 4px;
   }
@@ -417,9 +344,7 @@
   .extension-expand:hover { color: var(--text); }
   .extension-chevron { transition: transform 0.15s ease; }
   .extension-chevron.open { transform: rotate(90deg); }
-  /* the name line: the row law's typography rides .reg-row-name; this
-     section keeps its mono voice, and the openable name (t_561dc4e0) is a
-     button styled back into the row - hover raises it */
+  /* the name line: the row law's typography rides.reg-row-name. */
   .extension-name {
     font-family: var(--mono);
   }
@@ -436,9 +361,10 @@
     font-size: 10.5px;
   }
   .extension-shell { font-family: var(--mono); }
-  /* card t_81d0901b: the always-on CHIP - the visible mirror of the seam's
-     refusal (agent-loop, provider, and every row the registry reports as
-     non-toggleable). A chip, never a disabled switch. */
+  /*
+   * the always-on CHIP - the visible mirror of the seam's refusal.
+   * A chip, never a disabled switch.
+   */
   .module-alwayson {
     flex: none;
     padding: 1px 6px;
@@ -449,8 +375,6 @@
     color: var(--text-dim);
     white-space: nowrap;
   }
-  /* the subtitle specifics: the counts speak the section's mono meta voice;
-     the dim voice is the row law's .reg-row-sub */
   .extension-meta {
     font-family: var(--mono);
     font-size: 10.5px;
@@ -492,8 +416,6 @@
   }
   .extensions-error { color: var(--err); }
 
-  /* narrow: the section follows the settings pane's own measurement; the
-     description still ellipses within the subtitle line. */
   .settings-modules.narrow .extensions-summary {
     overflow-wrap: anywhere;
   }

@@ -1,12 +1,6 @@
 package api
 
-// POST-time rejection of client-chosen `eph-` session ids (card
-// t_860033e3, finding 4): the `eph-` namespace is minted by the /chat
-// ephemeral lane and lives in memory only. A durable row under one of
-// those ids would be unreachable - misrouted - on every store-read
-// endpoint. Both creation endpoints refuse the prefix with 400. (The
-// roster capsule's create endpoint rides the same guard - the guard
-// test moved with the roster routes to harness/continuous, wave 2.)
+// POST-time rejection of client-chosen `eph-` session ids.
 
 import (
 	"net/http"
@@ -30,5 +24,4 @@ func TestCreateSessionRejectsEphemeralPrefix(t *testing.T) {
 	}
 }
 
-// The roster capsule's guard: TestAgentSessionsRejectEphemeralPrefix
-// lives in harness/continuous/agents_test.go with the moved routes.
+// The roster capsule's guard.

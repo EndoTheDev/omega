@@ -1,11 +1,9 @@
 package verdict
 
-// The CLI loop's busy-time answering surface (card t_0744eb8e). The
-// module owns the whole exchange - pending check, parse, record, echo -
-// so the host stays a single call. That shape is load-bearing for the
-// purity law (scripts/nm-purity.sh): the scrubber deletes cmd/ wires to
-// this module line-by-line and never deletes a host function, so the
-// loop's caller must survive the wire's deletion with the seam down.
+// The CLI loop's busy-time answering surface. That shape is load-bearing for the purity
+// law (scripts/nm-purity.sh): the scrubber deletes cmd/ wires to this module
+// line-by-line and never deletes a host function, so the loop's caller must survive the
+// wire's deletion with the seam down.
 
 import (
 	"fmt"
@@ -14,10 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// AnswerInline interprets one busy-time line as the answer to the
-// session's oldest pending card. Returns false when no card is pending
-// (the line belongs to the chat queue). Echoes land on printf - the
-// host's renderer owns the palette.
+// AnswerInline interprets one busy-time line as the answer to the session's oldest.
 func AnswerInline(vp answerSink, sessionID, line string, printf func(format string, args ...any)) bool {
 	cards := vp.Pending(sessionID)
 	if len(cards) == 0 {

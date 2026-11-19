@@ -1,26 +1,10 @@
 package cron
 
-// The canvas surface (arc 6, t_31174f80): the cron capsule ships its
-// view-model as canvas panels - the jobs panel, the module's read-only
-// job listing the /cron command and the webui Cron tab already show.
-// Both frontends render from the canvas; nothing outside the module
-// holds a reference. The REST surface (GET /cron/jobs) stays where it
-// is (settled Q6a, the same law kanban rode) and the panel surface is
-// additive.
-//
-// The push law is the notifications capsule's law (arc 4b): mutations
-// that run through the module's own faces refresh the panels through
-// the sink the canvas runtime installed at registration. Cron's one
-// module-internal mutation is the crons.yaml hot reload (the
-// watcher in runner.go) - a reload pushes the refreshed jobs panel. The
-// job set never changes through the action pipe: cron is read-only v1
-// (crons.yaml is human-authored and omega may only ever propose jobs,
-// the CronJobs.vue settled decision). The module declares exactly one
-// action, refresh: it answers the live payload and pushes the panel -
-// no mutation. The action id carries the capsule's module name on the
-// wire, which is also how the canvas runtime learns it (the runtime
-// registers a provider through its declared actions; the toast rides
-// its sibling list panel the same way).
+// The canvas surface: the cron capsule ships its view-model as canvas panels. The job
+// set never changes through the action pipe: cron is read-only v1 (crons.yaml is
+// human-authored and omega may only ever propose jobs, the CronJobs.vue settled
+// decision). The module declares exactly one action, refresh: it answers the live
+// payload and pushes the panel - no mutation.
 
 import (
 	"fmt"
@@ -29,18 +13,13 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// jobsPanelID is the jobs panel's id. Panel ids keep their natural
-// shape; action ids are machine-facing and namespaced pairs
-// (cron.verb, Q10 - the registration API claims each one, v0.12 phase
-// C2).
+// jobsPanelID is the jobs panel's id.
 const (
 	jobsPanelID   = "cron"
 	actionRefresh = "cron.refresh_jobs"
 )
 
-// jobRow is one jobs-panel line: the CronJobInfo fields verbatim (the
-// same view GET /cron/jobs and the /cron table render). No action
-// binding - the module is read-only.
+// jobRow is one jobs-panel line.
 type jobRow struct {
 	Name     string   `json:"name"`
 	Kind     string   `json:"kind"`
@@ -54,8 +33,6 @@ type jobRow struct {
 	Skills   []string `json:"skills,omitempty"`
 	Enabled  bool     `json:"enabled"`
 	Next     string   `json:"next,omitempty"`
-	// The last fire's outcome (t_3885c975): status + completion time,
-	// the same JobInfo fields the wire listing carries.
 	Status     string `json:"status,omitempty"`
 	Last       string `json:"last,omitempty"`
 	StatusNote string `json:"status_note,omitempty"`
@@ -68,12 +45,7 @@ type jobsPayload struct {
 	Jobs  []jobRow `json:"jobs"`
 }
 
-// capsule is the cron module's canvas surface. It is the
-// PanelProvider the plugin appends to Context.PanelProviders during
-// Mount - the registration IS the plugin. It also implements
-// core.PanelUpdateSink: the canvas runtime installs the update closure
-// at registration, and a hot reload pushes the refreshed panel
-// through it.
+// capsule is the cron module's canvas surface.
 type capsule struct {
 	runner *Runner
 
@@ -95,11 +67,8 @@ func (c *capsule) SetPanelUpdate(update func(core.Panel) error) {
 	c.mu.Unlock()
 }
 
-// push routes one panel through the installed closure. A missing sink
-// or a failed push is not a reload failure: the job set is already
-// rescheduled, the snapshot is the catch-up (the same law the delta
-// fan-out obeys). Nil-safe on the capsule itself - a runner without a
-// canvas surface (the unit tests, embeds) simply never pushes.
+// push routes one panel through the installed closure. Nil-safe on the capsule itself -
+// a runner without a canvas surface (the unit tests, embeds) simply never pushes.
 func (c *capsule) push() {
 	if c == nil {
 		return
@@ -113,8 +82,7 @@ func (c *capsule) push() {
 	_ = up(c.jobsPanel())
 }
 
-// Panels declares the snapshot: the jobs panel, seeded from the live
-// runner at registration.
+// Panels declares the snapshot.
 func (c *capsule) Panels() []core.Panel {
 	return []core.Panel{c.jobsPanel()}
 }
@@ -156,12 +124,7 @@ func (c *capsule) jobsPanel() core.Panel {
 	}
 }
 
-// HandleAction routes one action-pipe call (core.PanelProvider). The
-// refresh action answers the live payload and pushes the panel - the
-// module's read-only v1 posture in one arm: crons.yaml is
-// human-authored, omega may only ever propose jobs, and nothing here
-// mutates. Any other id is the same refusal the runtime's route
-// checks encode.
+// HandleAction routes one action-pipe call (core.PanelProvider).
 func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 	switch call.Action {
 	case actionRefresh:

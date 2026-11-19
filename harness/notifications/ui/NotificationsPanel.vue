@@ -1,27 +1,17 @@
 <template>
-  <!-- card t_180db2cb: the notifications tab - the DURABLE feed/history
-       side of the bell ruling. The bell popover died; its panel body
-       (head, pending verdicts, the feed list) rehomed here as the
-       inspector pane's content. Same data (GET /notifications), same
-       rendering voice, same row contract: a click marks the record read
-       and hands the open intent to app.vue. Opening/focusing the tab
-       marks the feed read (markAllRead) - the tab chip's unread badge
-       clears on open. Transient toasts are NOT this component's job:
-       they stay shell-level in NotificationToasts.vue. -->
+  <!--
+    the notifications tab - the DURABLE feed/history side of the bell.
+    Same data (GET /notifications), same rendering voice, same row contract: a click
+    marks the record read and hands the open intent to app.vue.
+  -->
   <div class="notif-pane">
-    <!-- card t_308e6d9b: the head row is the UNIVERSAL band now (the
-         shared TabBand) - the mark-all-read action rides the band and
-         the band renders before the .notif-list scrollport: scrolling
-         the feed never moves it. -->
+    <!--
+      the head row is the UNIVERSAL band now (the shared TabBand) - the mark-all-read
+      action rides the band and the band renders before the.notif-list scrollport:
+      scrolling the feed never moves it.
+    -->
     <TabBand title="Notifications">
-      <!-- card t_9794272d: both band actions are ICON buttons now (Endo's
-           eyeball verdict on t_05ff5e35's text tools - they crowded the
-           band). The verbs moved to the native title tooltip + the
-           aria-label (both required - the accessibility gate); the glyphs
-           ride the iconset wrapper by semantic name (mail-open marks the
-           feed read, trash is the destructive delete). Behavior
-           unchanged: the t_05ff5e35 store wire + optimistic restore are
-           untouched, only the chrome restyled. -->
+      <!-- both band actions are ICON buttons now. -->
       <button
         class="band-tool"
         title="mark all read"
@@ -30,11 +20,7 @@
         @click="markAll">
         <Icon name="mailOpen" :size="13" />
       </button>
-      <!-- the clear-all (card t_05ff5e35): the DELETE side of the
-           surface - the feed GOES EMPTY, not just its read flags. Live
-           toasts clear with the store's clearAll. Enabled on a
-           non-empty feed; history deletion needs no rows confirmation
-           (records are metadata only, retention prunes at 200). -->
+      <!-- the clear-all: the DELETE side of the surface. -->
       <button
         class="band-tool"
         title="clear all"
@@ -57,12 +43,6 @@
         <span class="notif-row-main">
           <span class="notif-row-title">{{ p.title }}</span>
           <span class="notif-row-meta">
-            <!-- card t_63204dfd: the notification surface answers a gate
-                 question with approve/deny only (the pair contract on
-                 the card's options). The row click still jumps to the
-                 session; the buttons answer the SAME pending card the
-                 chat card answers - first resolution wins, a losing
-                 click collapses (no error, no double-apply). -->
             <template v-if="resolvedVerdicts.has(p.id)">
               <span class="notif-verdict resolved">{{ resolvedVerdicts.get(p.id) }}</span>
             </template>
@@ -136,9 +116,7 @@
   import type { OmegaNotification } from "~/composables/notifications";
 
   const emit = defineEmits<{
-    // navigation intent: app.vue routes task -> board, cron -> the
-    // cron inspector tab, chat -> the session when one exists (the
-    // openNotification router the bell's rows used)
+    // navigation intent: app.vue routes task -> board, cron -> the cron inspector.
     (e: "open", n: OmegaNotification): void;
   }>();
 
@@ -147,9 +125,7 @@
     return id && id.length > 8 ? id.slice(0, 8) : id;
   }
 
-  // kindGlyph is the source chip (the old bell row's vocabulary): one
-  // fixed glyph per kind - the icons are decoration; the kind word is
-  // the screen-reader channel.
+  // kindGlyph is the source chip (the old bell row's vocabulary).
   function kindGlyph(kind: string): string {
     switch (kind) {
       case "task": return "▦";
@@ -163,8 +139,7 @@
     return notificationAge(ts);
   }
 
-  // openVerdict routes a pending-card click to the card's chat session,
-  // reusing the existing chat-nav intent (kind=chat, source_id=session).
+  // openVerdict routes a pending-card click to the card's chat session, reusing.
   function openVerdict(p: PendingVerdictCard) {
     emit("open", {
       kind: "chat",
@@ -173,14 +148,11 @@
     } as OmegaNotification);
   }
 
-  // --- gate questions, answerable (card t_63204dfd): approve/deny on
-  // the notification surface --- the pair contract lives on the card's
-  // options; buttons render only when the pending card IS an
-  // approve/deny question. The body click (unstopped) still jumps to
-  // the session - the buttons answer in place.
-  // resolvedVerdicts: this surface's flip after a POST (win or a lost
-  // race) - the render collapses to the resolved state until the poll
-  // drops the settled card out of the pending list.
+  // gate questions, answerable: approve/deny on the notification surface --- the pair
+  // contract lives on the card's options; buttons render only when the pending card IS
+  // an approve/deny question. resolvedVerdicts: this surface's flip after a POST (win
+  // or a lost race) - the render collapses to the resolved state until the poll drops
+  // the settled card out of the pending list.
   function answerOptionsFor(p: PendingVerdictCard) {
     return approveDenyOptions(p.options);
   }
@@ -197,9 +169,6 @@
       });
       resolvedVerdicts.set(p.id, "resolved: " + kind);
     } catch (e) {
-      // a late click on an already-resolved question renders the
-      // resolved stamp, no error, no double-apply (first resolution
-      // won on the chat surface, another tab, or the CLI)
       const msg = e instanceof Error ? e.message : String(e);
       if (isSettledRace(msg)) resolvedVerdicts.set(p.id, "resolved (another surface)");
     } finally {
@@ -217,8 +186,6 @@
     await markAllRead();
   }
 
-  // the clear-all button: the feed deletes (records, not flags).
-  // clearingAll gates double clicks; the disabled state clears with it.
   const clearingAll = ref(false);
   async function clearAllRecords(): Promise<void> {
     if (clearingAll.value) return;
@@ -232,11 +199,7 @@
   }
 
   onMounted(async () => {
-    // the activation: the outlet mounts this panel exactly when the
-    // notifications tab gains focus (DockPane renders only the active
-    // tab), so the mount IS the open/focus event. The badge clears on
-    // open: pull the fresh truth first (the feed may have moved since
-    // the store's poll), then mark everything read in one POST.
+    // the activation: the outlet mounts this panel exactly when the notifications tab.
     startNotificationFeed();
     await refreshNotifications();
     if (notificationsUnread.value > 0) {
@@ -252,11 +215,12 @@
     min-height: 0;
     height: 100%;
   }
-  /* card t_308e6d9b: the head is the shared TabBand - the band's own
-     geometry replaced .notif-head/.notif-title. Card t_9794272d: the
-     two actions are icon-only band-tools - no local look survives,
-     the shared .band-tool contract (hover, disabled, centering)
-     covers them; the icons pin their size at the call site. */
+  /*
+   * the head is the shared TabBand - the band's own geometry
+   * replaced.notif-head/.notif-title.: the two actions are icon-only band-tools - no
+   * local look survives, the shared.band-tool contract (hover, disabled, centering)
+   * covers them; the icons pin their size at the call site.
+   */
   .notif-list {
     list-style: none;
     margin: 0;
@@ -279,8 +243,6 @@
   .notif-verdict.pending {
     color: var(--accent, #e8833a);
   }
-  /* card t_63204dfd: the notification surface's approve/deny buttons
-     and its resolved flip */
   .notif-answer-btns {
     display: inline-flex;
     gap: 4px;

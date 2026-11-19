@@ -1,10 +1,6 @@
 package api
 
-// The wake-path tests (async agent loop phase 1, card t_f3f953d0):
-// the runaway guard's park-and-reset, the user-send reset, the
-// simulated restart (boot recovery over a REAL store table), and the
-// end-to-end slice - dispatch, turn end, re-entry wake - through the
-// real loop, the server's wake path and a scripted provider.
+// The wake-path tests: the runaway guard's park-and-reset, the user-send reset,.
 
 import (
 	"context"
@@ -23,8 +19,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// TestWakeGuardParksAt25AndResets: unit - the cap counts launches, a
-// park refuses every further wake, a user reset re-arms.
+// TestWakeGuardParksAt25AndResets: unit - the cap counts launches, a park refuses.
 func TestWakeGuardParksAt25AndResets(t *testing.T) {
 	h := newWakeHub()
 	for i := 0; i < maxConsecutiveWakes; i++ {
@@ -35,14 +30,12 @@ func TestWakeGuardParksAt25AndResets(t *testing.T) {
 	if h.allow("s1") {
 		t.Errorf("wake 26 admitted - the 25 cap leaked")
 	}
-	// The 26th was refused: park latches the refusal permanently.
 	if !h.park("s1") {
 		t.Fatal("park refused to latch")
 	}
 	if !h.parkedNow("s1") {
 		t.Fatal("parked flag lost")
 	}
-	// A user message reset re-arms fully: parked flag gone, counter at 0.
 	h.reset("s1")
 	if h.parkedNow("s1") {
 		t.Error("reset left the parked flag")
@@ -52,10 +45,7 @@ func TestWakeGuardParksAt25AndResets(t *testing.T) {
 	}
 }
 
-// TestBootRecoveryInjectsTimeoutResults: the simulated restart. The
-// durable table (a real store) carries one pending call across
-// NewServer; the sweep settles it and injects the interrupted result
-// as a wake run.
+// TestBootRecoveryInjectsTimeoutResults: the simulated restart.
 func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -72,30 +62,22 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 		t.Fatalf("seed pending call: %v", err)
 	}
 
-	// The wake run's first turn: the recovered "interrupted" result is
-	// in its context; the script closes the stream and ends the run.
 	scripts := [][]core.ProviderStreamEvent{finalStep("recovering")}
 	prov := newWakeScripted("step", scripts)
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
 
-	// The sweep runs synchronously inside NewServer: by the time it
-	// returns, every pending row is settled and the launch has been
-	// admitted or rolled back. Both facts are read as RECORDS, never
-	// polled - the wake run's live slot measures 2-4ms, shorter than any
-	// poll interval, so a poll for s.runs.active misses the run whole
-	// whenever the test goroutine is descheduled here and the wait
-	// deadline, not the launch, would decide the verdict (t_32c3fce2).
+	// The sweep runs synchronously inside NewServer. Both facts are read as RECORDS, never
+	// polled - the wake run's live slot measures 2-4ms, shorter than any poll interval, so
+	// a poll for s.runs.active misses the run whole whenever the test goroutine is
+	// descheduled here and the wait deadline, not the launch, would decide the verdict.
 	if left := s.yieldLedger.All(); len(left) != 0 {
 		t.Fatalf("boot sweep left entries: %+v", left)
 	}
 	if n := s.wakeLaunchCount("s1"); n != 1 {
 		t.Fatalf("boot recovery launched %d wake runs, want 1 - the wake launch never happened", n)
 	}
-	// The injected result persisted as a first-class yield_result row
-	// once the run lands it (the loop's input persist). A row is durable,
-	// so this poll is a latch, not a sampled state.
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
@@ -115,17 +97,10 @@ func TestBootRecoveryInjectsTimeoutResults(t *testing.T) {
 	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
 }
 
-// TestBootRecoveryDoesNotReattachPendingShell is the shell-unification
-// probe pin (card t_5a49790b): a pending shell.run call whose row
-// survives a restart is NOT re-attached. The row is durable (a real
-// file-backed pending_calls table, re-read by a fresh store handle =
-// the restart), and boot recovery SETTLES it and injects the
-// interrupted result - the wake path never rejoins the call.
-//
-// That is the accepted degradation the card names: the detached child
-// keeps running and its log stays readable through the shell registry
-// (shell.list / shell.read), and the model learns the call was cut by
-// the restart from the injected result, then re-reads the shell by id.
+// TestBootRecoveryDoesNotReattachPendingShell is the shell-unification probe pin. The
+// row is durable (a real file-backed pending_calls table, re-read by a fresh store
+// handle = the restart), and boot recovery SETTLES it and injects the interrupted
+// result - the wake path never rejoins the call.
 func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "omega.db")
 	st, err := store.Open(dsn)
@@ -145,8 +120,6 @@ func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 		t.Fatalf("close store (the omega exit): %v", err)
 	}
 
-	// The restart: a fresh handle over the same file. The pending row
-	// is still there - that is the half the card asked us to probe.
 	st2, err := store.Open(dsn)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
@@ -161,12 +134,11 @@ func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st2, nil, nil, nil)
 
-	// The sweep settles the row: no re-attach, the call is not re-run.
 	waitFor(t, "boot sweep settles the pending shell call", func() bool {
 		return len(s.yieldLedger.All()) == 0
 	})
-	// ... and what re-enters is the interrupted TIMEOUT result, not the
-	// shell's live output - the wake path cannot reach the call again.
+	// . and what re-enters is the interrupted TIMEOUT result, not the shell's live output
+	// - the wake path cannot reach the call again.
 	waitFor(t, "the interrupted result persists", func() bool {
 		msgs, err := st2.GetMessages(context.Background(), "s1")
 		if err != nil {
@@ -185,11 +157,7 @@ func TestBootRecoveryDoesNotReattachPendingShell(t *testing.T) {
 	waitFor(t, "wake run finished", func() bool { return !s.runs.active("s1") })
 }
 
-// TestWakeSliceEndToEnd: the scripted slice (dispatch, turn end,
-// re-entry wake) through the REAL loop over the /chat wire. One user
-// send's completion calls a yield tool; the run ends yielded; the
-// settled result wakes the home - a second run answers it - and the
-// flush-before-result order holds in the store.
+// TestWakeSliceEndToEnd: the scripted slice (dispatch, turn end, re-entry wake).
 func TestWakeSliceEndToEnd(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -197,14 +165,12 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
-		// Run 1: one yield-class call - the turn ends yielded.
 		{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "probe", Arguments: map[string]any{"msg": "hi"},
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Run 2 (the wake): answer and close.
 		finalStep("done"),
 	})
 	tools := map[string]core.Tool{"probe": {
@@ -226,7 +192,6 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 	// Run 1: a scripted yield call; the agent_end must carry yielded.
 	resp, _, sc := postChatStream(t, ts, "s1")
 	lines := readFrames(t, sc, "agent_end", 1)
-	// The frame's data line trails its event line.
 	sc.Scan()
 	dataLine := sc.Text()
 	resp.Body.Close()
@@ -243,8 +208,6 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 		t.Errorf("agent_end (%s / %s) carried no yielded finish_reason", endEvent, endData)
 	}
 
-	// The result re-enters: the wake run (a second run on the same
-	// home, through the same launchRun slot) lands the synthetic row.
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
@@ -258,8 +221,7 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 		dumpSessionRows(t, st, "s1")
 		t.Fatal("the wake run never landed the probe result")
 	}
-	// Flush-before-result held: the assistant that carries the call is
-	// durable BEFORE the synthetic result row.
+	// Flush-before-result held: the assistant that carries the call is durable.
 	msgs, err := st.GetMessages(context.Background(), "s1")
 	if err != nil {
 		t.Fatalf("get messages: %v", err)
@@ -287,23 +249,16 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 	}
 }
 
-// TestWakeEmptyTurnLeavesNote: a wake run whose only completion is
-// all-empty must never end with zero persisted output (card t_954a67a6).
-// The store sink's all-empty-assistant skip is right for a blank stream
-// before an error end on a normal turn; on a wake run it ate the
-// re-entry turn whole - no row, no log line, and the transcript read as
-// a conversation that simply stopped. The run leaves a visible
-// bookkeeping note instead: the diagnostic breadcrumb and the honest UI
-// state in one row.
+// TestWakeEmptyTurnLeavesNote: a wake run whose only completion is all-empty must never
+// end with zero persisted output.
 func TestWakeEmptyTurnLeavesNote(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	// The wake run's only script: a completion with nothing in it -
-	// no content delta, no thinking, no calls. Exactly the shape the
-	// live lane recorded (a ~1s empty answer).
+	// The wake run's only script. Exactly the shape the live lane recorded (a ~1s empty
+	// answer).
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
 		{core.StreamEnd{Type: "stream_end", FinishReason: "stop"}},
 	})
@@ -315,7 +270,6 @@ func TestWakeEmptyTurnLeavesNote(t *testing.T) {
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// The settled result re-enters through the real wake path.
 	s.wakeHome("s1", core.YieldResult{
 		ToolCallID: "call_5b16qor0",
 		ToolName:   "files.glob",
@@ -343,31 +297,25 @@ func TestWakeEmptyTurnLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The note is the run's last word: the settled result still carries
-	// its own row before it.
 	if !hasYieldResult(msgs, "call_5b16qor0", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
 	}
 }
 
-// TestWakeStreamErrorLeavesNote: the adjacent break in the same
-// contract (card t_9821e39b). A wake run killed mid-stream by a
-// provider stream error (StreamEnd with FinishReason="error") never
-// reaches the loop's persistence epilogue, so the all-empty note
-// wrapper never sees an Assistant at all: the live UI painted the
-// agent_end error frame, the lane log wrote the "stream error" line,
-// and the SESSION kept no row - after a reload the re-entry turn
-// vanished with zero trace. The run must leave a visible bookkeeping
-// note naming the tool that settled instead.
+// TestWakeStreamErrorLeavesNote: the adjacent break in the same contract. A wake run
+// killed mid-stream by a provider stream error (StreamEnd with FinishReason="error")
+// never reaches the loop's persistence epilogue, so the all-empty note wrapper never
+// sees an Assistant at all: the live UI painted the agent_end error frame, the lane log
+// wrote the "stream error" line, and the SESSION kept no row - after a reload the
+// re-entry turn vanished with zero trace. The run must leave a visible bookkeeping note
+// naming the tool that settled instead.
 func TestWakeStreamErrorLeavesNote(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	// The wake run's only script: the provider stream dies before a
-	// single completion - no chunk, no calls, just the error end.
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{
 		{core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "provider 500: upstream exploded"}},
 	})
@@ -379,7 +327,6 @@ func TestWakeStreamErrorLeavesNote(t *testing.T) {
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// The settled result re-enters through the real wake path.
 	s.wakeHome("s1", core.YieldResult{
 		ToolCallID: "call_9err0r",
 		ToolName:   "files.glob",
@@ -410,47 +357,38 @@ func TestWakeStreamErrorLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The note is the run's last word: the settled result still carries
-	// its own row before it.
 	if !hasYieldResult(msgs, "call_9err0r", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
 	}
 }
 
-// TestWakeCancelledBetweenTurnsLeavesNote: the same zero-trace gap on
-// the run cap (card t_317136fd). A cap expiring MID-STREAM surfaces as
-// a provider stream error and rides the "error" note above, but an
-// expiry landing BETWEEN turns ends the loop on its own turn-boundary
-// ctx check with a DISTINCT finish_reason "cancelled" (agent/loop/
-// agent_loop.go) - before the first assistant row, so the latch above
-// never saw a note-worthy end and the re-entry turn vanished from the
-// session while only its input row survived. The cancelled end must
-// leave the same visible note, worded for the cap.
+// TestWakeCancelledBetweenTurnsLeavesNote: the same zero-trace gap on the run cap. A
+// cap expiring MID-STREAM surfaces as a provider stream error and rides the "error"
+// note above, but an expiry landing BETWEEN turns ends the loop on its own
+// turn-boundary ctx check with a DISTINCT finish_reason "cancelled" (agent/loop/
+// agent_loop.go) - before the first assistant row, so the latch above never saw a
+// note-worthy end and the re-entry turn vanished from the session while only its input
+// row survived. The cancelled end must leave the same visible note, worded for the cap.
 func TestWakeCancelledBetweenTurnsLeavesNote(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
-	// The provider script a healthy run would consume: if the cap ever
-	// fails to bite, the run produces an assistant row and the
-	// zero-row assertion below goes red instead of passing blind.
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("unreachable")})
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
 	s := NewServer(a, nil, st, nil, nil, nil)
-	// The cap has ALREADY expired when the run ctx is built, so the
-	// real loop's first turn-boundary check sees it - the between-turns
-	// window with zero assistant rows, deterministic (no sleep, no race
-	// with how fast the loop reaches its first stream).
+	// The cap has ALREADY expired when the run ctx is built, so the real loop's first
+	// turn-boundary check sees it - the between-turns window with zero assistant rows,
+	// deterministic (no sleep, no race with how fast the loop reaches its first stream).
 	s.runTimeout = -time.Second
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// The settled result re-enters through the real wake path.
 	s.wakeHome("s1", core.YieldResult{
 		ToolCallID: "call_9canc3l",
 		ToolName:   "files.glob",
@@ -481,18 +419,13 @@ func TestWakeCancelledBetweenTurnsLeavesNote(t *testing.T) {
 	if !contains(note, "files.glob") {
 		t.Errorf("note %q does not name the tool that settled", note)
 	}
-	// The input row survives (the partial trace the gap left behind):
-	// the note stands in for the END row, it does not replace the run.
 	if !hasYieldResult(msgs, "call_9canc3l", core.YieldResult{}) {
 		dumpSessionRows(t, st, "s1")
 		t.Error("the settled result row went missing")
 	}
 }
 
-// TestNonWakeStreamErrorLeavesNoRow pins the untouched half (scope
-// law, card t_9821e39b): a NON-wake run killed by a stream error keeps
-// today's behavior - the live error frame is the whole trace, nothing
-// extra is written behind the sender's back.
+// TestNonWakeStreamErrorLeavesNoRow pins the untouched half.
 func TestNonWakeStreamErrorLeavesNoRow(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -520,7 +453,7 @@ func TestNonWakeStreamErrorLeavesNoRow(t *testing.T) {
 	waitFor(t, "run finished", func() bool { return !s.runs.active("s1") })
 
 	// The error really reached the live wire - otherwise this pin
-	// would pass on a run that never errored at all.
+	// would pass on a run that never errored.
 	if !contains(strings.Join(lines, "\n"), `"finish_reason":"error"`) {
 		t.Fatalf("no error-end frame on the wire; frames: %v", lines)
 	}
@@ -538,12 +471,9 @@ func TestNonWakeStreamErrorLeavesNoRow(t *testing.T) {
 	}
 }
 
-// TestWakeGuardUserSendResets: parkHome parks with a persisted visible
-// note; a plain user send through the /chat pipe resets the guard
-// (launchRun's non-wake reset) and runs to its own end. The session
-// carries no pending calls - a park on a dry home must not error.
+// TestWakeGuardUserSendResets: parkHome parks with a persisted visible note. The
+// session carries no pending calls - a park on a dry home must not error.
 func TestWakeGuardUserSendResets(t *testing.T) {
-	// One batch ready: the reset run's script closes its own stream.
 	prov := newWakeScripted("step", [][]core.ProviderStreamEvent{finalStep("round trip")})
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
@@ -558,8 +488,6 @@ func TestWakeGuardUserSendResets(t *testing.T) {
 	createSession(t, ts, "s1")
 	muteTitles(t, st, "s1")
 
-	// Park through the real path: the note lands on the transcript and
-	// the parked state latches.
 	s.parkHome("s1")
 	if !s.wakes.parkedNow("s1") {
 		t.Fatal("parkHome left no parked flag")
@@ -578,7 +506,6 @@ func TestWakeGuardUserSendResets(t *testing.T) {
 		t.Errorf("park note never persisted: %s", sessionRowDump(msgs))
 	}
 
-	// A user send through the wire: the run's launch resets the guard.
 	resp, cancel, sc := postChatStream(t, ts, "s1")
 	readFrames(t, sc, "agent_end", 1)
 	detachClient(cancel, resp)
@@ -589,12 +516,11 @@ func TestWakeGuardUserSendResets(t *testing.T) {
 	}
 }
 
-// wakeScripted streams ONE prewritten script per Stream call (runs sit
-// serially on the one-run-per-session slot) and closes the stream at
-// script end - the loop's stream range unwinds exactly like a real
-// provider's, so each run finishes on its own script. Unlike
-// stepProvider, several turns across several runs never race one
-// shared receive channel.
+// wakeScripted streams ONE prewritten script per Stream call (runs sit serially on the
+// one-run-per-session slot) and closes the stream at script end - the loop's stream
+// range unwinds exactly like a real provider's, so each run finishes on its own script.
+// Unlike stepProvider, several turns across several runs never race one shared receive
+// channel.
 type wakeScripted struct {
 	modelName string
 	mu        sync.Mutex
@@ -610,9 +536,7 @@ func (p *wakeScripted) ModelName() string { return p.modelName }
 
 func (p *wakeScripted) SetThinkingLevel(level string) {}
 
-// Copies of a scripted provider share the script deck and the index
-// (one serial stream per slot makes runs strictly sequential), so a
-// new wakeScripted is built instead of a lock-carrying struct copy.
+// Copies of a scripted provider share the script deck and the index.
 func (p *wakeScripted) nextCopy() *wakeScripted {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -659,9 +583,7 @@ func (p *wakeScripted) Stream(_ context.Context, _ []core.Message, _ []llm.ToolS
 	return events
 }
 
-// hasYieldResult reports whether one row is the named tool call's
-// settled result; the `want` value carries only the fields to match
-// (a zero field matches anything).
+// hasYieldResult reports whether one row is the named tool call's settled result.
 func hasYieldResult(msgs []core.Message, callID string, want core.YieldResult) bool {
 	for _, m := range msgs {
 		y, ok := m.(core.YieldResult)
@@ -724,5 +646,4 @@ func contains(haystack, needle string) bool {
 	return false
 }
 
-// waitFor is defined in server_runs_test.go; the tests in this file
-// reuse it.
+// waitFor is defined in server_runs_test.go; the tests in this file reuse it.

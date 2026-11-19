@@ -1,9 +1,8 @@
-// omega webui: unit tests for the mobile drawer tab derivation (card
-// t_e76ce7b6). The drawer is decoupled from the dock tree: it reads the
-// live edge pane's tabs when the pane exists, and falls back to the
-// registry default when the pane was pruned by a desktop close (REPRO 1's
-// root cause - the drawer must open with content regardless of the
-// desktop-closed state). Run: node --test "test/*.test.ts"
+// omega webui: unit tests for the mobile drawer tab derivation. The drawer is decoupled
+// from the dock tree: it reads the live edge pane's tabs when the pane exists, and
+// falls back to the registry default when the pane was pruned by a desktop close (REPRO
+// 1's root cause - the drawer must open with content regardless of the desktop-closed
+// state).
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -31,9 +30,7 @@ function pane(tabs: DockComponentName[], edge: "left" | "right"): DockPane {
 }
 
 test("drawerTabsForEdge: a pruned edge pane (null) falls back to the registry default - REPRO 1", () => {
-  // the desktop toggle prunes the inspector pane from the tree; the
-  // drawer must still derive the full inspector tab strip from the
-  // registry default, not from the (absent) pane
+  // the desktop toggle prunes the inspector pane from the tree; the drawer must still.
   const tabs = drawerTabsForEdge(null, INSPECTOR_TAB_COMPONENTS, title);
   assert.equal(tabs.length, INSPECTOR_TAB_COMPONENTS.length);
   assert.deepEqual(
@@ -63,8 +60,6 @@ test("drawerTabsForEdge: a live edge pane drives the tab set (its actual tabs, i
 });
 
 test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector tabs surfaces them", () => {
-  // the left shell is sessions home but accepts free tabs; the drawer
-  // reflects whatever the pane actually holds
   const live = pane(["sidebar", "files"], "left");
   const tabs = drawerTabsForEdge(live, ["sidebar"], title);
   assert.deepEqual(
@@ -74,9 +69,7 @@ test("drawerTabsForEdge: a free-content left pane hosting dragged-in inspector t
 });
 
 test("drawerTabsForEdge: the injected title resolver wins over the registry fallback", () => {
-  // the resolver carries what the registry title cannot say (chat's
-  // session label, a module's ui/dockable.json title); assert over the
-  // bottom host's default strip, where the Logs tab still lives
+  // the resolver carries what the registry title cannot say.
   const resolve = (id: DockComponentName) =>
     id === "observability" ? "Logs (resolved)" : COMPONENT_TITLES[id];
   const tabs = drawerTabsForEdge(null, defaultHostTabs("bottom"), resolve);
@@ -86,8 +79,7 @@ test("drawerTabsForEdge: the injected title resolver wins over the registry fall
 
 test("clampDrawerTab: an out-of-range active index clamps to the last tab", () => {
   const tabs = drawerTabsForEdge(null, INSPECTOR_TAB_COMPONENTS, title);
-  // a DnD shrank the pane's tabs while the drawer held index 5; the
-  // drawer never indexes past the end
+  // a DnD shrank the pane's tabs while the drawer held index 5; the drawer never.
   assert.equal(clampDrawerTab(tabs, 99)?.id, tabs[tabs.length - 1]!.id);
   assert.equal(clampDrawerTab(tabs, -3)?.id, tabs[0]!.id);
   assert.equal(clampDrawerTab(tabs, 2)?.id, tabs[2]!.id);

@@ -58,7 +58,6 @@ func TestFormatInsights(t *testing.T) {
 
 	out := agent.FormatInsights(in)
 
-	// Period header with range.
 	if !strings.Contains(out, "omega insights — 30 days") {
 		t.Errorf("missing period header in output:\n%s", out)
 	}
@@ -66,7 +65,6 @@ func TestFormatInsights(t *testing.T) {
 		t.Errorf("missing period range in output:\n%s", out)
 	}
 
-	// Overview numbers.
 	if !strings.Contains(out, "Sessions:          42") {
 		t.Errorf("missing session count:\n%s", out)
 	}
@@ -77,7 +75,6 @@ func TestFormatInsights(t *testing.T) {
 		t.Errorf("missing avg session msgs:\n%s", out)
 	}
 
-	// Top Tools section.
 	if !strings.Contains(out, "Top Tools") {
 		t.Errorf("missing Top Tools section:\n%s", out)
 	}
@@ -85,7 +82,6 @@ func TestFormatInsights(t *testing.T) {
 		t.Errorf("missing tool names:\n%s", out)
 	}
 
-	// Activity by Day.
 	if !strings.Contains(out, "Activity by Day") {
 		t.Errorf("missing Activity by Day section:\n%s", out)
 	}
@@ -93,7 +89,6 @@ func TestFormatInsights(t *testing.T) {
 		t.Errorf("missing day labels:\n%s", out)
 	}
 
-	// Notable Sessions.
 	if !strings.Contains(out, "Notable Sessions") {
 		t.Errorf("missing Notable Sessions section:\n%s", out)
 	}
@@ -145,7 +140,6 @@ func TestFormatInsightsNoNotable(t *testing.T) {
 }
 
 func TestFormatInsightsNoTools(t *testing.T) {
-	// No tools → Top Tools section omitted.
 	in := &core.Insights{
 		Period:   "7 days",
 		Sessions: 5,

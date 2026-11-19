@@ -1,12 +1,6 @@
 package kanban
 
-// The CRUD-round tests: the Priority field (create/update, the refusal
-// of a negative, the audit trail) and the TaskDeleter capability (the
-// store's cascade, the DELETE route, the board isolation). Priority is
-// an integer urgency tiebreak on the Hermes shape (higher = more
-// urgent, 0 = normal); delete takes the comments and events with the
-// card - archive is the reversible path, this file pins that the
-// irreversible one actually removes.
+// The CRUD-round tests: the Priority field.
 
 import (
 	"context"
@@ -58,7 +52,6 @@ func TestPriorityCreateAndUpdate(t *testing.T) {
 		t.Fatalf("no priority edit event: %q", edited)
 	}
 
-	// a zero patch leaves the value alone
 	noop, err := s.UpdateTask(ctx, "", out.ID, KanbanPatch{Title: strPtr("retitled")})
 	if err != nil {
 		t.Fatalf("title update: %v", err)
@@ -127,7 +120,6 @@ func TestDeleteBoardIsolation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	// board "" is main; the id only answers on its board
 	if err := s.DeleteTask(ctx, "", out.ID); err == nil {
 		t.Fatal("cross-board delete accepted")
 	}
@@ -209,7 +201,6 @@ func TestRestPriorityAndDelete(t *testing.T) {
 		t.Fatalf("second delete = %d", res.StatusCode)
 	}
 
-	// the tool rides the same store: delete on a missing id answers the error
 	if _, _, err := p.tools.runTaskOp(context.Background(), p.tools.board, map[string]any{
 		"action": "delete", "id": "nope-missing",
 	}); err == nil {

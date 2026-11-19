@@ -1,12 +1,6 @@
 package main
 
-// omega setup: the mandatory first-run wizard (card t_0744eb8e). With
-// no config.yaml, every command refuses and points here; bare `omega`
-// in an empty home drops straight into this wizard. Stdlib stdin/fmt
-// only - the loop law keeps the terminal one-dimensional, so nothing
-// here draws a screen. The live connection test goes through the real
-// provider transport (harness/provider), so "it works" is the same
-// code path a chat run uses.
+// omega setup: the mandatory first-run wizard.
 
 import (
 	"bufio"
@@ -19,12 +13,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/provider"
 )
 
-// modelsLister is the one provider surface setup touches: the live
-// model list. A module-level hook so tests drive a stub transport.
-// The named return is load-bearing for the purity law (scripts/
-// nm-purity.sh): the scrubber deletes the wire line alone and never
-// deletes a host function, so the hook must still return with the
-// module gone.
+// modelsLister is the one provider surface setup touches: the live model list. The
+// named return is load-bearing for the purity law (scripts/ nm-purity.sh): the scrubber
+// deletes the wire line alone and never deletes a host function, so the hook must still
+// return with the module gone.
 var newSetupProvider = func(typ, modelName, baseURL, apiKey string) (prov modelsLister) {
 	prov = provider.NewProvider(typ, modelName, baseURL, apiKey)
 	return prov
@@ -43,8 +35,7 @@ type setupProvider struct {
 	Manual bool   // a missing model list still lets the user type a model name
 }
 
-// setupProviders is the menu order ollama/openai/anthropic, matching
-// the card's provider list.
+// setupProviders is the menu order ollama/openai/anthropic, matching.
 var setupProviders = []setupProvider{
 	{Type: "ollama", Label: "ollama (local, default http://localhost:11434)", Host: "http://localhost:11434", NoKey: true, Manual: false},
 	{Type: "openai", Label: "openai (api.openai.com)", Host: "https://api.openai.com/v1", Manual: true},
@@ -66,10 +57,9 @@ type setupSession struct {
 	out io.Writer
 }
 
-// cmdSetup runs the wizard and writes <home>/config/config.yaml. An
-// existing config is never silently overwritten: the operator confirms.
-// On success it prints the webui URL and returns; the caller decides
-// whether to continue into the loop.
+// cmdSetup runs the wizard and writes <home>/config/config.yaml. An existing config is
+// never silently overwritten: the operator confirms. On success it prints the webui URL
+// and returns; the caller decides whether to continue into the loop.
 func cmdSetup() error {
 	if err := runnableSetup(); err != nil {
 		return err
@@ -78,8 +68,7 @@ func cmdSetup() error {
 	return s.Run()
 }
 
-// Run drives the whole wizard. Errors are phrased for one-shot reading:
-// the user fixes one thing, not three.
+// Run drives the whole wizard.
 func (s *setupSession) Run() error {
 	pick, err := s.pickProvider()
 	if err != nil {
@@ -88,8 +77,6 @@ func (s *setupSession) Run() error {
 	host := s.ask("base url", pick.Host)
 	key := ""
 	if !pick.NoKey {
-		// The key echoes as it is pasted (no terminal raw mode here -
-		// the loop law owns this process): say so plainly.
 		key = strings.TrimSpace(s.ask(fmt.Sprintf("api key for %s", pick.Type), ""))
 		if key == "" {
 			return fmt.Errorf("an api key is required for %s (get one at the provider's console)", pick.Type)
@@ -137,12 +124,11 @@ func (s *setupSession) pickProvider() (setupProvider, error) {
 	}
 }
 
-// pickModel runs the live connection test: ListModels through the real
-// provider transport. A working host lists models to pick from; a
-// failing host names the error and falls back to a typed model name
-// (or a retried host) so a transient failure never strands the install.
-// It returns the model AND the final base url - a retried host must
-// land in the written config, not just this conversation.
+// pickModel runs the live connection test. A working host lists models to pick from; a
+// failing host names the error and falls back to a typed model name (or a retried host)
+// so a transient failure never strands the install. It returns the model AND the final
+// base url - a retried host must land in the written config, not just this
+// conversation.
 func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, string, error) {
 	for attempt := 0; ; attempt++ {
 		prov := newSetupProvider(pick.Type, "", host, key)
@@ -198,8 +184,6 @@ func (s *setupSession) pickModel(pick setupProvider, host, key string) (string, 
 			fmt.Fprintf(s.out, "\nconnected, but the host lists no models.\n")
 		}
 		if !pick.Manual {
-			// ollama with nothing running is the common miss; a retry loop
-			// around host+test is the useful hand.
 			line := s.ask("enter a base url to retry, or a model name to force [model name]", "")
 			if strings.HasPrefix(strings.ToLower(line), "http") {
 				host = line

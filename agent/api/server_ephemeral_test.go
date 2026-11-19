@@ -1,10 +1,9 @@
 package api
 
-// Ephemeral session tests (card t_d96a5cd5): the no-persist contract.
-// A store-backed server answers /chat {ephemeral:true} with an `eph-` id
-// that never becomes a store row - context accumulates in the registry,
-// the transcript/detail endpoints serve server memory, close deletes,
-// and every store-derived surface stays blind to it.
+// Ephemeral session tests: the no-persist contract. A store-backed server answers /chat
+// {ephemeral:true} with an `eph-` id that never becomes a store row - context
+// accumulates in the registry, the transcript/detail endpoints serve server memory,
+// close deletes, and every store-derived surface stays blind to it.
 
 import (
 	"bytes"
@@ -42,9 +41,7 @@ func ephemeralChatBody(t *testing.T, sessionID string, content string, extra map
 	return raw
 }
 
-// ephemeralChat runs one ephemeral /chat send and resolves the session
-// id (the leading `session` frame when a fresh mint, the session_id
-// when continuing) and the parsed SSE frames.
+// ephemeralChat runs one ephemeral /chat send and resolves the session id.
 func ephemeralChat(t *testing.T, s *Server, sessionID string, content string, extra map[string]any) (string, []sseFrame) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(ephemeralChatBody(t, sessionID, content, extra)))
@@ -77,7 +74,6 @@ func TestChatEphemeralNeverTouchesTheStore(t *testing.T) {
 
 	id, _ := ephemeralChat(t, s, "", "hello ephemeral", nil)
 
-	// no session row, no messages, nothing
 	session, err := st.GetSession(t.Context(), id)
 	if err == nil {
 		t.Fatalf("ephemeral session %q materialized in the store: %+v", id, session)
@@ -90,8 +86,6 @@ func TestChatEphemeralNeverTouchesTheStore(t *testing.T) {
 		t.Fatalf("list = %+v, want empty (the eph session exists in memory only)", sessions)
 	}
 
-	// the registry owns the conversation: user + assistant in context
-	// and in the wire transcript
 	history := s.eph.history(id)
 	if len(history) != 2 {
 		t.Fatalf("history len = %d, want 2 (user + assistant)", len(history))
@@ -149,8 +143,6 @@ func TestChatEphemeralAccumulatesContext(t *testing.T) {
 		t.Fatalf("history[1] = %T, want core.Assistant", history[1])
 	}
 
-	// restart kills: dropping the record empties the conversation for
-	// good
 	if !s.eph.drop(id) {
 		t.Fatalf("drop(%q) = false, want the record present", id)
 	}
@@ -162,7 +154,6 @@ func TestChatEphemeralAccumulatesContext(t *testing.T) {
 func TestChatEphemeralGuards(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 
-	// retry is refused: nothing persisted to replay
 	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(ephemeralChatBody(t, "", "m", map[string]any{"retry": true})))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -170,7 +161,6 @@ func TestChatEphemeralGuards(t *testing.T) {
 		t.Fatalf("retry status = %d, want 400", rec.Code)
 	}
 
-	// fork is refused the same way
 	req = httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(ephemeralChatBody(t, "", "m", map[string]any{"fork": "row-id"})))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -186,7 +176,6 @@ func TestChatEphemeralGuards(t *testing.T) {
 		t.Fatalf("unknown eph id status = %d, want 404", rec.Code)
 	}
 
-	// an eph id without the flag is a client bug
 	req = httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader([]byte(`{"session_id":"eph-x","messages":[{"role":"user","content":"m"}]}`)))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -225,11 +214,8 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ephID, _ := ephemeralChat(t, s, "", "ephemeral hello", nil)
 
-	// search (FTS5) + export invisibility rode the store capsule out
-	// with wave 2 (the capsule's routes_test.go pins both: only the
-	// store is indexed, an eph id has no row to export)
+	// search (FTS5) + export invisibility rode the store capsule out with wave 2.
 
-	// the read-stamp PATCH answers 204 without a store write
 	req := httptest.NewRequest(http.MethodPatch, "/sessions/"+ephID, bytes.NewReader([]byte(`{"read":true}`)))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -237,7 +223,6 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 		t.Fatalf("read-stamp status = %d, want 204", rec.Code)
 	}
 
-	// rename is refused (no row to name)
 	req = httptest.NewRequest(http.MethodPut, "/sessions/"+ephID, bytes.NewReader([]byte(`{"label":"no"}`)))
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -248,7 +233,6 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 
 func TestWithoutMemoryTools(t *testing.T) {
 	s := newTestServer()
-	// the registry carries the dotted memory wire like the real mount does
 	s.tools = map[string]core.Tool{
 		"memory.add":     stubTool(),
 		"memory.replace": stubTool(),
@@ -272,8 +256,7 @@ func TestWithoutMemoryTools(t *testing.T) {
 	if _, has := s.tools["memory.add"]; !has {
 		t.Fatalf("withoutMemoryTools mutated the caller's registry")
 	}
-	// a stray flat `memory` name (an extension re-adding the old
-	// identity) strips too - the whole domain is the no-persist line
+	// a stray flat `memory` name (an extension re-adding the old identity) strips too.
 	s.tools = map[string]core.Tool{"memory": stubTool(), "files.read": stubTool()}
 	out = withoutMemoryTools(s.tools)
 	if _, has := out["memory"]; has {
@@ -282,7 +265,6 @@ func TestWithoutMemoryTools(t *testing.T) {
 	if _, has := out["files.read"]; !has {
 		t.Fatalf("files.read vanished from the copy")
 	}
-	// no memory in the registry: same map back, no allocation churn
 	s.tools = map[string]core.Tool{"files.read": stubTool()}
 	if got := withoutMemoryTools(s.tools); got == nil {
 		t.Fatalf("withoutMemoryTools returned nil for a memory-free registry")

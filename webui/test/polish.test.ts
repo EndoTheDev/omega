@@ -1,8 +1,4 @@
-// omega webui: unit tests for the card-7 polish helpers in
-// composables/omega.ts - message hover timestamps (formatMsgTime), the
-// thinking elapsed meter (formatElapsed + createElapsedMeter, fake clock),
-// and the transcript scroll math (isAtBottom / pillVisible, plain numbers).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the card-7 polish helpers in composables/omega.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -18,9 +14,7 @@ import {
 
 import type { RenderTimers } from "../app/composables/omega.ts";
 
-// formatMsgTime tests pin local-calendar expectations: an ISO instant is
-// re-rendered through the LOCAL getters of two Date objects, so the
-// expectations hold on any machine timezone.
+// formatMsgTime tests pin local-calendar expectations.
 function isoAt(y: number, m: number, d: number, h: number, min: number, s = 0): string {
   // build in local time, hand to Date as epoch ms - never UTC-constructed
   return new Date(y, m - 1, d, h, min, s).toISOString();
@@ -72,8 +66,6 @@ describe("formatElapsed", () => {
 });
 
 describe("createElapsedMeter (injectable timers)", () => {
-  // manual fake clock for the meter tests: set/clear plus a tick() that
-  // fires every timer due at or before the advanced time
   function fakeClock() {
     const pending: { fn: () => void; due: number; handle: symbol }[] = [];
     let now = 0;
@@ -193,9 +185,7 @@ describe("pillVisible", () => {
     assert.equal(pillVisible(0, 200, 200), false);
   });
 });
-// formatDurationMs: server-measured durations (restored sessions carry
-// real elapsed on the wire) render in the same voice as formatElapsed
-// (timing persistence, in-app comment session 04ea63f3)
+// formatDurationMs: server-measured durations.
 describe("formatDurationMs", () => {
   it("renders seconds, minutes, hours like the live meter", () => {
     assert.equal(formatDurationMs(0), "0ms");
@@ -205,8 +195,7 @@ describe("formatDurationMs", () => {
   });
 });
 
-// sub-second spans render milliseconds, not a floored "0s" (in-app
-// comment 4: fast thinking/tool/response phases are real measurements)
+// sub-second spans render milliseconds, not a floored "0s".
 describe("formatElapsed sub-second", () => {
   it("shows milliseconds under one second", () => {
     assert.equal(formatElapsed(0, 208), "208ms");

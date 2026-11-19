@@ -1,36 +1,15 @@
-// omega webui: pure row model for the MODULES surface (the settings tab's
-// MODULES section, card t_81d0901b - which moved the whole surface out of
-// the retired secondary-pane cockpit tab that card t_14f73742/t_210a0d19
-// built: module toggles are configuration, not content).
-//
-// Composition contract note: this listing is a SHELL-owned surface over the
-// GET /extensions endpoint, NOT a module-owned panel - the shell owns
-// the listing (it aggregates every module, including the modules that
-// carry no panel UI). has-ui and the panel list derive at shell build
-// time from the composition manifest (modulePanels: a module shipped
-// harness/<name>/ui/ with at least one panel component = it has UI);
-// the endpoint itself stays source-agnostic for the runtime.
-//
-// Lifecycle (card t_210a0d19): the row model MERGES three sources into
-// one list. GET /extensions covers every MOUNTED module (tools,
-// commands, seams, expansion names). GET /modules covers the registry
-// introspection (live state, toggleable, dependents) - the toggle
-// cockpit's data - and filters the shell modules, so a row the
-// introspection does not know is the SHELL ring (http_channel):
-// always on by tier law, no toggle. A module the inventory does not
-// know is DISABLED (it unmounted, so /extensions never listed it): it
-// rides the tail with empty detail. Pure on purpose: no Vue, no fetch
-// - the unit suite pins the merge.
-//
-// One row per module, never two: the merge keys on the module name and
-// the inventory (mount order) owns the position; disabled rows append
-// in registry order after the mounted ones.
+// omega webui: pure row model for the MODULES surface. Composition contract note: this
+// listing is a SHELL-owned surface over the GET /extensions endpoint, NOT a
+// module-owned panel - the shell owns the listing (it aggregates every module,
+// including the modules that carry no panel UI). A module the inventory does not know
+// is DISABLED (it unmounted, so /extensions never listed it): it rides the tail with
+// empty detail. One row per module, never two: the merge keys on the module name and
+// the inventory (mount order) owns the position; disabled rows append in registry order
+// after the mounted ones.
 
 import type { OmegaExtension, ModuleRow } from "../../composables/omega";
 
-// PanelRef is one composition-manifest hit: the owning module and the
-// panel's dockable title (the shell builds these from modulePanels; a
-// manifest entry without a dockable declaration titles by module name).
+// PanelRef is one composition-manifest hit.
 export interface PanelRef {
   module: string;
   title: string;
@@ -41,32 +20,20 @@ interface ExtensionRow {
   description: string;
   tools: number;
   commands: number;
-  // the expansion detail: verbatim tool names (alphabetical, as the
-  // registry sorts them) and the module's slash commands in
-  // registration order
   toolNames: string[];
   commandNames: string[];
   seams: string[];
-  // panel titles this module ships per the composition manifest
   panels: string[];
-  // true when the module ships a panel UI (composition manifest hit):
-  // the row's action opens the module's dock tab
   hasUi: boolean;
-  // lifecycle from the registry introspection. "shell" = the always-on
-  // serving shell (never in the /modules list; always on by tier law),
-  // "mounted" and
-  // "disabled" are the live registry states. A host without the toggle
-  // seam (501) leaves every row its inventory state with no toggles -
-  // the tab renders no checkbox then (the old settings-group fallback).
+  // lifecycle from the registry introspection. "shell" = the always-on serving shell
+  // (never in the /modules list; always on by tier law), "mounted" and "disabled" are
+  // the live registry states.
   state: "mounted" | "disabled" | "shell";
   toggleable: boolean;
   dependents: string[];
 }
 
-// extensionsRows merges the endpoint payload, the composition manifest
-// and the registry introspection into renderable rows: mounted rows in
-// payload order (mount order), then
-// the introspection-only rows (disabled modules) in registry order.
+// extensionsRows merges the endpoint payload, the composition manifest.
 export function extensionsRows(
   extensions: readonly OmegaExtension[],
   panels: readonly PanelRef[],
@@ -101,9 +68,7 @@ export function extensionsRows(
     };
   });
 
-  // the mounted inventory never lists disabled modules (they unmounted):
-  // the introspection leftovers ride the tail - still toggleable, with
-  // no tool or command detail to expand (nothing is mounted to expand).
+  // the mounted inventory never lists disabled modules (they unmounted).
   for (const m of introspection.values()) {
     rows.push({
       name: m.name,
@@ -123,11 +88,7 @@ export function extensionsRows(
   return rows;
 }
 
-// extensionsSummary is the tab's header line: N modules, T tools,
-// C commands across the load. Disabled rows contribute zero tools and
-// commands (nothing mounted to inventory), so the counts stay honest.
-// Zero modules reads "no extensions loaded" upstream (the tab's honest
-// empty state).
+// extensionsSummary is the tab's header line.
 export function extensionsSummary(rows: readonly ExtensionRow[]): string {
   const tools = rows.reduce((n, r) => n + r.tools, 0);
   const commands = rows.reduce((n, r) => n + r.commands, 0);

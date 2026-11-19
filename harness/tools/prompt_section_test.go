@@ -7,12 +7,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestPromptSectionsRendersOnlyTheDelta pins the trim (card
-// t_4f2c7b2e): a plain tool renders nothing - its name and description
-// already ride the provider's JSON schema - while an action-bearing
-// tool renders the domain line plus its sub-verb one-liners, the part
-// a schema enum cannot carry. An extension with no action-bearing tool
-// gets no block at all.
+// TestPromptSectionsRendersOnlyTheDelta pins the trim: a plain tool renders nothing -
+// its name and description already ride the provider's JSON schema - while an
+// action-bearing tool renders the domain line plus its sub-verb one-liners, the part a
+// schema enum cannot carry.
 func TestPromptSectionsRendersOnlyTheDelta(t *testing.T) {
 	p := NewPlugin()
 	secs := p.PromptSections(core.PromptBuildOptions{
@@ -53,8 +51,7 @@ func TestPromptSectionsRendersOnlyTheDelta(t *testing.T) {
 	}
 }
 
-// TestFirstLine verifies firstLine semantics: first non-empty line,
-// trimmed; a whitespace-only string falls back to the input.
+// TestFirstLine verifies firstLine semantics.
 func TestFirstLine(t *testing.T) {
 	for in, want := range map[string]string{
 		"one\ntwo":           "one",
@@ -68,16 +65,14 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// TestPromptSectionsImplementsSeam verifies the plugin satisfies the
-// prompt-section seam.
+// TestPromptSectionsImplementsSeam verifies the plugin satisfies the prompt-section.
 func TestPromptSectionsImplementsSeam(t *testing.T) {
 	var _ core.PromptSectioner = (*Plugin)(nil)
 }
 
-// TestPromptSectionsSkipsDisabledTools pins the registry enable flag's
-// prompt effect (card t_441deb04): the section is the model's tool
-// list, so an entry the fold switched off must not be advertised -
-// the model would call a tool the wire no longer carries.
+// TestPromptSectionsSkipsDisabledTools pins the registry enable flag's prompt effect:
+// the section is the model's tool list, so an entry the fold switched off must not be
+// advertised - the model would call a tool the wire no longer carries.
 func TestPromptSectionsSkipsDisabledTools(t *testing.T) {
 	p := NewPlugin()
 	secs := p.PromptSections(core.PromptBuildOptions{
@@ -118,9 +113,8 @@ func TestPromptSectionsSkipsDisabledTools(t *testing.T) {
 	}
 }
 
-// TestPromptSectionsEmptyCasesContributeNothing pins the empty cases: a
-// home whose tools carry no action annotations (the shipped set, card
-// t_4f2c7b2e) and a home with every tool off both contribute no
+// TestPromptSectionsEmptyCasesContributeNothing pins the empty cases: a home whose
+// tools carry no action annotations and a home with every tool off both contribute no
 // section - never a dangling "## Tools" heading.
 func TestPromptSectionsEmptyCasesContributeNothing(t *testing.T) {
 	p := NewPlugin()

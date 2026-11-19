@@ -1,11 +1,7 @@
-// omega webui: back/forward navigation history (card t_6215474b). The
-// stack model (push on tab activation + pane focus, consecutive-duplicate
-// suppressed, cap 100) at the boundary production uses: the reactive
-// shell createNavHistory + the pure push/back/forward math + the app
-// wiring assertions (app.vue's wrapper routes every activation through
-// one record path; the MenuBar cluster seats inline after the brand
-// (card t_3aed367e: the wordmark owns the center) with the ends dimmed
-// via the disabled attribute).
+// omega webui: back/forward navigation history. The stack model (push on tab activation
+// + pane focus, consecutive-duplicate suppressed, cap 100) at the boundary production
+// uses: the reactive shell createNavHistory + the pure push/back/forward math + the app
+// wiring assertions.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -27,13 +23,12 @@ import { makeSplit, type DockPane } from "../app/composables/dock.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-// a pane literal (dock.ts's makePane mints its own id - these tests pin
-// exact pane ids)
+// a pane literal (dock.ts's makePane mints its own id - these tests pin exact pane ids)
 function pane(id: string, tabs: DockPane["tabs"]): DockPane {
   return { kind: "pane", id, tabs, active: 0, fixed: null };
 }
 
-// --- the pure push model -----------------------------------------------------
+// the pure push model --------------------------------------------------
 
 describe("nav push model", () => {
   const A: NavEntry = { paneId: "p1", tabId: "chat" };
@@ -47,7 +42,6 @@ describe("nav push model", () => {
   });
 
   it("a different entry splices in and discards the forward branch", () => {
-    // A -> B -> C (index at A), a push truncates the branch
     let s = navPush([A, B, C], 0, B);
     assert.deepEqual(s.entries.map((e) => e.tabId), ["chat", "k2"]);
     assert.equal(s.index, 1);
@@ -73,7 +67,7 @@ describe("nav push model", () => {
   });
 });
 
-// --- tab identity ------------------------------------------------------------
+// tab identity ---------------------------------------------------------
 
 describe("navTabId", () => {
   it("chat keys by the instance key, viewer by its payload, singletons by component", () => {
@@ -91,7 +85,7 @@ describe("navTabId", () => {
   });
 });
 
-// --- entry resolution against a live tree ------------------------------------
+// entry resolution against a live tree ---------------------------------
 
 describe("locateEntry", () => {
   const tree = makeSplit("row", [
@@ -110,7 +104,7 @@ describe("locateEntry", () => {
   });
 });
 
-// --- the reactive shell (the production signal shape) -------------------------
+// the reactive shell (the production signal shape) ----------------------
 
 describe("createNavHistory", () => {
   it("back/forward activate the resolved entry; the dims track the ends", () => {
@@ -156,7 +150,7 @@ describe("createNavHistory", () => {
   });
 });
 
-// --- the app wiring (production-boundary assertions) ----------------------------
+// the app wiring (production-boundary assertions) -------------------------
 
 describe("nav cluster wiring", () => {
   const menubar = readFileSync(
@@ -167,53 +161,41 @@ describe("nav cluster wiring", () => {
   const css = readFileSync(join(here, "../app/assets/css/main.css"), "utf8");
   const iconset = readFileSync(join(here, "../app/composables/icons.ts"), "utf8");
 
-  // card t_20fd8745 (Endo ruling 2026-11-13): ONE brand far left, the nav
-  // cluster dead center on the bar's full width, the 'Omega' wordmark dead.
+  // ONE brand far left, the nav cluster dead center on the bar's full width,.
   it("the brand is ONE element; the cluster owns the absolute center", () => {
     assert.match(menubar, /<NavCluster/);
     assert.match(menubar, /:can-back="canBack"/);
     assert.match(menubar, /@open-palette="\$emit\('open-palette'\)"/);
-    // MenuBar DECLARES the dims as props - an undeclared prop keeps
-    // canBack undefined in the template and both arrows ship dead
+    // MenuBar DECLARES the dims as props.
     assert.match(menubar, /canBack: boolean/);
     assert.match(menubar, /canForward: boolean/);
-    // ruling 1: ONE brand - glyph + word in a SINGLE element, far left
+    // ONE brand - glyph + word in a SINGLE element, far left
     assert.match(menubar, /<span class="brand">Ωmega<\/span>/);
     assert.equal(
       (menubar.match(/class="brand"/g) ?? []).length,
       1,
       "exactly one brand element",
     );
-    // ruling 1: the centered wordmark ELEMENT and its CSS rule are deleted
-    // (the comment above may still name the dead class - that is history,
-    // not a render)
+    // the centered wordmark ELEMENT and its CSS rule are deleted.
     assert.doesNotMatch(menubar, /<span class="menubar-wordmark"/);
     assert.doesNotMatch(css, /\.menubar-wordmark\s*\{/);
-    // ruling 2: the cluster takes the absolute-middle seat the wordmark
-    // used (dead center on the menubar's FULL width, robust to any
-    // left/right width) - never spacer-balanced
+    // the cluster takes the absolute-middle seat the wordmark used (dead center on the
+    // menubar's FULL width, robust to any left/right width) - never spacer-balanced
     assert.match(css, /\.nav-cluster\s*\{[^}]*position:\s*absolute/);
     assert.match(css, /\.nav-cluster\s*\{[^}]*left:\s*50%/);
     assert.match(css, /\.nav-cluster\s*\{[^}]*translateX\(-50%\)/);
-    // ruling 5: below the drawer breakpoint the cluster HIDES (the three
-    // edge toggles stay - they are the drawer handles)
+    // below the drawer breakpoint the cluster HIDES.
     assert.match(
       css,
       /@media \(max-width: 768px\) \{\s*\.nav-cluster \{ display: none; \}/,
     );
-    // no version anywhere in the menubar - the status bar owns it
     assert.doesNotMatch(menubar, /Omega v?\d+\.\d+/);
     assert.doesNotMatch(menubar, /\/health/);
-    // the ruling: disabled attribute dimming, never a click-swallow class
+    // the rule: disabled attribute dimming, never a click-swallow class
     assert.match(css, /\.nav-btn:disabled\s*\{[^}]*opacity/);
   });
 
-  // ruling 3: the palette "input" is a BUTTON dressed as one - pure
-  // affordance, and its placeholder is a LIVE clock. card t_cc6d0920
-  // (the takeover) keeps this true of the CLUSTER's own markup: the real
-  // field is not written here, the palette teleports it into the seat
-  // (`#nav-palette-slot`) while it is open - one element, one focus path,
-  // and the seat's geometry is the affordance's (see palette.test.ts).
+  // the palette "input" is a BUTTON dressed as one.
   it("the palette affordance is a button with a ticking clock, never an input", () => {
     const nav = readFileSync(
       join(here, "../app/components/nav/NavCluster.vue"),
@@ -221,7 +203,6 @@ describe("nav cluster wiring", () => {
     );
     assert.match(nav, /class="nav-palette-input"/);
     assert.match(nav, /<button[\s\S]{0,260}class="nav-palette-input"/);
-    // no real input, no v-model, no focus path of its own
     assert.doesNotMatch(nav, /<input/);
     assert.doesNotMatch(nav, /v-model/);
     // one click opens the ONE palette (app.vue's toggle, via the shell)
@@ -229,7 +210,6 @@ describe("nav cluster wiring", () => {
       nav,
       /class="nav-palette-input"[\s\S]{0,400}@click="\$emit\('open-palette'\)"/,
     );
-    // the outside-click exemption rides the same marker as the trigger
     assert.match(
       nav,
       /class="nav-palette-input"[\s\S]{0,300}data-palette-trigger/,
@@ -238,8 +218,7 @@ describe("nav cluster wiring", () => {
     // decoration (aria-hidden) so a screen reader never reads a time
     assert.match(nav, /aria-label="Command palette \(Ctrl\+K\)"/);
     assert.match(nav, /class="nav-palette-clock"\s+aria-hidden="true"/);
-    // the clock: zero-padded HH:MM, re-armed on the minute boundary, and
-    // the timer dies with the component
+    // the clock: zero-padded HH:MM, re-armed on the minute boundary, and the timer.
     assert.match(nav, /pad\(d\.getHours\(\)\)[\s\S]{0,80}pad\(d\.getMinutes\(\)\)/);
     assert.match(nav, /60_000 - \(Date\.now\(\) % 60_000\)/);
     assert.match(nav, /onMounted\(armClock\)/);
@@ -250,10 +229,7 @@ describe("nav cluster wiring", () => {
     // CSS: the affordance reads as an input (token background + border)
     assert.match(css, /\.nav-palette-input\s*\{[^}]*var\(--z1\)/);
     assert.match(css, /\.nav-palette-input\s*\{[^}]*border: 1px solid var\(--stroke\)/);
-    // card t_d4443ab5: the top bar's command-palette SECTION was widened
-    // (200 -> 260, then 420 with the 2026-11-15 tuned numbers) and capped
-    // so the centred cluster stays clear of the toggles on a narrow
-    // desktop window
+    // the top bar's command-palette SECTION was widened and capped so the centred.
     assert.match(css, /\.nav-palette-input\s*\{[^}]*width: 420px/);
     assert.match(css, /\.nav-palette-input\s*\{[^}]*max-width: 26vw/);
   });
@@ -265,7 +241,6 @@ describe("nav cluster wiring", () => {
     assert.match(nav, /Command palette \(Ctrl\+K\)/);
     assert.match(nav, /Back \(Alt\+Left\)/);
     assert.match(nav, /Forward \(Alt\+Right\)/);
-    // the iconset vocabulary: all three names declared
     for (const n of ["nav-back", "nav-forward", "palette"]) {
       assert.match(iconset, new RegExp(`"${n}":`));
     }
@@ -281,12 +256,9 @@ describe("nav cluster wiring", () => {
     assert.match(app, /window\.addEventListener\("keydown", onNavKeys\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowLeft[\s\S]{0,300}nav\.back\(\)/);
     assert.match(app, /onNavKeys[\s\S]{0,1200}ArrowRight[\s\S]{0,300}nav\.forward\(\)/);
-    // Ctrl+K (ruling 1) and the palette open both exist - ONE toggle since
-    // the outside-click rider (t_bdcfefc6): both doors call togglePalette
     assert.match(app, /e\.key === "k"/);
     assert.match(app, /function togglePalette/);
     assert.match(app, /onNavKeys[\s\S]{0,200}togglePalette\(\)/);
-    // pane focus records (ruling 2), via the existing document click seam
     assert.match(app, /if \(paneId\) recordNav\(paneId\)/);
     assert.match(app, /navTabId\(tab\)/);
   });

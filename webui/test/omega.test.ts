@@ -1,9 +1,4 @@
-// omega webui: unit tests for the SSE parser + payload dispatch (the
-// pure half of the streamChat composable). chat-last 2a: the render
-// frames (thinking/response/tool) carry NO callbacks anymore - the chat
-// pane paints from the canvas panel's deltas; what the payload dispatch
-// still routes is usage, terminal state, errors and view_model_delta.
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the SSE parser + payload dispatch.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -152,7 +147,6 @@ describe("normalizeChatPayload: the chat panel payload's wire guard", () => {
         { role: "tool", status: "complete", blocks: [{ type: "tool_result", content: "ignore" }] },
       ],
     })!;
-    // the estimate counts assistant prose + thinking only (chars/4)
     assert.equal(chatPanelContent(payload), 10);
     assert.equal(chatPanelMessageCount(payload), 2);
   });
@@ -181,9 +175,6 @@ describe("attachment references on the render wire (card t_8a569163)", () => {
     );
   });
 
-  // card t_95385aba: the panel payload's duration fields survive the
-  // normalizer - a dropped one is a duration that vanishes on the next
-  // repaint (the answer_ms loss this guard also closes).
   it("normalizeChatPayload keeps the block durations", () => {
     const payload = normalizeChatPayload({
       rows: [
@@ -273,8 +264,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(settled.status, "done");
     assert.equal(settled.result, "1..30");
     assert.equal(settled.elapsedMs, undefined, "the meter spends when the call closes");
-    // the response-return window rides the result block beside the
-    // call duration (card t_e27c8347) - the row's second number
     assert.equal(settled.answerMs, 1200, "the result's answer_ms lands on the row");
   });
 
@@ -290,11 +279,10 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal((stored[0] as { id?: string }).id, "9");
   });
 
-  // card t_95385aba: a tab switch / reload rebuilds the pane from the
-  // panel payload. The answer and thinking rows carry their duration on
-  // the block both ways - elapsed-so-far while the segment streams (the
-  // remounted meter's anchor) and the measured span once it lands (the
-  // frozen label) - so the duration never snaps back to zero and never
+  // a tab switch / reload rebuilds the pane from the panel payload. The answer and
+  // thinking rows carry their duration on the block both ways - elapsed-so-far while
+  // the segment streams (the remounted meter's anchor) and the measured span once it
+  // lands (the frozen label) - so the duration never snaps back to zero and never
   // vanishes.
   it("a streaming answer/thinking row carries its meter anchor, a settled one its span", () => {
     const t = createCanvasTranscript();
@@ -313,8 +301,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(think.finalMs, undefined);
     const answer = live[1] as { kind: string; streaming?: boolean; elapsedMs?: number; finalMs?: number };
     assert.equal(answer.elapsedMs, 2400, "the answer meter counts on the same way");
-    // the run lands: the same items now carry the measured spans, and
-    // the streaming anchors are spent
     const done = t.apply({
       session: "s3",
       rows: [
@@ -361,7 +347,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     }));
     assert.equal(again[0], open[0]);
     assert.equal((again[0] as { issuedAt?: number }).issuedAt, card.issuedAt);
-    // the result row settles the card
     const settledRows = t.apply(rows(
       {
         role: "assistant",
@@ -376,15 +361,10 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
     assert.equal(settled.picked, "yes");
   });
 
-  // t_494639c8 (retires t_078a2c35's positional fold): a sibling variant
-  // is a DIFFERENT store row, so it gets its OWN item. The old positional
-  // sig folded variant-2's row 392 and variant-1's row 391 onto one
-  // cached object and rewrote its id/content in place - which is also how
-  // a sliding window handed one row another row's component state.
-  // Consumers still read item.id (variantLabel rides it - « n/n » - and
-  // the fork/copy targets too), so the swap must HAND the renderer the
-  // sibling's values: its own item does exactly that, and the row left
-  // behind keeps its own fields untouched.
+  // a sibling variant is a DIFFERENT store row, so it gets its OWN item. Consumers
+  // still read item.id (variantLabel rides it - « n/n » - and the fork/copy targets
+  // too), so the swap must HAND the renderer the sibling's values: its own item does
+  // exactly that, and the row left behind keeps its own fields untouched.
   it("a sibling variant repaints as its own item, never a rewrite of the other's", () => {
     const t = createCanvasTranscript();
     const rows = (aid: string, text: string) =>
@@ -402,7 +382,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
       content: (v2[1] as { content: string }).content,
     };
     assert.deepEqual(before, { id: "392", content: "second answer" });
-    // the select's refetch: the snapshot serves the sibling alone
     const v1 = t.apply(rows("391", "first answer"));
     assert.notEqual(v1[1], v2[1], "the sibling row is addressed by its own id - its own item");
     assert.equal((v1[1] as { id?: string }).id, "391");
@@ -413,7 +392,6 @@ describe("createCanvasTranscript: identity survives the deltas", () => {
       before,
       "no cross-row write: the previous variant keeps its own fields",
     );
-    // and the user turn above both variants is untouched throughout
     assert.equal((v1[0] as { content: string }).content, "prompt");
     // switching BACK re-uses the first variant's own item (ids are stable)
     const back = t.apply(rows("392", "second answer"));
@@ -451,9 +429,7 @@ describe("thinkingLevelWire", () => {
   });
 });
 
-// the reattach merge's restored running tool counts on from the
-// server's elapsed-so-far instead of restarting the call's clock
-// (card t_692254f7). Manual fake clock: one stored tick callback.
+// the reattach merge's restored running tool counts.
 describe("createElapsedMeter initialMs (restored running call offset)", () => {
   function fakeMeter(offset: number) {
     const labels: string[] = [];
@@ -478,8 +454,6 @@ describe("createElapsedMeter initialMs (restored running call offset)", () => {
   }
 
   it("starts the label at the consumed span and ticks on from it", () => {
-    // wall clock at 0, call started 7s ago: the restored tool has
-    // already burned 7s before this meter ever mounted
     const t = fakeMeter(7000);
     t.meter.start();
     assert.deepEqual(t.labels, ["7s"], "first emit is the consumed span");

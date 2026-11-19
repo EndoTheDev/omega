@@ -35,7 +35,6 @@ func TestHumanBytes(t *testing.T) {
 
 func TestFindInArchiveRoot(t *testing.T) {
 	tmp := t.TempDir()
-	// Create a file named "omega" at the root.
 	binPath := filepath.Join(tmp, "omega")
 	if err := os.WriteFile(binPath, []byte("fake binary"), 0o755); err != nil {
 		t.Fatal(err)
@@ -44,10 +43,7 @@ func TestFindInArchiveRoot(t *testing.T) {
 	if got == "" {
 		t.Fatalf("findInArchive returned empty, expected %s", binPath)
 	}
-	// On Windows, findInArchive checks for .exe first. If the file is
-	// "omega" (no .exe), the loop tries "omega.exe" (stat fails), then
-	// "omega" (stat succeeds). Verify we got something pointing to the
-	// right file.
+	// On Windows, findInArchive checks for.exe first.
 	if filepath.Base(got) != "omega" && filepath.Base(got) != "omega.exe" {
 		t.Fatalf("findInArchive returned %q, expected base name omega or omega.exe", got)
 	}
@@ -55,7 +51,6 @@ func TestFindInArchiveRoot(t *testing.T) {
 
 func TestFindInArchiveNested(t *testing.T) {
 	tmp := t.TempDir()
-	// Create a versioned directory with omega inside.
 	subDir := filepath.Join(tmp, "omega-v0.3.0")
 	os.MkdirAll(subDir, 0o755)
 	binPath := filepath.Join(subDir, "omega")
@@ -149,7 +144,6 @@ func TestProgressReaderRead(t *testing.T) {
 	if string(buf) != strings.Repeat("x", 250) {
 		t.Errorf("progressReader.Read data mismatch")
 	}
-	// Read rest
 	n2, err := pr.Read(buf)
 	if err != nil {
 		t.Fatalf("progressReader.Read second call error: %v", err)
@@ -161,7 +155,6 @@ func TestProgressReaderRead(t *testing.T) {
 
 func TestExtractZipBasic(t *testing.T) {
 	tmp := t.TempDir()
-	// Create a zip in memory with one file.
 	var buf bytes.Buffer
 	w := zip.NewWriter(&buf)
 	fw, err := w.Create("test.txt")

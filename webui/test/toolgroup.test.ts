@@ -1,9 +1,4 @@
-// omega webui: unit tests for the tool-call grouping (card t_e4280de7).
-// The pure logic (run folding, variant exclusion, the group open state
-// machine) is tested directly; the component wiring (three render
-// sites, the shared display mode, the pin click, the CSS width laws)
-// is pinned structurally, the composition-test convention. Run:
-// node --test webui/test/ (node >= 23)
+// omega webui: unit tests for the tool-call grouping.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -16,8 +11,7 @@ import type { ToolItem, TranscriptItem } from "../app/composables/omega.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// item builders keep the tests shape-honest: the same items the live
-// stream and the restore path produce
+// item builders keep the tests shape-honest.
 const user = (content: string): TranscriptItem => ({ kind: "message", role: "user", content });
 const assistant = (content: string): TranscriptItem => ({
   kind: "message",
@@ -32,7 +26,7 @@ const tool = (name: string, id?: string): TranscriptItem => ({
   id,
 });
 
-// --- groupToolRuns: the run folding ---
+// groupToolRuns: the run folding
 
 test("two or more consecutive tool rows fold into ONE group entry", () => {
   const a = tool("shell.run", "t1");
@@ -77,7 +71,6 @@ test("a variant-anchored tool row is NEVER swallowed - it splits the run", () =>
     ["tool", "tool", "tool"],
   );
   assert.ok(!isToolRun(out[1]));
-  // the anchor row itself is in flow, same object
   assert.equal(out[1], anchor);
 });
 
@@ -97,7 +90,7 @@ test("empty transcript, empty result", () => {
   assert.deepEqual(groupToolRuns([]), []);
 });
 
-// --- toolGroupWantOpen: the group's auto state machine ---
+// toolGroupWantOpen: the group's auto state machine
 
 test("expanded/collapsed force one state regardless of run state", () => {
   for (const live of [true, false]) {
@@ -114,10 +107,9 @@ test("auto keeps the group open while the run is live or any row runs", () => {
   assert.equal(toolGroupWantOpen(false, false, "auto"), false, "settled collapses");
 });
 
-// --- toolChildKey: the group's children key on the CALL, not the slot ---
+// toolChildKey: the group's children key on the CALL, not the slot
 
-// callRow mirrors what the two producers mint: the canvas path stamps
-// callId AND the store row id, the REST restore path stamps callId only
+// callRow mirrors what the two producers mint.
 const callRow = (name: string, callId?: string, rowId?: string): ToolItem => ({
   kind: "tool",
   name,
@@ -131,10 +123,9 @@ test("a group that loses its head keeps every remaining child's key", () => {
   const b = callRow("shell.run", "t2");
   const c = callRow("files.read", "t3");
   const before = [a, b, c].map((it, i) => toolChildKey(it, i));
-  // the head leaves the run (a variant anchor splits it): the SAME two
-  // remaining items now sit at slots 0 and 1 - their keys must ride the
-  // items, so their ToolCallLine instances (fold pin, running meter)
-  // stay with their own call
+  // the head leaves the run (a variant anchor splits it): the SAME two remaining items
+  // now sit at slots 0 and 1 - their keys must ride the items, so their ToolCallLine
+  // instances (fold pin, running meter) stay with their own call
   const after = [b, c].map((it, i) => toolChildKey(it, i));
   assert.deepEqual(after, before.slice(1));
   // and the old slot-0 instance is NOT handed to b: slot 0 changed hands
@@ -151,12 +142,11 @@ test("identity ladder: call id, then store row id, then the slot", () => {
   assert.equal(toolChildKey(callRow("a", "t1", "r1"), 7), "call:t1");
   assert.equal(toolChildKey(callRow("a", undefined, "r1"), 7), "row:r1");
   assert.equal(toolChildKey(callRow("a"), 7), "slot:7");
-  // an id-less row falls to its slot, and the prefix keeps that floor
-  // from colliding with a numeric call id
+  // an id-less row falls to its slot, and the prefix keeps that floor from colliding.
   assert.notEqual(toolChildKey(callRow("a"), 0), toolChildKey(callRow("a", "0"), 0));
 });
 
-// --- structural wiring: the card's must-haves ---
+// structural wiring: the card's must-haves
 
 test("ChatTab renders the group at BOTH sites and keys on item identity", () => {
   const t = src("components/ChatTab.vue");
@@ -165,14 +155,10 @@ test("ChatTab renders the group at BOTH sites and keys on item identity", () => 
   assert.match(t, /import \{ groupToolRuns, isToolRun, foldAddress, type ChatEntry \}/);
   assert.match(t, /groupToolRuns\(transcript\.value, variantOfItem\)/);
   assert.match(t, /groupToolRuns\(block, variantOfItem\)/);
-  // the third site retired with the run-only live body (card t_5bb319f6):
-  // a streaming run now groups its calls inside the ordinary stacked block
   assert.doesNotMatch(t, /groupToolRuns\(liveRun\.value\.body/);
-  // the group's key is its HEAD ROW's key - a growing run keeps its
-  // details element (pins survive the growth)
+  // the group's key is its HEAD ROW's key.
   assert.match(t, /return isToolRun\(entry\) \? itemKey\(entry\.items\[0\]!\) : itemKey\(entry\)/);
-  // the live gate rides the busy slot so auto stays open across the
-  // whole run (no per-call yoyo)
+  // the live gate rides the busy slot so auto stays open across the whole run.
   assert.match(t, /:live="busy"/);
   assert.equal(t.match(/<ToolGroup(?![\w-])/g)?.length, 2, "one render per site");
 });
@@ -192,32 +178,26 @@ test("ToolGroup mirrors the row/block fold: shared mode, pin click, child passth
   // phase 3) keeps a chip-holding group open
   assert.match(g, /useToolDisplay\(\)/);
   assert.match(g, /toolGroupWantOpen\(anyActive\.value, props\.live \?\? false, display\.value\)/);
-  // the combined flag is the SHARED live-set predicate (card t_008f5d27) -
-  // no per-status aggregate of its own to drift
+  // the combined flag is the SHARED live-set predicate.
   assert.match(g, /import \{ isLive \} from "\.\.\/\.\.\/composables\/toolStatus"/);
   assert.match(g, /anyActive = computed\(\(\) => props\.items\.some\(\(it\) => isLive\(it\.status\)\)\)/);
-  // children render EXACTLY the ChatItem tool-branch markup: rows keep
-  // their own fold + gate card, a group is a container not a re-render
+  // children render EXACTLY the ChatItem tool-branch markup.
   assert.match(g, /<ToolCallLine/);
   assert.match(g, /<GateCard/);
-  // children key on the CALL's identity, never the slot (card
-  // t_64212867): an index key hands a surviving row's instance to a
-  // different call once the group's membership shifts
+  // children key on the CALL's identity, never the slot.
   assert.match(g, /:key="toolChildKey\(item, i\)"/);
   assert.doesNotMatch(g, /:key="i"/);
-  // aggregate status rides the existing wrench glyph (one name one meaning)
   assert.match(g, /name="tools"/);
 });
 
 test("the width laws ride the row's: base cap, stacked full, mobile 88%", () => {
   const css = src("assets/css/main.css");
-  // the summary face mirrors .thinking's block summary (one fold grammar)
+  // the summary face mirrors.thinking's block summary (one fold grammar)
   assert.match(css, /\.toolgroup summary \{/);
   assert.match(css, /\.toolgroup summary::-webkit-details-marker \{ display: none; \}/);
   assert.match(css, /\.toolgroup \{[^}]*max-width: 70%/);
   assert.match(css, /\.messages\.stacked \.toolgroup \{ max-width: 100%; \}/);
   assert.match(css, /\.bubble, \.thinking, \.toolcall, \.toolgroup \{ max-width: 88%; \}/);
-  // rows render at FULL width inside the group - the cap belongs to
-  // the group, not to the rows in its body
+  // rows render at FULL width inside the group.
   assert.match(css, /\.toolgroup \.toolcall \{ max-width: 100%; \}/);
 });

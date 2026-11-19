@@ -36,10 +36,7 @@ func TestLoadConfigDefaults(t *testing.T) {
 	}
 }
 
-// TestLoadConfigFromYAML is the COMPAT contract (card t_bf21ee07): a
-// config.yaml carrying the pre-merge flat provider trio keeps loading,
-// and the reader normalizes it to the instance named "default" in
-// memory - no migration script, no user action.
+// TestLoadConfigFromYAML is the COMPAT contract.
 func TestLoadConfigFromYAML(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
@@ -83,11 +80,7 @@ store:
 	}
 }
 
-// TestFirstSaveWritesInstancesShape (card t_bf21ee07): a pre-merge
-// config.yaml loads (flat trio plus the old top-level providers map)
-// and the FIRST write lands the one all-instances shape - no flat
-// trio, no legacy map - and the saved document reloads to the same
-// provider rows.
+// TestFirstSaveWritesInstancesShape: a pre-merge config.yaml loads.
 func TestFirstSaveWritesInstancesShape(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:
@@ -145,7 +138,6 @@ providers:
 		t.Errorf("saved rows = %s, want default,home,work\n%s", got, data)
 	}
 
-	// the saved shape reloads to the same provider
 	reloaded, err := LoadConfig(path)
 	if err != nil {
 		t.Fatalf("reload: %v", err)
@@ -214,7 +206,6 @@ store:
 }
 
 func TestLoadConfigEnvFillsMissingYAML(t *testing.T) {
-	// YAML provides only model_name; env fills the rest.
 	path := writeTempConfig(t, `
 provider:
   model_name: llama3
@@ -248,10 +239,7 @@ server:
 	}
 }
 
-// card t_7dcd4280 / t_1914a8c9: the named provider instances -
-// Validate law. An instance is a NAMED ENDPOINT only (name, type,
-// host, api_key); a model_name is a loud config error - models come
-// from the instance's catalog through the pickers.
+// /: the named provider instances - Validate law.
 func TestValidateProviderInstances(t *testing.T) {
 	base := `
 provider:
@@ -275,9 +263,6 @@ providers:
     api_key: sk-test
     host: https://api.openai.example
 `, ""},
-		// card t_bf21ee07: every provider is a row now, the primary
-		// included - a config whose list carries only the named rows has
-		// no primary and says so loudly.
 		{"merged list without the primary", `
   instances:
     - name: backup
@@ -546,7 +531,6 @@ func TestApplyEnvInvalidValues(t *testing.T) {
 provider:
   model_name: llama3
 `)
-	// Invalid port: non-numeric — should be skipped, default preserved.
 	t.Setenv("OMEGA_PORT", "not-a-number")
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -562,7 +546,6 @@ func TestApplyEnvInvalidCompactionThreshold(t *testing.T) {
 provider:
   model_name: llama3
 `)
-	// Out-of-range threshold (negative) — should be skipped, default preserved.
 	t.Setenv("OMEGA_COMPACTION_THRESHOLD", "-0.5")
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -578,7 +561,6 @@ func TestApplyEnvInvalidCompactionThresholdOverOne(t *testing.T) {
 provider:
   model_name: llama3
 `)
-	// Out-of-range threshold (>1) — should be skipped, default preserved.
 	t.Setenv("OMEGA_COMPACTION_THRESHOLD", "1.5")
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -611,7 +593,6 @@ func TestApplyEnvNegativeCompactionContextWindow(t *testing.T) {
 provider:
   model_name: llama3
 `)
-	// Negative context window — should be skipped, default preserved.
 	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "-100")
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -622,10 +603,9 @@ provider:
 	}
 }
 
-// TestLoadConfigLegacyPathNamesNewLocation is the C1 regression: reading
-// the pre-v0.8 home-root config.yaml used to surface only the raw OS
-// message ("The system cannot find the file specified"). The error now
-// names the config/ layout location the file moved to.
+// TestLoadConfigLegacyPathNamesNewLocation is the C1 regression: reading the pre-v0.8
+// home-root config.yaml used to surface only the raw OS message ("The system cannot
+// find the file specified").
 func TestLoadConfigLegacyPathNamesNewLocation(t *testing.T) {
 	t.Run("moved config is named", func(t *testing.T) {
 		home := t.TempDir()

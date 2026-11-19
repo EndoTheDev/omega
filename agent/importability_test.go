@@ -1,9 +1,7 @@
 package agent
 
-// The tier law (three-tier restructure, card t_768c6cc1): agent/ is THE
-// MECHANISM. It imports the substrate (core, llm) and itself - never a
-// harness capsule. Same machinery as core's importability_test.go: the
-// law was true when the test landed; the test keeps it true.
+// The tier law: agent/ is THE MECHANISM. It imports the substrate (core, llm) and
+// itself - never a harness capsule.
 
 import (
 	"go/parser"
@@ -14,11 +12,10 @@ import (
 	"testing"
 )
 
-// allowedPath reports whether an import path is legal inside the
-// mechanism tier. Stdlib first: paths without a dot in their first
-// segment. Then the tier's omega allowance {core, llm, agent}, then
-// the vetted third-party list - a new third-party dep lands only by
-// adding it here (in review, on its own), never by the side door.
+// allowedPath reports whether an import path is legal inside the mechanism tier. Then
+// the tier's omega allowance {core, llm, agent}, then the vetted third-party list - a
+// new third-party dep lands only by adding it here (in review, on its own), never by
+// the side door.
 func allowedPath(path string) bool {
 	first := path
 	if i := strings.IndexByte(path, '/'); i >= 0 {
@@ -37,10 +34,7 @@ func allowedPath(path string) bool {
 	return false
 }
 
-// checkImports parses every .go file in dir (test files included,
-// subdirectories excluded) and lists imports the tier law refuses.
-// The offender list carries file names so the fix is the next edit,
-// not a mystery.
+// checkImports parses every.go file in dir.
 func checkImports(t *testing.T, dir string) []string {
 	t.Helper()
 	var offenders []string
@@ -80,9 +74,7 @@ func checkImports(t *testing.T, dir string) []string {
 	return offenders
 }
 
-// TestAgentImportsLaw: agent/ is the mechanism. core, llm, agent,
-// the vetted third-party list, stdlib - nothing else. A harness or
-// modules import anywhere under agent/ fails here.
+// TestAgentImportsLaw: agent/ is the mechanism.
 func TestAgentImportsLaw(t *testing.T) {
 	offenders := checkImports(t, ".")
 	if len(offenders) > 0 {

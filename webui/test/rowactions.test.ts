@@ -1,6 +1,4 @@
-// omega webui: unit tests for the session-row actions batch
-// (t_6bf696e4) - branch/rename/export parity actions. Run:
-// node --test "test/*.test.ts" (node >= 23 runs TS natively)
+// omega webui: unit tests for the session-row actions batch.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {

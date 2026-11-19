@@ -1,12 +1,6 @@
 package continuous
 
-// plugin.go: the capsule adapter. MountWithAPI registers every face:
-// the config section (continuous:), the evidence-ledger spine
-// subscription, and the module REST routes (the v1 cross-home read
-// allow-list: roster + canonical chat, ruling 5, plus the create and
-// wake POSTs and the evidence read ruling 11 carries). The capsule is
-// toggleable (ruling 14): toggled off, schedules stay and wakes go
-// inert - cron still fires ticks into an empty spine.
+// plugin.go: the capsule adapter.
 
 import (
 	"encoding/json"
@@ -20,8 +14,6 @@ import (
 )
 
 // Plugin adapts the continuous machinery into omega's plugin system.
-// It provides no exclusive seam - its faces are the routes, the spine
-// subscription and the config section (additive by nature).
 type Plugin struct {
 	home    string   // the ROOT omega home; "" = datadir.Home() fallback
 	cfg     Config   // the mounted config section
@@ -52,23 +44,18 @@ func (p *Plugin) ConfigKey() string { return "continuous" }
 // Provides lists the seams this plugin mounts: none exclusive.
 func (p *Plugin) Provides() []string { return nil }
 
-// Requires: store. The create flow opens an agent store to seed the
-// canonical chat; nothing else this capsule does needs a seam.
+// Requires: store.
 func (p *Plugin) Requires() []string { return []string{"store"} }
 
-// MountWithAPI wires the capsule: config, home, the ledger spine
-// subscription, and the REST routes.
+// MountWithAPI wires the capsule.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["continuous"].(Config); ok {
 		cfg = c
 	}
 	p.cfg = cfg
-	// The ROOT home, never the agent layer's: even a wake child
-	// receives the root via OMEGA_HOME (the spawn contract), and the
-	// roster reads agents/ relative to it. The env fallback mirrors
-	// datadir.Home; cmd/omega passes the exe-aware answer explicitly
-	// (NewPluginWithHome) because that resolution is host business.
+	// The ROOT home, never the agent layer's: even a wake child receives the root via
+	// OMEGA_HOME (the spawn contract), and the roster reads agents/ relative to it.
 	home := p.home
 	if home == "" {
 		home = datadir.Home()
@@ -76,42 +63,28 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if home == "" {
 		return fmt.Errorf("continuous: no home resolvable (set OMEGA_HOME)")
 	}
-	// Pin the RESOLVED home: the route builders run later and read it,
-	// and an agent route reading "" would resolve agents/ against the
-	// process's cwd (the roster and the canonical mint both walk it).
+	// Pin the RESOLVED home: the route builders run later and read it, and an agent.
 	p.home = home
 	machine := NewMachine(home, cfg)
-	// The store seam, resolved PER CALL (the live re-wire law): main's
-	// canonical chat lives in the daemon's own store, and only the seam
-	// knows which handle that is after a settings reload. An agent
-	// home's chat opens its own file and never touches this.
+	// The store seam, resolved PER CALL (the live re-wire law). An agent home's chat opens
+	// its own file and never touches.
 	machine.SetStoreResolver(func() agent.StoreProvider {
 		st, _ := ctx.Services().Resolve("store").(agent.StoreProvider)
 		return st
 	})
 	p.machine = machine
 	p.ctx = ctx
-	// The canonical-id migration (card t_5df01d0f): agent homes created
-	// before the chat id became agent-qualified still carry the bare
-	// "canonical", which is the collision this capsule's roster rows
-	// tripped over. Idempotent, so every mount may run it; it touches
-	// only files this capsule owns (agents/<name>/data/omega.db).
+	// The canonical-id migration. Idempotent, so every mount may run it; it touches only
+	// files this capsule owns (agents/<name>/data/omega.db).
 	if err := machine.MigrateCanonicalIDs(); err != nil {
 		return err
 	}
-	// The visibility repair (card t_10ac04f0): homes created before the
-	// canonical seed went through the machinery-owned door carry their
-	// chat as a LISTED row, which /new forks instead of folding. Boot-
-	// time, idempotent, hides canonical-id rows only.
+	// The visibility repair: homes created before the canonical seed went through.
+	// Boot- time, idempotent, hides canonical-id rows only.
 	if err := machine.MigrateCanonicalVisibility(); err != nil {
 		return err
 	}
-	// The evidence ledger (ruling 11): runtime-owned, spine-fed, and
-	// NEVER tool-writable - it subscribes through AddEventObserver, a
-	// surface no tool registry reaches. Per-agent stores fall out of
-	// the data isolation: this process's rows land in the data dir
-	// datadir.AgentHome names (the wake child carries OMEGA_AGENT).
-	// AgentHome answers a HOME; the ledger is a data-dir consumer.
+	// The evidence ledger: runtime-owned, spine-fed, and NEVER tool-writable.
 	ledgerData, err := datadir.AgentHome()
 	if err != nil {
 		return fmt.Errorf("continuous: ledger home: %w", err)
@@ -120,9 +93,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err != nil {
 		return fmt.Errorf("continuous: ledger: %w", err)
 	}
-	// A same-instance re-mount (the double-mount removal proofs) opens
-	// a second ledger: the prior handle is dead weight - close it, or
-	// the abandoned handle keeps the database file locked on windows.
 	if p.ledger != nil {
 		_ = p.ledger.Close()
 	}
@@ -139,28 +109,21 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the
-// tier law): the omega.json disable list may name it. Off = schedules
-// stay, agent wakes go inert (ruling 14).
+// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }
 
-// SetDisabledAgents swaps the disabled.agents soft-toggle list live
-// (v0.14.1 registry-browser: the host's registry-toggle seam and hot
-// config reload route here). Nil before Mount is recorded - the mount
-// reads it first, but a toggle that early never happens (the seam only
-// exists on a wired channel).
+// SetDisabledAgents swaps the disabled.agents soft-toggle list live (v0.14.1. Nil
+// before Mount is recorded - the mount reads it first, but a toggle that early never
+// happens (the seam only exists on a wired channel).
 func (p *Plugin) SetDisabledAgents(names []string) {
 	if p.machine != nil {
 		p.machine.SetDisabledAgents(names)
 	}
 }
 
-// Dismount releases the mounted evidence ledger. The mount keeps the
-// ledger's database open for the process's lifetime - beyond-Context
-// state the journal cannot see. A handle left open blocks the removal
-// of the data directory on windows, so the host shutdown and every
-// test mount dismount instead of abandoning it. Nil-safe: Close before
-// a mount (or twice) closes nothing.
+// Dismount releases the mounted evidence ledger. The mount keeps the ledger's database
+// open for the process's lifetime - beyond-Context state the journal cannot see.
+// Nil-safe: Close before a mount (or twice) closes nothing.
 func (p *Plugin) Dismount(ctx *core.Context) error {
 	if p.ledger == nil {
 		return nil
@@ -170,20 +133,13 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 	return err
 }
 
-// routeRow is one REST registration: natural wire shape, tenant-checked
-// at the registry.
+// routeRow is one REST registration.
 type routeRow struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
 }
 
-// routes builds the capsule's REST face. The v1 cross-home reads are
-// the roster, the canonical chat view and the ledger rows (rulings 5
-// and 11); the writes are the create flow, the human wake and the
-// sleep button - nothing else crosses a home boundary. The roster
-// MANAGEMENT surface (the /agents family) rides the same face since
-// the shell-ring shrink wave 2 (agentsrest.go): the agents tab is
-// this capsule's face.
+// routes builds the capsule's REST face.
 func (p *Plugin) routes() []routeRow {
 	m := p.machine
 	rows := []routeRow{
@@ -200,15 +156,14 @@ func (p *Plugin) routes() []routeRow {
 	return rows
 }
 
-// rosterHandler answers the webui roster pane (ruling 18).
+// rosterHandler answers the webui roster pane.
 func rosterHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, m.Roster())
 	}
 }
 
-// createHandler runs the create flow: name + directive + schedule ->
-// the home folder + canonical chat (ruling 18).
+// createHandler runs the create flow.
 func createHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -228,9 +183,7 @@ func createHandler(m *Machine) http.HandlerFunc {
 	}
 }
 
-// chatHandler answers the canonical chat view (ruling 5), marking the
-// session read - the roster's unread flag clears when the human opens
-// the chat.
+// chatHandler answers the canonical chat view, marking the session read.
 func chatHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		view, err := m.CanonicalChat(r.PathValue("name"))
@@ -242,9 +195,7 @@ func chatHandler(m *Machine) http.HandlerFunc {
 	}
 }
 
-// wakeHandler is the human typing into the canonical chat (ruling 8):
-// the message wakes the agent; the child persists it as the input and
-// lands its report in the session after.
+// wakeHandler is the human typing into the canonical chat.
 func wakeHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		name := r.PathValue("name")
@@ -270,7 +221,7 @@ func wakeHandler(m *Machine) http.HandlerFunc {
 	}
 }
 
-// evidenceHandler answers the detail strip's evidence rows (ruling 11).
+// evidenceHandler answers the detail strip's evidence rows.
 func evidenceHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rows, err := m.Evidence(r.PathValue("name"))
@@ -282,8 +233,7 @@ func evidenceHandler(m *Machine) http.HandlerFunc {
 	}
 }
 
-// sleepHandler is the roster's sleep button: nothing to sleep when no
-// wake runs (ruling 7 - asleep between wakes is the default state).
+// sleepHandler is the roster's sleep button: nothing to sleep when no wake runs.
 func sleepHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.Sleep(r.PathValue("name"))
@@ -298,8 +248,7 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = enc.Encode(v)
 }
 
-// httpError renders one failure; detail is operator-facing truth, the
-// webui renders what it gets.
+// httpError renders one failure.
 func httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

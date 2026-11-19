@@ -1,11 +1,11 @@
 package provider
 
-// Live probe for the prompt-cache economics (card t_81b5cf65, fix
+// Live probe for the prompt-cache economics
 // ladder step 1). Skipped unless KEYPOOL_CLIENT_KEY is set - no secrets
 // in the tree.
 //
 //	KEYPOOL_CLIENT_KEY=<key> KEYPOOL_HOST=http://<host>:11435 \
-//	  go test ./harness/provider/ -run TestLiveToolBlockPromptCache -v
+// go test./harness/provider/ -run TestLiveToolBlockPromptCache -v
 //
 // What it measures: the tools block is the wire's largest stable
 // prefix, and a prefix cache reuses only BYTE-IDENTICAL prefixes. This
@@ -18,16 +18,16 @@ package provider
 // product failure. The deterministic laws live in tools_block_test.go
 // (rendered block byte-stable) and agent/loop (sorted + hoisted).
 //
-// Measured 2026-11-15 on glm-5.3 through the keypool gateway, same
+// Measured on glm-5.3 through the keypool gateway, same
 // 26,159-byte / 25-tool block, three calls per shape:
 //
 //	pre-fix shape (toolSchemasToJSON fed from a map range):
-//	  turn 1 cold     prompt_eval=6753 cached=0
-//	  turn 2 repeat   prompt_eval=6753 cached=0
+// turn 1 cold prompt_eval=6753 cached=0
+// turn 2 repeat prompt_eval=6753 cached=0
 //	  turn 3 extended prompt_eval=6766 cached=0
 //	current shape (sorted slice rendered verbatim):
-//	  turn 1 cold     prompt_eval=6753 cached=0
-//	  turn 2 repeat   prompt_eval=6753 cached=6720
+// turn 1 cold prompt_eval=6753 cached=0
+// turn 2 repeat prompt_eval=6753 cached=6720
 //	  turn 3 extended prompt_eval=6766 cached=6720
 //
 // i.e. 0 of 6,753 prompt tokens reused before, 6,720 of 6,753 after:
@@ -45,9 +45,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// productionSizedTools builds a tools block sized like omega's real
-// registry (~25KB rendered): 25 tools, each with a multi-sentence
-// description and a nested parameter schema.
+// productionSizedTools builds a tools block sized like omega's real registry.
 func productionSizedTools() []llm.ToolSchema {
 	domains := []string{
 		"shell", "files", "memory", "skills", "cron", "kanban", "delegate",
@@ -92,8 +90,7 @@ func productionSizedTools() []llm.ToolSchema {
 	return tools
 }
 
-// TestLiveToolBlockPromptCache reports the cache economics of a stable
-// tools block on the live glm lane.
+// TestLiveToolBlockPromptCache reports the cache economics of a stable tools block.
 func TestLiveToolBlockPromptCache(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live tool-block cache probe skipped")
@@ -125,11 +122,7 @@ func TestLiveToolBlockPromptCache(t *testing.T) {
 	}
 
 	first := run("turn 1 (cold)", base)
-	// Identical prompt, identical bytes: a cache that reuses the tools
-	// block answers cached ~= prompt_eval here.
 	second := run("turn 2 (repeat)", base)
-	// Same prefix, one new tail: a prefix cache answers cached ~= the
-	// first call's prompt_eval.
 	extended := append(append([]core.Message{}, base...),
 		core.Assistant{Content: "ready"},
 		core.NewUser("Reply with the single word: again."),

@@ -7,11 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestToolSchemasActionEnumDerivesFromMetadata pins the drift gate at
-// the provider boundary: toolSchemas renders the action enum from the
-// Tool's Actions metadata alone. A schema that hand-maintains a stale
-// enum (here: "purge", not declared in Actions) is corrected, not
-// trusted.
+// TestToolSchemasActionEnumDerivesFromMetadata pins the drift gate at the provider.
 func TestToolSchemasActionEnumDerivesFromMetadata(t *testing.T) {
 	tools := map[string]core.Tool{
 		"memory": {

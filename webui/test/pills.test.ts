@@ -1,10 +1,4 @@
-// omega webui: reference pills. The /skill invocations
-// and @file attachments of the composer turn into inline chips that
-// REPLACE their token spans (card t_e67c372b); the sent message keeps
-// the pill shape. The token model is
-// pills.ts (pure, imported here directly); the components' wiring is
-// pinned at the source level (the served shape), as palette.test.ts
-// does. Run: node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: reference pills.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -38,7 +32,7 @@ import {
   tokenBeforeCaret,
 } from "../app/composables/pills.ts";
 
-// --- the token scan ---------------------------------------------------
+// the token scan ------------------------------------------------
 
 describe("reference token scan (t_7f09bd0c)", () => {
   it("a leading /word is the skill invocation - the composer accepts it at draft start", () => {
@@ -57,10 +51,6 @@ describe("reference token scan (t_7f09bd0c)", () => {
     assert.deepEqual(scanRefTokens("the flag -/not-a-pill stays"), []);
   });
 
-  // card t_d4443ab5: the composer's chip editor reads skill tokens the way
-  // it reads @file tokens - anywhere a word starts - because its slash
-  // palette is token-based (t_d1a2951d accepts a completed /word mid-draft).
-  // The transcript keeps the leading-invocation law: one scan, one switch.
   it("the composer scan pills an inline /skill; the transcript keeps it prose", () => {
     const text = "say hi then /greet-writer write it";
     const inline = scanRefTokens(text, { inlineSkills: true });
@@ -78,9 +68,7 @@ describe("reference token scan (t_7f09bd0c)", () => {
       scanRefTokens("/greet-writer x", { inlineSkills: true }),
       scanRefTokens("/greet-writer x"),
     );
-    // the boundary shape is the @ token's: a glued "/" stays prose
     assert.deepEqual(scanRefTokens("flag -/not-a-pill", { inlineSkills: true }), []);
-    // and the chip plan follows the same switch
     const chips = editorNodes(
       text,
       { caret: text.length, paletteOpen: false, forced: new Set(), dissolved: new Set() },
@@ -105,10 +93,6 @@ describe("reference token scan (t_7f09bd0c)", () => {
   });
 
   it("a trailing-slash @path is a DIR token - the folder pins like a file", () => {
-    // t_c3fe4ea6: the slash is the discriminator. The pill shows the
-    // folder's name, addresses its bare path (the viewer ref) and keeps
-    // the slash in the TOKEN (the draft stays the expansion's exact
-    // source: the model reads "@artifacts_mmo/").
     const text = "please move the json into @artifacts_mmo/ folder";
     const [tok] = scanRefTokens(text);
     assert.deepEqual(tok, {
@@ -118,13 +102,11 @@ describe("reference token scan (t_7f09bd0c)", () => {
       name: "artifacts_mmo",
       start: text.indexOf("@artifacts"),
     });
-    // a nested folder: the label is the last segment, the name the path
     const [nested] = scanRefTokens("@docs/deep/");
     assert.equal(nested!.kind, "dir");
     assert.equal(nested!.label, "deep");
     assert.equal(nested!.name, "docs/deep");
     assert.equal(nested!.token, "@docs/deep/");
-    // a no-name token ("@/") is not a reference
     assert.deepEqual(scanRefTokens("at @/ here"), []);
     // and the file rule is untouched by the dir rule: no slash = a file
     const [file] = scanRefTokens("@docs/readme.md");
@@ -155,24 +137,18 @@ describe("reference token scan (t_7f09bd0c)", () => {
     );
   });
 
-  // card t_620a3edf: the @ palette's two prefix rows insert the SAME
-  // injections the server expands on submit (core/atmention.go). They are
-  // content, never paths - a file pill for "@skill:x" wore the document
-  // glyph and its click opened a Files tab titled "skill:x" that answered
-  // "not found". One token model, one classification.
+  // the @ palette's two prefix rows insert the SAME injections the server expands.
+  // They are content, never paths - a file pill for "@skill:x" wore the document glyph
+  // and its click opened a Files tab titled "skill:x" that answered "not found".
   it("@skill:<name> wears the SKILL pill - the other door to the same injection", () => {
     const [tok] = scanRefTokens("@skill:greet-writer go");
     assert.deepEqual(tok, {
       kind: "skill",
-      // the draft keeps the RAW token: it is the server expansion's source
       token: "@skill:greet-writer",
-      // the pill renders the invocation form ("/name"), like a typed /name
       label: "greet-writer",
       name: "greet-writer",
       start: 0,
     });
-    // it chips mid-draft on the transcript surface too (an @ token has no
-    // leading-only law - only the slash token does)
     const mid = scanRefTokens("note @skill:greet-writer first");
     assert.equal(mid.length, 1);
     assert.equal(mid[0]!.start, 5);
@@ -222,7 +198,7 @@ describe("sent-message pill render (t_7f09bd0c)", () => {
   });
 });
 
-// --- the chip law (card t_e67c372b: chip replaces text) ---------------
+// the chip law ------------
 
 describe("chipFor - the chip rule per token", () => {
   const tok = scanRefTokens("see @docs/readme.md now")[0]!;
@@ -323,9 +299,7 @@ describe("editorNodes - the editor's DOM plan", () => {
     assert.equal(nodes[0]!.type, "text");
   });
 
-  // t_c3fe4ea6: a folder reference is a chip exactly like a file's - the
-  // plan carries the raw "@dir/" token (the draft's exact source) and
-  // renders one chip node for it.
+  // a folder reference is a chip exactly like.
   it("a dir token chips with its trailing slash intact", () => {
     const draft = "move it into @artifacts_mmo/ please";
     const nodes = editorNodes(draft, opts(draft.length), pillable);
@@ -333,8 +307,7 @@ describe("editorNodes - the editor's DOM plan", () => {
       nodes.map((n) => (n.type === "chip" ? "CHIP:" + n.token.token : "TEXT:" + n.text)),
       ["TEXT:move it into ", "CHIP:@artifacts_mmo/", "TEXT: please"],
     );
-    // the running query: while the palette sits at the token end the
-    // folder stays raw (the drill) - leaving it finalizes the chip
+    // the running query: while the palette sits at the token end the folder stays raw.
     assert.equal(
       editorNodes("@artifacts_mmo/", { ...opts(15), paletteOpen: true }, pillable)[0]!.type,
       "text",
@@ -346,7 +319,7 @@ describe("editorNodes - the editor's DOM plan", () => {
   });
 });
 
-// --- the backspace law ------------------------------------------------
+// the backspace law ---------------------------------------------
 
 describe("token delete (backspace on a chip dissolves it to its text)", () => {
   it("tokenBeforeCaret fires only at the token's end", () => {
@@ -357,8 +330,6 @@ describe("token delete (backspace on a chip dissolves it to its text)", () => {
     assert.equal(tokenBeforeCaret("", 0), null);
   });
 
-  // t_c3fe4ea6: the dissolve law covers folders - the caret parked behind
-  // "@dir/" dissolves the folder chip to its raw text like a file chip.
   it("a dir token behind the caret is the dissolve target", () => {
     const text = "into @artifacts_mmo/ folder";
     const end = text.indexOf("@artifacts") + "@artifacts_mmo/".length;
@@ -375,7 +346,7 @@ describe("token delete (backspace on a chip dissolves it to its text)", () => {
   });
 });
 
-// --- the @ path list (directories first, leaf filtering) --------------
+// the @ path list (directories first, leaf filtering) -----------
 
 describe("@ autocomplete paths (dirs first, drill-in)", () => {
   it("mentionRows orders directories first, each alphabetical", () => {
@@ -397,11 +368,10 @@ describe("@ autocomplete paths (dirs first, drill-in)", () => {
     assert.equal(mentionLeafQuery("@"), "");
   });
 
-  // t_c3fe4ea6: a DIR token's drill. The dir keeps its trailing slash
-  // (mentionDirOf feeds the INSERTION, "@" + dir + name), but the READ
-  // must be the bare path - /files/browse answers 400 "empty path
-  // segment" for "docs//", which is why the folder token's own listing
-  // came back empty in the lane.
+  // a DIR token's drill. The dir keeps its trailing slash (mentionDirOf feeds the
+  // INSERTION, "@" + dir + name), but the READ must be the bare path - /files/browse
+  // answers 400 "empty path segment" for "docs//", which is why the folder token's own
+  // listing came back empty in the lane.
   it("a folder token drills on its bare path (the insertion keeps the slash)", () => {
     const tok = "@artifacts_mmo/";
     assert.equal(mentionDirOf(tok), "artifacts_mmo/", "the insertion's dir keeps the slash");
@@ -422,7 +392,7 @@ describe("@ autocomplete paths (dirs first, drill-in)", () => {
   });
 });
 
-// --- production-boundary wiring (the served shape) --------------------
+// production-boundary wiring (the served shape) -----------------
 
 describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
   it("the composer's editor is a contenteditable div with the placeholder", () => {
@@ -499,8 +469,7 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
       composer.includes('forced.add("/" + item.name)'),
       "the skill accept keys the chip by its RAW token (chipKeyOf), not the bare name",
     );
-    // the Tab path (accept without submit) keys the SAME way - one law,
-    // both accept paths (card t_620a3edf: the bare name never matched)
+    // the Tab path (accept without submit) keys the SAME way.
     const tabPath = composer.slice(composer.indexOf("function acceptActive"));
     assert.ok(
       tabPath.includes('forced.add("/" + item.name)'),
@@ -512,10 +481,6 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
       "sets are replaced whole (the plan's computed re-runs)");
   });
 
-  // t_c3fe4ea6: folder pins. The chip gate carries the dir kind, the
-  // palette accept PINS a dir row (one closePalette lane for both row
-  // kinds - no bare-text drill), and the pill's icon/label and the
-  // viewer's folder body host the ref.
   it("a dir token is pill-eligible and the dir row accept pins it", () => {
     assert.ok(
       composer.includes('t.kind === "file" || t.kind === "dir" || skillNames.value.has(t.name)'),
@@ -525,8 +490,6 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
       composer.includes('(isDir ? "/" : "")'),
       "the dir row completes to the trailing-slash token",
     );
-    // the pin: the accept closes the palette and force-chips the
-    // inserted token for BOTH kinds - the drill is the token's own law
     const accept = composer.slice(composer.indexOf("const isDir = item.kind === \"dir\";"));
     const lane = accept.slice(0, accept.indexOf("caretAt.value = next.caret;"));
     assert.ok(lane.includes("closePalette()"), "the accept closes the palette (pin)");
@@ -550,9 +513,7 @@ describe("composer chip law wiring (source-pinned, card t_e67c372b)", () => {
     );
   });
 
-  // t_c3fe4ea6: the drill's READ strips the trailing slash the insertion
-  // keeps - /files/browse 400s on "docs//", so the folder token's own
-  // listing came back empty until this strip landed.
+  // the drill's READ strips the trailing slash the insertion keeps.
   it("the drill read strips the dir's trailing slash (the browse 400)", () => {
     assert.ok(
       composer.includes('const clean = dir.replace(/\\/+$/, "")'),
@@ -650,8 +611,7 @@ describe("pill component + iconset (source-pinned)", () => {
 describe("shared list-keyboard grammar (no duplication)", () => {
   it("clampIndex is the one nav arithmetic - declared in commands, used by every list", () => {
     assert.ok(commands.includes("export function clampIndex"));
-    // palette.test.ts pins the command palette + composer's use; the
-    // pills law: the composer's list nav still rides the same helper
+    // palette.test.ts pins the command palette + composer's use; the pills law.
     assert.ok(composer.includes("clampIndex"), "the composer list nav rides clampIndex");
   });
 });

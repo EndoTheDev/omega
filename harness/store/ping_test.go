@@ -1,9 +1,8 @@
 package store
 
-// The store health probe (card t_5e2f3095): agent.StorePinger's Ping is
-// what the /health body's database fact rides. It must answer on a live
-// pool and must NOT answer healthy on a closed one - a wedged or closed
-// database has to paint the row unhealthy, or the row is decoration.
+// The store health probe: agent.StorePinger's Ping is what the /health body's. It must
+// answer on a live pool and must NOT answer healthy on a closed one - a wedged or
+// closed database has to paint the row unhealthy, or the row is decoration.
 
 import (
 	"context"
@@ -25,9 +24,7 @@ func TestPingHealthyStore(t *testing.T) {
 	}
 }
 
-// TestPingClosedStore: a closed handle answers with an error, never nil
-// - the popover's "database" row is only worth showing when a dead
-// database can redden it.
+// TestPingClosedStore: a closed handle answers with an error, never nil.
 func TestPingClosedStore(t *testing.T) {
 	s, err := Open(t.TempDir() + "/ping-closed.db")
 	if err != nil {

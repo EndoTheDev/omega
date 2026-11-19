@@ -1,10 +1,6 @@
 package compactor
 
-// The never-fold law (async agent loop phase 1, card t_f3f953d0,
-// ruling 11): a turn whose tool calls are still pending NEVER folds -
-// the fold boundary pulls back past the pending call's assistant
-// message, and everything from that turn on stays verbatim. Once the
-// call settles, the compact folds normally again.
+// The never-fold law: a turn whose tool calls are still pending NEVER folds.
 
 import (
 	"context"
@@ -16,8 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// pendingCtx wraps a context the way the loop threads it: the session
-// id and the pending-calls table.
+// pendingCtx wraps a context the way the loop threads it.
 func pendingCtx(sessionID string, ledger agent.YieldLedger) context.Context {
 	return agent.WithYieldLedger(agent.WithSessionID(context.Background(), sessionID), ledger)
 }
@@ -57,9 +52,7 @@ func pendingHistory() []core.Message {
 	}
 }
 
-// TestCompactSkipsPendingTurn: the ledger holds c2 pending; the fold
-// boundary sits before c2's assistant - the folded output keeps the
-// pending turn and its wake-relevant tail verbatim.
+// TestCompactSkipsPendingTurn: the ledger holds c2 pending.
 func TestCompactSkipsPendingTurn(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{
@@ -72,7 +65,6 @@ func TestCompactSkipsPendingTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Expect: [first] + [system summary] + [assistant c2] + [last] = 4.
 	if len(out) != 4 {
 		t.Fatalf("expected 4 messages (first+summary+pending turn+last), got %d: %s", len(out), messageDump(out))
 	}
@@ -83,14 +75,12 @@ func TestCompactSkipsPendingTurn(t *testing.T) {
 	if len(as.ToolCalls) == 0 || as.ToolCalls[0].ID != "c2" {
 		t.Fatalf("the surviving turn lost the pending call: %+v", as.ToolCalls)
 	}
-	// The summary row marks the fold boundary.
 	if out[1].(core.System).Content != "[compacted: summary of the foldable middle]" {
 		t.Fatalf("no summary row where the fold boundary sat: %s", messageDump(out))
 	}
 }
 
-// TestCompactFoldsAfterSettle: the same history with the call settled
-// folds normally - the law only holds while the call is outstanding.
+// TestCompactFoldsAfterSettle: the same history with the call settled folds normally.
 func TestCompactFoldsAfterSettle(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	_ = ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()})
@@ -102,8 +92,6 @@ func TestCompactFoldsAfterSettle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Settled: the normal fold. [first] + [summary] + [last] = 3 - the
-	// pending assistant is inside the summary now.
 	if len(out) != 3 {
 		t.Fatalf("expected 3 messages after settle, got %d: %s", len(out), messageDump(out))
 	}
@@ -112,8 +100,7 @@ func TestCompactFoldsAfterSettle(t *testing.T) {
 	}
 }
 
-// TestCompactPendingOtherSession: a pending call belonging to ANOTHER
-// session does not fence this session's fold.
+// TestCompactPendingOtherSession: a pending call belonging to ANOTHER session does.
 func TestCompactPendingOtherSession(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s2", CallID: "cOther", DispatchedAt: core.NowISO()}); err != nil {
@@ -129,9 +116,7 @@ func TestCompactPendingOtherSession(t *testing.T) {
 	}
 }
 
-// TestCompactFullyPendingHistory: everything beyond keepFirst is under
-// the pending fence - the boundary condition `end <= keepFirst` folds
-// nothing at all.
+// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending.
 func TestCompactFullyPendingHistory(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()}); err != nil {

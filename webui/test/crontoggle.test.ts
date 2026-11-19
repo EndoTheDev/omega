@@ -1,11 +1,8 @@
-// omega webui: unit tests for the Cron tab's per-job toggle chain
-// (card t_561dc4e0). The behavior half runs at the helper level (the
-// mcp.test.ts recipe): a fetch-log probe drives setCronJobEnabled, no
-// SFC compile. The wire contract: POST /cron/toggle lands the enabled
-// flag write (the Go fold-write the cron toggle_test.go pins), the
-// re-fetch GET /cron/jobs IS the returned listing (one response
-// carries the state it landed, the listing is the re-read), and a
-// failed POST throws before any re-fetch so the prior rows stand.
+// omega webui: unit tests for the Cron tab's per-job toggle chain. The wire contract:
+// POST /cron/toggle lands the enabled flag write (the Go fold-write the cron
+// toggle_test.go pins), the re-fetch GET /cron/jobs IS the returned listing (one
+// response carries the state it landed, the listing is the re-read), and a failed POST
+// throws before any re-fetch so the prior rows stand.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -73,9 +70,8 @@ test("cronKeyOf keys agent wake jobs on the agent path", () => {
     cronKeyOf({ name: "wake", schedule: "", enabled: true, next: "", agent: "scout", agent_owned: true }),
     "scout/wake",
   );
-  // a main-home job with an AUTHORED agent keys on its own name: the
-  // server's StateKey never namespaces a main row (card t_21824d98 -
-  // the old derivation sent "ghost/pulse" at a job loaded as "pulse")
+  // a main-home job with an AUTHORED agent keys on its own name: the server's StateKey
+  // never namespaces a main row
   assert.equal(
     cronKeyOf({ name: "pulse", schedule: "", enabled: true, next: "", agent: "ghost" }),
     "pulse",
@@ -107,7 +103,6 @@ test("setCronJobEnabled: POST the toggle, then re-fetch the listing", async () =
     );
     assert.equal(calls[1].method, "GET");
     assert.equal(calls[1].url, "/cron/jobs");
-    // the returned listing is the re-fetch
     assert.ok(Array.isArray(rep) && rep.length === 2);
     assert.equal(rep[0].name, "daily-journal");
     assert.equal(rep[1].agent, "scout");
@@ -137,8 +132,7 @@ test("setCronJobEnabled: a failed toggle throws and never re-fetches", async () 
 test("setCronJobEnabled: the landed response carries the json contract", async () => {
   savedFetch = globalThis.fetch;
   try {
-    // a plain-string body (the Go handler's json.NewEncoder writer)
-    // still parses - the chain does not demand a content-type header
+    // a plain-string body (the Go handler's json.NewEncoder writer) still parses.
     const calls = recordToggleFetch((call) => {
       if (call.url === "/cron/toggle") return { status: 200, payload: JSON.stringify(jobs) };
       return { status: 200, payload: JSON.stringify(jobs) };

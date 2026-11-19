@@ -323,6 +323,22 @@ flake, because the debugging run always passes. Use the package's
   `<https://example.com>`.
 - No diary entries or TODO comments in this file. Keep it factual
   and contract-focused.
+- **A comment earns its line.** Keep one only when deleting it would let a
+  competent reader break the code: an invariant, a non-obvious why, a
+  hazard, a contract with another file. Narration of the next line, prose
+  over self-describing struct fields or yaml keys, section banners and
+  commented-out code all go. The test: would a competent reader plausibly
+  break this without the comment?
+- **History never lives in source comments.** No card ids (`t_xxxxxxxx`),
+  no dates, no incident narratives, no "proven"/"ruling"/"receipt"
+  citations. Commit messages, card bodies and the vault Log own that
+  record. Machine input (`//go:build`, `//go:embed`, shebangs, tool
+  pragmas) is exempt.
+- Density target: ~10% of nonblank lines repo-wide, near zero in config
+  plumbing. Measure it, do not eyeball it: `python3
+  scripts/comment-census.py` prints the per-language totals and the files
+  above the 30% ceiling; `--marks` lists provenance lines that must not
+  exist. Full law: `docs/release-gate.md`.
 - No emoji, no long dashes - use normal hyphens (`-`). This is a
   STANDING RULE for public-facing docs (README, CONTRIBUTING, everything
   under `docs/`): plain `-` only - never `—` (em-dash), `–` (en-dash) or

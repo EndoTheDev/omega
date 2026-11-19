@@ -1,9 +1,9 @@
 package store
 
-// snapshot_test.go: the clone law's store step (card t_f47319d2). The
-// failure this pins is the one a byte copy cannot survive: rows living
-// in the -wal of a store that is still OPEN (the serving daemon's own
-// store, or a wake child's while it runs) must land in the snapshot.
+// snapshot_test.go: the clone law's store step. The failure this pins is the one a byte
+// copy cannot survive: rows living in the -wal of a store that is still OPEN (the
+// serving daemon's own store, or a wake child's while it runs) must land in the
+// snapshot.
 
 import (
 	"context"
@@ -22,9 +22,8 @@ func TestSnapshotStoreCopiesALiveWALStore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open source store: %v", err)
 	}
-	// Deliberately NOT closed before the snapshot: this is the live
-	// WAL situation the clone meets. The rows below sit in the -wal
-	// until a checkpoint, which a clone never gets to wait for.
+	// Deliberately NOT closed before the snapshot. The rows below sit in the -wal until a
+	// checkpoint, which a clone never gets to wait.
 	ctx := context.Background()
 	if err := st.CreateAgentSession(ctx, "scout-sess", "", "probe", "scout"); err != nil {
 		st.Close()
@@ -40,15 +39,11 @@ func TestSnapshotStoreCopiesALiveWALStore(t *testing.T) {
 		st.Close()
 		t.Fatalf("snapshot: %v", err)
 	}
-	// The snapshot carries no sidecars of its own: VACUUM INTO writes
-	// one self-contained database file.
 	for _, suffix := range []string{"-wal", "-shm"} {
 		if _, err := os.Stat(dst + suffix); err == nil {
 			t.Errorf("snapshot left a %s sidecar - the copy is not self-contained", suffix)
 		}
 	}
-	// Read the snapshot through a plain connection: the rows committed
-	// while the source was live are in it.
 	db, err := sql.Open("sqlite", dst)
 	if err != nil {
 		st.Close()
@@ -73,8 +68,7 @@ func TestSnapshotStoreCopiesALiveWALStore(t *testing.T) {
 	if err := st.Close(); err != nil {
 		t.Fatalf("close source store: %v", err)
 	}
-	// The clone is independent after the source dies (clone + delete is
-	// the rename path): the snapshot still opens and still holds the row.
+	// The clone is independent after the source dies (clone + delete is the rename path).
 	db2, err := sql.Open("sqlite", dst)
 	if err != nil {
 		t.Fatalf("reopen snapshot: %v", err)

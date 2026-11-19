@@ -1,20 +1,6 @@
-// omega webui: the stacked live-run pin must not lock the scroll
-// (card t_5bb319f6). Endo's report (2026-11-12, stacked appearance):
-// mid-stream the last user message pinned at the top and the pane would
-// not scroll past it - prior messages were unreadable for the whole run.
-//
-// Cause: the two-region split of t_c40164cf rendered the pinned header
-// PLUS a run-only body, and that body was the ONLY scroll region - older
-// history was not in the DOM at all, so scrollTop 0 sat directly under
-// the pin until agent_end. The pin now rides a sticky slot inside the one
-// scrollport: history above it stays scrollable, the append follow stays
-// gated on the pinned flag.
-//
-// Part 1 replays a fake stream through the same follow decisions the
-// component makes (resumesFollow / pillVisible / the pinned gate in
-// scrollDown). Part 2 pins the wiring in the component and the CSS so
-// the model cannot drift away from the shipped path silently.
-// Run: node --test test/
+// omega webui: the stacked live-run pin must not lock the scroll. Part 2 pins the
+// wiring in the component and the CSS so the model cannot drift away from the shipped
+// path silently.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,12 +14,7 @@ const chatTab = () =>
 const css = () =>
   readFileSync(join(root, "app", "assets", "css", "main.css"), "utf8");
 
-// FakePane is the scrollport as ChatTab wires it: `append()` mirrors
-// scrollDown under its `if (!force && !pinned.value) return` gate (and
-// records the scrollTop its write landed at), `deliver()` mirrors the
-// browser handing back the scroll event that write raised, and
-// `scroll()` mirrors a reader gesture through onScroll. Heights are
-// arbitrary; the decisions are what matter.
+// FakePane is the scrollport as ChatTab wires it.
 class FakePane {
   scrollTop = 0;
   clientHeight = 400;
@@ -48,7 +29,6 @@ class FakePane {
     return this.scrollHeight - this.clientHeight;
   }
 
-  /** a stream delta lands: content grows, the tail follows only if pinned */
   append(growth: number): void {
     this.scrollHeight += growth;
     if (!this.pinned) return;
@@ -57,12 +37,10 @@ class FakePane {
     this.pending += 1;
   }
 
-  /** content grows with no follow write flushed yet (the paint beat) */
   growOnly(growth: number): void {
     this.scrollHeight += growth;
   }
 
-  /** the browser delivers the scroll events our writes raised */
   deliver(): void {
     for (let i = 0; i < this.pending; i++) {
       if (this.followWrite >= 0 && this.scrollTop === this.followWrite) {
@@ -89,7 +67,6 @@ class FakePane {
     this.pill = pillVisible(this.scrollTop, this.clientHeight, this.scrollHeight);
   }
 
-  /** a real reader scroll (the wheel), clamped like the browser */
   scroll(to: number): void {
     this.scrollTop = Math.max(0, Math.min(to, this.bottom));
     this.followWrite = -1;
@@ -117,7 +94,6 @@ describe("stacked live pin: a fake stream cannot trap the scroll (t_5bb319f6)", 
     pane.append(600); // a long stream has painted above the fold
     const atTail = pane.scrollTop;
     pane.scrollUpBy(1200);
-    // (a) the scroll moved - the history above the pin is reachable
     assert.equal(pane.scrollTop, atTail - 1200);
     assert.equal(pane.pinned, false, "scrolling up detaches the follow");
     assert.equal(pane.pill, true, "the way back to the tail is offered");
@@ -130,8 +106,7 @@ describe("stacked live pin: a fake stream cannot trap the scroll (t_5bb319f6)", 
   });
 
   it("the top of the history is a position, not a clamp under the pin", () => {
-    // the reported repro: scroll to scrollTop 0 and the pane is stuck
-    // there until agent_end because nothing else exists above the pin
+    // the reported repro: scroll to scrollTop 0 and the pane is stuck there until.
     const pane = new FakePane();
     pane.append(800);
     pane.scroll(0);
@@ -154,10 +129,9 @@ describe("stacked live pin: a fake stream cannot trap the scroll (t_5bb319f6)", 
   });
 
   it("a follow write's own scroll event cannot un-latch the tail", () => {
-    // the live defect (t_5bb319f6): the follow writes scrollTop = bottom,
-    // a delta grows the scroller before that write's scroll event lands,
-    // and the event then measures the pane "above the tail" - the run
-    // streams away from a reader who never touched the wheel
+    // the live defect: the follow writes scrollTop = bottom, a delta grows the scroller
+    // before that write's scroll event lands, and the event then measures the pane
+    // "above the tail" - the run streams away from a reader who never touched the wheel
     const pane = new FakePane();
     pane.append(600); // a follow write is queued
     pane.growOnly(500); // the next delta beat, no write flushed yet
@@ -250,12 +224,10 @@ describe("one scrollport, sticky pin: the shipped wiring", () => {
   });
 
   it("the pin's full-bleed inset matches the scrollport's side padding (card t_2739f125)", () => {
-    // the pair was authored against a 20px column and the transcript's side
-    // inset is 12px (the ONE composer law) - the stale number pushed the pin
-    // 8px past the scrollport's right edge, and mid-stream the transcript grew
-    // a horizontal scrollbar above the composer. The inset is DERIVED from the
-    // column, so the two rules must agree; the pin also carries no bottom rule
-    // (mid-stream the strip under the question is activity, not an artifact).
+    // the pair was authored against a 20px column and the transcript's side inset is.
+    // The inset is DERIVED from the column, so the two rules must agree; the pin also
+    // carries no bottom rule (mid-stream the strip under the question is activity, not
+    // an artifact).
     const c = css();
     const start = c.indexOf(".live-pin {");
     assert.ok(start !== -1, ".live-pin rule not found");

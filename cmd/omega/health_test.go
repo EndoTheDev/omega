@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// TestCmdHealthOK verifies cmdHealth returns nil when a server responds
-// with 200 OK on /health at the configured port.
+// TestCmdHealthOK verifies cmdHealth returns nil when a server responds with 200 OK.
 func TestCmdHealthOK(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {
@@ -36,10 +35,8 @@ server:
 	}
 }
 
-// TestCmdHealthNotRunning verifies cmdHealth returns an error containing
-// "not reachable" when nothing is listening on the configured port.
+// TestCmdHealthNotRunning verifies cmdHealth returns an error containing "not.
 func TestCmdHealthNotRunning(t *testing.T) {
-	// Port 1 is reserved and extremely unlikely to have a listener.
 	cfgPath := writeTempConfig(t, `
 provider:
   model_name: llama3
@@ -58,8 +55,7 @@ server:
 	}
 }
 
-// TestCmdHealthBadStatus verifies cmdHealth returns an error containing
-// "returned" when the server responds with a non-200 status.
+// TestCmdHealthBadStatus verifies cmdHealth returns an error containing "returned".
 func TestCmdHealthBadStatus(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)

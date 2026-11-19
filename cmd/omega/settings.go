@@ -22,25 +22,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// settings.go exposes the config.yaml knobs to the webui settings pane
-// over the http_channel Settings seam (core.Settings). The schema here
-// is the single source of truth: one entry per Config field, grouped in
-// config-file order — no new config keys, no duplicates. Save loads the
-// current file, applies the submitted values by dotted yaml path,
-// validates through the normal LoadConfig path, persists atomically,
-// and hot-applies what the running process can use without a restart.
+// settings.go exposes the config.yaml knobs to the webui settings pane over the. The
+// schema here is the single source of truth: one entry per Config field, grouped in
+// config-file order — no new config keys, no duplicates.
 
 // The knob/group shapes are core.SettingsKnob / core.SettingsGroup /
-// core.SettingsSchema - the seam is typed end to end, so cmd/omega and
-// http_channel cannot drift apart on the wire shape. Masked
-// secrets and the config-yaml-only gate live in this file: the host
-// decides what the unauthenticated API may see and write.
-//
-// maskedSecret stands in for a secret knob's value everywhere the
-// schema is served (GET and save refreshes alike): the pane treats
-// api_key as write-only (diff-only saves), so the plain text never
-// rides the wire. An empty value stays empty - masking a missing key
-// would imply one exists.
+// core.SettingsSchema - the seam is typed end to end, so cmd/omega and http_channel
+// cannot drift apart on the wire shape. maskedSecret stands in for a secret knob's
+// value everywhere the schema is served (GET and save refreshes alike): the pane treats
+// api_key as write-only (diff-only saves), so the plain text never rides the wire.
 const maskedSecret = "****"
 
 // maskSecret renders a secret knob's value for the wire.
@@ -59,12 +49,10 @@ func settingsSchema(path string) (*core.SettingsSchema, error) {
 	return settingsPayload(path, nil)
 }
 
-// settingsPayload renders the whole GET payload: the knob groups plus
-// the agent scopes (settings tier 3a, card t_22a5f70a). runtimeMaxTurns
-// is the serving agents' LIVE turn cap (agent.Agent.MaxTurns, card
-// t_f78acfd6); nil means no serving agent (the CLI, a save refresh) and
-// the loaded config's own value stands in - after a save the hot-apply
-// has just pushed exactly that value, so the two lanes agree there by
+// settingsPayload renders the whole GET payload: the knob groups plus the agent scopes.
+// runtimeMaxTurns is the serving agents' LIVE turn cap; nil means no serving agent (the
+// CLI, a save refresh) and the loaded config's own value stands in - after a save the
+// hot-apply has just pushed exactly that value, so the two lanes agree there by
 // construction.
 func settingsPayload(path string, runtimeMaxTurns func() int) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
@@ -78,12 +66,7 @@ func settingsPayload(path string, runtimeMaxTurns func() int) (*core.SettingsSch
 	}, nil
 }
 
-// settingsScopeHome anchors the agent-scope scan to the config file:
-// the settled home layout keeps it at <home>/config/config.yaml, the
-// legacy layout at <home>/config.yaml (the two locations
-// resolveConfigPath probes). Reading the anchor off the file - not the
-// process environment - keeps a `--config <file>` run and every test
-// honest about WHICH home the scopes describe.
+// settingsScopeHome anchors the agent-scope scan to the config file.
 func settingsScopeHome(configPath string) string {
 	dir := filepath.Dir(configPath)
 	if filepath.Base(dir) == "config" {
@@ -92,24 +75,14 @@ func settingsScopeHome(configPath string) string {
 	return dir
 }
 
-// scopeGroupKeys is the R2 vocabulary in render order: the four
-// overridable knob groups an agent tab shows (R3), and the dotted keys
-// each carries. The keys are the SAME paths the main payload's knobs
-// use wherever the two surfaces name the same knob, so the pane reads a
-// knob's inherited base straight out of groups (dot = differs from
-// main, the seam ruling) with no second copy of the values.
+// scopeGroupKeys is the R2 vocabulary in render order.
 var scopeGroupKeys = []string{"provider", "system_prompt", "description", "max_turns"}
 
-// settingsScopes renders one scope per agent home under <home>/agents/.
-// The scope NAMES come from agent.LoadProfiles - the roster scan the
-// agents tab already reads, so the two surfaces can never disagree on
-// which dirs are agents (main's home is the root, so it is never a
-// scope; dot/underscore and malformed dirs are skipped there and here).
-// The VALUES come from the layer read because Profile carries no
-// presence information (see agent.AgentConfigLayer).
-//
-// R8 empty world: no agent dirs = an empty, non-nil list. The pane
-// renders no scope strip at all.
+// settingsScopes renders one scope per agent home under <home>/agents/. The scope NAMES
+// come from agent.LoadProfiles - the roster scan the agents tab already reads, so the
+// two surfaces can never disagree on which dirs are agents (main's home is the root, so
+// it is never a scope; dot/underscore and malformed dirs are skipped there and here).
+// R8 empty world: no agent dirs = an empty, non-nil list.
 func settingsScopes(home string, cfg *Config, runtimeMaxTurns func() int) []core.SettingsScope {
 	scopes := []core.SettingsScope{}
 	if home == "" || cfg == nil {
@@ -129,10 +102,7 @@ func settingsScopes(home string, cfg *Config, runtimeMaxTurns func() int) []core
 			Groups: scopeGroups(cfg, lay, inheritedTurns),
 		}
 		if err != nil {
-			// The dir IS a scope (R8: no special-casing), so it rides
-			// with inherited values and no override flags - but the
-			// error field says so, because those flags are then not the
-			// file's truth. The write endpoint refuses the same layer.
+			// The dir IS a scope (R8: no special-casing), so it rides with inherited values.
 			scope.Error = err.Error()
 		}
 		scopes = append(scopes, scope)
@@ -140,11 +110,10 @@ func settingsScopes(home string, cfg *Config, runtimeMaxTurns func() int) []core
 	return scopes
 }
 
-// scopeGroups renders the four groups for one scope. A knob whose layer
-// entry is absent inherits the main value and answers overridden=false;
-// a knob the layer NAMES - even with an empty value - answers the
-// layer's value and overridden=true (the write lane stores an empty
-// string as an override, so the flag must agree with it).
+// scopeGroups renders the four groups for one scope. A knob whose layer entry is absent
+// inherits the main value and answers overridden=false; a knob the layer NAMES - even
+// with an empty value - answers the layer's value and overridden=true (the write lane
+// stores an empty string as an override, so the flag must agree with it).
 func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []core.SettingsScopeGroup {
 	value := func(key string, own agent.LayerValue, inherited string) core.SettingsScopeKnob {
 		if own.Set {
@@ -153,10 +122,9 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 		return core.SettingsScopeKnob{Key: key, Value: inherited}
 	}
 	provider := []core.SettingsScopeKnob{
-		// The secret-free provider law (0.17.3 make-over, card
-		// t_f47319d2): an agent names an INSTANCE, and the type, host
-		// and api_key live in settings exactly once. The scope payload
-		// therefore shows two knobs, never a secret.
+		// The secret-free provider law: an agent names an INSTANCE, and the type, host and
+		// api_key live in settings exactly once. The scope payload therefore shows two knobs,
+		// never a secret.
 		value("provider.instance", lay.ProviderInstance, agent.DefaultProviderInstance),
 		value("provider.model_name", lay.ModelName, cfg.Provider.ModelName),
 	}
@@ -169,8 +137,6 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 		{Key: scopeGroupKeys[1], Overridden: lay.SystemPrompt.Set, Knobs: []core.SettingsScopeKnob{
 			value("system_prompt", lay.SystemPrompt, cfg.SystemPrompt),
 		}},
-		// main carries no description knob (the home config has no such
-		// field), so the inherited base is the empty string
 		{Key: scopeGroupKeys[2], Overridden: lay.Description.Set, Knobs: []core.SettingsScopeKnob{
 			value("description", lay.Description, ""),
 		}},
@@ -178,8 +144,7 @@ func scopeGroups(cfg *Config, lay agent.AgentConfigLayer, inheritedTurns int) []
 	}
 }
 
-// anyOverridden is the group roll-up: one overridden knob makes the
-// group the agent's own.
+// anyOverridden is the group roll-up.
 func anyOverridden(knobs []core.SettingsScopeKnob) bool {
 	for _, k := range knobs {
 		if k.Overridden {
@@ -189,28 +154,21 @@ func anyOverridden(knobs []core.SettingsScopeKnob) bool {
 	return false
 }
 
-// defaultConfig returns the config layer BENEATH the file: the built-in
-// defaults (DefaultConfig) with the OMEGA_* environment overrides
-// applied - exactly the value LoadConfig gives a knob whose key
-// config.yaml does not name. The file itself is deliberately excluded:
-// writeConfigFile marshals the whole Config, so one settings save
-// materializes EVERY key, and a file-derived "default" would equal every
-// current value - the settings pane's modified-dot (tier 2b, card
-// t_c04c959e) could never light. Every knob's Default reads a field of
-// this struct, never a hand-typed literal, so a Config rename breaks the
-// build instead of silently drifting from the schema (card t_d13c7264).
+// defaultConfig returns the config layer BENEATH the file: the built-in defaults
+// (DefaultConfig) with the OMEGA_* environment overrides applied - exactly the value
+// LoadConfig gives a knob whose key config.yaml does not name. The file itself is
+// deliberately excluded: writeConfigFile marshals the whole Config, so one settings
+// save materializes EVERY key, and a file-derived "default" would equal every current
+// value - the settings pane's modified-dot could never light. Every knob's Default
+// reads a field of this struct, never a hand-typed literal, so a Config rename breaks
+// the build instead of silently drifting from the schema.
 func defaultConfig() Config {
 	cfg := DefaultConfig()
 	applyEnv(&cfg)
 	return cfg
 }
 
-// settingGroups builds the full knob inventory from a config. Field
-// order follows the config.yaml layout (provider, server, store,
-// compaction, runtime, skills, memory, logging). Every knob carries
-// Default from defaultConfig(); the only omission is
-// provider.model_name - config.Validate requires it, so no value can be
-// its default and the wire answers null (the pane's "no default known").
+// settingGroups builds the full knob inventory from a config.
 func settingGroups(cfg *Config) []core.SettingsGroup {
 	def := defaultConfig()
 	return []core.SettingsGroup{
@@ -218,32 +176,15 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Key:   "provider",
 			Label: "provider",
 			Knobs: []core.SettingsKnob{
-				// card t_bf21ee07: the connection subgroup and the
-				// instances subgroup MERGED - the providers list IS
-				// the connection surface. Every provider is a row; the
-				// primary is the row named "default", first in the
-				// list. There is no separately-named flat provider.
+				// the connection subgroup and the instances subgroup MERGED.
 				{Key: "provider.instances", Label: "provider instances", Type: "providers",
 					Value: providerInstancesKnob(cfg),
-					// The default is the same single row rendered
-					// through the same function, so the shapes (and the
-					// modified-dot comparison) cannot drift.
+					// The default is the same single row rendered through the same function, so the
+					// shapes (and the modified-dot comparison) cannot drift.
 					Default: providerInstancesKnob(&def), Live: true,
 					Help: "every provider is a named instance: the name is the instance id the model pickers and slots speak (instance:model), so two accounts of one type are two rows; the row named \"default\" is the provider the agent serves. Rows can be added, renamed, retyped and removed here; a row's base url and api key are config.yaml-only, and changes apply live"},
-				// card t_70c28128: model fields are typed pickers - the
-				// webui renders type "model" as a dropdown of the
-				// provider's live models, filtered by the knob's Filter
-				// (vision slots see vision-capable models only).
 				{Key: "provider.model_name", Label: "model name", Type: "model",
 					Value: cfg.Provider.ModelName,
-					// NO Default: config.Validate rejects an empty
-					// model_name, so no value can be "the default" - the
-					// knob answers JSON null and the pane renders no dot
-					// and no reset (the one omission in this schema).
-					// NO Live: the running model belongs to the picker
-					// (and /model), so Provider.SetConfig deliberately
-					// preserves it on a settings save; this knob is
-					// restart-only until that changes (t_bf21ee07 rework).
 					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
 				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision", DefaultOption: true,
 					Value:   cfg.VisionModel,
@@ -253,12 +194,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value:   cfg.TitleModel,
 					Default: def.TitleModel, Live: true,
 					Help: "cheap model for session titles; empty or \"default\" = the model this chat runs (resolved per call); applies live"},
-				// card t_fc0b2f2d: the four per-subsystem model
-				// slots - provider settings assigns one named model
-				// per subsystem ("instance:model" or a bare model;
-				// the selector also lists the named instances). The
-				// four call sites (compaction, summarizer, curator,
-				// approval reviewer) resolve the slot live.
 				{Key: "provider.compaction_model", Label: "compaction model", Type: "model", Slot: true, DefaultOption: true,
 					Value:   cfg.CompactionModel,
 					Default: def.CompactionModel, Live: true,
@@ -288,11 +223,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:    "HTTP channel port; applies on restart"},
 				{Key: "server.bind", Label: "bind addresses", Type: "bindlist",
 					Value: strings.Join(cfg.Server.Bind, ", "),
-					// Config-layer default is empty; the api capsule's
-					// api.Default() supplies 127.0.0.1 for an unset bind
-					// (api/config.go:60), so the loopback-only law is the
-					// effective default while an empty config stays
-					// unmodified. An explicit 0.0.0.0 lights the dot.
 					Default: strings.Join(def.Server.Bind, ", "),
 					Help:    "comma-separated listen addresses; loopback only by default (unauthenticated API); edit config.yaml instead (applies on restart)"},
 				{Key: "server.run_timeout", Label: "run timeout (s)", Type: "number",
@@ -302,7 +232,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:    "wall-clock cap per detached chat run and per cron fire, in seconds; a chat run takes a change on restart, a cron fire on its next fire"},
 				{Key: "server.default_workspace", Label: "default workspace", Type: "text",
 					Value: cfg.Server.DefaultWorkspace, Live: true,
-					// empty is the default (the cwd fallback stands)
 					Default: def.Server.DefaultWorkspace,
 					Help:    "absolute path; the Files tab roots here when the focused session has no pinned workspace, and a workspace-less session's tool runs (shell, files, processes) root here instead of the process working directory; empty = the process working directory; applies live"},
 			},
@@ -324,22 +253,14 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "sessions.retention_days", Label: "retention (days)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Sessions.RetentionDays, Live: true,
-					// store.DefaultHygiene().RetentionDays (config.go:348)
 					Default: def.Sessions.RetentionDays,
 					Help:    "the hygiene job deletes sessions inactive longer than this many days (pinned sessions are exempt); 0 = never prune; applies live - the section rides the same hot-apply push as summarizer_model"},
 				{Key: "sessions.summarize_after_hours", Label: "summarize after (h)", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Sessions.SummarizeAfterHours, Live: true,
-					// The 0-pseudo-default knob: 0 is the runtime sentinel
-					// ("the default, 24h"), the machine default is the real
-					// window - store.DefaultHygiene().SummarizeAfterHours
-					// (config.go:349), the number this pane shows as
-					// unmodified. A written 0 therefore reads as modified,
-					// which is honest: it is a different setting.
 					Default: def.Sessions.SummarizeAfterHours,
 					Help:    "the hygiene job summarizes settled sessions that lack a summary once they are idle this many hours; 0 = the default (24h); applies live - the section rides the same hot-apply push as summarizer_model"},
-				// The summarizer's model moved to provider settings
-				// (card t_fc0b2f2d): provider.summarizer_model.
+				// The summarizer's model moved to provider settings: provider.summarizer_model.
 			},
 		},
 		{
@@ -363,9 +284,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "max_turns", Label: "max turns", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.MaxTurns, Live: true,
-					// 0 is a runtime sentinel (the same 100); the machine
-					// default is the number DefaultConfig carries
-					// (config.go:384).
 					Default: def.MaxTurns,
 					Help:    "tool-loop turn cap per chat; applies live - the next run reads it (0 = the 100 default)"},
 			},
@@ -381,11 +299,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "skills.nudge_interval", Label: "nudge interval", Type: "number",
 					Min: ptrF(0), Step: ptrF(1),
 					Value: cfg.Skills.NudgeInterval,
-					// skills.DefaultNudgeInterval (config.go:365)
 					Default: def.Skills.NudgeInterval,
 					Help:    "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
-				// The curator's model moved to provider settings
-				// (card t_fc0b2f2d): provider.skills_model.
+				// The curator's model moved to provider settings: provider.skills_model.
 			},
 		},
 		{
@@ -428,20 +344,10 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help:    "operational log; applies on restart"},
 				{Key: "logging.file", Label: "log file", Type: "text",
 					Value: cfg.Logging.File,
-					// The default filename is deliberately empty: a bare
-					// relative name would open a log in the process CWD
-					// (config.go:377-381); resolveHomePaths computes the
-					// real path at boot.
 					Default: def.Logging.File,
 					Help:    "applies on restart"},
 			},
 		},
-		// The approval gate group (card t_c2b52cb5): mode off|manual|smart
-		// and the operator policy text. The decision model moved to
-		// provider settings (card t_fc0b2f2d). The gate goes live (card
-		// t_34cd1921): mode and policy hot-apply - a flip answers with the
-		// new behavior at the next decision, no restart. Mode off at BOOT
-		// still mounts nothing (Q10) - re-mounting stays a restart.
 		{
 			Key:   "approvals",
 			Label: "approvals",
@@ -449,12 +355,9 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "approvals.mode", Label: "mode", Type: "select",
 					Options: []string{"off", "manual", "smart"},
 					Value:   cfg.Approvals.Mode, Live: true,
-					// config.go:392-394: manual IS the explicit default
-					// (the ship-dark ruling).
 					Default: def.Approvals.Mode,
 					Help:    "off = no gate at all; manual = flagged commands ask you (default); smart = a decision model reviews them first; applies live for mounted gates (off at boot keeps the gate unmounted)"},
-				// The decision model moved to provider settings (card
-				// t_fc0b2f2d): provider.approvals_model.
+				// The decision model moved to provider settings: provider.approvals_model.
 				{Key: "approvals.smart_policy", Label: "operator policy", Type: "textarea",
 					Value: cfg.Approvals.SmartPolicy, Live: true,
 					Default: def.Approvals.SmartPolicy,
@@ -477,9 +380,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 	}
 }
 
-// compactionKnobs renders the agent.CompactionConfig section. Every
-// compaction knob is read per Compact call, so all hot-apply live.
-// def carries the default layer (defaultConfig) the Default fields read.
+// compactionKnobs renders the agent.CompactionConfig section.
 func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 	c := &cfg.Compaction
 	d := &def.Compaction
@@ -496,9 +397,6 @@ func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 		{Key: "compaction.context_window", Label: "context window", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
 			Value: c.ContextWindow,
-			// The config default is the 32768 floor DefaultConfig carries
-			// (config.go:357); 0 is the "probe the provider" sentinel and
-			// therefore reads as modified.
 			Default: d.ContextWindow,
 			Help:    "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
 		{Key: "compaction.keep_first", Label: "keep first", Type: "number",
@@ -526,14 +424,9 @@ func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 
 func ptrF(n float64) *float64 { return &n }
 
-// providerInstancesKnob renders the provider instances (card
-// t_bf21ee07: the ONE providers list - the primary row named
-// "default" leads it) as the list editor's value: one object per row -
-// name, type, host, api_key, NO model column (models come from the
-// instance's catalog through the pickers). The list order is the
-// config.yaml order (the primary first), so the pane never reshuffles
-// its rows between reloads. The api_key rides masked; the save path
-// treats a masked value as "keep the existing secret".
+// providerInstancesKnob renders the provider instances as the list editor's value. The
+// list order is the config.yaml order (the primary first), so the pane never reshuffles
+// its rows between reloads.
 func providerInstancesKnob(cfg *Config) []map[string]any {
 	out := make([]map[string]any, 0, len(cfg.Provider.Instances))
 	for _, inst := range cfg.Provider.Instances {
@@ -547,11 +440,7 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 	return out
 }
 
-// saveSettings applies values (dotted yaml path -> value), validates,
-// and writes config.yaml atomically, then hot-applies the live knobs to
-// the running context (the workspace hook only on a value change -
-// prevWorkspace is what the load saw before the values applied, card
-// t_9825147c part 3). Returns the refreshed schema payload.
+// saveSettings applies values (dotted yaml path -> value), validates, and writes.
 func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setTerminalWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
 	if err != nil {
@@ -568,10 +457,9 @@ func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(strin
 		return nil, err
 	}
 	hotApply(cfg, prevWorkspace, pctx, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig)
-	// the refreshed payload carries the scopes too, or the pane would
-	// lose its agent tabs after every save. nil runtime getter: the
-	// hot-apply above just pushed cfg.MaxTurns onto the serving agents,
-	// so the file lane IS the runtime lane for this response.
+	// the refreshed payload carries the scopes too, or the pane would lose its agent. nil
+	// runtime getter: the hot-apply above just pushed cfg.MaxTurns onto the serving
+	// agents, so the file lane IS the runtime lane for this response.
 	return &core.SettingsSchema{
 		Groups: settingGroups(&cfg),
 		Scopes: settingsScopes(settingsScopeHome(path), &cfg, nil),
@@ -588,32 +476,19 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "provider.model_name", "provider.vision_model", "provider.title_model":
 			err = setStringField(cfg, key, raw)
 		case "provider.instances":
-			// The provider instances (card t_bf21ee07): the ONE list
-			// every provider lives in, the primary row included. A
-			// row's api_key IS hot-PUT-able here (masked read, masked
-			// round-trip keeps the secret); a row's host and a stored
-			// secret stay config.yaml's property - the gate inside
-			// applyProviderInstances names that door.
+			// The provider instances: the ONE list every provider lives in, the primary row.
 			err = applyProviderInstances(cfg, key, raw)
 		case "provider.api_key", "server.bind":
-			// gated knobs: bind is the escalation lever for the whole
-			// LAN surface, api_key is the credential. Neither a
-			// restart-required nor a secret knob belongs on the
-			// unauthenticated hot-PUT path - config.yaml is the only
-			// door, and the error says so.
+			// gated knobs: bind is the escalation lever for the whole LAN surface, api_key is.
 			err = fmt.Errorf("%s: config.yaml is the only door for this knob - not settable over the API", key)
 		case "server.port":
 			err = setInt(&cfg.Server.Port, key, raw, 1, math.MaxUint16)
 		case "server.run_timeout":
 			err = setInt(&cfg.Server.RunTimeout, key, raw, 1, math.MaxInt32)
 		case "server.default_workspace":
-			// empty clears (the law's cwd fallback stands); anything
-			// else must be absolute and an existing directory - the
-			// same shape a session workspace pin validates, validated
-			// HERE so a typo never silently roots nothing. A "/"- or
-			// "\"-rooted spelling counts as absolute: it is volume
-			// rooted in the operator's eyes even where filepath.IsAbs
-			// disagrees (windows drive-relative roots).
+			// empty clears (the law's cwd fallback stands); anything else must be absolute and
+			// an existing directory - the same shape a session workspace pin validates,
+			// validated HERE so a typo never silently roots nothing.
 			v, verr := asTrimmedString(raw)
 			if verr != nil {
 				err = fmt.Errorf("%s: %w", key, verr)
@@ -629,10 +504,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			}
 			abs, aerr := filepath.EvalSymlinks(filepath.Clean(v))
 			if aerr != nil {
-				// One not-exist message on every OS: the windows stat
-				// answers "The system cannot find the file specified."
-				// where posix answers ENOENT's words - the missing
-				// directory is the same fact, one canon sentence.
+				// One not-exist message on every OS: the windows stat answers "The system cannot.
 				if os.IsNotExist(aerr) {
 					err = fmt.Errorf("%s: no such file or directory: %s", key, v)
 				} else {
@@ -704,8 +576,7 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			cfg.Approvals.Monitor = m
 		case "provider.compaction_model", "provider.summarizer_model",
 			"provider.skills_model", "provider.approvals_model":
-			// card t_fc0b2f2d: the per-subsystem model slots live in
-			// the provider group (setStringField routes them).
+			// the per-subsystem model slots live in the provider group.
 			err = setStringField(cfg, key, raw)
 		default:
 			err = fmt.Errorf("unknown setting: %s", key)
@@ -760,35 +631,16 @@ func setStringField(cfg *Config, key string, raw any) error {
 	return nil
 }
 
-// trim normalizes plain string inputs: surrounding whitespace is never
-// significant in any config field.
+// trim normalizes plain string inputs: surrounding whitespace is never significant.
 func trim(s string) string { return strings.TrimSpace(s) }
 
-// applyProviderInstances applies the instances knob (card t_bf21ee07,
-// the merge of the flat connection trio and the old named-instance
-// list; gated t_9825147c part 2). The submitted list REPLACES
-// cfg.Provider.Instances. Each entry carries name, type, host and
-// api_key - an instance is a named endpoint only, a model_name field
-// is a loud error (models come from the instance's catalog through
-// the model pickers). The PRIMARY is the row named "default": the
-// list must carry it (a list without it would leave the agent with no
-// provider to serve), and it can be retyped like any row but not
-// renamed away.
-//
-// The stored rows are the trust anchor for the two gated columns: a
-// row may be RENAMED, RETYPED or REMOVED over the API, but the
-// endpoint (host) and the secret (api_key) are config.yaml's property
-// - a changed host on a stored row, a key set or wiped on one, or a
-// planted host config.yaml does not carry all answer with the
-// config.yaml door (the same law server.bind holds). Renames keep
-// their secret via the masked round trip: the masked key inherits
-// from the one stored row that carries the submitted host (ambiguous
-// or missing matches refuse). A masked api_key keeps the entry's
-// EXISTING secret ("****" means unchanged, not blank - the plain text
-// never rides the wire, so the round trip must not wipe it). Unknown
-// types, illegal names and duplicate ids fail through apply +
-// cfg.Validate() in saveSettings - the schema is the contract and a
-// typo must be loud, never silently dropped.
+// applyProviderInstances applies the instances knob. The PRIMARY is the row named
+// "default": the list must carry it (a list without it would leave the agent with no
+// provider to serve), and it can be retyped like any row but not renamed away. A masked
+// api_key keeps the entry's EXISTING secret ("****" means unchanged, not blank - the
+// plain text never rides the wire, so the round trip must not wipe it). Unknown types,
+// illegal names and duplicate ids fail through apply + cfg.Validate in saveSettings -
+// the schema is the contract and a typo must be loud, never silently dropped.
 func applyProviderInstances(cfg *Config, key string, raw any) error {
 	list, ok := raw.([]any)
 	if !ok {
@@ -797,9 +649,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 	instancesDoor := func(name, field string) error {
 		return fmt.Errorf("%s: %s.%s: config.yaml is the only door for instance %s - not settable over the API", key, name, field, field)
 	}
-	// the submitted names, pre-computed in full (the rename source
-	// below must know what the WHOLE list removes, not just the rows
-	// so far) - card t_9825147c part 2
+	// the submitted names, pre-computed in full.
 	sent := make(map[string]bool, len(list))
 	for _, item := range list {
 		if obj, ok := item.(map[string]any); ok {
@@ -840,11 +690,9 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		if inst.APIKey, err = asTrimmedString(obj["api_key"]); err != nil {
 			return fmt.Errorf("%s: %s.api_key: %w", key, name, err)
 		}
-		// host gate (card t_9825147c part 2): a stored row keeps its
-		// endpoint; a new row is either hostless (the provider
-		// default, loopback) or carries a host config.yaml already
-		// serves - that is a rename of a stored row, never a planted
-		// endpoint reaching a fresh network target.
+		// host gate: a stored row keeps its endpoint; a new row is either hostless (the
+		// provider default, loopback) or carries a host config.yaml already serves - that is
+		// a rename of a stored row, never a planted endpoint reaching a fresh network target.
 		existing, has := cfg.Provider.instance(name)
 		if has {
 			if inst.Host != existing.Host {
@@ -857,10 +705,9 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		}
 		switch {
 		case inst.APIKey == maskedSecret:
-			// "****" = keep the EXISTING secret. On a known name that
-			// is the row's own key; on a rename it inherits the
-			// submitted host's stored key - exactly one source, else
-			// the secret is config.yaml's to name.
+			// "****" = keep the EXISTING secret. On a known name that is the row's own key; on a
+			// rename it inherits the submitted host's stored key - exactly one source, else the
+			// secret is config.yaml's to name.
 			if has {
 				if existing.APIKey == "" {
 					return fmt.Errorf("%s: %s.api_key is masked but the stored instance has no key - set a real key in config.yaml", key, name)
@@ -878,13 +725,11 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				}
 			}
 		case inst.APIKey == "":
-			// clearing a stored secret is a credential change too
 			if has && existing.APIKey != "" {
 				return instancesDoor(name, "api_key")
 			}
 		default:
-			// a plain key: an identical echo of the stored secret is a
-			// no-op, anything else is a credential write - config.yaml
+			// a plain key: an identical echo of the stored secret is a no-op, anything else is.
 			if !(has && existing.APIKey == inst.APIKey) {
 				return instancesDoor(name, "api_key")
 			}
@@ -892,20 +737,17 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 		instances = append(instances, inst)
 	}
 	if !seen[PrimaryProviderInstance] {
-		// Every provider is a row now (card t_bf21ee07): without the
-		// primary row there is no provider the agent can serve, and a
-		// RENAME of it is exactly this error - the primary keeps its
-		// name, its endpoint is what may change (in config.yaml).
+		// Every provider is a row now: without the primary row there is no provider the agent
+		// can serve, and a RENAME of it is exactly this error - the primary keeps its name,
+		// its endpoint is what may change (in config.yaml).
 		return fmt.Errorf("%s: the row named %q is required - it is the provider the agent serves (rename it by editing config.yaml, never away)", key, PrimaryProviderInstance)
 	}
-	// The primary leads the list, the rest keep the submitted order.
 	cfg.Provider.Instances = instances
 	cfg.Provider.primaryFirst()
 	return nil
 }
 
-// storedHostIn reports whether config already serves the host (the
-// rename path's anchor, card t_9825147c part 2).
+// storedHostIn reports whether config already serves the host.
 func storedHostIn(cfg *Config, host string) bool {
 	for _, inst := range cfg.Provider.Instances {
 		if inst.Host == host {
@@ -915,11 +757,7 @@ func storedHostIn(cfg *Config, host string) bool {
 	return false
 }
 
-// renamedOffKey finds the secret a masked round-trip on a NEW name
-// inherits (card t_9825147c part 2): the stored rows this submission
-// REMOVES (names not re-sent) that carry the submitted host. A rename
-// removes the old name, so its key is the source - one distinct key
-// inherits, none or several refuse at config.yaml.
+// renamedOffKey finds the secret a masked round-trip on a NEW name inherits.
 func renamedOffKey(cfg *Config, submitted map[string]bool, want string) (string, int) {
 	keys := map[string]bool{}
 	for _, inst := range cfg.Provider.Instances {
@@ -963,9 +801,8 @@ func setString(dst *string, key string, raw any, norm func(string) string) error
 	return nil
 }
 
-// asInt coerces a submitted JSON value into an int. JSON decodes every
-// number as float64; integral values round-trip exactly, non-integral
-// ones are rejected.
+// asInt coerces a submitted JSON value into an int. JSON decodes every number as
+// float64; integral values round-trip exactly, non-integral ones are rejected.
 func asInt(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case float64:
@@ -1029,9 +866,7 @@ func setBool(cfg *Config, key string, raw any) error {
 	return nil
 }
 
-// writeConfigFile persists the config as YAML, atomically (temp file +
-// rename) and mode-preserving: a config.yaml can hold an api_key, so a
-// fresh file is 0600 and an existing file keeps its permissions.
+// writeConfigFile persists the config as YAML, atomically (temp file + rename).
 func writeConfigFile(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -1052,43 +887,23 @@ func writeConfigFile(path string, cfg *Config) error {
 	return nil
 }
 
-// hotApply runs the knobs the running process can use without a
-// restart: the shared HTTP client timeout, the compactor's config
-// (Compact re-reads it on every call), the files surface's default
-// workspace - hot because the resolution law reads it per request, so
-// a settings-pane save re-roots the Files tab live (but only on a
-// VALUE CHANGE, prevWorkspace is the knob as the load saw it before
-// this save/reload applied - card t_9825147c part 3) - the hygiene and
-// skills capsules' model slots (SetConfig, re-read per pass), and the
-// serving agents' system_prompt / max_turns through the boot-captured
-// agent hook (card t_f78acfd6). WatchConfig's on-disk reload goes
-// through the same path, so a hand edit and a settings-pane save
-// behave identically.
+// hotApply runs the knobs the running process can use without a restart.
 func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setTerminalWorkspace func(string), setAgentConfig func(string, int)) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	if pctx == nil {
 		return
 	}
-	// default_workspace rides the files capsule's knob hook (the
-	// shell-ring shrink wave 1: the files routes own the root
-	// resolution law, the channels stopped carrying the knob). The
-	// hook is a bare func threaded from the mount (the continuous
-	// capsule's setAgents shape): nil means no files capsule is
-	// mounted and the knob stays where it was. No service-registry
-	// key - the offer namespaces stay closed at fourteen.
+	// default_workspace rides the files capsule's knob hook.
+	// The hook is a bare func threaded from the mount (the continuous capsule's setAgents
+	// shape): nil means no files capsule is mounted and the knob stays where it was.
 	if cfg.Server.DefaultWorkspace != prevWorkspace {
 		if setFilesWorkspace != nil {
 			setFilesWorkspace(cfg.Server.DefaultWorkspace)
 		}
-		// The same knob re-roots the tools' fallback workdir on the
-		// HTTP channel (card t_ccf74d88): a workspace-less session's
-		// tool runs follow the live save, not the boot copy.
+		// The same knob re-roots the tools' fallback workdir on the HTTP channel.
 		if setChannelWorkspace != nil {
 			setChannelWorkspace(cfg.Server.DefaultWorkspace)
 		}
-		// The terminal capsule rides the same knob (card t_62d72028):
-		// the pane's spawn workspace chain reads it per claim, so the
-		// next spawned shell lands in the freshly saved workspace.
 		if setTerminalWorkspace != nil {
 			setTerminalWorkspace(cfg.Server.DefaultWorkspace)
 		}
@@ -1097,89 +912,53 @@ func hotApply(cfg Config, prevWorkspace string, pctx *agent.Context, setFilesWor
 	if c, ok := svc.(*compactor.Compactor); ok {
 		c.SetConfig(compactionSection(cfg))
 	}
-	// Approvals goes live (card t_34cd1921): the smart approval gate
-	// re-reads its config per decision, so the hot-apply path hands it
-	// a fresh section - the host resolves the slot/host/key knobs
-	// (approvalSlot) just like at boot; the gate swaps the value
-	// behind its lock. Not mounted (mode off at boot) = a nil
-	// resolve, no-op: re-mounting stays out of scope.
+	// Approvals goes live: the smart approval gate re-reads its config per decision,.
+	// Not mounted (mode off at boot) = a nil resolve, no-op: re-mounting stays out of
+	// scope.
 	if a, ok := pctx.Services().Resolve("approvals").(*approval.Gate); ok {
 		a.SetConfig(approvalSection(cfg))
 	}
-	// The providers go live (card t_bf21ee07): one save materializes the
-	// whole instance list, and the capsule swaps its base endpoint plus
-	// every resolver behind the lock - the next run, model listing and
-	// slot consult see the saved config. Consumer law (the noun test):
-	// the host declares its own local face, the capsule satisfies it
-	// structurally.
 	if pp, ok := pctx.Services().Resolve("provider").(providerConfigSetter); ok {
 		pp.SetConfig(providerSection(cfg))
 	}
-	// vision_model goes live on the SAME stroke (card t_bf21ee07): the
-	// captioner is installed from boot and swaps its lane in place, so
-	// every agent holding the pointer follows a settings save. Empty
-	// turns the aux hop off again.
+	// vision_model goes live on the SAME stroke.
 	if c, ok := pctx.Captioner.(visionModelSetter); ok {
 		c.SetModel(cfg.VisionModel)
 	}
-	// title_model rides the channel's own setter (card t_bf21ee07): the
-	// title call resolves the persisted word at the wire boundary, so
-	// the channel keeps the knob and every mounted bind follows it. The
-	// push is unconditional - a CLEARED knob must reach the wire too,
-	// and the setter is idempotent.
+	// title_model rides the channel's own setter. The push is unconditional - a CLEARED
+	// knob must reach the wire too, and the setter is idempotent.
 	for _, ch := range pctx.Channels {
 		if tm, ok := ch.(titleModelSetter); ok {
 			tm.SetTitleModel(cfg.TitleModel)
 		}
 	}
-	// The store's hygiene pass goes live (card t_f78acfd6): the sweep
-	// resolves its model slot + retention window from the live section
-	// (store.SetHygieneConfig), so a summarizer_model flip reaches the
-	// next sweep. Unmounted store (the host's own supply) = a nil
+	// The store's hygiene pass goes live. Unmounted store (the host's own supply) = a nil
 	// resolve, no-op.
 	if s, ok := pctx.Services().Resolve("store").(*store.Store); ok {
 		s.SetHygieneConfig(sessionsSection(cfg))
 	}
-	// The skills curator does the same for its consult slot: the next
-	// curator action resolves provider.skills_model live. Consumer law
-	// (the noun test): the host declares its own local face, the
-	// capsule's type name never leaves harness/.
+	// The skills curator does the same for its consult slot. Consumer law (the noun test):
+	// the host declares its own local face, the capsule's type name never leaves harness/.
 	if sp, ok := pctx.Services().Resolve("skills").(curatorSlotSetter); ok {
 		sp.SetCuratorModel(skillsSection(cfg).CuratorModel)
 	}
-	// The runtime knobs land on the AGENTS (card t_f78acfd6, the probe
-	// verdict): the loop re-reads prompt.Custom and the turn cap per
-	// Run, so a system_prompt / max_turns save answers with the new
-	// values at the next run - through the one boot-captured hook that
-	// covers the host-owned agent AND the HTTP channel's serving
-	// agent. Nil hook = the surface is not mounted (host fallback
-	// supply, tests).
+	// The runtime knobs land on the AGENTS. Nil hook = the surface is not mounted (host
+	// fallback supply, tests).
 	if setAgentConfig != nil {
 		setAgentConfig(cfg.SystemPrompt, cfg.MaxTurns)
 	}
-	// The cron fire's cap follows the operator's knob (card
-	// t_e635df3a): a fire bounds a hung turn with
-	// server.run_timeout, and only this host knows which config file
-	// it booted on - so every save/reload hands the resolution to the
-	// scheduler instead of leaving it to re-guess a home.
 	pushRunTimeout(pctx, cfg)
 }
 
-// runTimeoutSetter is the host's consumer-owned face for the cron
-// capsule's fire cap (card t_e635df3a): hotApply declares its need
-// here, the capsule satisfies it with SetRunTimeout - the owner name
-// never leaves harness/ (the curatorSlotSetter discipline).
+// runTimeoutSetter is the host's consumer-owned face for the cron capsule's fire cap:
+// hotApply declares its need here, the capsule satisfies it with SetRunTimeout - the
+// owner name never leaves harness/ (the curatorSlotSetter discipline).
 type runTimeoutSetter interface {
 	SetRunTimeout(time.Duration)
 }
 
-// pushRunTimeout hands the cron runner the server.run_timeout this
-// host resolved - the config file the process booted on, an explicit
-// `--config` path included - so a fire's cap follows the operator's
-// knob even when the module's own home candidates point elsewhere
-// (card t_e635df3a). Both the boot push and every settings save/reload
-// ride this one helper (the setAgentConfig shape). A nil context or an
-// unmounted cron capsule is a no-op: the fire keeps its own
+// pushRunTimeout hands the cron runner the server.run_timeout this host resolved. A nil
+// context or an unmounted cron capsule is a no-op: the fire keeps its own
 // home-candidate read, then the 30-minute default.
 func pushRunTimeout(pctx *agent.Context, cfg Config) {
 	if pctx == nil {
@@ -1190,46 +969,38 @@ func pushRunTimeout(pctx *agent.Context, cfg Config) {
 	}
 }
 
-// curatorSlotSetter is the host's consumer-owned face for the skills
-// capsule's live consult slot (card t_f78acfd6): hotApply declares its
-// need here, the capsule satisfies it with SetCuratorModel - the owner
-// name never leaves harness/ (the noun test holds the namespace).
+// curatorSlotSetter is the host's consumer-owned face for the skills capsule's live
+// consult slot: hotApply declares its need here, the capsule satisfies it with
+// SetCuratorModel - the owner name never leaves harness/ (the noun test holds the
+// namespace).
 type curatorSlotSetter interface {
 	SetCuratorModel(model string)
 }
 
-// providerConfigSetter is the host's consumer-owned face for the
-// provider capsule's live configuration (card t_bf21ee07): hotApply
-// declares its need, the capsule satisfies it with SetConfig and swaps
-// its endpoint + instance resolvers behind its own lock.
+// providerConfigSetter is the host's consumer-owned face for the provider.
 type providerConfigSetter interface {
 	SetConfig(provider.Config)
 }
 
-// visionModelSetter is the captioner's live lane (card t_bf21ee07):
-// hotApply hands the vision_model knob over, the captioner swaps its
-// pinned copy (or turns the aux hop off for an empty value).
+// visionModelSetter is the captioner's live lane.
 type visionModelSetter interface {
 	SetModel(model string)
 }
 
-// titleModelSetter is the HTTP channel's live title lane (card
-// t_bf21ee07): the channel resolves the persisted word at its wire
-// boundary, so the setter carries the knob VERBATIM.
+// titleModelSetter is the HTTP channel's live title lane.
 type titleModelSetter interface {
 	SetTitleModel(configured string)
 }
 
-// omegaSettings implements core.Settings for the serve host: the webui
-// settings pane rides the http_channel through this.
+// omegaSettings implements core.Settings for the serve host.
 type omegaSettings struct {
 	path                 string
 	pctx                 *agent.Context
 	setFilesWorkspace    func(string)      // the files capsule's hot knob, nil when it is not mounted
 	setChannelWorkspace  func(string)      // the HTTP channel's default-workspace hot knob, nil when unset
-	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob (t_62d72028), nil when unset
-	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook (t_f78acfd6)
-	maxTurns             func() int        // the serving agents' LIVE turn cap (t_f78acfd6 GETTER), the agent scopes' inherited max_turns
+	setTerminalWorkspace func(string)      // the terminal capsule's default-workspace hot knob, nil when unset
+	setAgentConfig       func(string, int) // the serving agents' runtime-knob hot hook
+	maxTurns             func() int        // the serving agents' LIVE turn cap, the agent scopes' inherited max_turns
 }
 
 func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
@@ -1237,10 +1008,6 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Read-only hint for the auto-resolved compaction window: the pane
-	// shows what startup probed the provider with as part of the
-	// knob's help line. No probe here - only the value cached at
-	// startup.
 	if s.pctx == nil {
 		return schema, nil
 	}
@@ -1264,13 +1031,12 @@ func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error
 	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
 }
 
-// Raw returns the config FILE as YAML text for the pane's export and
-// edit-as-YAML surfaces (card t_a82d39c8). The bytes are the
-// operator's own document - comments, key order and style included -
-// with each api_key VALUE replaced by the pane's mask: the config file
-// is a credential's only home, so the unauthenticated wire never
-// carries one. A file that will not parse answers the parse error
-// instead of its text (an unmaskable document is a leak, not a read).
+// Raw returns the config FILE as YAML text for the pane's export and edit-as-YAML. The
+// bytes are the operator's own document - comments, key order and style included - with
+// each api_key VALUE replaced by the pane's mask: the config file is a credential's
+// only home, so the unauthenticated wire never carries one. A file that will not parse
+// answers the parse error instead of its text (an unmaskable document is a leak, not a
+// read).
 func (s *omegaSettings) Raw() (string, error) {
 	data, err := os.ReadFile(s.path)
 	if err != nil {
@@ -1279,13 +1045,12 @@ func (s *omegaSettings) Raw() (string, error) {
 	return maskConfigSecrets(string(data))
 }
 
-// SaveRaw validates a whole YAML document and persists it through the
-// same path a knob save rides: the same LoadConfig layer (built-in
-// defaults + the document + OMEGA_* overrides), the same Validate, the
-// same atomic writer, the same hot-apply. A submitted mask at a secret
-// path KEEPS the value already on disk (the provider.instances
-// round-trip law), so opening the editor from an export and saving it
-// back can never destroy a credential.
+// SaveRaw validates a whole YAML document and persists it through the same path a knob
+// save rides: the same LoadConfig layer (built-in defaults + the document + OMEGA_*
+// overrides), the same Validate, the same atomic writer, the same hot-apply. A
+// submitted mask at a secret path KEEPS the value already on disk (the
+// provider.instances round-trip law), so opening the editor from an export and saving
+// it back can never destroy a credential.
 func (s *omegaSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	prev, err := LoadConfig(s.path)
 	if err != nil {
@@ -1299,11 +1064,9 @@ func (s *omegaSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	if err != nil {
 		return nil, err
 	}
-	// the credential config.yaml will hold: the document's own value, or
-	// the masked value the file already carries. Neither the env layer
-	// nor the mask itself ever lands on disk. An unreadable on-disk
-	// document is a REFUSAL, never a skip: with nothing to keep, a
-	// submitted mask would be persisted as the literal credential.
+	// the credential config.yaml will hold. An unreadable on-disk document is a REFUSAL,
+	// never a skip: with nothing to keep, a submitted mask would be persisted as the
+	// literal credential.
 	if err := settleSecretsFromDisk(s.path, &cfg, &doc); err != nil {
 		return nil, err
 	}
@@ -1320,9 +1083,9 @@ func (s *omegaSettings) SaveRaw(text string) (*core.SettingsSchema, error) {
 	}, nil
 }
 
-// Reset restores every knob that HAS a default to it (card t_a82d39c8)
-// through saveSettings - the pane's own PUT path, so the write
-// validates, persists and hot-applies exactly like a hand save.
+// Reset restores every knob that HAS a default to it through saveSettings - the pane's
+// own PUT path, so the write validates, persists and hot-applies exactly like a hand
+// save.
 func (s *omegaSettings) Reset() (*core.SettingsSchema, error) {
 	values, err := resetValues()
 	if err != nil {
@@ -1341,15 +1104,7 @@ var resetGated = map[string]bool{
 	"provider.instances": true,
 }
 
-// resetValues is the write map the reset-to-default action ships: the
-// schema's own Default for every knob that has one, minus the gated
-// doors. The defaults come from settingGroups(defaultConfig()) - the
-// layer beneath the file, the same field the pane's per-knob reset
-// compares against - so no second default set exists anywhere.
-//
-// The map is normalized through JSON before it ships: applySettingValues
-// expects the shape a PUT body decodes to (numbers as float64), and the
-// struct-typed Go values in the schema are not that shape.
+// resetValues is the write map the reset-to-default action ships.
 func resetValues() (map[string]any, error) {
 	def := defaultConfig()
 	values := map[string]any{}
@@ -1375,10 +1130,7 @@ func resetValues() (map[string]any, error) {
 	return wire, nil
 }
 
-// fileConfig loads the config FILE alone: the built-in defaults with
-// the document overlaid and NO environment layer. LoadConfig is the
-// wrong reader for the mask-keep law - it answers the effective value,
-// which may come from OMEGA_* rather than from the file.
+// fileConfig loads the config FILE alone.
 func fileConfig(path string) (Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -1387,8 +1139,7 @@ func fileConfig(path string) (Config, error) {
 	return documentConfig(string(data))
 }
 
-// documentConfig parses ONE YAML document over the built-in defaults,
-// with no environment layer: it answers what the text itself says.
+// documentConfig parses ONE YAML document over the built-in defaults, with no.
 func documentConfig(text string) (Config, error) {
 	cfg := DefaultConfig()
 	if err := yaml.Unmarshal([]byte(text), &cfg); err != nil {
@@ -1397,10 +1148,8 @@ func documentConfig(text string) (Config, error) {
 	return cfg, nil
 }
 
-// configFromYAML parses a submitted document exactly the way LoadConfig
-// parses the file: defaults, then the document, then the environment
-// overrides. Validate is the caller's, so the layer order stays in one
-// place.
+// configFromYAML parses a submitted document exactly the way LoadConfig parses.
+// Validate is the caller's, so the layer order stays in one place.
 func configFromYAML(text string) (Config, error) {
 	cfg, err := documentConfig(text)
 	if err != nil {
@@ -1410,10 +1159,9 @@ func configFromYAML(text string) (Config, error) {
 	return cfg, nil
 }
 
-// settleSecretsFromDisk pins the credential layer a raw save writes
-// against the document ON DISK. An unreadable document is an ERROR and
-// never a skip: with nothing to keep, a submitted mask ("****") would be
-// written out as the literal credential.
+// settleSecretsFromDisk pins the credential layer a raw save writes against the. An
+// unreadable document is an ERROR and never a skip: with nothing to keep, a submitted
+// mask ("****") would be written out as the literal credential.
 func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
 	onDisk, err := fileConfig(path)
 	if err != nil {
@@ -1423,12 +1171,10 @@ func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
 	return nil
 }
 
-// settleSecrets pins the credential layer a raw save writes: the
-// document's own value wins (a literal key typed in the editor), the
-// mask keeps what the file already holds, and an OMEGA_*-supplied
-// secret never lands in config.yaml - the variable is its source, and a
-// copy in the file would outlive it. Clearing the line therefore clears
-// the credential, the way a text editor would.
+// settleSecrets pins the credential layer a raw save writes: the document's own value
+// wins (a literal key typed in the editor), the mask keeps what the file already holds,
+// and an OMEGA_*-supplied secret never lands in config.yaml - the variable is its
+// source, and a copy in the file would outlive it.
 func settleSecrets(cfg *Config, doc *Config, onDisk *Config) {
 	instances := make([]ProviderInstance, 0, len(cfg.Provider.Instances))
 	for _, inst := range cfg.Provider.Instances {
@@ -1445,8 +1191,7 @@ func settleSecrets(cfg *Config, doc *Config, onDisk *Config) {
 	cfg.Provider.Instances = instances
 }
 
-// secretLayerValue is the one rule: the mask stands for the value on
-// disk, anything else is what the document says.
+// secretLayerValue is the one rule.
 func secretLayerValue(docValue, diskValue string) string {
 	if docValue == maskedSecret {
 		return diskValue
@@ -1454,12 +1199,10 @@ func secretLayerValue(docValue, diskValue string) string {
 	return docValue
 }
 
-// maskConfigSecrets renders a config document with every api_key value
-// masked, every other byte (comments, order, flow/block style) kept.
-// The walk is BY NAME, not by path: an api_key is a credential wherever
-// it sits, so a provider-shaped section added later cannot introduce an
-// unmasked one. An empty value stays empty - masking a missing key
-// would imply one exists.
+// maskConfigSecrets renders a config document with every api_key value masked, every
+// other byte (comments, order, flow/block style) kept. The walk is BY NAME, not by
+// path: an api_key is a credential wherever it sits, so a provider-shaped section added
+// later cannot introduce an unmasked one.
 func maskConfigSecrets(text string) (string, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal([]byte(text), &doc); err != nil {
@@ -1505,17 +1248,12 @@ func maskSecretNodes(n *yaml.Node) {
 // Compile-time assertion that omegaSettings implements core.Settings.
 var _ core.Settings = (*omegaSettings)(nil)
 
-// --- omega settings: the terminal face of the settings pane ---------
-//
-// Card t_013b4643: the settings surface outside the webui. Reads call
-// settingsSchema (the same function the pane's GET rides) and writes
-// call saveSettings (the same function the pane's PUT rides) - one
-// schema, one setter, one validator, one writer, so a CLI save and a
-// pane save land byte-identically in config.yaml and every refusal
-// (unknown knob, out-of-range value, a config.yaml-only door) is the
-// seam's own sentence. The CLI's only job is argv: pick the knob,
-// coerce the operator's text into the wire-typed value the pane would
-// have sent, hand it to the seam.
+// omega settings: the terminal face of the settings pane. Reads call settingsSchema
+// (the same function the pane's GET rides) and writes call saveSettings (the same
+// function the pane's PUT rides) - one schema, one setter, one validator, one writer,
+// so a CLI save and a pane save land byte-identically in config.yaml and every refusal
+// (unknown knob, out-of-range value, a config.yaml-only door) is the seam's own
+// sentence.
 
 // settingsUsage is the verb grammar, printed on a bad verb.
 const settingsUsage = `omega settings - read and write config knobs
@@ -1535,10 +1273,7 @@ door, and so does a stored instance's host and secret. A refusal
 writes nothing.
 `
 
-// cmdSettings dispatches the settings verbs. configPath is the --config
-// flag (empty = the home's config), rest is the argv after the
-// subcommand - the root owns the settings argv, so --config still
-// works before or after the verb.
+// cmdSettings dispatches the settings verbs.
 func cmdSettings(configPath string, rest []string) error {
 	args := settingsArgs(rest)
 	if len(args) == 0 {
@@ -1567,10 +1302,8 @@ func cmdSettings(configPath string, rest []string) error {
 	}
 }
 
-// settingsArgs drops the --config pair (the file selector, already
-// parsed by the caller) from the verb argv. Every other token stays
-// positional: a value is arbitrary text and may itself start with a
-// dash only in string values, which the verb handlers guard.
+// settingsArgs drops the --config pair (the file selector, already parsed by the
+// caller) from the verb argv.
 func settingsArgs(rest []string) []string {
 	out := make([]string, 0, len(rest))
 	for i := 0; i < len(rest); i++ {
@@ -1579,7 +1312,6 @@ func settingsArgs(rest []string) []string {
 		case a == "--config":
 			i++ // skip the value
 		case strings.HasPrefix(a, "--config="):
-			// selector only
 		default:
 			out = append(out, a)
 		}
@@ -1587,10 +1319,9 @@ func settingsArgs(rest []string) []string {
 	return out
 }
 
-// settingsConfigPath resolves the file both verbs read and write. The
-// bare home without a config is the setup gate's refusal - a write
-// against no file would have to invent one, and the seam never
-// creates config from nothing.
+// settingsConfigPath resolves the file both verbs read and write. The bare home without
+// a config is the setup gate's refusal - a write against no file would have to invent
+// one, and the seam never creates config from nothing.
 func settingsConfigPath(flagPath string) (string, error) {
 	path := resolveConfigPath(flagPath)
 	if path == "" {
@@ -1599,8 +1330,7 @@ func settingsConfigPath(flagPath string) (string, error) {
 	return path, nil
 }
 
-// settingsList prints every knob group: the group key as a header, one
-// `key = value` line per knob. Strings are quoted so an empty value is
+// settingsList prints every knob group. Strings are quoted so an empty value is
 // visible; secrets ride masked exactly as the pane's GET masks them.
 func settingsList(configPath string) error {
 	path, err := settingsConfigPath(configPath)
@@ -1623,9 +1353,7 @@ func settingsList(configPath string) error {
 	return nil
 }
 
-// settingsGet prints one knob's value, unquoted so a script reads it
-// straight: `omega settings get provider.model_name`. An unknown key is
-// loud - a silent empty line would look like an empty setting.
+// settingsGet prints one knob's value, unquoted so a script reads it straight.
 func settingsGet(configPath, key string, w io.Writer) error {
 	if strings.HasPrefix(key, "-") {
 		return fmt.Errorf("usage: omega settings get [<key>]")
@@ -1647,8 +1375,6 @@ func settingsGet(configPath, key string, w io.Writer) error {
 }
 
 // settingsSet writes one knob through the seam the pane's PUT rides.
-// The refreshed schema the seam returns is the receipt: the value is
-// printed as it landed, not as it was typed.
 func settingsSet(configPath, key, raw string, w io.Writer) error {
 	if strings.HasPrefix(key, "-") {
 		return fmt.Errorf("usage: omega settings set <key> <value>")
@@ -1681,18 +1407,13 @@ func settingsSet(configPath, key, raw string, w io.Writer) error {
 	return nil
 }
 
-// coerceSettingValue turns the operator's text into the JSON-shaped
-// value the webui would submit for this knob: a toggle becomes a bool,
-// a number a float64 (the wire's only number type), the instances list
-// the JSON array the pane posts, everything else the string as typed.
-//
-// This is an input adapter, never a second validator: ranges, enum
-// membership, absolute-path checks, the config.yaml-only doors and
-// every cross-field rule stay behind saveSettings (applySettingValues +
-// cfg.Validate), so the CLI can never accept what the pane refuses or
-// refuse what the pane accepts. The one guard added here is finiteness:
-// JSON cannot carry NaN/Inf, so the pane can never submit them while
-// the CLI text can - and the seam's range test would let NaN through.
+// coerceSettingValue turns the operator's text into the JSON-shaped value the webui.
+// This is an input adapter, never a second validator: ranges, enum membership,
+// absolute-path checks, the config.yaml-only doors and every cross-field rule stay
+// behind saveSettings (applySettingValues + cfg.Validate), so the CLI can never accept
+// what the pane refuses or refuse what the pane accepts. The one guard added here is
+// finiteness: JSON cannot carry NaN/Inf, so the pane can never submit them while the
+// CLI text can - and the seam's range test would let NaN through.
 func coerceSettingValue(k core.SettingsKnob, raw string) (any, error) {
 	switch k.Type {
 	case "toggle":
@@ -1720,9 +1441,6 @@ func coerceSettingValue(k core.SettingsKnob, raw string) (any, error) {
 	}
 }
 
-// settingsValueText renders a knob value for the list and the set
-// receipt: strings quoted (an empty value stays visible), numbers in
-// plain decimal, everything structured as JSON.
 func settingsValueText(k core.SettingsKnob) string {
 	switch v := k.Value.(type) {
 	case string:
@@ -1742,9 +1460,7 @@ func settingsValueText(k core.SettingsKnob) string {
 	return fmt.Sprintf("%v", k.Value)
 }
 
-// settingsRawText renders a single knob's value for script consumption:
-// a string comes back bare, everything else as settingsValueText prints
-// it.
+// settingsRawText renders a single knob's value for script consumption.
 func settingsRawText(k core.SettingsKnob) string {
 	if s, ok := k.Value.(string); ok {
 		return s

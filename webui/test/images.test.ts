@@ -1,5 +1,4 @@
-// omega webui: image input support - the pure helpers (magic sniff,
-// data URLs). Run: node --test webui/test/
+// omega webui: image input support - the pure helpers (magic sniff, data URLs).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 

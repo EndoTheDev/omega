@@ -7,10 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// card t_c2da3379: every bridge-discovered tool stamp carries the
-// core.ToolOriginMCP origin - the wire field the webui Tools tab
-// filters on (the MCP tab owns MCP display, one surface per concern).
-// The stamp is the only key: no name-shape logic anywhere.
+// every bridge-discovered tool stamp carries the core.ToolOriginMCP origin.
 func TestBridgeToolProviderStampsMCPOrigin(t *testing.T) {
 	b := &Bridge{
 		servers:  make(map[string]MCPConn),

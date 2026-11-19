@@ -1,9 +1,8 @@
 package store
 
-// rename_test.go: the session-id rename (card t_5df01d0f). The law the
-// canonical-id migration stands on: moving a session to another id takes
-// its history with it, and asking for a move that cannot be honoured
-// (no file, no row, an occupied target) is a no-op, never a merge.
+// rename_test.go: the session-id rename. The law the canonical-id migration stands on:
+// moving a session to another id takes its history with it, and asking for a move that
+// cannot be honoured (no file, no row, an occupied target) is a no-op, never a merge.
 
 import (
 	"context"
@@ -14,9 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// renameFixture writes one store with "canonical" (one user + one
-// assistant message, plus a forked child and a pending call) and
-// returns its dsn.
+// renameFixture writes one store with "canonical".
 func renameFixture(t *testing.T) string {
 	t.Helper()
 	dsn := filepath.Join(t.TempDir(), "omega.db")
@@ -35,8 +32,7 @@ func renameFixture(t *testing.T) string {
 	if err := st.AppendMessage(ctx, "canonical", core.NewAssistant("0 anomalies")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	// A fork of the chat: its parent reference must follow the rename,
-	// or the tree answers a parent that stopped existing.
+	// A fork of the chat: its parent reference must follow the rename, or the tree.
 	if err := st.CreateSession(ctx, "canonical-fork", "canonical", "fork"); err != nil {
 		t.Fatalf("create fork: %v", err)
 	}
@@ -77,7 +73,6 @@ func TestRenameSessionCarriesTheHistory(t *testing.T) {
 	if len(msgs) != 2 {
 		t.Fatalf("messages after rename = %d, want 2 (the history has to move with the id)", len(msgs))
 	}
-	// The fork follows.
 	fork, err := st.GetSession(ctx, "canonical-fork")
 	if err != nil {
 		t.Fatalf("GetSession(fork) = %v", err)
@@ -85,7 +80,6 @@ func TestRenameSessionCarriesTheHistory(t *testing.T) {
 	if fork.ParentID != "scout-canonical" {
 		t.Errorf("fork parent = %q, want the renamed id", fork.ParentID)
 	}
-	// The pending call follows.
 	var n int
 	if err := st.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM pending_calls WHERE session_id = 'scout-canonical'`).Scan(&n); err != nil {
@@ -94,8 +88,7 @@ func TestRenameSessionCarriesTheHistory(t *testing.T) {
 	if n != 1 {
 		t.Errorf("pending calls under the new id = %d, want 1", n)
 	}
-	// The label index follows: the standalone fts table keys on
-	// session_id and no trigger fires on an id change.
+	// The label index follows: the standalone fts table keys on session_id and no.
 	var fts int
 	if err := st.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM sessions_fts WHERE session_id = 'scout-canonical'`).Scan(&fts); err != nil {
@@ -111,7 +104,6 @@ func TestRenameSessionCarriesTheHistory(t *testing.T) {
 	if fts != 0 {
 		t.Errorf("sessions_fts still carries the old id (%d rows)", fts)
 	}
-	// The message index agrees with the table.
 	var hits int
 	if err := st.db.QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'anomalies'`).Scan(&hits); err != nil {
@@ -134,11 +126,10 @@ func TestRenameSessionNoOps(t *testing.T) {
 	if _, err := os.Stat(missing); !os.IsNotExist(err) {
 		t.Error("the rename created a store file for a home that never ran")
 	}
-	// An absent old id is the already-migrated case.
 	if err := RenameSession(dsn, "ghost", "scout-canonical"); err != nil {
 		t.Fatalf("RenameSession(absent id) = %v, want nil", err)
 	}
-	// An occupied target is never merged into.
+	// An occupied target is never merged.
 	st, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open: %v", err)

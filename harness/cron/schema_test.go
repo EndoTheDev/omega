@@ -1,11 +1,6 @@
 package cron
 
-// schema_test.go: the async cron overhaul (card t_ecec864e) - the
-// interval kind alongside the 5-field cron grammar, the per-job
-// agent/model fields under the defaulting law, and the fire target
-// dispatch (in-process default agent, continuous-agent wake, bad agent
-// = clear logged error). The save/delete editor write face is pinned
-// in save_test.go.
+// schema_test.go: the async cron overhaul.
 
 import (
 	"context"
@@ -23,7 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// --- schema: kinds, minutes, schedule laws ---
+// schema: kinds, minutes, schedule laws
 
 func TestIntervalKindParses(t *testing.T) {
 	raw := `jobs:
@@ -82,7 +77,7 @@ func TestIntervalKindValidation(t *testing.T) {
 	}
 }
 
-// --- schema: the deliver enum + legacy aliases ---
+// schema: the deliver enum + legacy aliases
 
 func TestDeliverEnumResolution(t *testing.T) {
 	cases := []struct{ raw, want string }{
@@ -100,19 +95,17 @@ func TestDeliverEnumResolution(t *testing.T) {
 			t.Errorf("DeliverTarget(%q) = %q, want %q", c.raw, got, c.want)
 		}
 	}
-	// unknown value rejects at load
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: smoke-signal\n")); err == nil {
 		t.Error("unknown deliver accepted")
 	}
-	// legacy journal keeps its byte-identical shape: empty file, the
-	// journal date naming
+	// legacy journal keeps its byte-identical shape: empty file, the journal date naming
 	j := Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p", Deliver: deliverJournal}
 	if j.DeliverTarget() != deliverAppendToFile || j.File != "" {
 		t.Errorf("journal alias target = %q, want append-to-file with empty file", j.DeliverTarget())
 	}
 }
 
-// --- schema: agent + model fields, the defaulting law ---
+// schema: agent + model fields, the defaulting law
 
 func TestAgentDefaultLaw(t *testing.T) {
 	if got := (Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p"}).ResolveAgent(); got != agent.DefaultAgentName {
@@ -121,11 +114,9 @@ func TestAgentDefaultLaw(t *testing.T) {
 	if got := (Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p", Agent: "scout"}).ResolveAgent(); got != "scout" {
 		t.Errorf("authored agent lost: %q", got)
 	}
-	// syntax-only load-time validation
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    agent: SCOUT!!\n")); err == nil {
 		t.Error("malformed agent name accepted at load")
 	}
-	// the model field rides through parse untouched
 	cfg, err := ParseConfig([]byte("jobs:\n  - name: x\n    kind: interval\n    minutes: 5\n    prompt: p\n    model: glm-5.3\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -145,10 +136,7 @@ func TestFileFieldValidation(t *testing.T) {
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: /absolute\n")); err == nil {
 		t.Error("absolute file path accepted")
 	}
-	// windows rooted-but-driveless shapes (no volume prefix, so IsAbs
-	// misses them): rooted means escape-shaped, rejected on windows.
-	// On posix /absolute/path is plain IsAbs; \rooted is a legal
-	// (if odd) file name and stays accepted.
+	// windows rooted-but-driveless shapes (no volume prefix, so IsAbs misses them).
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: append-to-file\n    file: /absolute/path\n")); err == nil {
 		t.Error("rooted file path /absolute/path accepted")
 	}
@@ -171,7 +159,7 @@ func TestFileFieldValidation(t *testing.T) {
 	}
 }
 
-// --- the interval schedule ---
+// the interval schedule
 
 func TestEveryScheduleNext(t *testing.T) {
 	// the grid is aligned to epoch minutes: an exact boundary returns
@@ -190,7 +178,6 @@ func TestEveryScheduleNext(t *testing.T) {
 	if got := s.Next(noisy); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("Next(noisy) = %v, want the next grid point", got)
 	}
-	// crossing hours and days on uneven intervals
 	cases := []struct {
 		minutes int
 		from    time.Time
@@ -235,7 +222,6 @@ func TestIntervalJobCatchUpFiresOnGrid(t *testing.T) {
 	// evaluate the catch-up from a point OFF the 10-minute grid (the
 	// runner's fixed `now`, on whole hours, sits exactly on it)
 	now := r.now().Add(-4 * time.Minute)
-	// last fire 25 minutes ago: one grid point was missed
 	r.lastFire["pulse"] = now.Add(-25 * time.Minute).Unix()
 	r.catchUp(context.Background(), now)
 	select {
@@ -243,8 +229,6 @@ func TestIntervalJobCatchUpFiresOnGrid(t *testing.T) {
 	default:
 		t.Fatal("catch-up did not fire the interval job")
 	}
-	// the recorded fire is the missed grid time: a restart before the
-	// next point does not fire again
 	last, _ := r.lastFireOf("pulse")
 	if last >= now.Unix() {
 		t.Fatalf("catch-up recorded %d, want the missed grid time < %d", last, now.Unix())
@@ -278,12 +262,9 @@ func TestIntervalJobNextFireInInspector(t *testing.T) {
 	}
 }
 
-// --- the defaulting law at fire time: model override ---
+// the defaulting law at fire time: model override
 
-// streamSpy records the ModelName of the provider each Stream rides,
-// into a recorder shared by every WithModel derivation - so the test
-// sees both the inherited and the overridden stream against one log.
-// WithModel derives a NEW spy around the copy (the copy discipline).
+// streamSpy records the ModelName of the provider each Stream rides, into a recorder.
 type modelLog struct {
 	mu   sync.Mutex
 	seen []string
@@ -340,8 +321,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	r.ag = agent.NewAgent(spawner, nil, 0)
 	r.ag.SetLoopProvider(loop.Loop{})
 
-	// the defaulting law, model side: empty model = the session
-	// provider model - the base provider streams, no derivation
 	if _, err := r.agentTurn(context.Background(), "s1", Job{Name: "m", Prompt: "p"}, "p"); err != nil {
 		t.Fatal(err)
 	}
@@ -352,8 +331,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	if _, err := r.agentTurn(context.Background(), "s2", Job{Name: "m", Prompt: "p", Model: "cron-model"}, "p"); err != nil {
 		t.Fatal(err)
 	}
-	// the derived spy sees the override; the base provider still
-	// reports the session model afterwards (no shared-state mutation)
 	for i := 0; i < 200; i++ {
 		if got := spawner.log.last(); got == "cron-model" {
 			break
@@ -368,7 +345,7 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	}
 }
 
-// --- wake-target dispatch ---
+// wake-target dispatch
 
 func TestWakeTickCarriesModel(t *testing.T) {
 	var got wakeTickPayload
@@ -398,13 +375,11 @@ func TestContinuousAgentTargetWakeAndBadAgent(t *testing.T) {
 	r.tickEmit = func(p wakeTickPayload) { ticks = append(ticks, p) }
 	ctx := context.Background()
 
-	// a main-home job aimed at a continuous agent: the wake fires
 	r.fire(ctx, Job{Name: "patrol", Schedule: "0 8 * * *", Prompt: "go", Deliver: deliverContinuous, Agent: "scout", Enabled: boolPtr()}, r.now())
 	if len(ticks) != 1 || ticks[0].Agent != "scout" {
 		t.Fatalf("continuous-agent fire produced %d ticks, want one aimed at scout: %+v", len(ticks), ticks)
 	}
 
-	// unknown agent: clear error in the job log, scheduler standing
 	r.fire(ctx, Job{Name: "ghost", Schedule: "0 8 * * *", Prompt: "go", Deliver: deliverContinuous, Agent: "nobody-here", Enabled: boolPtr()}, r.now())
 	if len(ticks) != 1 {
 		t.Fatalf("a bad agent wake must not emit a tick: %+v", ticks)
@@ -413,7 +388,6 @@ func TestContinuousAgentTargetWakeAndBadAgent(t *testing.T) {
 		t.Errorf("bad agent error not logged clearly: %v", rec.snapshot())
 	}
 
-	// an agent with no continuous home (main): same clear-error lane
 	r.fire(ctx, Job{Name: "main-wake", Schedule: "0 8 * * *", Prompt: "go", Deliver: deliverContinuous, Enabled: boolPtr()}, r.now())
 	if len(ticks) != 1 {
 		t.Fatalf("the default agent must not wake as a fire: %+v", ticks)
@@ -422,15 +396,13 @@ func TestContinuousAgentTargetWakeAndBadAgent(t *testing.T) {
 		t.Errorf("non-continuous agent error not logged: %v", rec.snapshot())
 	}
 
-	// an in-process deliver with a non-default agent: clear error,
-	// never a wrong-persona run
+	// an in-process deliver with a non-default agent: clear error, never a wrong-persona.
 	r.fire(ctx, Job{Name: "misplaced", Schedule: "0 8 * * *", Prompt: "go", Deliver: deliverNewSession, Agent: "scout", Enabled: boolPtr()}, r.now())
 	if !rec.waitContains("runs in-process as the default agent", 2*time.Second) {
 		t.Errorf("wrong-target error not logged: %v", rec.snapshot())
 	}
 
-	// in-process fires with an EMPTY agent field just run: the
-	// defaulting law's silent inheritance case
+	// in-process fires with an EMPTY agent field just run.
 	r.store = nil
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) { return "ok", nil }
 	r.fire(ctx, Job{Name: "plain", Schedule: "0 8 * * *", Prompt: "go", Enabled: boolPtr()}, r.now())
@@ -452,7 +424,6 @@ func TestAppendToFileDeliver(t *testing.T) {
 	if !strings.Contains(string(text), "## filer - ") || !strings.Contains(string(text), "the report") {
 		t.Errorf("file appendix wrong: %q", text)
 	}
-	// the legacy journal alias: empty file = the journal/date naming
 	r.fire(ctx, Job{Name: "journaled", Schedule: "0 8 * * *", Prompt: "p", Deliver: deliverJournal, Enabled: boolPtr()}, when)
 	jt, err := os.ReadFile(filepath.Join(home, "journal", when.Format("2006-01-02")+".md"))
 	if err != nil {

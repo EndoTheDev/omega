@@ -1,4 +1,4 @@
-// omega webui: the status bar's two zones (card t_8fd38f88).
+// omega webui: the status bar's two zones.
 // The rulings this pins, one test each:
 //   1. TWO zones - LEFT work context (workdir), RIGHT live metrics + build.
 //   2. the workdir selector lives in the bar (the composer chip is gone).
@@ -30,7 +30,7 @@ const statusBar = () => src("components/shell/StatusBar.vue");
 const appVue = () => src("app.vue");
 const css = () => src("assets/css/main.css");
 
-// --- 4a. the count: the panel payload's still-pending calls ---------------
+// 4a.
 
 const payload = (rows: ChatPayloadWire["rows"]): ChatPayloadWire => ({
   session: "s1",
@@ -127,7 +127,7 @@ describe("chatPanelPendingCount: the open session's pending calls", () => {
   });
 });
 
-// --- 1/2/3/5/7. the bar's shape ------------------------------------------
+// 1/2/3/5/7.
 
 describe("the bar's zones and the closed clickable set", () => {
   it("renders exactly two zones: health + work context LEFT, metrics + version RIGHT", () => {
@@ -135,7 +135,7 @@ describe("the bar's zones and the closed clickable set", () => {
     assert.equal((bar.match(/class="zone left"/g) ?? []).length, 1);
     assert.equal((bar.match(/class="zone right"/g) ?? []).length, 1);
     const left = bar.slice(bar.indexOf('class="zone left"'), bar.indexOf('class="zone right"'));
-    // card t_5656d52f: the health segment LEADS the bar, the picker follows
+    // the health segment LEADS the bar, the picker follows
     assert.match(left, /^[^]*class="seg seg-btn health"/, "health is in the left zone");
     assert.ok(
       left.indexOf('class="seg seg-btn health"') < left.indexOf("<WorkspaceSelect"),
@@ -151,15 +151,14 @@ describe("the bar's zones and the closed clickable set", () => {
     const messages = right.indexOf("{{ messageCount }} messages");
     assert.ok(version > 0, "the version segment is still in the bar");
     assert.ok(messages > 0 && messages < version, "moved AFTER the messages segment");
-    // nothing else follows it: the version is the last segment in the zone
     assert.doesNotMatch(
       right.slice(version),
       /class="seg( |")/,
       "the version is the last segment in the right zone",
     );
-    // card t_be30543a: the segment reads the short version ALONE - the
-    // uptime the bar used to repeat ("· up 8m 20s") moved into the health
-    // popover, so formatUp must not render in this segment any more.
+    // the segment reads the short version ALONE - the uptime the bar used to repeat ("·
+    // up 8m 20s") moved into the health popover, so formatUp must not render in this
+    // segment any more.
     const seg = right.slice(version, right.indexOf("</span>", version));
     assert.match(seg, /\{\{ shortVersion\(version\) \}\}/, "the segment renders the short version");
     assert.doesNotMatch(seg, /formatUp/, "the bar segment no longer renders the uptime");
@@ -168,14 +167,12 @@ describe("the bar's zones and the closed clickable set", () => {
 
   it("the clickable set is CLOSED: workdir, health, pending - nothing else", () => {
     const bar = statusBar();
-    // every <button in the bar, by its class list
     const buttons = [...bar.matchAll(/<button[\s\S]*?class="([^"]*)"/g)].map((m) => m[1]);
     assert.deepEqual(
       buttons.sort(),
       ["seg seg-btn health", "seg seg-btn pending hide-sm"],
       "exactly the health + pending segments are buttons (workdir rides the picker component)",
     );
-    // display-only segments stay spans - no button block carries them
     const blocks = [...bar.matchAll(/<button[\s\S]*?<\/button>/g)].map((m) => m[0]);
     for (const title of ["tokens used, active session", "model context window", "generation speed, last run", "chunks per second, last run"]) {
       assert.ok(bar.includes(`title="${title}"`), `segment missing: ${title}`);
@@ -187,7 +184,6 @@ describe("the bar's zones and the closed clickable set", () => {
     const bar = statusBar();
     assert.doesNotMatch(bar, /<ModelSelect/, "the bar renders no model chip");
     assert.doesNotMatch(bar, /:model=|model-name|:thinking/, "the bar binds no model/effort value");
-    // the open tab names the session; the bar takes no session value at all
     assert.doesNotMatch(bar, /sessionRef|:session=|session-title|sessionLabel/, "the bar takes no session prop");
   });
 
@@ -210,30 +206,27 @@ describe("the bar's zones and the closed clickable set", () => {
   });
 });
 
-// --- 6. narrow collapses to health dot + workdir -------------------------
+// 6.
 
 describe("narrow collapse (ruling 6)", () => {
   it("every right-zone metric carries hide-sm; the dot and the picker do not", () => {
     const bar = statusBar();
     const right = bar.slice(bar.indexOf('class="zone right"'));
-    // the messages/streaming, tokens, ctx, rates, pending and version all hide
     for (const cls of [
       'class="seg seg-btn pending hide-sm"',
       'class="seg hide-sm"',
     ]) {
       assert.ok(right.includes(cls), `missing narrow-hide segment: ${cls}`);
     }
-    // the health button itself does NOT hide - only its word does (card
-    // t_5656d52f moved it to the left zone; the narrow law is unchanged)
+    // the health button itself does NOT hide - only its word does
     const left = bar.slice(bar.indexOf('class="zone left"'), bar.indexOf('class="zone right"'));
     assert.match(left, /class="seg seg-btn health"\s+type="button"[\s\S]{0,400}<span class="hide-sm">/, "only the label hides, the dot stays");
     assert.equal((left.match(/hide-sm/g) ?? []).length, 1, "the dot is the ONLY thing left on a narrow bar besides the picker");
-    // and the existing utility does the hiding (no second mechanism)
     assert.match(css(), /\.statusbar \.hide-sm \{ display: none; \}/, "the hide-sm utility still backs the collapse");
   });
 });
 
-// --- 5. the health popover's facts ---------------------------------------
+// 5.
 
 describe("the health popover", () => {
   it("opens from the health segment and names its role + state to AT", () => {
@@ -250,33 +243,25 @@ describe("the health popover", () => {
     for (const key of ["server", "provider", "database", "uptime", "last error"]) {
       assert.match(bar, new RegExp(`<span class="hp-key">${key}</span>`), `fact row missing: ${key}`);
     }
-    // the sourced facts read the real /health body
     assert.match(bar, /\{\{ healthy \? "reachable" : "not reachable" \}\}/);
-    // card t_be30543a: the uptime row is the ONE place formatUp renders. A
-    // bare "formatUp appears somewhere" match would pass for the wrong
-    // reason now (the bar dropped its copy), so pin the row AND the count:
-    // exactly one template read, inside the popover.
+    // the uptime row is the ONE place formatUp renders. A bare "formatUp appears
+    // somewhere" match would pass for the wrong reason now (the bar dropped its copy),
+    // so pin the row AND the count: exactly one template read, inside the popover.
     assert.match(
       bar,
       /<span class="hp-key">uptime<\/span>\s*<span class="hp-val">\{\{ formatUp \}\}<\/span>/,
       "the uptime row renders the computed",
     );
     assert.equal((bar.match(/\{\{ formatUp \}\}/g) ?? []).length, 1, "formatUp renders exactly once - the popover row, never the bar");
-    // the three enriched facts (card t_5e2f3095): each renders its wire
-    // verdict when the body carries one...
     assert.match(bar, /\{\{ providerReachable \? "reachable" : "not reachable" \}\}/, "provider row reads its verdict");
     assert.match(bar, /\{\{ databaseHealthy \? "healthy" : "unhealthy" \}\}/, "database row reads its verdict");
     assert.match(bar, /\{\{ lastErrorMessage \|\| "none" \}\}/, "last error row reads the recorded message, or none");
-    // ...and each degrades to not reported when it has no source: three
-    // v-else fallbacks, no invented value anywhere.
     assert.equal((bar.match(/\{\{ NOT_REPORTED \}\}/g) ?? []).length, 3);
     assert.equal((bar.match(/v-else class="hp-val muted"/g) ?? []).length, 3, "every row has an unsourced branch");
   });
 
   it("only names the gap while a row is actually unsourced", () => {
     const bar = statusBar();
-    // the footnote is conditional - a fully sourced popover carries no
-    // apology (the old unconditional note named a build-level gap).
     assert.match(bar, /<p v-if="unsourcedCount" class="hp-note">/);
     assert.match(bar, /if \(!providerSourced\.value\) n\+\+;/);
     assert.match(bar, /if \(!databaseSourced\.value\) n\+\+;/);
@@ -286,20 +271,17 @@ describe("the health popover", () => {
 
   it("decides sourced-vs-unsourced from the wire shapes, not from defaults", () => {
     const bar = statusBar();
-    // a boolean verdict is the only sourced provider/database shape
     assert.match(bar, /typeof props\.providerReachable === "boolean"/);
     assert.match(bar, /typeof props\.databaseHealthy === "boolean"/);
-    // an EMPTY last-error message is sourced ("none since boot"); only an
-    // absent field is the gap
+    // an EMPTY last-error message is sourced ("none since boot").
     assert.match(bar, /typeof props\.lastErrorMessage === "string"/);
-    // the facts are optional props - an older shell passes nothing
     assert.match(bar, /providerReachable\?: boolean \| null;/);
     assert.match(bar, /databaseHealthy\?: boolean \| null;/);
     assert.match(bar, /lastErrorMessage\?: string \| null;/);
   });
 });
 
-// --- 5b. the facts' wiring: /health body -> app shell -> the bar ----------
+// 5b.
 
 describe("the health facts' wiring (card t_5e2f3095)", () => {
   it("the wire types carry the three optional facts", () => {

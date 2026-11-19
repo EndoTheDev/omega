@@ -1,13 +1,5 @@
-// Package notifications is the finished-things store (card
-// t_5d9032d3): one small SQLite record per finished thing - a kanban
-// task completed, a cron fire finished, a dispatched chat run ended -
-// served to the webui bell (badge, dropdown panel, live toasts) and
-// the /notifications command on the extension seam.
-//
-// Records are metadata only: source kind (task | cron | chat), source
-// id, a fixed title line, the verdict (ok | failed) and the read flag.
-// Prompt and session content never enter a notification (privacy law).
-// Retention keeps the 200 newest records, oldest pruned on insert.
+// Package notifications is the finished-things store. Prompt and session content never
+// enter a notification (privacy law).
 package notifications
 
 import (
@@ -32,9 +24,8 @@ const retention = 200
 // a wedged SSE client must never stall a task completion.
 const subscriberBuf = 8
 
-// Store implements finishedThings over SQLite. Safe for
-// concurrent use via *sql.DB (WAL + busy_timeout, the board/session
-// recipe). Live delivery fans out through a mutexed subscriber set.
+// Store implements finishedThings over SQLite. Safe for concurrent use via *sql.DB (WAL
+// + busy_timeout, the board/session recipe).
 type Store struct {
 	db *sql.DB
 
@@ -45,9 +36,7 @@ type Store struct {
 
 // The Offer under the notifications key is the mount-time assertion.
 
-// Open opens (creating if needed) the database at dsn and ensures the
-// schema. ":memory:" works for tests. A dsn inside a data/ directory
-// gets the boot-time data-dir migration first, same as the board.
+// Open opens (creating if needed) the database at dsn and ensures the schema.
 func Open(dsn string) (*Store, error) {
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
@@ -56,10 +45,6 @@ func Open(dsn string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	// An in-memory database lives per connection: a pooled second
-	// connection would see an empty database (the session store's
-	// recipe). One connection keeps :memory: usable under pooling; a
-	// file DSN keeps the full connection pool.
 	if dsn == ":memory:" {
 		db.SetMaxOpenConns(1)
 	}
@@ -71,8 +56,7 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// dsnParams widens a bare file dsn with the WAL + busy_timeout
-// parameters (the same recipe as the board store).
+// dsnParams widens a bare file dsn with the WAL + busy_timeout parameters.
 func dsnParams(dsn string) string {
 	if !strings.Contains(dsn, "?") {
 		return dsn + "?_journal_mode=WAL&_busy_timeout=5000"
@@ -99,8 +83,7 @@ CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read, id);
 	return err
 }
 
-// Close releases the handle; subscribers are dropped first so nothing
-// writes into closed channels.
+// Close releases the handle.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	for id, ch := range s.subs {
@@ -111,9 +94,9 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// Emit inserts one record, prunes beyond retention, and broadcasts the
-// stored record to subscribers. Kind must be task, cron or chat;
-// verdict "" normalizes to ok, "failed" stays, anything else errors.
+// Emit inserts one record, prunes beyond retention, and broadcasts the stored record.
+// Kind must be task, cron or chat; verdict "" normalizes to ok, "failed" stays,
+// anything else errors.
 func (s *Store) Emit(n core.Notice) (core.Notice, error) {
 	switch n.Kind {
 	case "task", "cron", "chat":
@@ -140,9 +123,6 @@ VALUES (?, ?, ?, ?, ?, 0)`, n.Kind, n.SourceID, n.Title, n.Verdict, n.CreatedAt)
 	if err != nil {
 		return core.Notice{}, err
 	}
-	// Prune beyond retention: keep the retention-row-newest set. The
-	// boundary is the retention-th newest row's id (ids only ever
-	// grow, so id order is time order even across pruned gaps).
 	if _, err := s.db.Exec(`DELETE FROM notifications WHERE id < (
 SELECT id FROM notifications ORDER BY id DESC LIMIT 1 OFFSET ?)`, retention-1); err != nil {
 		return core.Notice{}, fmt.Errorf("prune: %w", err)
@@ -188,9 +168,7 @@ func (s *Store) Subscribe() (<-chan core.Notice, func()) {
 	return ch, cancel
 }
 
-// List returns records newest-first. unreadOnly filters to unread
-// rows; limit <= 0 takes the server default (50); offset pages deeper.
-// unread counts over the whole set, not the page.
+// List returns records newest-first.
 func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	unread := 0
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notifications WHERE read = 0`).Scan(&unread); err != nil {
@@ -225,7 +203,7 @@ func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([
 	return out, unread, rows.Err()
 }
 
-// MarkRead flags one record read. An unknown id errors.
+// MarkRead flags one record read.
 func (s *Store) MarkRead(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE notifications SET read = 1 WHERE id = ?`, id)
 	if err != nil {
@@ -243,11 +221,7 @@ func (s *Store) MarkAllRead(ctx context.Context) error {
 	return err
 }
 
-// Clear deletes every record (the webui tab's clear-all button): the
-// feed empties, not just its read flags. The id sequence keeps its
-// place - ids only ever grow, so the next emitted record still orders
-// correctly against any page a client cached. Returns the deleted
-// count so a response can say what it removed.
+// Clear deletes every record (the webui tab's clear-all button).
 func (s *Store) Clear(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM notifications`)
 	if err != nil {

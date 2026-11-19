@@ -1,9 +1,4 @@
-// Package skills implements the skills seam: scanning a directory
-// for <name>/SKILL.md skill files (one folder per skill, the file
-// always named SKILL.md, the folder name is the skill name),
-// parsing YAML frontmatter, and providing the skills domain tool
-// (read/write/update) and
-// /skills slash command.
+// Package skills implements the skills seam.
 package skills
 
 import (
@@ -20,47 +15,24 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// SkillsProvider implements core.SkillsProvider by scanning a
-// directory for <name>/<name>.md skill files. SharedDir (optional) is
-// scanned before Dir and is every agent's shared skill home; Dir is
-// the agent's own. The merge is by skill NAME in scan order - first
-// match wins, so shared entries win name collisions (the card's
-// resolution order is literal: shared first).
+// SkillsProvider implements core.SkillsProvider by scanning a directory.
 type SkillsProvider struct {
 	Dir       string
 	SharedDir string
-	// Disabled is the config.yaml disabled.skills fold (v0.14.1): the
-	// names a prompt build never advertises. Unset by default. The
-	// disableMu guards it: prompt builds read while the toggle seam
-	// swaps the list live.
+	// Disabled is the config.yaml disabled.skills fold (v0.14.1): the names a prompt build
+	// never advertises.
 	Disabled []string
 
-	// Allow/AllowSet are the explicit allowlist (0.17.3 make-over):
-	// when AllowSet, ONLY the named skills load at all - not advertised,
-	// not listed, not readable. Empty + set = no skills, the always-off
-	// law's default for a secondary agent. Unset = the host's own mount
-	// and every skill loads.
 	Allow    []string
 	AllowSet bool
 
-	// Curator plumbing (card t_9972dfd0). providerFn reads the
-	// provider seam LIVE at every consult (api.Provider()) - a module
-	// toggle that swaps the provider is seen the next pass, and a
-	// missing provider skips the LLM proposals instead of rewriting
-	// anything. curatorModel is the consult slot (card t_fc0b2f2d),
-	// live since t_f78acfd6: the host's hot-apply swaps it
-	// (SetCuratorModel) on every settings save and the next pass
-	// re-reads it - empty = the session provider's own model.
 	providerFn   func() agent.Provider
 	curatorModel string
 
 	disableMu sync.RWMutex
 }
 
-// SetCuratorModel swaps the curator's consult slot live (card
-// t_f78acfd6, the compactor/approval SetConfig pattern): the host's
-// hot-apply pushes the provider.skills_model value, the next curator
-// action consults it.
+// SetCuratorModel swaps the curator's consult slot live.
 func (sp *SkillsProvider) SetCuratorModel(model string) {
 	sp.disableMu.Lock()
 	defer sp.disableMu.Unlock()
@@ -74,16 +46,14 @@ func (sp *SkillsProvider) curatorSlot() string {
 	return sp.curatorModel
 }
 
-// SetDisabled swaps the disable list live (the host's toggle seam and
-// hot config reload take this one path).
+// SetDisabled swaps the disable list live.
 func (sp *SkillsProvider) SetDisabled(names []string) {
 	sp.disableMu.Lock()
 	defer sp.disableMu.Unlock()
 	sp.Disabled = names
 }
 
-// SetProviderFn installs the live provider reader (the plugin passes
-// api.Provider); the CLI passes a config-built provider.
+// SetProviderFn installs the live provider reader (the plugin passes api.Provider).
 func (sp *SkillsProvider) SetProviderFn(fn func() agent.Provider) { sp.providerFn = fn }
 
 // provider returns the consult provider for one pass, nil-safe.
@@ -101,9 +71,7 @@ func (sp *SkillsProvider) disabledNames() []string {
 	return sp.Disabled
 }
 
-// scanDirs returns the ordered directory list to scan: SharedDir
-// (set) first, then dir (the explicit argument; a missing dir yields
-// an empty slice, not an error).
+// scanDirs returns the ordered directory list to scan.
 func (sp *SkillsProvider) scanDirs(dir string) []string {
 	var dirs []string
 	if sp.SharedDir != "" {
@@ -115,11 +83,7 @@ func (sp *SkillsProvider) scanDirs(dir string) []string {
 	return dirs
 }
 
-// LoadSkills scans the configured directories (shared first, then
-// dir) for <name>/SKILL.md skill files and returns them, deduped by
-// name with the first (shared) occurrence winning. Missing
-// directories return an empty slice, not an error. If dir is empty,
-// uses the provider's configured Dir.
+// LoadSkills scans the configured directories (shared first, then dir).
 func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 	if dir == "" {
 		dir = sp.Dir
@@ -143,10 +107,7 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 			out = append(out, s)
 		}
 	}
-	// The explicit allowlist (0.17.3 make-over): a set allowlist is the
-	// whole registry for this agent - an unnamed skill does not load at
-	// all, so it is not advertised, not listed and not readable. An
-	// UNSET allowlist is the host's own mount and filters nothing.
+	// The explicit allowlist (0.17.3 make-over).
 	if sp.AllowSet {
 		allowed := make(map[string]bool, len(sp.Allow))
 		for _, name := range sp.Allow {
@@ -163,11 +124,8 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 	return out, nil
 }
 
-// ListSkills is the read-only inspector snapshot (core.SkillsLister,
-// card t_db430fea): a fresh scan of the configured directory, sorted by
-// name. The directory is the live source of truth - a re-scan on every
-// listing is the point; there is no cached loader state to invalidate.
-// A missing directory is an empty inventory, not an error.
+// ListSkills is the read-only inspector snapshot: a fresh scan of the configured
+// directory, sorted by name.
 func (sp *SkillsProvider) ListSkills() ([]Skill, error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
@@ -177,12 +135,7 @@ func (sp *SkillsProvider) ListSkills() ([]Skill, error) {
 	return skills, nil
 }
 
-// SkillsEntries is the std-typed inventory view consumers read
-// through the universal registry (part 3 seam constitution): the
-// merged skill set as name -> description and name -> content pairs,
-// one fresh scan, the merge law's winner per name. A missing directory
-// is an empty inventory. Disabled names stay in (the registry tab
-// lists them; exclusion is the prompt section's business).
+// SkillsEntries is the std-typed inventory view consumers read through the universal.
 func (sp *SkillsProvider) SkillsEntries() (index map[string]string, contents map[string]string, err error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
@@ -197,10 +150,8 @@ func (sp *SkillsProvider) SkillsEntries() (index map[string]string, contents map
 	return index, contents, nil
 }
 
-// SkillRead reads one skill by name through the merge law's winner
-// rule - the std-typed face of ReadSkill for consumers that cannot
-// name the capsule type. The error (the not-found line with the
-// available names) passes through unchanged.
+// SkillRead reads one skill by name through the merge law's winner rule - the std-typed
+// face of ReadSkill for consumers that cannot name the capsule type.
 func (sp *SkillsProvider) SkillRead(name string) (description, content string, err error) {
 	s, err := sp.ReadSkill(name)
 	if err != nil {
@@ -209,19 +160,13 @@ func (sp *SkillsProvider) SkillRead(name string) (description, content string, e
 	return s.Description, s.Content, nil
 }
 
-// promptSectionOrder places the Available Skills section behind the
-// memory snapshot (10) and ahead of the tools list (30).
+// promptSectionOrder places the Available Skills section behind the memory snapshot.
 const promptSectionOrder = 20
 
-// PromptSections renders the Available Skills section: the read
-// usage instruction plus one line per skill. Empty when no skills are
-// installed. Owned here - the usage instruction describes this module's
-// tool, not the prompt builder's.
+// PromptSections renders the Available Skills section.
 func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	skills, _ := sp.LoadSkills("")
-	// The disabled.skills fold (v0.14.1): a disabled skill stays in the
-	// registry (the tab lists it, the reader tool reads it) and leaves
-	// the prompt - exclusion is prompt-build business, nothing else.
+	// The disabled.skills fold (v0.14.1).
 	if off := sp.disabledNames(); len(off) > 0 {
 		offSet := make(map[string]bool, len(off))
 		for _, n := range off {
@@ -248,10 +193,7 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-// skillsVerbs is the skills verb set, the one list the batch-shaped
-// consumers (the ledger, the nudge) read. The registry unification B
-// ruling (t_d8fbad57) split the flat action-protocol `skills` tool
-// into skills.<verb> wire tools.
+// skillsVerbs is the skills verb set, the one list the batch-shaped consumers.
 var skillsVerbs = []string{"read", "write", "update", "curate"}
 
 // prop assembles one typed schema property.
@@ -259,10 +201,9 @@ func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
 
-// object assembles the tool's JSON object schema. required names the
-// args THIS verb cannot run without - its own list, never another
-// verb's; a verb with no required args (curate - the bare call is
-// the default pass) omits the key entirely.
+// object assembles the tool's JSON object schema. required names the args THIS verb
+// cannot run without - its own list, never another verb's; a verb with no required args
+// (curate - the bare call is the default pass) omits the key entirely.
 func object(props map[string]any, required ...string) map[string]any {
 	schema := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -271,10 +212,7 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// Tools returns the dotted skills wire: one tool per verb (the
-// registry unification B ruling, t_d8fbad57 - the flat action-protocol
-// `skills` tool is gone). Each schema carries ONLY its own args; no
-// action property anywhere, the verb IS the tool name.
+// Tools returns the dotted skills wire: one tool per verb.
 func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"skills.read": {
@@ -312,8 +250,7 @@ func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runCurate is skills.curate's Run: one full pass plus a
-// rollback/report sub-verb over the same audit ledger.
+// runCurate is skills.curate's Run.
 func (sp *SkillsProvider) runCurate(ctx context.Context, args map[string]any) (string, error) {
 	out, err := sp.HandleCommand(ctx, "/curator", strArg(args["verb"]))
 	if out == "" && err == nil {
@@ -322,10 +259,9 @@ func (sp *SkillsProvider) runCurate(ctx context.Context, args map[string]any) (s
 	return out, err
 }
 
-// validSkillName enforces the loader's folder-name law (card
-// t_5baad951): the folder name IS the skill name, so it must be a
-// single directory component - no separators, no hidden dot dirs, no
-// padding whitespace.
+// validSkillName enforces the loader's folder-name law: the folder name IS the skill
+// name, so it must be a single directory component - no separators, no hidden dot dirs,
+// no padding whitespace.
 func validSkillName(name string) bool {
 	if name == "" || name == "." || name == ".." {
 		return false
@@ -339,12 +275,9 @@ func validSkillName(name string) bool {
 	return true
 }
 
-// runWrite is the write-action handler: create <dir>/<name>/SKILL.md
-// with the loader's frontmatter shape (--- / description: / ---). The
-// description must stay one line (the loader reads a single scalar
-// line) and the body must not open with a --- fence (the parser would
-// eat it as the frontmatter close). A re-parse through loadSkill
-// pins the composed shape before the confirmation returns.
+// runWrite is the write-action handler. The description must stay one line (the loader
+// reads a single scalar line) and the body must not open with a --- fence (the parser
+// would eat it as the frontmatter close).
 func (sp *SkillsProvider) runWrite(ctx context.Context, args map[string]any) (string, error) {
 	name := strings.TrimSpace(strArg(args["name"]))
 	if !validSkillName(name) {
@@ -383,23 +316,16 @@ func (sp *SkillsProvider) runWrite(ctx context.Context, args map[string]any) (st
 	if err := os.WriteFile(skillFile, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write SKILL.md: %w", err)
 	}
-	// the loader's parse of what we just wrote is the shape proof
 	s, err := loadSkill(skillFile)
 	if err != nil || s.Description != description {
 		return "", fmt.Errorf("write: composed SKILL.md failed the loader's frontmatter parse (description %q)", description)
 	}
-	// Provenance (card t_9972dfd0): skills.write stamps the
-	// agent-created class - frontmatter carries `author: agent`, and
-	// the usage record anchors the staleness clock at creation.
 	TouchUsage(dir, name, "write", "agent")
 	return "created skill " + name + " at " + skillDir, nil
 }
 
-// runUpdate is the update-action handler: resolve the skill exactly
-// the way runRead does (shared dir first, own dir second - the winner
-// of the merge law), then an exact-once targeted replace in its
-// SKILL.md file. Frontmatter must survive: a file that opened with
-// --- must still open with ---.
+// runUpdate is the update-action handler: resolve the skill exactly the way runRead.
+// Frontmatter must survive: a file that opened with --- must still open with ---.
 func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (string, error) {
 	name := strings.TrimSpace(strArg(args["name"]))
 	if !validSkillName(name) {
@@ -435,15 +361,12 @@ func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return "", err
 	}
-	// The persisted lesson resets the nudge counter (ObserveToolRun)
-	// and ages the record; "write" here is a patch - a write action on
-	// an existing skill is still activity, not a new author stamp.
+	// The persisted lesson resets the nudge counter (ObserveToolRun) and ages the record.
 	TouchUsage(filepath.Dir(filepath.Dir(skillFile)), name, "write", "")
 	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
 }
 
-// writePatched writes the patched content back and re-parses it
-// through the loader - the same shape gate runWrite applies.
+// writePatched writes the patched content back and re-parses it through the loader.
 func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write SKILL.md: %w", err)
@@ -454,15 +377,9 @@ func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 	return path, nil
 }
 
-// ReadSkill is the single-content read seam (core.SkillsReader, card
-// t_36ceb99b): one skill's parsed SKILL.md by name - Name (the folder
-// name, the same law every listing shows), Description (frontmatter) and
-// Content (the body under the fence). Resolution follows the LoadSkills
-// merge order (shared first, own second), so a name collision reads the
-// same winner the prompt listing and runRead use.
+// ReadSkill is the single-content read seam.
 func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
-	// The explicit allowlist (0.17.3 make-over) is the agent's whole
-	// registry: a skill it does not name is not readable either.
+	// The explicit allowlist (0.17.3 make-over) is the agent's whole registry.
 	if sp.AllowSet && !sp.allowed(name) {
 		return Skill{}, fmt.Errorf("skill %q is not enabled for this agent (its allowlist names %s)", name, sp.allowList())
 	}
@@ -489,8 +406,7 @@ func (sp *SkillsProvider) allowed(name string) bool {
 	return false
 }
 
-// allowList renders the allowlist for a refusal message ("none" when the
-// agent enabled no skills at all).
+// allowList renders the allowlist for a refusal message.
 func (sp *SkillsProvider) allowList() string {
 	if len(sp.Allow) == 0 {
 		return "none"
@@ -498,9 +414,7 @@ func (sp *SkillsProvider) allowList() string {
 	return strings.Join(sp.Allow, ", ")
 }
 
-// resolveSkillFile finds a skill's SKILL.md by name in the scan order
-// LoadSkills merges by (shared first, then own): the winner of a name
-// collision is the file the update action patches.
+// resolveSkillFile finds a skill's SKILL.md by name in the scan order LoadSkills.
 func (sp *SkillsProvider) resolveSkillFile(name string) (string, error) {
 	dirs := sp.scanDirs(sp.Dir)
 	if len(dirs) == 0 {
@@ -520,8 +434,7 @@ func (sp *SkillsProvider) resolveSkillFile(name string) (string, error) {
 	return "", fmt.Errorf("skill %q not found. Available: %s", name, strings.Join(names, ", "))
 }
 
-// strArg is the plain string read every action does on an untyped
-// tool-args map.
+// strArg is the plain string read every action does on an untyped tool-args map.
 func strArg(v any) string {
 	s, _ := v.(string)
 	return s
@@ -537,9 +450,7 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 	if len(dirs) == 0 {
 		return "", fmt.Errorf("skills directory not configured")
 	}
-	// Read resolution follows the LoadSkills merge order: shared is
-	// scanned first, then the agent's own dir - so a name present in
-	// both resolves to the same winner the prompt listing shows.
+	// Read resolution follows the LoadSkills merge order.
 	var lastIsNotExist bool
 	for _, dir := range dirs {
 		skillFile := filepath.Join(dir, name, "SKILL.md")
@@ -599,9 +510,7 @@ func (sp *SkillsProvider) handleSkillsCommand() (string, error) {
 	return sb.String(), nil
 }
 
-// handleCuratorCommand is /curator: a pass ("" or "run"), the audit
-// ledger surface ("ledger"), staleness ("stale"), and the
-// single-edit revert ("rollback <id>").
+// handleCuratorCommand is /curator.
 func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string) (string, error) {
 	verb, rest := strings.TrimSpace(args), ""
 	if i := strings.IndexAny(verb, " 	"); i >= 0 {
@@ -640,7 +549,6 @@ func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string)
 		}
 		var sb strings.Builder
 		for _, e := range entries {
-			// id | ts | action | skill | reason
 			fmt.Fprintf(&sb, "%s  %s  %-8s %-16s %s\n", e.ID, e.TS, e.Action, e.Skill, e.Evidence["reason"])
 		}
 		return strings.TrimRight(sb.String(), "\n"), nil
@@ -676,9 +584,9 @@ func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
 	}
 }
 
-// scanSkills scans a directory for <name>/SKILL.md skill files. The
-// folder name is the skill name (card t_5baad951): frontmatter cannot
-// rename a skill, so the parsed name field (retired) is overridden.
+// scanSkills scans a directory for <name>/SKILL.md skill files. The folder name is the
+// skill name: frontmatter cannot rename a skill, so the parsed name field (retired) is
+// overridden.
 func scanSkills(dir string) ([]Skill, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -707,23 +615,17 @@ func scanSkills(dir string) ([]Skill, error) {
 	return skills, nil
 }
 
-// WarnLegacyShape reports skill folders still in the retired format:
-// a directory holding <name>.md with no SKILL.md. Such a folder is
-// invisible to discovery (discovery reads SKILL.md only), and silent
-// loss is how the old <name>.md bug hid - so every legacy folder gets
-// one explicit boot warning naming the skill. The warning goes to
-// stderr unconditionally (logging may be disabled, a NopLogger
-// discards everything) and into the log when a logger is mounted.
-// Boot-only: runtime scans skip the legacy shape, this once-per-boot
-// scan is the visibility contract (card t_5baad951). Returns the
-// warned skill names. No auto-migration - a rename is the fix.
+// WarnLegacyShape reports skill folders still in the retired format. Such a folder is
+// invisible to discovery (discovery reads SKILL.md only), and silent loss is how the
+// old <name>.md bug hid - so every legacy folder gets one explicit boot warning naming
+// the skill. The warning goes to stderr unconditionally and into the log when a logger
+// is mounted. Boot-only: runtime scans skip the legacy shape, this once-per-boot scan
+// is the visibility contract.
 func (sp *SkillsProvider) WarnLegacyShape(logger agent.LoggerProvider) []string {
 	var warned []string
 	for _, dir := range sp.scanDirs(sp.Dir) {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
-			// Best-effort boot diagnostic; the runtime scan surfaces
-			// real read errors (LoadSkills returns them).
 			continue
 		}
 		for _, entry := range entries {
@@ -754,9 +656,7 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// loadSkill reads a single SKILL.md file and parses its YAML
-// frontmatter. The frontmatter is delimited by --- lines; only the
-// description is read from it - the skill name is the folder name.
+// loadSkill reads a single SKILL.md file and parses its YAML frontmatter.
 func loadSkill(path string) (Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {

@@ -1,25 +1,12 @@
 <template>
-  <!-- v0.14.1: the registry-browser list. ONE component, three
-       consumers (skills, tools, agents) - rows with a name, one
-       toggle each, and an expandable detail section. The parent owns
-       the data (fetches + fold state through composables/omega.ts);
-       this renders the rows and drives the toggle - ONE click, ONE
-       write (card t_5051d523: the arm/confirm two-step is dead; it
-       made every row need a double click), rendered with the shared
-       TogglePill (card t_d93864e7). A host without the toggle seam
-       (501) renders the list read-only: no pills, the state text only.
-       v0.14.3: the insights tab joins as the read-only stat consumer -
-       `showState=false` drops the right state text (insight rows
-       have no fold), and the generic #side slot seats a row's right
-       cluster (the CSS width bars the plain renderer can't express).
-       card t_561dc4e0: the rows ride THE ROW LAW - the shared
-       assets/css/registry-row.css anatomy (name / subtitle stack, one
-       right control, hairline separators). The left stack is NAME on
-       line 1, the description dim on line 2; the expander becomes the
-       row's LEAD chevron (the Modules-tab reading); the pill stays
-       the one right control (journey 92's button.registry-toggle
-       selector). The row's own geometry lives in the anatomy file --
-       this stylesheet keeps only the row's specifics. -->
+  <!--
+    v0.14.1: the registry-browser list.
+    v0.14.3: the insights tab joins as the read-only stat consumer - `showState=false`
+    drops the right state text (insight rows have no fold), and the generic #side slot
+    seats a row's right cluster (the CSS width bars the plain renderer can't express).:
+    the rows ride THE ROW LAW - the shared assets/css/registry-row.css anatomy (name /
+    subtitle stack, one right control, hairline separators).
+  -->
   <section
     class="registry-list"
     :class="{ 'feel-sessions': feel === 'sessions' }">
@@ -48,12 +35,7 @@
             :aria-expanded="isExpanded(r.name)"
             :aria-label="isExpanded(r.name) ? `collapse ${r.name}` : `expand ${r.name}`"
             @click.stop="flipExpand(r)">
-            <!-- card t_db378a0d: the expander glyph is the CONSUMER's - the
-                 registry family keeps the text chevron it has always
-                 rendered, and a tab adopting the sessions vocabulary asks
-                 for `expander="chevron"` (the sessions sidebar's lucide
-                 chevron-right, 12px, stroke, currentColor) which rotates
-                 90deg while open. -->
+            <!-- the expander glyph is the CONSUMER's. -->
             <Icon
               v-if="expander === 'chevron'"
               class="registry-expander-icon"
@@ -63,15 +45,9 @@
             <template v-else>{{ isExpanded(r.name) ? "▾" : "▸" }}</template>
           </button>
           <div class="reg-row-main">
-            <!-- the NAME LINE (card t_0a9edc72): the row law says a name's
-                 companion badge rides BESIDE THE NAME (the agents tab's
-                 `main`), and the #side slot below seats things beside the
-                 whole stack - right of the text column, which lands at the
-                 subtitle's end and reads as a suffix on the facts line. So
-                 the name gets its own line wrapper and a `name-side` slot;
-                 an empty slot renders nothing visible, and the name keeps
-                 the row law's ellipsis (min-width 0 / shrink in the
-                 anatomy file). -->
+            <!--
+              the NAME LINE: the row law says a name's companion badge rides BESIDE.
+            -->
             <div class="reg-row-name-line">
               <button
                 v-if="openableRow(r)"
@@ -86,12 +62,6 @@
                 name="name-side"
                 :row="r" />
             </div>
-            <!-- the row law's subtitle: a flex line so bars/badges can
-                 ride it; the dim 11px rides the .reg-row-sub anatomy
-                 class (the consumer keeps no row typography). Card
-                 t_2d8deb8c: the status vocabulary rides this line too -
-                 a colored dot + the short state word (green = active,
-                 dim = sleeping), cron's "next HH:MM" placement. -->
             <span
               v-if="r.description || r.status"
               class="reg-row-sub">
@@ -107,11 +77,11 @@
                   aria-hidden="true"></i>{{ r.status.label }}
               </span>
             </span>
-            <!-- card t_10ac04f0 ruling 5: THE PREVIEW LINE - one line of
-                 what the subject last said, with its age at the right
-                 edge. Its own line under the subtitle, so the facts line
-                 keeps its exact shape; a row without a preview renders
-                 byte-identically to before. -->
+            <!--
+              THE PREVIEW LINE - one line of what the subject last said, with its age.
+              Its own line under the subtitle, so the facts line keeps its exact shape;
+              a row without a preview renders byte-identically to before.
+            -->
             <span
               v-if="r.preview"
               class="reg-row-sub reg-row-preview">
@@ -121,24 +91,15 @@
                 class="registry-preview-at">{{ r.previewAt }}</span>
             </span>
           </div>
-          <!-- the generic row side: numbers, bars, badges - things the
-               plain name/desc stack doesn't express; seated on line 1
-               between the name and the right control -->
           <slot
             name="side"
             :row="r" />
-          <!-- the toggle is the shared TogglePill (card t_d93864e7): the
-               MCP tab's pill look, now here too - same 26px pill, same
-               dot. ONE activation applies the write (card t_5051d523):
-               the arm step that ate the first click is gone, and the
-               shared pill carries no armed state to resurrect it. A
-               button whose state comes from the reactive model carries
-               no :checked prop for Vue's prop diff to skip (t_87303e8f),
-               so the checkbox revision-remount machinery is gone with
-               it. A NO-TOGGLE row (card t_db378a0d, the default agent)
-               renders NO control at all, and the consumer's own badge
-               says why - a switch that can never legitimately move is
-               noise, not a safeguard. -->
+          <!--
+            the toggle is the shared TogglePill.
+            A NO-TOGGLE row renders NO control at all, and the consumer's own badge
+            says why - a switch that can never legitimately move is noise, not a
+            safeguard.
+          -->
           <TogglePill
             v-if="toggleable && !r.noToggle"
             class="registry-toggle reg-row-ctrl"
@@ -152,13 +113,12 @@
             class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </div>
-        <!-- card t_2d8deb8c: the under-row note line is gone (ruling 3) -
-             the two-line anatomy is the law, the status word rides the
-             subtitle. Card t_10ac04f0 ruling 5 brought back exactly ONE
-             under-row line (the preview above) for the consumer that has
-             something to say. Card t_5051d523: the armed confirm note
-             died with the arm step - the same consequence text rides the
-             pill's title (toggleHint). -->
+        <!--
+          the under-row note line is gone.
+          brought back exactly ONE under-row line (the preview above) for the consumer
+          that has something to say.: the armed confirm note died with the arm step -
+          the same consequence text rides the pill's title (toggleHint).
+        -->
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -168,9 +128,6 @@
               :key="line"
               class="registry-detail-line"><span>{{ line }}</span></li>
           </ul>
-          <!-- richer consumers (the agents tab renders the config
-               summary + session list) slot in here; plain consumers get
-               the detail lines above only. -->
           <slot
             name="detail"
             :row="r" />
@@ -195,9 +152,6 @@
     type RegistryRow,
   } from "~/composables/omega";
 
-  // The rows the parent built (registry listing + fold flags merged
-  // through withDisabledFlags). toggleable=false when the host
-  // answered 501 (no seam): the list renders read-only.
   const props = withDefaults(
     defineProps<{
       kind: RegistryKind;
@@ -208,34 +162,22 @@
       toggleable?: boolean;
       showState?: boolean;
       emptyText?: string;
-      /** card t_36ceb99b: the name click opens the row's content in a
-          main-pane viewer tab (the skills consumer only; everything else
-          keeps the plain name span and byte-identical renders).
-          card t_81109e1c: a PREDICATE form - the agents tab opens a
-          chat only for a row whose agent has a session to bind, so the
-          rows without one stay plain spans instead of dead buttons. */
+      /**
+       * the name click opens the row's content in a main-pane viewer tab (the skills
+       * consumer only; everything else keeps the plain name span and byte-identical
+       * renders).: a PREDICATE form - the agents tab opens a chat only for a row whose
+       * agent has a session to bind, so the rows without one stay plain spans instead
+       * of dead buttons.
+       */
       openable?: boolean | ((row: RegistryRow) => boolean);
-      /** card t_db378a0d: the row's INTERACTION vocabulary. "quiet" (the
-          default) is the ROW LAW's plain list - hierarchy by typography,
-          one hairline, no boxes - and keeps every registry tab that has
-          not taken its theming round byte-identical. "sessions" adopts
-          the sessions sidebar's row feel for THIS consumer: chip radius,
-          the z1-raised hover, the name brightening to the full text
-          colour, the hairline fading out from under the raised chip, the
-          whole HEAD line as the open surface, and an active row (see
-          `activeName`). Round 1 = the agents tab only; cron / tools /
-          skills / mcp / modules follow in their own rounds. */
+      /**
+       * the row's INTERACTION vocabulary.
+       * "quiet" (the default) is the ROW LAW's plain list - hierarchy by typography,
+       * one hairline, no boxes - and keeps every registry tab that has not taken its
+       * theming round byte-identical.
+       */
       feel?: "quiet" | "sessions";
-      /** the row that carries the sessions ACTIVE treatment - the one the
-          operator has OPEN (the agents tab passes the agent whose session
-          is the focused chat). "" = no row is active. Only meaningful
-          under feel="sessions"; the quiet list ignores it. */
       activeName?: string;
-      /** the expander glyph: "text" renders the registry's own ▸ / ▾,
-          "chevron" the sessions sidebar's lucide chevron-right (12px,
-          stroke, currentColor) rotating 90deg while open. Per consumer,
-          because the registry family's five tabs take the vocabulary one
-          round at a time. */
       expander?: "text" | "chevron";
     }>(),
     {
@@ -255,12 +197,7 @@
   const openableRow = (r: RegistryRow): boolean =>
     typeof props.openable === "function" ? props.openable(r) : props.openable;
 
-  // toggle carries the CONFIRMED direction: the parent PUTs and
-  // re-renders the rows from the response fold. expand tells the
-  // parent a row opened (the agents tab lazily loads sessions). open
-  // (card t_36ceb99b): the NAME click opens the row's content in a
-  // main-pane viewer tab - opt-in via `openable` (the skills tab only);
-  // the expander stays the detail toggle and keeps @click.stop.
+  // toggle carries the CONFIRMED direction.
   const emit = defineEmits<{
     (e: "toggle", name: string, enabled: boolean): void;
     (e: "expand", row: RegistryRow): void;
@@ -269,25 +206,14 @@
 
   const hasDetail = (r: RegistryRow) => !!(r.detail && r.detail.length);
 
-  // one key per row identity - the registry owns the names, no remount
-  // tricks since the toggle became the shared pill
   const rowKey = (r: RegistryRow) => r.name;
 
-  // --- one-click toggle (card t_5051d523) ---
-  // Card t_87303e8f's checkbox trap needed the per-row remount hack
-  // when the toggle was an input: a :checked prop Vue could skip. The
-  // shared TogglePill (card t_d93864e7) is a button whose state comes
-  // from the reactive model - no DOM prop to miss - so the remount
-  // machinery is gone with the checkbox. The arm step is gone too: the
-  // first (and only) click commits. The pill applies the intent and the
-  // fold write re-renders the rows from the response.
+  // one-click toggle --- checkbox trap needed the per-row remount hack when.
   function onToggle(r: RegistryRow) {
     if (props.busy !== null) return;
-    // card t_db378a0d: a no-toggle row never renders a pill; the guard
-    // stays so a consumer cannot reach the write path by another door.
+    // a no-toggle row never renders a pill; the guard stays so a consumer cannot.
     if (r.noToggle) return;
-    // the target direction IS the row's disabled flag: a disabled row
-    // emits enabled=true (the fold write re-renders from the response)
+    // the target direction IS the row's disabled flag.
     emit("toggle", r.name, r.disabled);
   }
 
@@ -295,21 +221,16 @@
   const toggleLabel = (r: RegistryRow) =>
     `${r.disabled ? "enable" : "disable"} ${r.name}`;
 
-  // toggleHint (card t_5051d523): the consequence text ("excluded from
-  // the session prompt build") used to gate the second click. It now
-  // rides the pill's title - the click never waits on it. The helper
-  // speaks the consequence only; the title already carries the request
-  // ("disable x") through the label.
+  // toggleHint: the consequence text ("excluded from the session prompt build") used.
+  // It now rides the pill's title - the click never waits on it.
   const toggleHint = (r: RegistryRow) =>
     r.noToggle ? "" : registryNote(props.kind, r.disabled);
 
-  // --- the sessions feel's open surface (card t_db378a0d) ---
-  // Under feel="sessions" the whole HEAD line is the open surface (the
-  // sessions row's read), not just the name button. A control inside the
-  // head already owns its own action - the name button and the expander
-  // stop propagation themselves, and the pill's click is skipped here so
-  // a toggle never opens a chat. The DETAIL below the head is never a
-  // click surface: it carries the agent's edit form.
+  // the sessions feel's open surface --- Under feel="sessions" the whole HEAD line. A
+  // control inside the head already owns its own action - the name button and the
+  // expander stop propagation themselves, and the pill's click is skipped here so a
+  // toggle never opens a chat. The DETAIL below the head is never a click surface: it
+  // carries the agent's edit form.
   function onHeadClick(e: MouseEvent, r: RegistryRow) {
     if (props.feel !== "sessions") return;
     if (!openableRow(r)) return;
@@ -318,7 +239,6 @@
     emit("open", r);
   }
 
-  // --- expandable detail: per-row, click-driven, one set per mount ---
   const expanded = ref<Record<string, boolean>>({});
 
   const isExpanded = (name: string) => !!expanded.value[name];
@@ -331,13 +251,6 @@
 </script>
 
 <style scoped>
-  /* card t_561dc4e0: the row geometry (paddings, separators, the
-     name/subtitle typography, the right-control seat) lives in the
-     shared assets/css/registry-row.css - ONE definition, five tabs.
-     The section's old 12px horizontal inset dies with it: the row law
-     is the Cron reference's 12px pane inset, which the consumer body
-     (.skills-body / .tools-body) already carries - this block keeps
-     only the vertical seat. */
   .registry-list {
     padding: 8px 0 14px;
   }
@@ -346,8 +259,6 @@
     margin: 0;
     padding: 0;
   }
-  /* the openable name (t_36ceb99b): a button styled back into the row -
-     same voice, the hover raises it like the other row affordances */
   .registry-open {
     border: none;
     background: none;
@@ -375,10 +286,6 @@
   .registry-expander:hover {
     opacity: 0.9;
   }
-  /* card t_db378a0d: the sessions expander glyph - the sidebar's lucide
-     chevron, closed at rest and rotated a quarter turn while the row is
-     open (main.css .bucket-chevron's transition verbatim). Only a
-     consumer that asked for `expander="chevron"` renders it. */
   .registry-expander-icon {
     display: block;
     transition: transform 0.12s ease;
@@ -386,21 +293,13 @@
   .registry-expander-icon.open {
     transform: rotate(90deg);
   }
-  /* --- card t_db378a0d: THE SESSIONS FEEL -------------------------------
-     The agents tab's opt-in interaction vocabulary, lifted from the
-     sessions sidebar's row law (main.css: .session-list li / li:hover /
-     li.active / li.active .session-title) so the two lists read as one
-     language. Every rule is gated on .feel-sessions: the quiet list -
-     cron, tools, skills, mcp, modules - keeps the ROW LAW's plain render
-     until its own round, byte for byte. The anatomy itself does not move:
-     two lines, one right control, semibold name over a dim subtitle, one
-     hairline at rest.
-
-     The chip is a DRESS, not a box: at rest the row is the row law's own
-     element, so the resting hairline keeps its exact width, its ends and
-     its position. Round 1 wore the negative margin at rest too, which
-     widened the quiet list's separator ~16px - "exactly as today" is
-     literal (review round 1, nit 3). Only the raise carries geometry. */
+  /*
+   * THE SESSIONS FEEL ------------------------------- The agents tab's opt-in.
+   * Every rule is gated on.feel-sessions: the quiet list - cron, tools, skills, mcp,
+   * modules - keeps the ROW LAW's plain render until its own round, byte for byte.
+   * Round 1 wore the negative margin at rest too, which widened the quiet list's
+   * separator ~16px - "exactly as today" is literal (review round 1, nit 3).
+   */
   .registry-list.feel-sessions .registry-row {
     transition:
       background-color 0.12s ease,
@@ -416,35 +315,27 @@
   .registry-list.feel-sessions .registry-row.reg-row-active {
     background: var(--z1-raised);
     border-radius: var(--r-chip);
-    /* the raised chip reaches past the text column so the row reads as
-       ONE surface; the negative margin and the matching padding cancel
-       each other, so the name never shifts - only the chip's edges grow */
+    /*
+     * the raised chip reaches past the text column so the row reads as ONE surface; the
+     * negative margin and the matching padding cancel each other, so the name never
+     * shifts - only the chip's edges grow / /
+     */
     margin: 0 -8px;
     padding: 5px 8px;
-    /* his fork ruling ("try first"): the hairline under a raised chip
-       fades, so the chip never crosses a seam. One-line revert if it
-       reads wrong: drop this border-color declaration, nothing else. */
+    /*
+     * his fork rule ("try first"): the hairline under a raised chip fades, so the
+     * chip never crosses a seam.
+     */
     border-bottom-color: transparent;
   }
-  /* ...and so does the seam ABOVE it: the preceding row's border-bottom
-     IS the raised chip's top edge (round 1 faded only the row's own, so
-     the chip still crossed a drawn seam above - review round 1, finding
-     2). `:has` is fine here - the journeys run Chrome. The row law gives
-     the LAST row no border, so on a last-row hover this rule matches a
-     border that draws nothing: harmless, and the row below is what the
-     sibling rule above already handles. */
   .registry-list.feel-sessions .registry-row:has(+ .registry-row:hover),
   .registry-list.feel-sessions .registry-row:has(+ .registry-row.reg-row-active) {
     border-bottom-color: transparent;
   }
   .registry-list.feel-sessions .registry-row:hover:not(.registry-off) .reg-row-name {
-    /* the rest opacity is 0.9; hover takes the name to the full text */
     opacity: 1;
   }
-  /* the active row is the one the operator has OPEN - the sessions
-     sidebar's li.active, name and all (the accent at the row law's
-     resting 0.9 would read as a dimmed accent, so the open row carries
-     the name at full strength) */
+  /* the active row is the one the operator has OPEN. */
   .registry-list.feel-sessions .registry-row.reg-row-active .reg-row-name {
     color: var(--accent);
     opacity: 1;
@@ -454,14 +345,15 @@
     opacity: 0.5;
     padding-top: 0;
   }
-  /* the desc: the row law's own voice rides .reg-row-sub-text; only
-     the flex seat (it is the subtitle's one and only text child) is
-     local - the dim is the .reg-row-sub anatomy's, nothing more. */
+  /* the desc: the row law's own voice rides.reg-row-sub-text. */
   .registry-desc {
     min-width: 0;
   }
-  /* card t_10ac04f0 ruling 5: the preview line. One line, ellipsized - a
-     long report never grows the row - with its age pinned right. */
+  /*
+   * the preview line.
+   * One line, ellipsized - a long report never grows the row - with its age pinned
+   * right.
+   */
   .reg-row-preview {
     margin-top: 1px;
   }
@@ -475,10 +367,6 @@
     flex: none;
     opacity: 0.7;
   }
-  /* card t_2d8deb8c: the under-row detail lines are the note line above
-     only. card t_10ac04f0 ruling 5 REVIVED one line - the agent's
-     canonical-chat preview - and it is its own anatomy (.reg-row-preview
-     above), not a detail line. */
   .registry-detail {
     list-style: none;
     margin: 2px 0 2px 10px;

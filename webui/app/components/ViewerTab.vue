@@ -33,11 +33,9 @@
         <p
           v-if="skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
-        <!-- the FOLDER body (card t_c3fe4ea6): a dir ref lists one
-             directory (/files/browse, the same listing the Files tab
-             browses); rows drill to another folder tab or open a file
-             tab. No preview, no sizes for folders - the tree's row
-             vocabulary, flat. -->
+        <!--
+          the FOLDER body: a dir ref lists one directory (/files/browse, the same.
+        -->
         <div
           v-if="isDir"
           class="viewer-dir"
@@ -70,11 +68,7 @@
               class="viewer-dir-size">{{ e.size_bytes }}</span>
           </button>
         </div>
-        <!-- ONE body per content class (t_42c8aced): the sniffed mime
-             decides pdf/image, an .md/.markdown file or the skill body
-             renders markdown, a non-UTF-8 file keeps the honest
-             no-preview state (name + size + download), everything else
-             stays the line-numbered monospace body. -->
+        <!-- ONE body per content class. -->
         <div
           v-if="view === 'image'"
           class="viewer-imgwrap">
@@ -83,8 +77,6 @@
             :src="rawSrc"
             :alt="viewer.name">
         </div>
-        <!-- pdf rides the browser's native viewer on the raw route - no
-             renderer dependency, the bytes are same-origin -->
         <iframe
           v-else-if="view === 'pdf'"
           class="viewer-pdf"
@@ -104,8 +96,9 @@
               :download="leafName">download</a>
           </p>
         </div>
-        <!-- the markdown body: the CHAT renderer (same grammar, same
-             sanitizer) + the codeblock decoration pass -->
+        <!--
+          the markdown body: the CHAT renderer (same grammar, same sanitizer) + the.
+        -->
         <div
           v-else-if="view === 'markdown'"
           ref="mdEl"
@@ -132,18 +125,7 @@
 </template>
 
 <script setup lang="ts">
-  // The content viewer (card t_36ceb99b): ONE tab shape for the two
-  // content kinds. A FILE tab reads GET /files/read (the same surface the
-  // retired inline preview fetched); a SKILL tab reads GET /skills/content
-  // (the loader's own parse: frontmatter description + body). The body
-  // switches on ONE view class per content type (t_42c8aced):
-  // markdown -> the chat renderMarkdown grammar + codeblock decoration,
-  // pdf -> the browser's native viewer on GET /files/raw,
-  // image -> an <img> on the raw route (card t_08d822bb),
-  // binary -> the honest no-preview state (name + size + download lane),
-  // everything else -> line-numbered monospace text.
-  // Fetch-on-mount: a persisted viewer tab opened later re-fetches -
-  // content views refresh, nothing caches stale bytes.
+  // The content viewer: ONE tab shape for the two content kinds.
   import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
   import type { ViewerRef } from "../composables/dockables";
   import {
@@ -170,8 +152,7 @@
 
   const props = defineProps<{ viewer?: ViewerRef }>();
 
-  // the focused session rides the SAME seam FilesTab reads (t_a5f9d185):
-  // the app always provides; a null fallback keeps the mount harmless.
+  // the focused session rides the SAME seam FilesTab reads.
   const focusedSession = inject(FOCUSED_SESSION_KEY, null);
 
   const rootEl = ref<HTMLElement | null>(null);
@@ -185,13 +166,11 @@
   const mime = ref("");
   const size = ref<number | undefined>(undefined);
   const skillDesc = ref("");
-  // the FOLDER body's rows (card t_c3fe4ea6): one directory listing, the
-  // same /files/browse read the Files tab rides
+  // the FOLDER body's rows: one directory listing, the same /files/browse read.
   const dirEntries = ref<FileEntry[]>([]);
   const isDir = computed(() => props.viewer?.kind === "dir");
 
-  // the viewer's own opener: a folder row drills to another folder tab,
-  // a file row opens a file tab - the same focus-reuse the chip rides
+  // the viewer's own opener: a folder row drills to another folder tab, a file row.
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function dirChildPath(e: FileEntry): string {
     return joinRelPath(props.viewer?.name ?? "", e.name);
@@ -200,8 +179,7 @@
     openViewerRef?.({ kind: e.is_dir ? "dir" : "file", name: dirChildPath(e) });
   }
 
-  // a refetch when the same tab instance is handed a DIFFERENT viewer
-  // (the outlet reuses the component; only the remount fetches fresh)
+  // a refetch when the same tab instance is handed a DIFFERENT viewer.
   watch(
     () => (props.viewer ? `${props.viewer.kind}:${props.viewer.name}` : ""),
     () => void load(),
@@ -225,15 +203,10 @@
         truncated.value = data.truncated;
         skillDesc.value = data.description;
       } else if (props.viewer.kind === "dir") {
-        // the folder body: /files/browse under the SAME root resolution
-        // the Files tab browsed with (t_a5f9d185)
+        // the folder body: /files/browse under the SAME root resolution the Files tab.
         const data = await fetchFilesBrowse(props.viewer.name, focusedSession?.value ?? undefined);
         dirEntries.value = sortFileEntries(data.entries ?? []);
       } else {
-        // t_a5f9d185: the read roots on the focused session's resolved
-        // root - the SAME resolution the Files tab browsed under, so a
-        // workspace-pinned tab's file parses instead of 404ing against
-        // the cwd fallback.
         const data = await fetchFilesRead(props.viewer.name, focusedSession?.value ?? undefined);
         content.value = data.content;
         truncated.value = data.truncated;
@@ -250,10 +223,7 @@
 
   onMounted(() => void load());
 
-  // ONE view class per content kind. A skill's body IS markdown (the
-  // loader hands the parsed body); files decide by the sniffed mime and
-  // the extension (fileViewKind, t_42c8aced); a folder has no body class
-  // - its listing is the isDir branch (t_c3fe4ea6).
+  // ONE view class per content kind.
   const view = computed<FileViewKind>(() => {
     if (!props.viewer) return "code";
     if (props.viewer.kind === "skill") return "markdown";
@@ -272,10 +242,7 @@
     return all;
   });
 
-  // the markdown branch renders through the CHAT grammar (markdown-it,
-  // html:false sanitizer), then the shared codeblock decoration wraps
-  // fences with the header bar - the same pass ChatMessage runs, the
-  // v-html replacement tears the wrapper down so decorate re-adds it.
+  // the markdown branch renders through the CHAT grammar.
   const renderedMd = ref("");
   const mdEl = ref<HTMLElement | null>(null);
   const collapsed = new Set<number>();
@@ -307,9 +274,6 @@
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined)
       : "",
   );
-  // the no-preview state's affordance (t_42c8aced): the download lane
-  // serves any mime as an attachment, and the leaf name lands on the
-  // anchor so the browser's save dialog pre-fills it
   const downloadUrl = computed(() =>
     props.viewer && props.viewer.kind === "file"
       ? filesRawUrl(props.viewer.name, focusedSession?.value ?? undefined, { download: true })
@@ -375,9 +339,6 @@
     font-size: 11px;
     opacity: 0.65;
   }
-  /* the folder body (t_c3fe4ea6): the tree's row vocabulary, flat -
-     one row per entry, the folder glyph leading, folders marked with
-     their trailing slash. The rows are buttons (a click opens the ref). */
   .viewer-dir {
     flex: 1;
     min-height: 0;
@@ -423,8 +384,9 @@
     font-size: 11px;
     line-height: 1.5;
   }
-  /* the image body (t_08d822bb): fits the pane (contain), scrolls when
-     the file is larger than it */
+  /*
+   * the image body: fits the pane (contain), scrolls when the file is larger than it.
+   */
   .viewer-imgwrap {
     flex: 1;
     min-height: 0;
@@ -436,8 +398,6 @@
     max-width: 100%;
     object-fit: contain;
   }
-  /* the pdf body (t_42c8aced): the browser's native viewer owns the
-     frame; the pane bounds the chrome */
   .viewer-pdf {
     flex: 1;
     min-height: 0;
@@ -445,7 +405,6 @@
     border: none;
     background: var(--z1-raised);
   }
-  /* the no-preview state (t_42c8aced): name + size + the download lane */
   .viewer-binstate {
     flex: 1;
     min-height: 0;
@@ -467,8 +426,7 @@
   .viewer-dl:hover {
     text-decoration: underline;
   }
-  /* the markdown body rides the bubble's .md grammar (main.css); this
-     container only sets the scroll + padding frame */
+  /* the markdown body rides the bubble's.md grammar (main.css). */
   .viewer-md {
     flex: 1;
     min-height: 0;

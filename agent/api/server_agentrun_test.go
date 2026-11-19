@@ -1,10 +1,6 @@
 package api
 
-// server_agentrun_test.go: per-agent run config (card t_a7fab745, Endo's
-// ruling A). Law: a session owned by an agent home runs on THAT home's
-// agent (provider, model, system prompt, max_turns) and its turn
-// persists into that home's store only; a daemon-owned session keeps
-// today's agent and store untouched.
+// server_agentrun_test.go: per-agent run config.
 
 import (
 	"bufio"
@@ -22,8 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// captureLoop records the LoopOptions a run was built with (the values
-// the agent home owns) and then runs the canned turn.
+// captureLoop records the LoopOptions a run was built with.
 type captureLoop struct {
 	seen *agent.LoopOptions
 }
@@ -33,14 +28,12 @@ func (c captureLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	return testLoop{}.Run(ctx, opts)
 }
 
-// agentHomeServer builds one daemon home with an agent-owned session and
-// a main session, plus the agent the host factory serves for each.
+// agentHomeServer builds one daemon home with an agent-owned session and a main.
 func agentHomeServer(t *testing.T) (home string, srv *Server, ts *httptest.Server, daemonSeen, scoutSeen *agent.LoopOptions) {
 	t.Helper()
 	ctx := context.Background()
 	home = t.TempDir()
 
-	// Main store: one daemon-owned session, titled (no title kick).
 	main, err := store.Open(datadir.DBPath(home, "omega.db"))
 	if err != nil {
 		t.Fatalf("open main store: %v", err)
@@ -54,7 +47,6 @@ func agentHomeServer(t *testing.T) (home string, srv *Server, ts *httptest.Serve
 		t.Fatalf("title main session: %v", err)
 	}
 
-	// Agent home: the session the roster lists, in its own file.
 	scout, err := store.Open(datadir.DBPath(filepath.Join(home, "agents", "scout"), "omega.db"))
 	if err != nil {
 		t.Fatalf("open scout store: %v", err)
@@ -103,8 +95,6 @@ func TestAgentOwnedSessionReadsAndRunsOnItsHome(t *testing.T) {
 	ctx := context.Background()
 	home, srv, ts, daemonSeen, scoutSeen := agentHomeServer(t)
 
-	// READ routing: the transcript receipt that used to 404 answers
-	// with the agent-owned history.
 	res, err := http.Get(ts.URL + "/sessions/sess-scout-2/transcript")
 	if err != nil {
 		t.Fatalf("transcript: %v", err)
@@ -122,7 +112,6 @@ func TestAgentOwnedSessionReadsAndRunsOnItsHome(t *testing.T) {
 	if len(body.Items) == 0 {
 		t.Fatal("transcript has no items for the agent-owned session")
 	}
-	// The session row answers too.
 	res2, err := http.Get(ts.URL + "/sessions/sess-scout-2")
 	if err != nil {
 		t.Fatalf("session row: %v", err)
@@ -163,8 +152,6 @@ func TestAgentOwnedSessionReadsAndRunsOnItsHome(t *testing.T) {
 	if len(coldMsgs) != 3 {
 		t.Fatalf("cold scout history has %d messages, want 3 (probe one, hi, answer)", len(coldMsgs))
 	}
-	// ... and not into the daemon's file: a second plain handle on it
-	// (routing off, one file) sees no rows for the agent session.
 	daemonDB, err := store.Open(datadir.DBPath(home, "omega.db"))
 	if err != nil {
 		t.Fatalf("reopen daemon store: %v", err)
@@ -199,19 +186,12 @@ func TestDaemonOwnedSessionKeepsItsAgent(t *testing.T) {
 		msgs, err := srv.store.GetMessages(ctx, "sess-main")
 		return err == nil && len(msgs) >= 2
 	})
-	// The daemon session owns itself: no agent home answers for it.
 	if got := srv.store.(agent.SessionOwnerStore).SessionOwner("sess-main"); got != "" {
 		t.Fatalf("sess-main owner = %q, want empty (daemon)", got)
 	}
 }
 
-// TestAgentOwnedSessionIgnoresTheDaemonModelPin pins the wire the webui
-// actually sends (card t_81109e1c): every chat send carries the
-// composer's model, and a chat tab with no pinned model carries the
-// DAEMON's default. An agent-owned session answers on its own home's
-// model anyway - the daemon's pick addresses the daemon's catalog, and
-// resolving that name against another home's provider is the wrong
-// agent (or a hard provider error). Nothing sticks on the session.
+// TestAgentOwnedSessionIgnoresTheDaemonModelPin pins the wire the webui actually sends.
 func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 	ctx := context.Background()
 	_, srv, ts, daemonSeen, scoutSeen := agentHomeServer(t)
@@ -249,9 +229,7 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 		}
 		ended = frame.event == "agent_end"
 	}
-	// The frame loop ends the REQUEST, not the run: agent_end is broadcast
-	// from inside the run's event loop, before it persists usage/last-run
-	// stats. Own that tail before returning (card t_8b6daa57).
+	// The frame loop ends the REQUEST, not the run.
 	waitRunSettled(t, srv, "sess-scout-2")
 
 	if started != "scout-model" {
@@ -263,8 +241,7 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 	if daemonSeen.Provider != nil {
 		t.Fatal("the daemon's agent served an agent-owned session")
 	}
-	// The pick must not stick on the row either: the home decides on
-	// every send, and a remembered daemon model would outlive the rule.
+	// The pick must not stick on the row either.
 	sess, err := srv.store.GetSession(ctx, "sess-scout-2")
 	if err != nil {
 		t.Fatalf("read scout session: %v", err)
@@ -275,9 +252,7 @@ func TestAgentOwnedSessionIgnoresTheDaemonModelPin(t *testing.T) {
 	}
 }
 
-// postChatAndWait sends one turn and waits for the run to finish
-// persisting (the run detaches from the request; the frames tell us the
-// stream ended, the hub release tells us the writes landed).
+// postChatAndWait sends one turn and waits for the run to finish persisting.
 func postChatAndWait(t *testing.T, srv *Server, ts *httptest.Server, sessionID string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
@@ -305,15 +280,11 @@ func postChatAndWait(t *testing.T, srv *Server, ts *httptest.Server, sessionID s
 	}
 }
 
-// waitRunSettled blocks until the session's detached run has fully
-// unwound. agent_end is broadcast from inside the run's event loop
-// (runs.go), BEFORE the run persists its usage and last-run stats and
-// before the goroutine's deferred hub release - so a test that returns
-// on the last frame leaves that write in flight, and t.TempDir's
-// RemoveAll can hit the home's data dir mid-write: "directory not
-// empty" on a cold runner (card t_8b6daa57). The hub slot is released
-// only after persistRun returns, so this is the run's real end of life:
-// no sleep, no widened tolerance.
+// waitRunSettled blocks until the session's detached run has fully unwound. agent_end
+// is broadcast from inside the run's event loop (runs.go), BEFORE the run persists its
+// usage and last-run stats and before the goroutine's deferred hub release - so a test
+// that returns on the last frame leaves that write in flight, and t.TempDir's RemoveAll
+// can hit the home's data dir mid-write: "directory not empty" on a cold runner.
 func waitRunSettled(t *testing.T, srv *Server, sessionID string) {
 	t.Helper()
 	waitFor(t, "the run to finish persisting (session "+sessionID+")", func() bool {

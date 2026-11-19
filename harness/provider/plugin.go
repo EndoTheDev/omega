@@ -11,9 +11,6 @@ import (
 )
 
 // Plugin is the in-process adapter for the provider extension.
-// It reads provider configuration from Context.Configs and mounts
-// through the ExtensionAPI exclusively (v0.12 phase F): the provider
-// seam plus the /model, /models, /thinking and /provider commands.
 type Plugin struct{}
 
 // Name returns the plugin name shown in the /extensions listing.
@@ -24,8 +21,7 @@ func (Plugin) Description() string {
 	return "model provider: LLM transport (Ollama, OpenAI, Anthropic), streaming and model listing"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "provider" }
 
 func (Plugin) Provides() []string { return []string{"provider"} }
@@ -33,24 +29,17 @@ func (Plugin) Provides() []string { return []string{"provider"} }
 // Requires lists seam names that must be mounted before this plugin.
 func (Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin. Reads the provider config
-// from Context.Configs (missing config: zero values, type defaults to
-// ollama) and registers the provider seam plus the four commands.
+// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["provider"].(Config); ok {
 		cfg = c
 	}
 	prov := NewProvider(cfg.Type, cfg.ModelName, cfg.Host, cfg.APIKey)
-	// The instances (cards t_7dcd4280, t_bf21ee07): one resolver per
-	// config provider.instances row, eager at mount (no network at
-	// construction). The primary row is the base provider itself - the
-	// resolver answers the name, so nothing downstream needs a flag.
-	// The shell resolves a run's pinned instance through
-	// agent.ProviderInstances and fails loudly on a missing name, which
-	// is how a removed instance can never strand a session's run into a
-	// silent fallback. Live from here on: the settings save re-sends the
-	// section through SetConfig.
+	// The instances: one resolver per config provider.instances row, eager at mount.
+	// The shell resolves a run's pinned instance through agent.ProviderInstances and fails
+	// loudly on a missing name, which is how a removed instance can never strand a
+	// session's run into a silent fallback.
 	prov.SetConfig(cfg)
 	if err := api.Offer("provider", prov); err != nil {
 		return err
@@ -74,10 +63,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// handleCommand handles the /model, /models, /thinking and /provider
-// commands. The /model switch mutates the base provider in place
-// (single user, applied outside a run); runs themselves carry their
-// own WithModel copy.
+// handleCommand handles the /model, /models, /thinking and /provider commands.
 func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/model":
@@ -124,7 +110,6 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 	case "/thinking":
 		level := strings.TrimSpace(args)
 		if level == "" {
-			// Cycle to next level.
 			current := prov.thinkingLevel
 			if current == "" {
 				current = "medium"

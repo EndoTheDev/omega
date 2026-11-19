@@ -1,8 +1,5 @@
-// omega webui: THE ROUTING LAW (canvas C1) - a session opens in the ACTIVE
-// center chat pane, falling back to the main column, and a SIDEBAR never
-// hosts one. The store-side half is pinned here: the resolver the app's
-// openChatTab calls (sessionPane) and the op-layer refusal that makes the
-// violation unrepresentable (openTab/setPaneComponent read the seat law).
+// omega webui: THE ROUTING LAW (canvas C1) - a session opens in the ACTIVE center chat
+// pane, falling back to the main column, and a SIDEBAR never hosts one.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
@@ -83,7 +80,6 @@ describe("routing: a session only ever opens in the main column (canvas C1)", ()
     assert.ok(mainPane, "the fresh tree seats a chat in the main column");
     assert.equal(dock.sessionPane(mainPane!), mainPane, "the asking main pane is honored");
 
-    // no preference: the resolver still answers a main pane
     const fallback = dock.sessionPane(null);
     assert.equal(isPinnedPane(findPane(dock.tree.value, fallback)!), false);
   });
@@ -96,12 +92,10 @@ describe("routing: a session only ever opens in the main column (canvas C1)", ()
     ]);
     const left = shell.children[0] as DockPane;
     const right = shell.children[2] as DockPane;
-    // the op layer reads the seat law, so no caller can seat a session in a
-    // sidebar - not the '+' path, not a refill, not a drag
+    // the op layer reads the seat law, so no caller can seat a session in a sidebar.
     assert.equal(openTab(shell, left.id, { component: "chat" }), shell);
     assert.equal(openTab(shell, right.id, { component: "chat" }), shell);
     assert.equal(setPaneComponent(shell, left.id, "chat"), shell);
-    // the legal side: a sidebar view refills an empty sidebar
     const emptySide = makePane(null, 240, "left");
     const tree = makeSplit("row", [emptySide, makePane("chat")]);
     assert.notEqual(setPaneComponent(tree, emptySide.id, "files"), tree);
@@ -122,7 +116,6 @@ describe("the seat map is the dnd legality check (canvas C1)", () => {
       assert.equal(seatAllowsIn(id, "left"), true, `${id} visits the primary sidebar`);
       assert.equal(seatAllowsIn(id, "right"), true, `${id} visits the secondary sidebar`);
     }
-    // chat is main-only; the sessions list is primary-only (its standing lock)
     assert.deepEqual([...zonesOf("chat")], ["main"]);
     assert.deepEqual([...zonesOf("sidebar")], ["left"]);
   });
@@ -143,13 +136,9 @@ describe("the seat map is the dnd legality check (canvas C1)", () => {
     const left = tree.children[0] as DockPane;
     const main = tree.children[1] as DockPane;
     const right = tree.children[2] as DockPane;
-    // the root cause this card kills: a chat dragged into the primary sidebar
     assert.equal(moveTab(tree, main.id, 0, left.id, 0), tree, "chat never enters the sidebar");
-    // sessions is locked to its own home - not even the main pane
     assert.equal(moveTab(tree, left.id, 0, main.id, 0), tree, "the sessions list never leaves its home");
-    // a sidebar view MAY visit the main pane (the temporary promote - the
-    // visit is not a move-out: its registry home stands, later cards make
-    // close return it)
+    // a sidebar view MAY visit the main pane
     const filesIdx = right.tabs.findIndex((t) => t.component === "files");
     const promoted = moveTab(tree, right.id, filesIdx, main.id, main.tabs.length);
     assert.notEqual(promoted, tree, "the promote is legal");

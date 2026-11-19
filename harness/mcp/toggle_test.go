@@ -1,8 +1,7 @@
-// Per-server enable/disable toggle tests (card t_83f37525): the
-// config flag is honored at connect (a disabled server is never
-// connected, serves no tools, stays listed), the wire carries it,
-// and POST /mcp/toggle persists it into mcp.yaml (comments and key
-// order survive the node write) and reloads through the shared swap.
+// Per-server enable/disable toggle tests: the config flag is honored at connect (a
+// disabled server is never connected, serves no tools, stays listed), the wire carries
+// it, and POST /mcp/toggle persists it into mcp.yaml (comments and key order survive
+// the node write) and reloads through the shared swap.
 package mcp
 
 import (
@@ -17,9 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// writeHome writes a temp OMEGA_HOME with an mcp.yaml at the config/
-// subdir (the Endo 2026-10-18 layout the loader reads second) and
-// points the env at it. Returns the yaml path.
+// writeHome writes a temp OMEGA_HOME with an mcp.yaml at the config/ subdir.
 func writeHome(t *testing.T, yaml string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -35,8 +32,7 @@ func writeHome(t *testing.T, yaml string) string {
 	return path
 }
 
-// TestServerConfigEnabledFlag: the yaml flag parses, an absent key
-// reads as on (pre-flag configs keep working).
+// TestServerConfigEnabledFlag: the yaml flag parses, an absent key reads.
 func TestServerConfigEnabledFlag(t *testing.T) {
 	cfg, err := parseConfig([]byte(`
 servers:
@@ -66,10 +62,9 @@ servers:
 	}
 }
 
-// TestDisabledServerNotConnectedNotServed: the connect loop skips the
-// disabled entry - no connection attempt (the mock never sees it),
-// no discovered tools in the served map, and the status row stays
-// listed with enabled:false / not connected / no error.
+// TestDisabledServerNotConnectedNotServed: the connect loop skips the disabled entry -
+// no connection attempt (the mock never sees it), no discovered tools in the served
+// map, and the status row stays listed with enabled:false / not connected / no error.
 func TestDisabledServerNotConnectedNotServed(t *testing.T) {
 	up := mockMCPServer(t, "s1")
 	defer up.Close()
@@ -112,7 +107,6 @@ servers:
 	if len(m.Tools) != 0 {
 		t.Errorf("muted: no tools discovered - got %v", m.Tools)
 	}
-	// the served tool map carries only the live server's names
 	served := b.Tools()
 	if len(served) != 1 {
 		t.Fatalf("served tools: got %d, want 1", len(served))
@@ -125,8 +119,7 @@ servers:
 	}
 }
 
-// serveToggleRoute finds the module's POST /mcp/toggle route on the
-// context and serves one POST through it. Returns the response.
+// serveToggleRoute finds the module's POST /mcp/toggle route on the context.
 func serveToggleRoute(t *testing.T, ctx *core.Context, name string, enabled bool) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(toggleRequest{Name: name, Enabled: enabled})
@@ -145,11 +138,7 @@ func serveToggleRoute(t *testing.T, ctx *core.Context, name string, enabled bool
 	return nil
 }
 
-// TestToggleRoutePersistsAndReloads: POST /mcp/toggle writes the
-// flag into mcp.yaml (comments + key order survive the node write),
-// answers the fresh StatusReport, and the reload honored it - the
-// disabled server's tools leave the served map. Toggle back on for
-// the return-trip half.
+// TestToggleRoutePersistsAndReloads: POST /mcp/toggle writes the flag into mcp.yaml.
 func TestToggleRoutePersistsAndReloads(t *testing.T) {
 	up := mockMCPServer(t, "s1")
 	defer up.Close()
@@ -167,8 +156,6 @@ servers:
 		t.Fatal(err)
 	}
 	ctx := mountPlugin(t, p)
-	// route registration happens in Mount - assert through the mounted
-	// routes the toggle exists
 	found := false
 	for _, rt := range ctx.ModuleRoutes {
 		if rt.Pattern == "POST /mcp/toggle" {
@@ -179,7 +166,6 @@ servers:
 		t.Fatal("POST /mcp/toggle not registered on the mount")
 	}
 
-	// ---- disable echo ----
 	w := serveToggleRoute(t, ctx, "echo", false)
 	if w.Code != 200 {
 		t.Fatalf("toggle off: %d %s", w.Code, w.Body.String())
@@ -188,7 +174,7 @@ servers:
 	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// the response IS the fresh status (the reload's body ruling)
+	// the response IS the fresh status
 	var disabled *ServerStatus
 	for i := range rep.Servers {
 		if rep.Servers[i].Name == "echo" {
@@ -198,7 +184,6 @@ servers:
 	if disabled == nil || disabled.Enabled || disabled.Connected || len(disabled.Tools) != 0 {
 		t.Fatalf("response: echo not disabled: %+v", disabled)
 	}
-	// the file carries the flag; comments and key order survive
 	out, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -216,12 +201,10 @@ servers:
 	if !strings.Contains(y, "name: other") {
 		t.Errorf("the untouched entry must survive:\n%s", y)
 	}
-	// the served tools drop the disabled server's names
 	if _, ok := p.activeBridge().Tools()["echo.echo"]; ok {
 		t.Error("the disabled server's tools stay served - the reload did not honor the write")
 	}
 
-	// ---- re-enable echo (the return trip) ----
 	w2 := serveToggleRoute(t, ctx, "echo", true)
 	if w2.Code != 200 {
 		t.Fatalf("toggle on: %d %s", w2.Code, w2.Body.String())
@@ -242,8 +225,6 @@ servers:
 	if _, ok := p.activeBridge().Tools()["echo.echo"]; !ok {
 		t.Error("the re-enabled server's tools did not come back")
 	}
-	// reload persists the state: a fresh status read (no further write)
-	// still reports it
 	st := p.activeBridge().Status()
 	for _, s := range st.Servers {
 		if s.Name == "echo" && !s.Enabled {
@@ -255,7 +236,6 @@ servers:
 // TestToggleRouteRefusals: the sources with nowhere (or no right way)
 // to persist are refused at the wire, not silently dropped.
 func TestToggleRouteRefusals(t *testing.T) {
-	// env source: the env var is not a file
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"x","command":"cat"}]}`)
 	p, err := NewPluginFromEnv()
 	if err != nil {
@@ -270,7 +250,6 @@ func TestToggleRouteRefusals(t *testing.T) {
 		t.Errorf("the refusal must name the source: %s", w.Body.String())
 	}
 
-	// no config file anywhere: nothing to toggle
 	p2, err := NewPluginFromEnv()
 	if err != nil {
 		t.Fatal(err)
@@ -329,10 +308,7 @@ func TestToggleRouteRefusals(t *testing.T) {
 	}
 }
 
-// TestToggleDuplicateNamedServerRefused (v0.14.1 audit NOTE-tier): with
-// two entries carrying one name, the old code flagged the first twin
-// and stayed silent about the ambiguity. The route refuses loud - and
-// refuses BEFORE any write lands, so neither twin is touched.
+// TestToggleDuplicateNamedServerRefused (v0.14.1 audit NOTE-tier).
 func TestToggleDuplicateNamedServerRefused(t *testing.T) {
 	path := writeHome(t, "servers:\n  - name: twin\n    command: cat\n  - name: twin\n    command: cat\n")
 	p, err := NewPluginFromEnv()
@@ -353,10 +329,8 @@ func TestToggleDuplicateNamedServerRefused(t *testing.T) {
 	}
 }
 
-// TestToggleRaceKeepsBothWrites (v0.14.1 audit): two quick toggles
-// against DIFFERENT servers must both land. The pre-fix shape - the
-// flag write outside reloadMu - lost one when the read-parse-marshal
-// writes raced; serialized, both survive in the file and the bridge.
+// TestToggleRaceKeepsBothWrites (v0.14.1 audit): two quick toggles against DIFFERENT
+// servers must both land.
 func TestToggleRaceKeepsBothWrites(t *testing.T) {
 	path := writeHome(t, "servers:\n  - name: alpha\n    command: cat\n  - name: beta\n    command: cat\n")
 	p, err := NewPluginFromEnv()
@@ -377,14 +351,12 @@ func TestToggleRaceKeepsBothWrites(t *testing.T) {
 	if !strings.Contains(s, "name: alpha") || strings.Count(s, "enabled") != 2 {
 		t.Fatalf("two toggles, two flags expected:\\n%s", s)
 	}
-	// both flags read false from the file the bridge last wrote
 	if err := checkBothDisabled(s); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// setServerEnabledAndReloadTolerant wraps the plugin toggle for the race
-// test where no live listener needs the response body.
+// setServerEnabledAndReloadTolerant wraps the plugin toggle for the race test where.
 func (p *Plugin) setServerEnabledAndReloadTolerant(path, name string, enabled bool) error {
 	_, writeErr, reloadErr := p.setServerEnabledAndReload(path, name, enabled)
 	if writeErr != nil {

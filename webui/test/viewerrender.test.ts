@@ -1,11 +1,4 @@
-// omega webui: the viewer's content-class branches (card t_42c8aced) -
-// markdown renders through the CHAT grammar + the codeblock decoration,
-// pdf rides the browser's native viewer inside an <iframe> (the raw
-// route's widened mime gate, no renderer dependency), a non-previewable
-// binary keeps the honest no-preview state (name + size + download
-// lane), code/text keeps the line-numbered monospace body. The suite
-// pins the pure branch logic, the wire (download lane, size passthrough)
-// and the structural wiring. Run: node --test test/viewerrender.test.ts
+// omega webui: the viewer's content-class branches.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -28,15 +21,14 @@ const viewer = read("app/components/ViewerTab.vue");
 const omega = read("app/composables/omega.ts");
 const serverFiles = readRepo("harness/files/routes.go");
 
-// --- the pure branch logic -------------------------------------------------------
+// the pure branch logic ----------------------------------------------------
 
 describe("fileViewKind (t_42c8aced)", () => {
   it("mime decides pdf/image - sniffed bytes, never the extension", () => {
     assert.equal(fileViewKind("doc.pdf", "application/pdf", true), "pdf");
     assert.equal(fileViewKind("shot.png", "image/png", true), "image");
     assert.equal(fileViewKind("icon.svg", "image/svg+xml", false), "image");
-    // extension tricks do not unlock a render lane: a text-named .pdf
-    // sniffs text/plain and stays text
+    // extension tricks do not unlock a render lane.
     assert.equal(fileViewKind("fake.pdf", "text/plain; charset=utf-8", false), "code");
     assert.equal(fileViewKind("a.md", "application/octet-stream", true), "binary");
   });
@@ -65,7 +57,7 @@ describe("bytesLabel", () => {
   });
 });
 
-// --- the viewer's five bodies ----------------------------------------------------
+// the viewer's five bodies -------------------------------------------------
 
 describe("ViewerTab's content-class branches (t_42c8aced)", () => {
   it("the skill body IS markdown - the chat grammar renders it", () => {
@@ -107,7 +99,7 @@ describe("ViewerTab's content-class branches (t_42c8aced)", () => {
   });
 });
 
-// --- the wire --------------------------------------------------------------------
+// the wire -----------------------------------------------------------------
 
 describe("the t_42c8aced wire", () => {
   it("filesRawUrl carries the download lane; the default omits it", () => {
@@ -148,8 +140,6 @@ describe("the t_42c8aced wire", () => {
     );
     assert.match(serverFiles, /Content-Disposition/, "the attachment lane");
     assert.match(serverFiles, /"download"/, "the download query decides the lane");
-    // one guard set covers every lane that passes the gate; the refusals
-    // write no headers at all
     const count = (serverFiles.match(/X-Content-Type-Options/g) ?? []).length;
     assert.ok(count === 1, `nosniff is set once, covering both lanes (${count})`);
   });

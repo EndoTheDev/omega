@@ -1,13 +1,4 @@
-// The workspace picker/finder face's self-check (moved from
-// agent/api/server_workspaces_test.go + server_workspace_intent_test.go's
-// listing test by the shell-ring shrink wave 3, card t_b75df168): pin
-// the wire contract directly against the capsule's Routes - the base
-// package no longer serves these (they are module routes).
-//
-// /workspaces/browse lists child dirs of a validated absolute path
-// (hidden entries filtered, root default on an empty path, the parent
-// reported); /workspaces/files lists first-level entries (hidden
-// filtered) and refuses relative, nonexistent and file paths.
+// The workspace picker/finder face's self-check: pin the wire contract directly.
 
 package files
 
@@ -54,15 +45,13 @@ func mustQueryWorkspace(v string) string {
 	return b.String()
 }
 
-// TestWorkspaceBrowse: the picker's read - the root listing (empty
-// path), the parent chain, hidden filtered, relative refused.
+// TestWorkspaceBrowse: the picker's read.
 func TestWorkspaceBrowse(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 
-	// The root listing lists the root dirs and reports no parent. On
-	// windows the "/" default must be mounted on the process volume -
-	// a volume-less root's rows ("\Users") never re-validate on click
-	// (t_7dcdc98e): every emitted row path must be absolute.
+	// The root listing lists the root dirs and reports no parent. On windows the "/"
+	// default must be mounted on the process volume - a volume-less root's rows ("\Users")
+	// never re-validate on click: every emitted row path must be absolute.
 	req := httptest2.NewRequest(http.MethodGet, "/workspaces/browse", nil)
 	rec := httptest2.NewRecorder()
 	rt.handleWorkspacesBrowse(rec, req)
@@ -97,11 +86,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 			t.Errorf("root row %q is not absolute - the browse click would be refused", d.Path)
 		}
 	}
-	// The click-through wire shape: every root row path re-validates
-	// in the same endpoint that emitted it. A row may still 400 on a
-	// permission-bound dir (open ... Access is denied) - a real disk
-	// error, browsable by a user with the rights - but the
-	// "not an absolute path" refusal can no longer happen (t_7dcdc98e).
 	for _, d := range listing.Dirs {
 		req := httptest2.NewRequest(http.MethodGet, "/workspaces/browse?path="+mustQueryWorkspace(d.Path), nil)
 		rec := httptest2.NewRecorder()
@@ -114,7 +98,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 		}
 	}
 
-	// A relative path is rejected; an absolute dir lists its subdirs.
 	req = httptest2.NewRequest(http.MethodGet, "/workspaces/browse?path=rel/ative", nil)
 	rec = httptest2.NewRecorder()
 	rt.handleWorkspacesBrowse(rec, req)
@@ -122,7 +105,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 		t.Fatalf("relative browse: status = %d, want 400", rec.Code)
 	}
 
-	// An absolute dir lists its visible subdirs and hides dot dirs.
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "proj")
 	if err := os.Mkdir(sub, 0o755); err != nil {
@@ -155,7 +137,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 		t.Errorf("non-root listing must report a parent")
 	}
 
-	// A nonexistent dir is a 400.
 	req = httptest2.NewRequest(http.MethodGet, "/workspaces/browse?path="+string(jsonMarshalWorkspace(filepath.Join(dir, "nope"))), nil)
 	rec = httptest2.NewRecorder()
 	rt.handleWorkspacesBrowse(rec, req)
@@ -164,9 +145,7 @@ func TestWorkspaceBrowse(t *testing.T) {
 	}
 }
 
-// TestWorkspaceFilesListing: /workspaces/files lists first-level
-// entries of a validated absolute dir (hidden filtered), refusing
-// relative and nonexistent paths - the @ picker's draft-intent read.
+// TestWorkspaceFilesListing: /workspaces/files lists first-level entries.
 func TestWorkspaceFilesListing(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 	dir := t.TempDir()
@@ -210,7 +189,6 @@ func TestWorkspaceFilesListing(t *testing.T) {
 		t.Errorf(".hidden must stay filtered")
 	}
 
-	// Refusals: relative, nonexistent, a file not a dir.
 	for _, bad := range []string{"relative/path", "/definitely/not/here", filepath.Join(dir, "note.txt")} {
 		req = httptest2.NewRequest(http.MethodGet, "/workspaces/files?path="+mustQueryWorkspace(bad), nil)
 		rec = httptest2.NewRecorder()
@@ -221,8 +199,7 @@ func TestWorkspaceFilesListing(t *testing.T) {
 	}
 }
 
-// TestWorkspaceMethodGuard: the picker face is read-only GET; a POST is
-// a 405, never a browse.
+// TestWorkspaceMethodGuard: the picker face is read-only GET; a POST is a 405, never.
 func TestWorkspaceMethodGuard(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 	for _, probe := range []struct {

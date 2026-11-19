@@ -7,9 +7,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // firstLineOfDesc
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestFirstLineOfDescShort(t *testing.T) {
 	got := firstLineOfDesc("list files")
@@ -35,7 +35,6 @@ func TestFirstLineOfDescMultiLine(t *testing.T) {
 func TestFirstLineOfDescTruncate(t *testing.T) {
 	long := "this is a very long description that definitely exceeds sixty chars boundary"
 	got := firstLineOfDesc(long)
-	// truncated to 57 chars + "..."
 	if len(got) != 60 {
 		t.Fatalf("len(got) = %d, want 60", len(got))
 	}
@@ -70,9 +69,8 @@ func TestFirstLineOfDescExactly60(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// listTools
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------ listTools
+// ------------------------------------------------------------------------
 
 func TestListToolsEmpty(t *testing.T) {
 	ctx := &core.Context{}
@@ -83,8 +81,7 @@ func TestListToolsEmpty(t *testing.T) {
 }
 
 func TestListToolsEmptyToolListSkipped(t *testing.T) {
-	// An extension with an empty ToolList should be skipped, and since no
-	// extension has tools, "[no tools available]" should appear.
+	// An extension with an empty ToolList should be skipped, and since no extension has.
 	ctx := &core.Context{
 		Infos: []core.ExtensionInfo{
 			{Name: "empty", ToolList: []core.ToolInfo{}},
@@ -165,7 +162,6 @@ func TestListToolsMultipleExtensions(t *testing.T) {
 }
 
 func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
-	// Extension with tools followed by an empty one — empty should be skipped.
 	ctx := &core.Context{
 		Infos: []core.ExtensionInfo{
 			{
@@ -186,9 +182,9 @@ func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 // handleToolsCommand
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------
 
 func TestHandleToolsCommandNoArgs(t *testing.T) {
 	ctx := &core.Context{}
@@ -337,7 +333,6 @@ func TestHandleToolsCommandInvalid(t *testing.T) {
 }
 
 func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
-	// Leading/trailing whitespace should be trimmed, so "  list  " → listTools.
 	ctx := &core.Context{}
 	res, err := handleToolsCommand(ctx, "/tools", "  list  ")
 	if err != nil {
@@ -348,10 +343,7 @@ func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 	}
 }
 
-// TestListToolsShowsDisabledState pins the listing surface (card
-// t_441deb04): a tool the fold switched off keeps its row - that row IS
-// the way back, since a vanished name leaves nothing to re-enable - and
-// the row says it is off.
+// TestListToolsShowsDisabledState pins the listing surface.
 func TestListToolsShowsDisabledState(t *testing.T) {
 	ctx := &core.Context{
 		DisabledTools: []string{"files.write"},

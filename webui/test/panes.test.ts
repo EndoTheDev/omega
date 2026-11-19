@@ -1,6 +1,4 @@
-// omega webui: unit tests for the pane-width math in composables/panes.ts
-// (the +320 magnetic snap ladder, open-clamp floor). Pure functions, no DOM.
-// Run: node --test "test/*.test.ts"
+// omega webui: unit tests for the pane-width math in composables/panes.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {

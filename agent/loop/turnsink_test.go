@@ -9,8 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// recordingSink captures the loop's turn-copy writes in order - the
-// persistence-shape assertions run against this, not a real store.
+// recordingSink captures the loop's turn-copy writes in order.
 type recordingSink struct {
 	msgs []core.Message
 }
@@ -20,10 +19,9 @@ func (s *recordingSink) AppendTurnMessage(ctx context.Context, msg core.Message)
 	return nil
 }
 
-// TestLoopPersistsTurnCopiesOnce pins the seam law (t_471f6d4a): one
-// run input write, then per turn exactly assistant(A + thinking +
-// calls, timing attached) -> tool result, never duplicated, never out
-// of order.
+// TestLoopPersistsTurnCopiesOnce pins the seam law: one run input write, then per turn
+// exactly assistant(A + thinking + calls, timing attached) -> tool result, never
+// duplicated, never out of order.
 func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 	sink := &recordingSink{}
 	ctx := agent.WithTurnSink(context.Background(), sink)
@@ -91,8 +89,7 @@ func TestLoopPersistsTurnCopiesOnce(t *testing.T) {
 	}
 }
 
-// pinStore satisfies the store seam while recording appends. Only
-// AppendMessage is called by the store sink under test.
+// pinStore satisfies the store seam while recording appends.
 type pinStore struct {
 	agent.StoreProvider
 	msgs []core.Message
@@ -103,10 +100,7 @@ func (s *pinStore) AppendMessage(ctx context.Context, sessionID string, msg core
 	return nil
 }
 
-// TestStoreSinkHeadPinning pins t_17365247 at the sink: a pinned run
-// parents its FIRST conversation-carrying assistant to the branch
-// point explicitly; everything after chains off the derived leaf. The
-// all-empty assistant stays unwritten (nothing the provider produced).
+// TestStoreSinkHeadPinning pins at the sink.
 func TestStoreSinkHeadPinning(t *testing.T) {
 	st := &pinStore{}
 	sink := agent.NewStoreTurnSink(st, "sess-1", "user-7")

@@ -1,14 +1,10 @@
-// omega webui: THE RUNTIME MODULE GATE (card t_103e30a6) - the dock half.
-//
-// A module toggled off in settings dismounts on the server live; its
-// dockable's chip must leave the strip with it and return on remount. These
-// tests pin the pure mechanics: the gate predicate (owned AND off), the
-// parking (tab out of the tree, seat recorded, shell tabs untouched), the
-// re-seat (same pane/seat on remount, no duplicate singleton), the stash
-// reader, and the createDock wiring (a boot with a module off carries no
-// ghost chip, and the parked seat survives the reload).
-//
-// Render-free; node's built-in test runner.
+// omega webui: THE RUNTIME MODULE GATE - the dock half. A module toggled off in
+// settings dismounts on the server live; its dockable's chip must leave the strip with
+// it and return on remount. These tests pin the pure mechanics: the gate predicate
+// (owned AND off), the parking (tab out of the tree, seat recorded, shell tabs
+// untouched), the re-seat (same pane/seat on remount, no duplicate singleton), the
+// stash reader, and the createDock wiring (a boot with a module off carries no ghost
+// chip, and the parked seat survives the reload).
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -81,7 +77,7 @@ function tabIds(tree: DockNode, paneId: string): string[] {
   return pane ? pane.tabs.map((t) => t.component) : [];
 }
 
-// --- 1. the predicate -------------------------------------------------------
+// 1.
 
 describe("the gate predicate: module-owned AND off", () => {
   it("hides a module-owned dockable whose module is off", () => {
@@ -93,8 +89,7 @@ describe("the gate predicate: module-owned AND off", () => {
   });
 
   it("keeps a shell-owned pane even when its NAME sits in the off set", () => {
-    // the runtime never owned "chat"/"agents"/"insights": a stray name in
-    // the disabled set may not take the shell's own panes down
+    // the runtime never owned "chat"/"agents"/"insights".
     const gate = gateOf(["cron"], ["chat", "agents", "insights"]);
     for (const id of ["chat", "agents", "insights"]) {
       assert.equal(moduleGated(id, gate), false, `${id} is shell-owned`);
@@ -108,7 +103,7 @@ describe("the gate predicate: module-owned AND off", () => {
   });
 });
 
-// --- 2. the derivation ------------------------------------------------------
+// 2.
 
 describe("the owned set is DERIVED from the composition manifests", () => {
   it("unions modulePanels + moduleTabs and invents no id", () => {
@@ -119,8 +114,7 @@ describe("the owned set is DERIVED from the composition manifests", () => {
   });
 
   it("the real manifests own the capsule panes and NOT the shell's", () => {
-    // the generated files on disk (nuxt prepare wrote them) - the gate must
-    // read the capsules' ui/ dirs, not a hand list that could drift
+    // the generated files on disk (nuxt prepare wrote them) - the gate must read.
     const panelsSrc = read("webui", "app", "composables", "module-panels.generated.ts");
     const tabsSrc = read("webui", "app", "composables", "module-tabs.generated.ts");
     const modulesOf = (src: string) =>
@@ -146,7 +140,7 @@ describe("the owned set is DERIVED from the composition manifests", () => {
   });
 });
 
-// --- 3. parking -------------------------------------------------------------
+// 3.
 
 describe("parkGatedTabs: the chip leaves, the seat is remembered", () => {
   it("removes the gated tab and keeps the rest in order", () => {
@@ -189,7 +183,7 @@ describe("parkGatedTabs: the chip leaves, the seat is remembered", () => {
   });
 });
 
-// --- 4. re-seating ----------------------------------------------------------
+// 4.
 
 describe("reseatParkedTabs: the chip comes back where it sat", () => {
   it("re-seats into the recorded pane and index on remount", () => {
@@ -208,16 +202,12 @@ describe("reseatParkedTabs: the chip comes back where it sat", () => {
   });
 
   it("falls back to the registry area when the old pane is gone", () => {
-    // canvas C1: the fallback reads the registry HOME, which is the class's
-    // zone - skills is a secondary-sidebar view, so its home pane answers.
-    // (cron's home is the primary sidebar now; a shell without one leaves
-    // its seat parked, the honest no-pane answer.)
+    // canvas C1: the fallback reads the registry HOME, which is the class's zone.
     const parked: ParkedTab[] = [{ component: "skills", pane: "p-gone", index: 0 }];
     const tree = shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 }));
     const res = reseatParkedTabs(tree, parked, gateOf(["skills"], []));
     assert.deepEqual(tabIds(res.tree, "p-right"), ["skills", "files"]);
-    // no home pane in the tree: the seat stays parked, never minted into a
-    // pane the law does not name
+    // no home pane in the tree: the seat stays parked, never minted into a pane.
     const noLeft = reseatParkedTabs(
       shell(inspectorPane({ tabs: [{ component: "files" }], active: 0 })),
       [{ component: "cron", pane: "p-gone", index: 0 }],
@@ -242,7 +232,7 @@ describe("reseatParkedTabs: the chip comes back where it sat", () => {
   });
 });
 
-// --- 5. the stash reader ----------------------------------------------------
+// 5.
 
 describe("parseParkedTabs: a lenient reader", () => {
   it("reads the seats it wrote", () => {
@@ -266,7 +256,7 @@ describe("parseParkedTabs: a lenient reader", () => {
   });
 });
 
-// --- 6. the store wiring ----------------------------------------------------
+// 6.
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -284,13 +274,12 @@ class MemoryStorage {
 describe("createDock: the gate is part of the store", () => {
   it("a boot with a module off carries no chip and parks the seat", async () => {
     const store = new MemoryStorage();
-    // a record written while cron was live
     store.setItem(DOCK_LAYOUT_KEY, serialize(shell(), []));
     const dock = createDock(store as unknown as Storage);
     dock.setModuleGate(gateOf(["cron"], ["cron"]));
     assert.equal(findComponentTab(dock.tree.value, "cron"), null, "no ghost chip");
     assert.equal(JSON.parse(store.getItem(MODULE_STASH_KEY) ?? "[]").length, 1, "the seat is stashed");
-    // the tree watch is the ONE writer (ruling 6) - it lands on the next tick
+    // the tree watch is the ONE writer - it lands on the next tick
     await new Promise((r) => setTimeout(r, 0));
     assert.equal(
       (store.getItem(DOCK_LAYOUT_KEY) ?? "").includes('"cron"'),
@@ -319,7 +308,6 @@ describe("createDock: the gate is part of the store", () => {
     const second = createDock(store as unknown as Storage);
     second.setModuleGate(gateOf(["cron"], ["cron"]));
     assert.equal(findComponentTab(second.tree.value, "cron"), null);
-    // ... then the module mounts again (the settings toggle)
     second.setModuleGate(gateOf(["cron"], []));
     assert.notEqual(findComponentTab(second.tree.value, "cron"), null);
   });
@@ -332,7 +320,7 @@ describe("createDock: the gate is part of the store", () => {
   });
 });
 
-// --- 6b. the reintroduction paths re-run the gate ---------------------------
+// 6b.
 
 describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
   it("a seat parked behind a CLOSED edge reseats on reveal", () => {
@@ -343,10 +331,8 @@ describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
     assert.ok(strip, "boot seats the inspector shell");
     const before = tabIds(dock.tree.value, strip.id);
 
-    // 1. skills off while the inspector is open: the chip parks
     dock.setModuleGate(gateOf(["skills"], ["skills"]));
     assert.equal(findComponentTab(dock.tree.value, "skills"), null);
-    // 2. the inspector closes - the strip (skills already gone) stows
     dock.toggleEdge("inspector", "after");
     assert.equal(findEdgePane(dock.tree.value, "inspector"), null, "the edge is closed");
     // 3. skills comes back while the strip is hidden: no live pane hosts it,
@@ -391,7 +377,7 @@ describe("a reveal reintroduces a strip: the gate re-runs there too", () => {
   });
 });
 
-// --- 7. the surfaces that must NOT be gated ---------------------------------
+// 7. the surfaces that must NOT be gated ------------------------------
 
 describe("the shell's own panes stay outside the gate", () => {
   it("app.vue derives the owned set from the manifests and passes the live off set", () => {

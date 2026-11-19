@@ -13,7 +13,6 @@ import (
 )
 
 // HandleSessionsCommand lists all sessions with message counts.
-// Returns a text table for the command surface to display.
 func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -179,12 +178,7 @@ func sessionDisplayName(label, id string) string {
 	return id
 }
 
-// HandleNewCommand returns a new_session action. The consuming surface
-// resets state.
-// Flags: --ephemeral skips the store; --agent <name> binds the session
-// the surface's first message will create to that agent profile (card
-// t_7e2b7002). The agent name rides Action.List[0]; unknown names fail
-// at creation, not here - the flag parse stays store-free.
+// HandleNewCommand returns a new_session action.
 func HandleNewCommand(args string) (core.CommandResult, error) {
 	ephemeral := ""
 	var agentName string
@@ -218,8 +212,7 @@ func HandleNewCommand(args string) (core.CommandResult, error) {
 	return res, nil
 }
 
-// HandleResumeCommand resolves the argument to a session ID using the
-// store, then returns a load_session action for the surface to load.
+// HandleResumeCommand resolves the argument to a session ID using the store,.
 func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -228,12 +221,10 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 	if arg == "" {
 		return core.CommandResult{}, fmt.Errorf("usage: /resume <# | id | label>")
 	}
-	// Build a session list for number-based resolution.
 	sessions, err := store.ListSessions(ctx)
 	if err != nil {
 		return core.CommandResult{}, fmt.Errorf("list sessions: %w", err)
 	}
-	// Strip leading # for line numbers.
 	numStr := strings.TrimPrefix(arg, "#")
 	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(sessions) {
 		return core.CommandResult{
@@ -248,7 +239,6 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 			}, nil
 		}
 	}
-	// Try case-insensitive label prefix match.
 	lower := strings.ToLower(arg)
 	for _, s := range sessions {
 		if s.Label != "" && strings.HasPrefix(strings.ToLower(s.Label), lower) {
@@ -257,7 +247,6 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 			}, nil
 		}
 	}
-	// Fallback: try the store directly.
 	if _, err := store.GetSession(ctx, arg); err == nil {
 		return core.CommandResult{
 			Actions: []core.CmdAction{{Type: "load_session", Value: arg}},
@@ -266,8 +255,7 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 	return core.CommandResult{}, fmt.Errorf("session not found: %s", arg)
 }
 
-// HandleBranchCommand creates a child session and returns a branch_session
-// action with the child ID. The consuming surface loads the ancestor messages.
+// HandleBranchCommand creates a child session and returns a branch_session action.
 func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -291,8 +279,7 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 	}, nil
 }
 
-// HandleLabelCommand updates the session label in the store and returns
-// a set_label action for the surface to update its display.
+// HandleLabelCommand updates the session label in the store and returns a set_label.
 func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -316,8 +303,7 @@ func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionI
 	}, nil
 }
 
-// HandleExportCommand reads messages from the store and writes them as
-// JSONL to the given path. No surface state needed.
+// HandleExportCommand reads messages from the store and writes them as JSONL.
 func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {
 		return core.CommandResult{}, fmt.Errorf("no active session to export")

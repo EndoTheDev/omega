@@ -24,8 +24,7 @@ func withSession(ctx context.Context, id string) context.Context {
 	return agent.WithSessionID(ctx, id)
 }
 
-// dottedToolNames is the full split wire (the B ruling, t_f616ed78):
-// exactly these seven, and no flat kanban tool.
+// dottedToolNames is the full split wire: exactly these seven, and no flat kanban tool.
 var dottedToolNames = []string{
 	"kanban.list",
 	"kanban.create",
@@ -56,11 +55,10 @@ func TestToolsRegistryCarriesSevenDottedTools(t *testing.T) {
 	}
 }
 
-// TestDottedToolSchemasCarryOnlyTheirOwnArgs pins the split's schema
-// win (the card's acceptance): each tool's property set is exactly its
-// own verb's args and its required list is exactly its own - comment
-// carries no title, create carries no operations, list carries no
-// required key at all, and no tool knows the retired action property.
+// TestDottedToolSchemasCarryOnlyTheirOwnArgs pins the split's schema win: each tool's
+// property set is exactly its own verb's args and its required list is exactly its own
+// - comment carries no title, create carries no operations, list carries no required
+// key at all, and no tool knows the retired action property.
 func TestDottedToolSchemasCarryOnlyTheirOwnArgs(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()
@@ -229,40 +227,33 @@ func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 	}
 }
 
-// TestDottedToolsCoverAllVerbs is the split's behavior gate: every
-// pre-split verb's behavior is reachable through its own dotted tool,
-// driven through the real Run (the wire surface the loop calls).
+// TestDottedToolsCoverAllVerbs is the split's behavior gate.
 func TestDottedToolsCoverAllVerbs(t *testing.T) {
 	p, board := toolProvider(t)
 	tools := p.Tools()
 	ctx := withSession(context.Background(), "sess_split")
 
-	// the empty call is a legal list: no args at all
 	out, err := tools["kanban.list"].Run(ctx, nil)
 	if err != nil || out != "no tasks" {
 		t.Fatalf("empty list: %q %v", out, err)
 	}
 
-	// create
 	out, err = tools["kanban.create"].Run(ctx, map[string]any{"title": "split flow", "body": "spec"})
 	if err != nil || !strings.Contains(out, "created t_") {
 		t.Fatalf("create: %q %v", out, err)
 	}
 	id := strings.Fields(out)[1]
 
-	// list
 	out, err = tools["kanban.list"].Run(ctx, map[string]any{})
 	if err != nil || !strings.Contains(out, "split flow") {
 		t.Fatalf("list: %q %v", out, err)
 	}
 
-	// update
 	out, err = tools["kanban.update"].Run(ctx, map[string]any{"id": id, "status": StatusRunning})
 	if err != nil || !strings.Contains(out, id) {
 		t.Fatalf("update: %q %v", out, err)
 	}
 
-	// comment
 	out, err = tools["kanban.comment"].Run(ctx, map[string]any{"id": id, "body": "hello"})
 	if err != nil || !strings.Contains(out, "commented on") {
 		t.Fatalf("comment: %q %v", out, err)
@@ -272,7 +263,6 @@ func TestDottedToolsCoverAllVerbs(t *testing.T) {
 		t.Fatalf("comments = %+v", comments)
 	}
 
-	// complete
 	out, err = tools["kanban.complete"].Run(ctx, map[string]any{"id": id})
 	if err != nil || !strings.Contains(out, "done") {
 		t.Fatalf("complete: %q %v", out, err)
@@ -282,7 +272,6 @@ func TestDottedToolsCoverAllVerbs(t *testing.T) {
 		t.Fatalf("task = %+v", task)
 	}
 
-	// delete
 	out, err = tools["kanban.delete"].Run(ctx, map[string]any{"id": id})
 	if err != nil || !strings.Contains(out, "deleted") {
 		t.Fatalf("delete: %q %v", out, err)
@@ -292,8 +281,7 @@ func TestDottedToolsCoverAllVerbs(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatch covers the batch surface: create several in one
-// call, and update+comment together.
+// TestRunTaskBatch covers the batch surface.
 func TestRunTaskBatch(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := p.Tools()["kanban.batch"]
@@ -329,10 +317,9 @@ func TestRunTaskBatch(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchRollback pins the atomic batch contract: the batch
-// fails at the first bad op, everything earlier rolled back - the
-// board is exactly what it was before the call, and the result says
-// so (no orphaned creates).
+// TestRunTaskBatchRollback pins the atomic batch contract: the batch fails at the first
+// bad op, everything earlier rolled back - the board is exactly what it was before the
+// call, and the result says so (no orphaned creates).
 func TestRunTaskBatchRollback(t *testing.T) {
 	p, _ := toolProvider(t)
 	batch := p.Tools()["kanban.batch"]
@@ -355,9 +342,8 @@ func TestRunTaskBatchRollback(t *testing.T) {
 	}
 }
 
-// nonBatcher is a KanbanProvider without the Batcher capability: it
-// pins the honest fail-forward fallback for embedders the store's
-// transaction cannot cover.
+// nonBatcher is a KanbanProvider without the Batcher capability: it pins the honest
+// fail-forward fallback for embedders the store's transaction cannot cover.
 type nonBatcher struct{ inner *Store }
 
 func (b nonBatcher) CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error) {
@@ -385,9 +371,7 @@ func (b nonBatcher) Close() error { return nil }
 
 var _ KanbanProvider = nonBatcher{}
 
-// TestRunTaskBatchFailForward pins the no-Batcher fallback: the board
-// cannot roll back, so the batch stops at the first failure and the
-// applied prefix honestly stands.
+// TestRunTaskBatchFailForward pins the no-Batcher fallback: the board cannot roll.
 func TestRunTaskBatchFailForward(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -418,9 +402,9 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 }
 
-// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the
-// B ruling (t_f616ed78): the wire is exactly the seven dotted names -
-// the legacy alias shims and the flat domain tool never register.
+// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the B rule: the wire
+// is exactly the seven dotted names - the legacy alias shims and the flat domain tool
+// never register.
 func TestTaskAliasesRetired(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()

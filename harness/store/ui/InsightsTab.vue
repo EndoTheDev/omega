@@ -1,29 +1,18 @@
 <template>
-  <!-- card t_e1e61680: the /insights parity view. card t_d7fd3ad3: the
-       home moved - insights is a default-visible SECONDARY-sidebar tab
-       now (registry: singleton, unclosable, area "right"), superseding
-       the main-area width ruling. v0.14.3: the body references the
-       skills/tools tabs - the shared RegistryList (v0.14.1) renders
-       every block but the period summary as read-only rows (no fold:
-       showState=false), with the honest CSS bars riding the row's
-       #side slot. The same numbers the /insights report prints, the
-       browser pattern's look. No chart dependency. -->
   <section class="pane insights">
-    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
-         window selector + recompute ride the band; card t_f1a034dc: the
-         plain-text period label is GONE - it rendered the SAME value the
-         BandSelect chip already shows ("Last 7 days" beside "7 days"),
-         two controls for one window. The period still travels on the
-         band's hover tooltip (title-attr) and the overview block. The
-         band renders before the .insights-scroll body: scrolling the
-         dashboard never moves it. -->
+    <!--
+      the UNIVERSAL band (the shared TabBand).
+      The band renders before the.insights-scroll body: scrolling the dashboard never
+      moves it.
+    -->
     <TabBand
       title="Insights"
       :title-attr="data ? `${data.period}${data.period_start ? ': ' + data.period_start + ' — ' + data.period_end : ''}` : undefined">
-      <!-- card t_acad02ec (audit M1): the window selector rides the themed
-           listbox (BandSelect) - a native select popup is OS chrome over
-           the pane. The fixed literals below are the devProxy contract
-           (nuxt.config devProxy keys /insights?days=7|30|90|0). -->
+      <!--
+        (audit M1): the window selector rides the themed listbox (BandSelect).
+        The fixed literals below are the devProxy contract (nuxt.config devProxy keys
+        /insights?days=7|30|90|0).
+      -->
       <BandSelect
         class="insights-days"
         :model-value="days ?? INSIGHTS_DEFAULT_DAYS"
@@ -37,8 +26,6 @@
         aria-label="recompute insights"
         :disabled="loading"
         @click="load()">
-        <!-- card t_acad02ec (audit M7): the recompute glyph rides the Icon
-             vocabulary - no raw HTML entities -->
         <Icon
           name="refresh"
           :size="13" />
@@ -65,10 +52,6 @@
     <div
       v-else-if="data"
       class="insights-body">
-      <!-- overview: the /insights report's Overview block - the period
-           summary keeps its stat rows; the rest of the body is the
-           registry browser's list/row/interaction pattern (v0.14.3,
-           the skills/tools tabs' shared RegistryList). -->
       <section class="insights-box">
         <h3>overview</h3>
         <dl class="insights-overview">
@@ -81,10 +64,9 @@
         </dl>
       </section>
 
-      <!-- activity by day: one registry row per weekday, the honest CSS
-           bar rides the row's #side slot; the expanded detail names the
-           row's raw count (parity: the same numbers the /insights
-           report prints) -->
+      <!--
+        activity by day: one registry row per weekday, the honest CSS bar rides the.
+      -->
       <h3 class="insights-group">activity by day</h3>
       <RegistryList
         kind="insights"
@@ -100,9 +82,6 @@
         </template>
       </RegistryList>
 
-      <!-- top tools (hidden when zero, like the /insights report):
-           registry rows with
-           call bars; the expanded detail carries the share of all calls -->
       <template v-if="data.tools.length">
         <h3 class="insights-group">top tools</h3>
         <RegistryList
@@ -120,9 +99,6 @@
         </RegistryList>
       </template>
 
-      <!-- notable sessions (hidden when zero, like the /insights
-           report): the label
-           row expands into the row's own detail line -->
       <template v-if="notables.length">
         <h3 class="insights-group">notable sessions</h3>
         <RegistryList
@@ -152,14 +128,9 @@
   const data = ref<InsightsPayload | null>(null);
   const loading = ref(false);
   const loadError = ref<string | null>(null);
-  // initial window = 7 days (see ./defaultWindow.ts) - NOT the server
-  // default 30 a bare `/insights` gets. null only survives for the
-  // load() fold; a user pick (30/90/all) wins for the tab's lifetime.
+  // initial window = 7 days (see./defaultWindow.ts).
   const days = ref<number | null>(INSIGHTS_DEFAULT_DAYS);
 
-  // the fixed window literals (the /insights [days] arg): the band
-  // select's options. days=0 is "all time" - the server's bare /insights
-  // default (30) is deliberately NOT an option (card t_d7fd3ad3).
   const WINDOW_OPTIONS = [
     { value: 7, label: "7 days" },
     { value: 30, label: "30 days" },
@@ -175,10 +146,10 @@
     data.value ? [...data.value.daily].sort((a, b) => a.count - b.count) : [],
   );
 
-  // --- the registry-browser row models (v0.14.3, the skills/tools
-  // pattern on the /insights report's blocks): every block renders through
-  // the shared RegistryList - read-only rows (no fold), the #side slot
-  // carries the honest CSS bar + count the plain name line can't. ---
+  // the registry-browser row models (v0.14.3, the skills/tools pattern on the /insights
+  // report's blocks): every block renders through the shared RegistryList - read-only
+  // rows (no fold), the #side slot carries the honest CSS bar + count the plain name
+  // line can't.
   const dailyRows = computed<RegistryRow[]>(() =>
     daily.value.map((d) => ({
       name: d.day,
@@ -204,9 +175,6 @@
     })),
   );
 
-  // notable sessions: a triple of [label, stat]; rows with value 0 are
-  // omitted - the /insights report prints nothing for them, so neither
-  // does this.
   const notables = computed(() => {
     if (!data.value) return [];
     return [
@@ -229,7 +197,6 @@
   const dailyMax = () => Math.max(...daily.value.map((d) => d.count), 1);
   const barPct = (c: number | undefined) => ((c ?? 0) / dailyMax()) * 100;
 
-  // thousands separators, matching the /insights report's format
   const count = (n: number | undefined): string =>
     (n ?? 0).toLocaleString("en-US");
 
@@ -247,19 +214,11 @@
     }
   }
 
-  // the select's model drives refetch (null only shows on first load)
   watch(days, () => load());
   onMounted(load);
 </script>
 
 <style scoped>
-  /* card t_308e6d9b: the root stops being the scrollport - the band
-     anchors its top, the .insights-scroll wrapper under it owns the
-     scroll; the old root padding rides the wrapper. */
-  /* card t_ffab9823: the root stays padding-free - the 14px side inset
-     sat the band +14px inside (the only tab whose band left edge didn't
-     match Files); the scroll body carries the seat now (the 0px-top
-     stays flush). */
   .insights {
     flex: 1;
     min-height: 0;
@@ -278,19 +237,13 @@
     gap: 10px;
     padding: 4px 14px 10px;
   }
-  /* card t_acad02ec (audit M1): the window select rides the shared
-     BandSelect chip now - no native select chrome; only seating rides
-     here (the chip keeps the shared .model-chip look). The old
-     .insights-period small-print rule died with the label
-     (card t_f1a034dc). */
+  /* (audit M1): the window select rides the shared BandSelect chip now. */
   .insights-days {
     flex-shrink: 0;
   }
   .insights-days :deep(.model-chip) {
     padding: 2px 6px;
     font-size: 11px;
-    /* the band's dim look: transparent at rest, the chip's hover raise
-       stays (mirrors .band-tool) */
     background: transparent;
   }
   .insights-refresh {
@@ -304,8 +257,6 @@
     color: var(--text-dim);
   }
 
-  /* the registry-browser body: group subheads over shared
-     RegistryList sections (v0.14.3); the overview keeps its stat box */
   .insights-group {
     margin: 2px 0 0;
     font-size: 11px;
@@ -319,8 +270,6 @@
     padding-top: 2px;
   }
   .insights-box {
-    /* card t_acad02ec (audit M7): the stroke token - --z1-raised is a
-       surface fill, not a border color */
     border: 1px solid var(--stroke);
     border-radius: var(--r-pane);
     background: var(--z0);
@@ -351,16 +300,11 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* the row's honest bar + count, riding the row's #side slot: the
-     same CSS-width bars the /insights report prints, no chart
-     dependency */
   .insights-bar {
     flex: none;
     height: 8px;
     min-width: 1px;
     max-width: 96px;
-    /* card t_acad02ec (audit M7): the 8/6/4 radius ladder - 3px is off
-       it */
     border-radius: var(--r-chip);
     background: color-mix(in srgb, var(--accent) 60%, transparent);
     align-self: center;

@@ -118,7 +118,6 @@ func TestSSEData(t *testing.T) {
 }
 
 func TestSSEDataSequential(t *testing.T) {
-	// A single bufio.Reader can be read multiple times to walk the stream.
 	input := "event: ping\ndata: first\n: comment\ndata: second\ndata: [DONE]\ndata: third\n"
 	r := bufio.NewReader(strings.NewReader(input))
 
@@ -138,7 +137,6 @@ func TestSSEDataSequential(t *testing.T) {
 }
 
 func TestSetHTTPTimeout(t *testing.T) {
-	// Save and restore original timeout.
 	orig := httpClient.Timeout
 	t.Cleanup(func() { httpClient.Timeout = orig })
 
@@ -204,7 +202,7 @@ func TestThinkingEnabled(t *testing.T) {
 	}
 }
 
-// --- RetryHTTP / retryHTTP via httptest ---
+// RetryHTTP / retryHTTP via httptest
 
 // newRetryReq builds a retryable GET request (bytes.Reader body => GetBody set).
 func newRetryReq(t *testing.T, target string) *http.Request {

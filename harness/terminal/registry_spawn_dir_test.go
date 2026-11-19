@@ -11,12 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestSpawnDirOverride pins the shell.run working-directory
-// override (card t_ccf74d88): an explicit dir (absolute or
-// workspace-relative) roots the spawned command. The probe lingers
-// ~2s so the cwd assertion rides the log without racing the child's
-// exit (post-t_304afb4e the finished log stays put, but the read
-// while ALIVE is still the no-race shape).
+// TestSpawnDirOverride pins the shell.run working-directory override.
 func TestSpawnDirOverride(t *testing.T) {
 	ws := t.TempDir()
 	sub := filepath.Join(ws, "sub")
@@ -25,16 +20,12 @@ func TestSpawnDirOverride(t *testing.T) {
 	}
 	r := testRegistry(t)
 
-	// The probe prints its cwd and lingers ~2s (sleep on unix, ping
-	// on windows - cmd carries no sleep and rotates nothing while it
-	// waits).
 	probe := "pwd; sleep 2"
 	if runtime.GOOS == "windows" {
 		probe = "cd & ping -n 3 127.0.0.1 >NUL"
 	}
 
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
-	// Absolute override wins over the run's workspace.
 	if _, err := r.Spawn(ctx, probe, "abs-dir", sub); err != nil {
 		t.Fatalf("spawn abs dir: %v", err)
 	}
@@ -43,7 +34,6 @@ func TestSpawnDirOverride(t *testing.T) {
 		return err == nil && strings.Contains(log, sub)
 	})
 
-	// Relative dir rides the session workspace root.
 	if _, err := r.Spawn(ctx, probe, "rel-dir", "sub"); err != nil {
 		t.Fatalf("spawn rel dir: %v", err)
 	}
@@ -52,7 +42,6 @@ func TestSpawnDirOverride(t *testing.T) {
 		return err == nil && strings.Contains(log, sub)
 	})
 
-	// No dir: the run's workspace stands (t_9de5b009).
 	if _, err := r.Spawn(ctx, probe, "no-dir", ""); err != nil {
 		t.Fatalf("spawn workspace: %v", err)
 	}
@@ -61,8 +50,6 @@ func TestSpawnDirOverride(t *testing.T) {
 		return err == nil && strings.Contains(log, filepath.Clean(ws))
 	})
 
-	// The impossible dir is a spawn-side refusal (the shell.run door
-	// resolves the dir through the same override helper).
 	p := &ShellProvider{reg: r}
 	if _, err := p.reg.Spawn(ctx, probe, "dead-dir", "/omega-definitely-not-here"); err == nil {
 		t.Fatal("missing dir: want the spawn to be refused")

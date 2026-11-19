@@ -94,11 +94,7 @@ func TestBackoff(t *testing.T) {
 	}
 }
 
-// TestLoadBackoff pins the cold-load retry pacing (t_163d1e87): a
-// "load" verdict waits on LOAD-scale timescales - 5s/15s/45s - so a
-// default 3-retry budget spans ~65s and outlasts a real upstream model
-// load, unlike the 1s/2s/4s 429 pacing that ended the window before a
-// cold remote model (~1 minute observed) ever finished loading.
+// TestLoadBackoff pins the cold-load retry pacing.
 func TestLoadBackoff(t *testing.T) {
 	cases := []struct {
 		attempt int
@@ -123,9 +119,6 @@ func TestLoadBackoff(t *testing.T) {
 		})
 	}
 
-	// the full default window: 3 retries wait at least 65s in total -
-	// the observed cold-load latency fits inside the budget instead of
-	// outliving it
 	var total time.Duration
 	for attempt := 0; attempt < 3; attempt++ {
 		total += loadBackoff(attempt)

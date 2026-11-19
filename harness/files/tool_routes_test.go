@@ -31,7 +31,7 @@ func TestValidateRelPath(t *testing.T) {
 		"go.mod":            "go.mod",
 		"cmd/omega":         "cmd/omega",
 		"docs/a b.txt":      "docs/a b.txt",
-		".git":              ".git",              // hidden names are ordinary paths (t_ccd4a000)
+		".git":              ".git",              // hidden names are ordinary paths
 		"docs/.hidden":      "docs/.hidden",      // hidden nested name
 		".github/workflows": ".github/workflows", // hidden dir descends
 		"a/. b/c":           "a/. b/c",           // any non-traversal dot segment passes
@@ -68,8 +68,7 @@ func TestSortFileEntries(t *testing.T) {
 		{Name: "apple", IsDir: true},
 	}
 	got := sortFileEntries(in)
-	// Alpha.txt sorts equal to alpha.txt (case-insensitive); stable sort
-	// keeps the input order for the pair
+	// Alpha.txt sorts equal to alpha.txt (case-insensitive); stable sort keeps the input.
 	want := []string{"apple", "beta", "Alpha.txt", "alpha.txt", "zeta.txt"}
 	if len(got) != len(want) {
 		t.Fatalf("sortFileEntries returned %d entries; want %d", len(got), len(want))
@@ -79,16 +78,12 @@ func TestSortFileEntries(t *testing.T) {
 			t.Errorf("entry[%d] = %q; want %q", i, e.Name, want[i])
 		}
 	}
-	// pure: the input slice stays untouched
 	if in[3].Name != "alpha.txt" {
 		t.Errorf("sortFileEntries mutated its input")
 	}
 }
 
 func TestEnsureUnderRoot(t *testing.T) {
-	// the product calls this with native (EvalSymlinks-resolved) paths
-	// and builds its prefix with filepath.Separator - feed native
-	// shapes, slash literals alone are a posix pin
 	root := filepath.Join("/", "work")
 	if err := ensureUnderRoot(root, root); err != nil {
 		t.Errorf("root itself rejected: %v", err)
@@ -96,9 +91,9 @@ func TestEnsureUnderRoot(t *testing.T) {
 	if err := ensureUnderRoot(root, filepath.Join(root, "sub", "file")); err != nil {
 		t.Errorf("subpath rejected: %v", err)
 	}
-	// a literal prefix check - callers pass EvalSymlinks-resolved paths,
-	// so a ".." segment can never reach this function (validateRelPath
-	// rejects them upstream; the handler tests cover the full request path)
+	// a literal prefix check - callers pass EvalSymlinks-resolved paths, so a "." segment
+	// can never reach this function (validateRelPath rejects them upstream; the handler
+	// tests cover the full request path)
 	for _, p := range []string{
 		filepath.Join("/", "workup"),
 		filepath.Join("/", "etc", "passwd"),
@@ -273,18 +268,16 @@ func TestFilesReadMethodGate(t *testing.T) {
 	}
 }
 
-// TestFilesSymlinkEscape pins the full-request escape guard: symlinks
-// inside the working directory pointing outside (file and directory
-// targets) must get a structured 400 on both endpoints, never a disk
-// read of the target.
+// TestFilesSymlinkEscape pins the full-request escape guard: symlinks inside the
+// working directory pointing outside (file and directory targets) must get a structured
+// 400 on both endpoints, never a disk read of the target.
 func TestFilesSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
-	// targets must EXIST for the escape guard to answer: a dangling
-	// link fails the resolution upstream and the route 404s before the
-	// guard can say 400 (the /etc/* links are the posix shape; they do
-	// not exist on windows at all). Build real targets beside the
-	// workdir root: this second TempDir call is a sibling of the
-	// workdir, never inside it.
+	// targets must EXIST for the escape guard to answer: a dangling link fails the
+	// resolution upstream and the route 404s before the guard can say 400 (the /etc/*
+	// links are the posix shape; they do not exist on windows at all). Build real targets
+	// beside the workdir root: this second TempDir call is a sibling of the workdir, never
+	// inside it.
 	outside := filepath.Join(t.TempDir(), "outsider")
 	if err := os.MkdirAll(outside, 0o755); err != nil {
 		t.Fatalf("outside dir: %v", err)
@@ -317,10 +310,9 @@ func TestFilesSymlinkEscape(t *testing.T) {
 	}
 }
 
-// TestFilesRootBehindSymlink pins the containment base: a working
-// directory reached through a symlink (PWD points at the symlink) must
-// still serve requests - containment is checked against the
-// EvalSymlinks-resolved root, not the raw one.
+// TestFilesRootBehindSymlink pins the containment base: a working directory reached
+// through a symlink (PWD points at the symlink) must still serve requests - containment
+// is checked against the EvalSymlinks-resolved root, not the raw one.
 func TestFilesRootBehindSymlink(t *testing.T) {
 	dir := t.TempDir()
 	real := filepath.Join(dir, "realwork")
@@ -364,8 +356,7 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 	}
 }
 
-// filesPost exercises the write half the way filesGet exercises the
-// read half: a real Server.Handler() round-trip against the chdir'd root.
+// filesPost exercises the write half the way filesGet exercises the read half.
 func filesPost(t *testing.T, path string, jsonBody string) (*http.Response, map[string]any) {
 	t.Helper()
 	s := filesRouteMux(t)
@@ -444,7 +435,6 @@ func TestFilesWriteRefusals(t *testing.T) {
 			t.Errorf("%s (%s) error envelope missing or empty: %v", c.json, c.why, body)
 		}
 	}
-	// loud refusal means loud: nothing landed outside the root
 	if _, err := os.Stat(filepath.Join(filepath.Dir(dir), "outsidespawn")); !os.IsNotExist(err) {
 		t.Errorf("traversal wrote outside the root")
 	}
@@ -468,12 +458,8 @@ func TestFilesWriteSymlinkEscape(t *testing.T) {
 	}
 }
 
-// TestFilesDotNamesServe pins the narrowed guard end to end (card
-// t_ccd4a000, the Endo report symptom): hidden names are ordinary
-// paths - a dot FILE reads, a dot FOLDER lists, a hidden name writes
-// and mkdirs - while traversal and symlink escapes through the SAME
-// hidden names stay refused. Containment rides resolveUnderRoot +
-// ensureUnderRoot, never the segment scan.
+// TestFilesDotNamesServe pins the narrowed guard end to end. Containment rides
+// resolveUnderRoot + ensureUnderRoot, never the segment scan.
 func TestFilesDotNamesServe(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	_ = os.Mkdir(filepath.Join(dir, ".git"), 0o755)                             // setup
@@ -481,7 +467,6 @@ func TestFilesDotNamesServe(t *testing.T) {
 	_ = os.WriteFile(filepath.Join(dir, ".git", "HEAD"), []byte("ref"), 0o644)  // setup
 	_ = os.WriteFile(filepath.Join(dir, ".gitignore"), []byte("bin/\n"), 0o644) // setup
 
-	// a dot folder lists like any folder
 	res, body := filesGet(t, "/files/browse?path=.git")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("browse .git status = %d; want 200 (%v)", res.StatusCode, body)
@@ -492,7 +477,6 @@ func TestFilesDotNamesServe(t *testing.T) {
 	if len(entries) != 1 || entries[0].Name != "HEAD" {
 		t.Errorf("browse .git entries = %v; want [HEAD]", entries)
 	}
-	// a dot file previews like any file
 	res, body = filesGet(t, "/files/read?path=.gitignore")
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("read .gitignore status = %d; want 200 (%v)", res.StatusCode, body)
@@ -500,7 +484,6 @@ func TestFilesDotNamesServe(t *testing.T) {
 	if body["content"] != "bin/\n" {
 		t.Errorf("read .gitignore content = %q; want %q", body["content"], "bin/\n")
 	}
-	// a hidden name writes and mkdirs (the toolbar's surface)
 	if res, body := filesPost(t, "/files/write", `{"path":".gitignore","content":"v2"}`); res.StatusCode != http.StatusOK {
 		t.Errorf("write .gitignore status = %d; want 200 (%v)", res.StatusCode, body)
 	}
@@ -515,9 +498,7 @@ func TestFilesDotNamesServe(t *testing.T) {
 	}
 }
 
-// TestFilesDotSymlinkEscape pins the containment law THROUGH the newly
-// opened hidden names: a symlink (dot-named or not) that leaves the
-// root is refused on every half, and the outside target stays untouched.
+// TestFilesDotSymlinkEscape pins the containment law THROUGH the newly opened hidden.
 func TestFilesDotSymlinkEscape(t *testing.T) {
 	dir := chdirToWorkdir(t)
 	outside := filepath.Join(t.TempDir(), "victim.txt")
@@ -543,9 +524,6 @@ func TestFilesDotSymlinkEscape(t *testing.T) {
 func TestFilesWriteMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
 	_, r, _, _ := filesRouteMuxWithStore(t)
-	// invoked DIRECTLY: the mux registers only the POST pattern, so a
-	// wrong verb in production falls to the SPA catch-all - the handler's
-	// own gate is the pinned defense here
 	req := httptest.NewRequest(http.MethodGet, "/files/write", nil)
 	rec := httptest.NewRecorder()
 	r.handleFilesWrite(rec, req)
@@ -599,7 +577,6 @@ func TestFilesMkdirRefusals(t *testing.T) {
 func TestFilesMkdirMethodGate(t *testing.T) {
 	chdirToWorkdir(t)
 	_, r, _, _ := filesRouteMuxWithStore(t)
-	// direct invocation - see TestFilesWriteMethodGate
 	req := httptest.NewRequest(http.MethodPut, "/files/mkdir", strings.NewReader("{}"))
 	rec := httptest.NewRecorder()
 	r.handleFilesMkdir(rec, req)

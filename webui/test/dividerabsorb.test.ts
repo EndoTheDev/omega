@@ -1,20 +1,9 @@
-// omega webui: card t_8098aa06 - the fixed lanes' absorb law.
-//
-// A divider with a FIXED pane on one side controls that pane and the
-// ADJACENT neighbor absorbs 1:1. The old body wrote only the fixed pane's
-// px and let the flex reflow spread the delta over every flexible child:
-// the pane the divider touches tracked the pointer at its SHARE of the flex
-// space (Endo 2026-11-13: a small terminal pane beside the chat shrank at a
-// fraction of the drag - "the terminal shrinks SLOW", right divider only,
-// because the left divider is the both-flexible lane and already 1:1),
-// and a pane the user never touched moved too (the wall law).
-//
-// These tests drive the loop DockSplit.vue drives (frozen startPx, the
-// grafted split as the next event's input) and render the result through
-// the cellStyleFor law, pinning:
-//   - every leg of a terminal pane's two dividers tracks the pointer 1:1,
-//   - the panes the gesture did not touch hold their measured px,
-//   - the sizes sum survives (the record's px shares re-derive it).
+// omega webui: - the fixed lanes' absorb law. The old body wrote only the fixed pane's
+// px and let the flex reflow spread the delta over every flexible child: the pane the
+// divider touches tracked the pointer at its SHARE of the flex space (Endo: a small
+// terminal pane beside the chat shrank at a fraction of the drag - "the terminal
+// shrinks SLOW", right divider only, because the left divider is the both-flexible lane
+// and already 1:1), and a pane the user never touched moved too (the wall law).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -32,8 +21,9 @@ interface Child {
   edge?: "left" | "right" | "bottom";
 }
 
-/** a split whose fractions are the children's own px (the render reads
-    only the RATIO, and the drag treats the fractions as the baseline) */
+/**
+ * a split whose fractions are the children's own px.
+ */
 function tree(direction: "row" | "column", spec: Child[]): DockSplit {
   const children = spec.map((c) => makePane(c.comp, c.fixed ?? null, c.edge));
   const split = makeSplit(direction, children);
@@ -45,9 +35,7 @@ function tree(direction: "row" | "column", spec: Child[]): DockSplit {
 const fixedOf = (c: DockSplit["children"][number]): number | null =>
   c.kind === "pane" ? c.fixed : null;
 
-/** the render law (DockSplit.vue cellStyleFor): fixed panes keep their px,
-    flexible cells share the remaining box by their fraction
-    (px is only a ratio against the flex sum) */
+/** the render law (DockSplit.vue cellStyleFor). */
 function render(split: DockSplit, contentPx: number): number[] {
   let fixedSum = 0;
   let flexSum = 0;
@@ -66,8 +54,7 @@ function render(split: DockSplit, contentPx: number): number[] {
 const startPx = (split: DockSplit, contentPx: number): number[] =>
   render(split, contentPx).map((p) => Math.round(p));
 
-/** the component's loop: frozen startPx, one call per move event, the
-    grafted split carried into the next event */
+/** the component's loop: frozen startPx, one call per move event, the grafted split. */
 function feed(
   split: DockSplit,
   dividerIndex: number,
@@ -133,12 +120,10 @@ describe("the fixed lanes' adjacent absorb (card t_8098aa06)", () => {
     ]);
     const px = startPx(t, CONTENT2);
     assert.deepEqual(px, [240, 500, 700, 460]);
-    // dragging right grows the sidebar over the terminal
     const grow = render(feed(t, 1, px, CONTENT2, [20]), CONTENT2);
     assert.equal(Math.round(grow[0]!), 260);
     assert.equal(Math.round(grow[1]!), 480, "the terminal gives exactly 20 (was: 490)");
     assert.equal(Math.round(grow[2]!), 700, "the chat beyond never moves");
-    // and dragging left shrinks the sidebar, handing the px back 1:1
     const shrink = render(feed(t, 1, px, CONTENT2, [-20]), CONTENT2);
     assert.equal(Math.round(shrink[0]!), 220);
     assert.equal(Math.round(shrink[1]!), 520);

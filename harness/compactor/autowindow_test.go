@@ -9,9 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// contextWindowProvider wraps a provider with a forced ModelInfo
-// result, so the auto-probe path can be asserted against a known
-// window (and a known failure).
+// contextWindowProvider wraps a provider with a forced ModelInfo result,.
 type contextWindowProvider struct {
 	agent.Provider
 	info  llm.ModelInfo
@@ -32,10 +30,7 @@ func autoTestCompactor(p *contextWindowProvider, threshold float64) *Compactor {
 	}
 }
 
-// Auto probe feeds the budget: window 100000, reserve defaults to
-// 16384, effective 83680; at threshold 0.6 the budget is 50208. The
-// same history stays under a manual 32768 window's budget (9840) and
-// triggers compaction against the probed one.
+// Auto probe feeds the budget.
 var autoMsgs = []core.Message{
 	core.NewUser("first padded message to survive keep_first"),
 	core.NewUser(strings_repeat("middle filler ", 700)),
@@ -52,9 +47,6 @@ func strings_repeat(s string, n int) string {
 }
 
 func TestAutoWindowDrivesBudget(t *testing.T) {
-	// ~2900 chars -> ~725 tokens: under the manual-32768 budget but
-	// over the probed-100000-window threshold. Actually this asserts
-	// the arithmetic directly through BudgetWith/window below.
 	c := autoTestCompactor(&contextWindowProvider{}, 0.6)
 	if w := c.window(); w != 100000 {
 		t.Fatalf("window() = %d, want 100000 (manual > 0 wins)", w)
@@ -82,9 +74,7 @@ func TestAutoWindowZeroFallsBack(t *testing.T) {
 	if w := c.window(); w != 0 {
 		t.Fatalf("window() = %d, want 0", w)
 	}
-	// BudgetWith falls back to DefaultContextWindow 32768; reserve
-	// 16384 eats exactly half (not more), so effective = 16384;
-	// 16384 * 0.6 = 9830.
+	// BudgetWith falls back to DefaultContextWindow 32768; reserve 16384 eats exactly.
 	if got := c.config.BudgetWith(c.window()); got != 9830 {
 		t.Fatalf("budget = %d, want 9830", got)
 	}
@@ -102,10 +92,6 @@ func TestSetConfigKeepsAutoWindow(t *testing.T) {
 }
 
 func TestCompactUsesProbedWindow(t *testing.T) {
-	// History of ~700*12 chars -> ~2100 tokens. Manual default-config
-	// budget (window 0, no probe) would be 4096*0.6=2457 -> under
-	// budget, no compaction. Probed window 3000: effective 1500,
-	// threshold 1.0 -> budget 1500 -> compaction triggers.
 	summary := "summary text"
 	provider := &contextWindowProvider{
 		Provider: agent.NewFakeProvider("test",
@@ -139,7 +125,6 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 	ctx.ApplyOffer("provider", "provider", p)
 
 	plugin := &Plugin{}
-	// Auto: config 0 -> probe runs, window cached.
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: plugin, seam: "provider"}, plugin}, ctx, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +136,6 @@ func TestMountProbesAutoWindowOnlyWhenConfigZero(t *testing.T) {
 		t.Fatalf("auto probe: AutoWindow=%d calls=%d, want 123456/1", c.AutoWindow(), p.calls)
 	}
 
-	// Manual: config > 0 -> no probe at all.
 	p2 := &contextWindowProvider{info: llm.ModelInfo{ContextWindow: 999999}}
 	ctx2 := &core.Context{Configs: map[string]any{"compactor": agent.CompactionConfig{ContextWindow: 32768}}}
 	ctx2.ApplyOffer("provider", "provider", p2)
@@ -178,8 +162,7 @@ func TestMountProbeFailureStillBoots(t *testing.T) {
 	if c.AutoWindow() != 0 {
 		t.Fatalf("AutoWindow = %d, want 0", c.AutoWindow())
 	}
-	// Budget resolves through the DefaultContextWindow fallback:
-	// threshold 0 -> budget 0 regardless of window.
+	// Budget resolves through the DefaultContextWindow fallback.
 	if got := c.config.BudgetWith(c.window()); got != 0 {
 		t.Fatalf("budget = %d, want 0", got)
 	}

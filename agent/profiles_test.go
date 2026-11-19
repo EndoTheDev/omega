@@ -1,8 +1,6 @@
 package agent
 
-// profiles_test.go: the continuous-agent home surface (card
-// t_72ecca67). Every test runs in a scratch home - nothing here touches
-// a real ~/.omega (privacy law: no personal content beyond fixtures).
+// profiles_test.go: the continuous-agent home surface.
 
 import (
 	"os"
@@ -34,8 +32,6 @@ func TestScaffoldAgent(t *testing.T) {
 	if err := ScaffoldAgent(home, "scout", "fast code scout"); err != nil {
 		t.Fatalf("scaffold: %v", err)
 	}
-	// the settled layout: config/, data/, skills/; no persona file is
-	// ever seeded (ruling 1; privacy law).
 	for _, want := range []string{"config", "data", "skills"} {
 		if fi, err := os.Stat(filepath.Join(home, "agents", "scout", want)); err != nil || !fi.IsDir() {
 			t.Errorf("scaffold missing dir %s: %v", want, err)
@@ -50,19 +46,15 @@ func TestScaffoldAgent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read scaffolded config: %v", err)
 	}
-	// description is written; every knob is a comment (nothing live to
-	// break a boot).
 	if !strings.Contains(string(data), `"fast code scout"`) {
 		t.Errorf("scaffolded config lost the description")
 	}
 	if strings.Contains(string(data), "\nprovider:\n") {
 		t.Errorf("scaffolded config carries a live provider block; knobs must be commented")
 	}
-	// second scaffold of the same name is a conflict.
 	if err := ScaffoldAgent(home, "scout", "again"); err == nil {
 		t.Errorf("re-scaffold of existing agent accepted")
 	}
-	// default is not scaffoldable: it is the home root by definition.
 	if err := ScaffoldAgent(home, "default", ""); err == nil {
 		t.Errorf("scaffolding 'default' accepted")
 	}
@@ -162,7 +154,6 @@ func TestLoadProfileParsesConfigLayer(t *testing.T) {
 	if _, err := LoadProfile(home, "ghost"); err == nil {
 		t.Errorf("unknown agent returned no error")
 	}
-	// main always resolves (its home is the root).
 	d, err := LoadProfile(home, DefaultAgentName)
 	if err != nil || d.Name != DefaultAgentName {
 		t.Errorf("main profile did not synthesize: %+v %v", d, err)
@@ -170,9 +161,8 @@ func TestLoadProfileParsesConfigLayer(t *testing.T) {
 }
 
 func TestMainProfileMemoryAtRoot(t *testing.T) {
-	// main's persona files live at the home root (ruling 3); the
-	// pre-migration agents/default copy still counts so the panel
-	// never shows a phantom zero between boots.
+	// main's persona files live at the home root; the pre-migration agents/default copy
+	// still counts so the panel never shows a phantom zero between boots.
 	home := scratchHome(t)
 	os.WriteFile(filepath.Join(home, "memory.md"), []byte("# memory\nnoted"), 0o644)
 	if p := LoadProfiles(home)[0]; p.MemorySize == 0 {
@@ -194,9 +184,7 @@ func TestMigrateAgentHomesMovesPersonaUp(t *testing.T) {
 	if err := MigrateAgentHomes(home); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	// rename up: the retired dir must be gone and its content live at
-	// the root (ruling 3: agents/default dies in the move, main's
-	// persona files live at root).
+	// rename up: the retired dir must be gone and its content live at the root.
 	for _, name := range []string{"memory.md", "user.md"} {
 		if _, err := os.Stat(filepath.Join(home, "agents", "default")); !os.IsNotExist(err) {
 			t.Errorf("agents/default survived the migration")
@@ -288,7 +276,6 @@ func TestMigrateAgentHomesArchivesResidue(t *testing.T) {
 	if !warned {
 		t.Errorf("residue archived without a loud warning")
 	}
-	// persona still moves up; the unknowable remainder is preserved.
 	if string(mustRead(t, filepath.Join(home, "user.md"))) != "about endo" {
 		t.Errorf("persona move lost alongside residue archive")
 	}
@@ -320,12 +307,10 @@ func TestAgentSkillDirs(t *testing.T) {
 	os.MkdirAll(filepath.Join(home, "agents", "scout", "skills"), 0o755)
 
 	got := AgentSkillDirs(home, "scout")
-	// scout: shared first, own second, no home/skills.
 	if len(got) != 2 || !strings.HasSuffix(got[0], "shared") || !strings.Contains(got[1], "agents") {
 		t.Errorf("scout skill dirs = %v", got)
 	}
 	got = AgentSkillDirs(home, DefaultAgentName)
-	// main: shared first, then the home skills root.
 	if len(got) != 2 || !strings.HasSuffix(got[0], "shared") || !strings.HasSuffix(got[1], "skills") {
 		t.Errorf("main skill dirs = %v", got)
 	}
@@ -343,10 +328,7 @@ func TestScanProfileSkillNames(t *testing.T) {
 	}
 }
 
-// TestCloneAgentMaterializesEverything pins the CLONE law: a clone is a
-// full copy at birth - definition, skills, persona files and the
-// session store - and it diverges freely, so deleting the source
-// afterwards is legal (clone + delete IS the rename path).
+// TestCloneAgentMaterializesEverything pins the CLONE law.
 func TestCloneAgentMaterializesEverything(t *testing.T) {
 	home := scratchHome(t)
 	installStubSnapshot(t)
@@ -394,8 +376,6 @@ func TestCloneAgentMaterializesEverything(t *testing.T) {
 	if got := loadProfile(home, "scout").Description; got != "probe duty" {
 		t.Errorf("clone edit leaked into the source (%q)", got)
 	}
-	// Clone + delete is the rename path: deleting the source leaves a
-	// complete agent behind.
 	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
 		t.Fatal(err)
 	}
@@ -404,10 +384,7 @@ func TestCloneAgentMaterializesEverything(t *testing.T) {
 	}
 }
 
-// TestCloneAgentFromMainIsSecretFree pins the exception to "copy
-// everything": main's definition IS the home config, which carries the
-// provider secret - the clone starts on the scaffold instead and
-// references the host provider by name.
+// TestCloneAgentFromMainIsSecretFree pins the exception to "copy everything".
 func TestCloneAgentFromMainIsSecretFree(t *testing.T) {
 	home := scratchHome(t)
 	if err := WriteFileAtomic(AgentConfigPath(home, DefaultAgentName),
@@ -440,9 +417,7 @@ func TestCloneAgentFromMainIsSecretFree(t *testing.T) {
 	}
 }
 
-// TestMigrateAgentHomesMovesSoulUp pins soul.md as a persona file: the
-// retired agents/default copy migrates to the home root like user.md and
-// memory.md.
+// TestMigrateAgentHomesMovesSoulUp pins soul.md as a persona file.
 func TestMigrateAgentHomesMovesSoulUp(t *testing.T) {
 	home := scratchHome(t)
 	os.MkdirAll(filepath.Join(home, "agents", "default"), 0o755)
@@ -455,10 +430,9 @@ func TestMigrateAgentHomesMovesSoulUp(t *testing.T) {
 	}
 }
 
-// installStubSnapshot wires a fake StoreSnapshot for a test and returns
-// the (src,dst) pairs it saw. The real copier lives in harness/store
-// (this package never touches SQLite); the stub proves the clone CALLS
-// it once per store and never falls back to a byte copy.
+// installStubSnapshot wires a fake StoreSnapshot for a test and returns the (src,dst).
+// The real copier lives in harness/store (this package never touches SQLite); the stub
+// proves the clone CALLS it once per store and never falls back to a byte copy.
 func installStubSnapshot(t *testing.T) *[][2]string {
 	t.Helper()
 	prev := StoreSnapshot
@@ -475,10 +449,7 @@ func installStubSnapshot(t *testing.T) *[][2]string {
 	return &calls
 }
 
-// TestCloneAgentCopiesTheWholeHome pins Important 2 of the review: the
-// clone is complete enough to be a rename. The hand-owned config beside
-// the definition layer (crons.yaml), every store in data/, and the wall
-// sidecars' exclusion all travel with it.
+// TestCloneAgentCopiesTheWholeHome pins Important 2 of the review.
 func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 	home := scratchHome(t)
 	calls := installStubSnapshot(t)
@@ -486,7 +457,6 @@ func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	src := AgentDir(home, "scout")
-	// hand-owned schedules beside the definition layer
 	if err := WriteFileAtomic(filepath.Join(src, "config", "crons.yaml"), []byte("jobs: []\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +471,6 @@ func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// runtime scratch in data/ is not agent data
 	if err := os.WriteFile(filepath.Join(src, "data", "process.json"), []byte("[]"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -537,10 +506,7 @@ func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 	}
 }
 
-// TestCloneAgentFromMainCarriesItsSchedules pins the same completeness for
-// a clone of main: main's config directory travels minus the one file
-// that carries the host's provider secret. Its schedules ARE copied -
-// they are hand-owned and no tool can regenerate them.
+// TestCloneAgentFromMainCarriesItsSchedules pins the same completeness for a clone.
 func TestCloneAgentFromMainCarriesItsSchedules(t *testing.T) {
 	home := scratchHome(t)
 	installStubSnapshot(t)
@@ -577,11 +543,10 @@ func TestCloneAgentFromMainCarriesItsSchedules(t *testing.T) {
 	}
 }
 
-// TestCloneAgentFromMainRefusesMainOnlySchedules pins the guard on a
-// clone of main: main's crons.yaml may carry main-home-only fields that
-// the cron loader refuses INSIDE an agent home (fatally, at boot), so the
-// clone refuses instead of copying a file that would break the next boot
-// or silently dropping the operator's schedules.
+// TestCloneAgentFromMainRefusesMainOnlySchedules pins the guard on a clone of main:
+// main's crons.yaml may carry main-home-only fields that the cron loader refuses INSIDE
+// an agent home (fatally, at boot), so the clone refuses instead of copying a file that
+// would break the next boot or silently dropping the operator's schedules.
 func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 	for _, c := range []struct{ name, body, want string }{
 		{
@@ -595,10 +560,6 @@ func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 			want: "authors agent",
 		},
 		{
-			// Skills pinning is the loader's third agent-home refusal
-			// (harness/cron: "skills pinning is a main-home feature") and
-			// the one a clone gate missed before - copying it 201'd and
-			// then took the WHOLE daemon down on the next boot.
 			name: "skills pinned",
 			body: "jobs:\n  - name: nightly\n    schedule: \"0 3 * * *\"\n    prompt: patrol\n    skills:\n      - omega-dev\n",
 			want: "pins skills",
@@ -624,8 +585,6 @@ func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 			}
 		})
 	}
-	// An agent-legal schedule file still travels (jobs: [] and a
-	// wake-shaped job with no deliver/agent fields).
 	home := scratchHome(t)
 	installStubSnapshot(t)
 	legal := "jobs:\n  - name: journal\n    schedule: \"0 8 * * *\"\n    prompt: write\n"
@@ -710,10 +669,7 @@ func TestCloneAgentWithoutSnapshotIsLoud(t *testing.T) {
 	}
 }
 
-// TestMigrateAgentHomesRefusesSymlinkedSkill pins Nit 1 of the review:
-// copyTree's symlink refusal is a MIGRATION behavior too, and it is a
-// deliberate fail-loud, not an accident. A skill reachable only through
-// a link would otherwise land in the home as a dangling escape.
+// TestMigrateAgentHomesRefusesSymlinkedSkill pins Nit 1 of the review.
 func TestMigrateAgentHomesRefusesSymlinkedSkill(t *testing.T) {
 	home := scratchHome(t)
 	legacy := filepath.Join(home, "agents", "default")
@@ -731,9 +687,8 @@ func TestMigrateAgentHomesRefusesSymlinkedSkill(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "symlink") {
 		t.Fatalf("migration of a symlinked skill = %v, want the loud symlink refusal", err)
 	}
-	// The refusal is loud and leaves the migration unfinished: the
-	// legacy tree is still there for the operator to fix, never half
-	// merged into the home.
+	// The refusal is loud and leaves the migration unfinished: the legacy tree is still
+	// there for the operator to fix, never half merged into the home.
 	if _, statErr := os.Stat(legacy); statErr != nil {
 		t.Errorf("the refused migration destroyed the legacy tree: %v", statErr)
 	}

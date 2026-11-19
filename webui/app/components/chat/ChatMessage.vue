@@ -9,9 +9,6 @@
         class="md"
         v-html="rendered" />
       <template v-else-if="msgParts">
-        <!-- the user bubble's reference pills (t_7f09bd0c): the tokens
-             the composer produced, scanned straight off the message
-             text - the pill is inline, text around it stays verbatim -->
         <template
           v-for="(seg, i) in msgParts"
           :key="i">
@@ -22,7 +19,6 @@
             @open="openRef(seg.token!)" />
         </template>
       </template>
-      <!-- uploaded/attached images: thumbnails, click opens full size -->
       <div
         v-if="images?.length"
         class="msg-images">
@@ -34,8 +30,9 @@
           :alt="'attached image ' + (i + 1)"
           @click="openImage(img)" />
       </div>
-      <!-- non-image references (card t_8a569163): type glyph + name +
-           size - never a thumbnail, the bytes stayed server-side -->
+      <!--
+        non-image references: type glyph + name + size - never a thumbnail, the bytes.
+      -->
       <div
         v-if="attachments?.length"
         class="msg-files">
@@ -51,12 +48,6 @@
           <span class="msg-file-size">{{ attachmentSizeLabel(f.size) }}</span>
         </span>
       </div>
-      <!-- Endo's comment (2026-10-26): fork / copy / duration live on ONE
-           line at the bubble's bottom - the duration rides the action
-           row's right end. ASSISTANT responses only: user bubbles carry
-           no fork, no copy, no duration. While streaming the row hides
-           (no actions yet), so the live meter ticks on its own line
-           until the run ends. -->
       <span
         v-if="role === 'assistant' && streaming && elapsedLabel"
         class="msg-elapsed">{{ elapsedLabel }}</span
@@ -72,28 +63,24 @@
           :variant="variant"
           :item-id="itemId"
           @select="$emit('select', $event)" />
-        <!-- fork affordance (t_a62eeb43): any HISTORICAL message carries
-             it. Click anchors the composer - the next send continues
-             from this message. -->
+        <!-- fork affordance: any HISTORICAL message carries it. -->
         <button
           v-if="itemId && !streaming"
           class="msg-fork"
           type="button"
           title="fork from here - the next send continues from this message"
           @click.stop="emit('fork')">fork</button>
-        <!-- copy message (/copy parity): the click carries the RAW
-             source, never the render -->
+        <!--
+          copy message (/copy parity): the click carries the RAW source, never the.
+        -->
         <button
           class="msg-copy"
           type="button"
           :title="copyFailed ? 'copy failed' : copied ? 'copied' : 'copy message'"
           @click.stop="copyMessage">{{ copyFailed ? "failed" : copied ? "copied" : "copy" }}</button>
-        <!-- retry affordance (t_95d2bc34): THE NEWEST assistant response
-             carries it, and only when the run is idle (the owner passes
-             the signal - this component does not know the transcript).
-             Same replay the composer's face used to dispatch: the chat
-             panel's retry action through the pipe, the fresh response
-             becomes a sibling variant. -->
+        <!--
+          retry affordance: THE NEWEST assistant response carries it, and only when.
+        -->
         <button
           v-if="retryable && itemId"
           class="msg-retry"
@@ -112,7 +99,7 @@
   import { computed, inject, nextTick, onUnmounted, ref, watch } from "vue";
 
   import { decorateCodeblocks } from "../../composables/codeblocks";
-  // card t_a92450ea: the ONE copy path - insecure-context-proof
+  // the ONE copy path - insecure-context-proof
   import { copyText } from "../../composables/clipboard";
   import VariantSwitcher from "./VariantSwitcher.vue";
   import ReferencePill from "./ReferencePill.vue";
@@ -141,75 +128,43 @@
     role: "user" | "assistant";
     content: string;
     streaming?: boolean;
-    // store row id (restored history / post-run refetch) - the switcher
-    // and fork affordance's address; live bubbles carry none
     itemId?: string;
-    // this bubble's branch block (assistant responses with >=2 sibling
-    // runs) - resolved by ChatTab, rendered as the « 2/3 » switcher
     variant?: VariantBlock | null;
     time?: string;
-    // image attachments (user messages; restored history carries them)
     images?: OmegaImage[];
-    // non-image references (user messages, card t_8a569163): rendered as
-    // type-glyph chips with name + size - never thumbnailed
+    // non-image references: rendered as type-glyph chips with name + size - never.
     attachments?: OmegaAttachment[];
     // server-measured duration from restored history - wins over the
     // live meter (restored items mount final and never start one)
     finalMs?: number;
-    // the TURN's wall-clock total from prompt arrival to this answer
-    // landing (card t_3a857a2d): thinking, tool runs and smart-gate waits
-    // all bill into it. The answer row's badge shows THIS instead of the
-    // segment's own generation span - the last badge is the turn's honest
-    // bottom line, derived from the transcript's two timestamps so a
-    // restored turn reads the same number the live one did.
     turnMs?: number;
-    // elapsed-so-far of a segment that is STILL streaming here: a
-    // restored/remounted running answer counts on from the server's
-    // measurement instead of restarting its meter at the mount moment
-    // (card t_95385aba - the same anchor a running tool row carries)
     elapsedMs?: number;
-    // the run is IDLE and this bubble is the transcript's NEWEST
-    // assistant response: the retry chip shows (ChatTab derives it -
-    // the component does not know the transcript)
     retryable?: boolean;
   }>();
 
-  // the variant affordances surface upward: select carries the SIBLING
-  // index clicked; fork carries this bubble's store id. ChatItem maps
-  // select onto the branch point's id (this component does not know it).
   const emit = defineEmits<{
     (e: "select", index: number): void;
     (e: "fork"): void;
     (e: "retry"): void;
   }>();
 
-  // --- the sent-message pills (card t_7f09bd0c) ---
-  // USER bubbles only: the message text is scanned for the pill tokens
-  // the composer inserts (a leading /<skill-name>, a standalone
-  // @<path>) - the assistant bubble keeps the markdown render. The
-  // scan is the shared token model (pills.ts), not a transcript
-  // heuristic: pills exist exactly where the invocation grammar is.
+  // the sent-message pills --- USER bubbles only. The scan is the shared token model
+  // (pills.ts), not a transcript heuristic: pills exist exactly where the invocation
+  // grammar is.
   const msgParts = computed(() =>
     props.role === "user" ? splitRefSegments(props.content) : null,
   );
-  // the pill's open: the app always provides the viewer opener (FilesTab
-  // rides it) - a file ref opens in the Files pane, a skill ref opens
-  // its SKILL.md. Same renderer, same targets as the composer's strip.
+  // the pill's open: the app always provides the viewer opener (FilesTab rides it).
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function openRef(t: RefToken) {
     openViewerRef?.({ kind: t.kind, name: t.name });
   }
 
-  // Click-to-open: a data URL in a new browser tab is the plain full
-  // view (no lightbox infrastructure for v1).
+  // Click-to-open: a data URL in a new browser tab is the plain full view.
   function openImage(img: OmegaImage) {
     window.open(dataUrl(img), "_blank");
   }
 
-  // Assistant bubbles render markdown. Stream chunks land at one render
-  // per tick (createRenderScheduler), so partial markdown does not
-  // re-parse per chunk; the stream end re-renders the full clean HTML
-  // directly. User bubbles stay raw text.
   const rendered = ref("");
   const scheduler = createRenderScheduler((src) => {
     rendered.value = renderMarkdown(src);
@@ -232,44 +187,24 @@
     scheduler.cancel();
   });
 
-  // Elapsed counter (first response chunk -> stream_end): starts when the
-  // bubble mounts streaming and freezes at the final value when it ends -
-  // the finished answer keeps showing how long it took. Bubbles that
-  // arrive already-final (user messages, restored history) never start
-  // and render nothing. The transcript v-for keys on item identity
-  // (createItemKeySource), so a component instance always belongs to one
-  // item - no label ever leaks across a history rebuild or retry.
-  // A bubble that remounts MID-STREAM (tab switch, reload) starts its
-  // meter at the segment's elapsed-so-far (card t_95385aba): the
-  // duration keeps counting on instead of snapping back to zero.
-  //
-  // The frozen label prefers the TURN TOTAL (card t_3a857a2d): on the
-  // turn's answer row the badge is the whole span from the prompt
-  // arriving to this answer landing, not the last segment's share of it.
-  // The segment's own finalMs is the fallback for the rows that are not
-  // an answer (a mid-turn prose phase) and for a turn whose timestamps
-  // the wire has not handed over yet.
+  // Elapsed counter (first response chunk -> stream_end). Bubbles that arrive
+  // already-final (user messages, restored history) never start and render nothing.
   const elapsedLabel = useElapsed(
     () => props.turnMs ?? props.finalMs,
     () => props.streaming ?? false,
     () => props.elapsedMs ?? 0,
   );
 
-  // Hover timestamp: an empty ref removes the title attribute entirely
-  // (malformed or absent times render nothing, not a blank tooltip).
   const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
 
-  // Copy message (/copy parity, card t_868633b3): the bubble's RAW text
-  // reaches the clipboard - the markdown source for assistant bubbles,
-  // plain text for user ones - never the rendered HTML (codeblock copy
-  // already handles its own raw source). Same 1.2s copied affordance as
-  // the codeblock header button.
+  // Copy message: the bubble's RAW text reaches the clipboard - the markdown source for
+  // assistant bubbles, plain text for user ones - never the rendered HTML (codeblock
+  // copy already handles its own raw source).
   const copied = ref(false);
   const copyFailed = ref(false);
   let copyTimer: number | undefined;
   async function copyMessage() {
-    // card t_a92450ea: the ONE copy path - the affordance reflects the
-    // real verdict, never a voided rejection.
+    // the ONE copy path - the affordance reflects the real verdict, never a voided.
     const raw = await copyText(props.content);
     if (!raw) {
       copyFailed.value = true;
@@ -287,11 +222,7 @@
   }
   onUnmounted(() => window.clearTimeout(copyTimer));
 
-  // Codeblock UX (header bar, copy, collapse, 60vh cap). The markdown
-  // renderer owns the <pre><code> markup; the wrapper is added after each
-  // render so it survives streaming. v-html replacement tears the wrapper
-  // down on every tick - decorate re-adds it, keyed collapse state keeps
-  // the user's choice across re-renders.
+  // Codeblock UX (header bar, copy, collapse, 60vh cap).
   const mdEl = ref<HTMLElement | null>(null);
   const collapsed = new Set<number>();
   watch(rendered, () => {

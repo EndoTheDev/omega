@@ -11,20 +11,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestSessionContextPatch pins the session-context PATCH surface (card
-// t_9de5b009): model + workspace land on the row, the list payload
-// serves the pinned model, invalid workspaces are rejected before any
-// write, and GET /sessions/{id} restores both fields. The file used to
-// be the workspaces surface's whole test (both GET routes served from
-// agent/api); the picker routes rode the files capsule out with wave 3
-// (card t_b75df168, harness/files/workspaces_test.go) and only the
-// session-row PATCH face is left here - the file renamed with it.
-// The workspace-path validator itself is core.ResolveWorkspaceDir now
-// (the shared guard both consumers ride).
+// TestSessionContextPatch pins the session-context PATCH surface.
 func TestSessionContextPatch(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 
-	// Create a session row.
 	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"cx1"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -32,7 +22,6 @@ func TestSessionContextPatch(t *testing.T) {
 		t.Fatalf("create session: status = %d, want 201", rec.Code)
 	}
 
-	// PATCH the pinned model and a real directory as workspace.
 	ws := t.TempDir()
 	body := `{"model":"glm-5.3","workspace":` + string(jsonMarshal(ws)) + `}`
 	req = httptest.NewRequest(http.MethodPatch, "/sessions/cx1", strings.NewReader(body))
@@ -42,8 +31,7 @@ func TestSessionContextPatch(t *testing.T) {
 		t.Fatalf("patch: status = %d (%s), want 200", rec.Code, rec.Body.String())
 	}
 
-	// GET /sessions/{id} carries the pinned fields (the list payload rode
-	// the store capsule out with wave 2; the row truth is the store).
+	// GET /sessions/{id} carries the pinned fields.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/cx1", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

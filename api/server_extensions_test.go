@@ -1,13 +1,6 @@
 package api
 
-// GET /extensions tests (card t_14f73742): the endpoint must return the
-// real mounted module registry, not a fixture. This test mounts the
-// actual provider/logging/skills/tools/compactor plugins through
-// agent.MountAllAPI into a scratch home (t.TempDir), builds the Agent the
-// way cmd/omega does (NewFromContext → ctx.Infos), and asserts the wire
-// rows match ctx.Infos: mount order, descriptions from the Describer
-// seam, tool/command counts, and JSON shape (empty seams as arrays, a
-// missing description omitted).
+// GET /extensions tests: the endpoint must return the real mounted module registry.
 
 import (
 	"context"
@@ -27,10 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/tools"
 )
 
-// mountRealRegistry in cmd/omega's image: buildPlugins → buildConfigs →
-// MountAll → NewFromContext, scaled to a hermetic subset (the provider
-// plugin is required material - compactor lists it as its Requires seam
-// - and mounts fine on zero config). Configs point at the scratch home.
+// mountRealRegistry in cmd/omega's image.
 func mountRealRegistry(t *testing.T) *agent.Agent {
 	t.Helper()
 	home := t.TempDir()
@@ -51,13 +41,11 @@ func mountRealRegistry(t *testing.T) *agent.Agent {
 	if _, err := agent.MountAllAPI(plugins, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	// The offered file logger holds omega.log open; windows refuses the
-	// TempDir cleanup while a handle lives, so close it when done.
+	// The offered file logger holds omega.log open.
 	if l, ok := ctx.Services().Resolve("logger").(interface{ Close() error }); ok {
 		t.Cleanup(func() { l.Close() })
 	}
-	// The way the host builds it (agent.NewFromContext does
-	// SetExtensionInfos(ctx.Infos) internally).
+	// The way the host builds it.
 	return agent.NewFromContext(ctx, agent.AgentOptions{})
 }
 
@@ -97,28 +85,23 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 		}
 	}
 
-	// Spot-check the loaded set against what these real modules declare.
 	wantNames := []string{"observability", "provider", "skills", "tools", "compactor"}
 	for i, n := range wantNames {
 		if got[i].Name != n {
 			t.Fatalf("row %d: got %q, want %q", i, got[i].Name, n)
 		}
 	}
-	// Descriptions flow from the Describer seam for every real module.
 	for _, row := range got {
 		if row.Description == "" {
 			t.Errorf("%s: empty description (module misses agent.Describer?)", row.Name)
 		}
 	}
-	// The skills module mounts a real skills-provider tool: its row must
-	// count it, and provider's row carries the seam list as arrays.
+	// The skills module mounts a real skills-provider tool: its row must count it,.
 	for _, row := range got {
 		if row.Seams == nil {
 			t.Errorf("%s: seams must be an array on the wire, not null", row.Name)
 		}
-		// Expansion detail (card t_210a0d19): the name arrays ride the
-		// same wire and must agree with the counts - the webui's expanded
-		// row renders them verbatim, a count/name split would lie.
+		// Expansion detail: the name arrays ride the same wire and must agree.
 		if row.ToolNames == nil || len(row.ToolNames) != row.Tools {
 			t.Errorf("%s: tool_names %v, want %d names", row.Name, row.ToolNames, row.Tools)
 		}
@@ -126,8 +109,6 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 			t.Errorf("%s: command_names %v, want %d names", row.Name, row.CommandNames, row.Commands)
 		}
 	}
-	// Skill inventory names ride verbatim: find the skills row's dotted
-	// provider tools, and the /skills slash command in its command_names.
 	for _, row := range got {
 		if row.Name != "skills" {
 			continue
@@ -150,8 +131,6 @@ func TestHandleExtensionsRealRegistry(t *testing.T) {
 }
 
 func TestHandleExtensionsEmptyRegistry(t *testing.T) {
-	// Zero extensions mounted: an honest empty array, like the other
-	// inspector reads. The webui tab renders its empty state from this.
 	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
@@ -184,9 +163,7 @@ func TestHandleExtensionsMethodGuard(t *testing.T) {
 	}
 }
 
-// toggleRowCapsule is the E2 probe for the /extensions staleness law
-// (card t_b2654d6b): a toggleable capsule that mounts one tool and one
-// command, so its inventory row has counts to unwind with it.
+// toggleRowCapsule is the E2 probe for the /extensions staleness law.
 type toggleRowCapsule struct{ name string }
 
 func (c *toggleRowCapsule) Name() string                 { return c.name }
@@ -208,13 +185,10 @@ func (c *toggleRowCapsule) MountWithAPI(ctx *core.Context, api *agent.ExtensionA
 		func(context.Context, string, string) (core.CommandResult, error) { return core.CommandResult{}, nil })
 }
 
-// TestHandleExtensionsFollowsLiveToggle pins the inventory law: after
-// a live module toggle plus the host's re-wire (core.LiveSeams, what
-// cmd/omega does on every successful toggle), GET /extensions lists
-// exactly what is mounted - the disabled capsule's row drops, the
-// re-enabled one's row returns with its counts. Before the fix the
-// endpoint read the mount-time snapshot and kept listing a disabled
-// module while GET /modules said "disabled".
+// TestHandleExtensionsFollowsLiveToggle pins the inventory law: after a live module
+// toggle plus the host's re-wire (core.LiveSeams, what cmd/omega does on every
+// successful toggle), GET /extensions lists exactly what is mounted - the disabled
+// capsule's row drops, the re-enabled one's row returns with its counts.
 func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 	ctx := &core.Context{}
 	plugins := []agent.Plugin{
@@ -250,7 +224,6 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 		return nil
 	}
 
-	// Boot state: cron mounted, row present with its mounted counts.
 	rows := extensionRows()
 	cronRow := rowOf(rows, "cron")
 	if cronRow == nil {
@@ -288,8 +261,6 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 		t.Fatalf("toggle-on: cron row counts tools=%d commands=%d, want 1/1", cronRow.Tools, cronRow.Commands)
 	}
 
-	// The inventory matches the Context verbatim after every toggle:
-	// one authoritative listing, the journal replay.
 	if got := a.ExtensionInfos(); len(got) != len(ctx.Infos) {
 		t.Fatalf("agent inventory %d rows, ctx.Infos has %d", len(got), len(ctx.Infos))
 	}

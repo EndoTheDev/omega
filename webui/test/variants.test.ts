@@ -1,9 +1,4 @@
-// omega webui: variant navigation (t_a62eeb43). The switcher is driven
-// entirely by the server's variants block: variantOf/variantLabel do
-// the index/total math, renderTranscriptItems carries the store ids,
-// the switcher markup is conditional on the resolved block, the fork
-// chip is historical-only, and the host POSTs the select endpoint then
-// re-fetches (the active path IS the re-render). Run: node --test test/
+// omega webui: variant navigation.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -58,8 +53,7 @@ const silent: StreamHandlers = {
   onUsage: () => {},
 };
 
-// three siblings of one branch point (U1 re-run twice): the fresh retry
-// is active with no selector state - server default
+// three siblings of one branch point (U1 re-run twice).
 const BRANCH: VariantBlock = {
   message_id: "3",
   siblings: ["4", "7", "9"],
@@ -101,7 +95,6 @@ describe("variantLabel: the « 2/3 » index/total math", () => {
   });
   it("an out-of-range active or stale id clamps into range", () => {
     assert.deepEqual(variantLabel({ ...BRANCH, active: 5 }), { index: 2, count: 3 });
-    // a stale id not in siblings falls back to the clamped active
     assert.deepEqual(variantLabel(BRANCH, "999"), { index: 2, count: 3 });
   });
   it("degenerate count stays renderable", () => {
@@ -112,15 +105,9 @@ describe("variantLabel: the « 2/3 » index/total math", () => {
   });
 });
 
-// --- variantAnchors (t_0df4efd8): WHERE the switcher renders. A
-// multi-row replay's branch siblings are run HEAD row ids, and the
-// active head can be a THINKING row or a TOOL CALL row - a plain
-// message-only lookup renders nothing.
+// variantAnchors: WHERE the switcher renders.
 
-// the live-probed shape (t_078a2c35 verify, run-25Oct191736): the
-// retry replayed thinking + tool_call + tool_result + text - the
-// heads (46, 47) are both THINKING rows, the fresh answer text (49)
-// is not a sibling
+// the live-probed shape: the retry replayed thinking + tool_call + tool_result + text.
 const MULTIBRANCH: VariantBlock = {
   message_id: "45",
   siblings: ["46", "47"],
@@ -130,8 +117,7 @@ const MULTIBRANCH: VariantBlock = {
 const multiRunItems: TranscriptItem[] = [
   { kind: "message", role: "user", content: "q", id: "45" },
   { kind: "thinking", content: "hm", id: "47" } as TranscriptItem,
-  // the tool_result row (48) merged onto the call item - the id stays
-  // the CALL row's
+  // the tool_result row (48) merged onto the call item - the id stays the CALL row's
   { kind: "tool", name: "grep", status: "done", result: "x", id: "33" } as TranscriptItem,
   { kind: "message", role: "assistant", content: "answer", id: "49" },
 ];
@@ -153,7 +139,6 @@ describe("variantAnchors: the switcher survives multi-row replays", () => {
     ];
     const anchors = variantAnchors(items, [MULTIBRANCH]);
     assert.equal(anchors.get("47"), MULTIBRANCH);
-    // and the head as a tool line (no thinking, no text)
     const toolOnly: TranscriptItem[] = [
       { kind: "message", role: "user", content: "q", id: "45" },
       { kind: "tool", name: "grep", status: "done", result: "x", id: "47" } as TranscriptItem,
@@ -172,8 +157,6 @@ describe("variantAnchors: the switcher survives multi-row replays", () => {
   });
 
   it("one anchor per branch: the tool-call head does not double-anchor", () => {
-    // head = the tool call row itself, run carries a text row: the
-    // text bubble wins, the tool line stays chipless
     const items: TranscriptItem[] = [
       { kind: "message", role: "user", content: "q", id: "45" },
       { kind: "tool", name: "grep", status: "done", result: "x", id: "47" } as TranscriptItem,
@@ -241,7 +224,6 @@ describe("renderTranscriptItems: store ids ride the restore", () => {
       items.map((i) => ("id" in i ? i.id : undefined)),
       ["3", "4", undefined],
     );
-    // roles and durations are untouched by the id pass-through
     assert.equal(items[0]?.kind, "message");
     const a1 = items[0] as { role: string };
     const a2 = items[1] as { role: string; finalMs?: number };
@@ -275,8 +257,7 @@ describe("findMessageItem: the variants surface's address", () => {
 
 describe("ChatMessage markup: switcher + fork affordance", () => {
   it("the switcher mounts ONLY on a variant block, one-indexed, arrows emit", () => {
-    // t_0df4efd8: the chip markup is ONE component (VariantSwitcher) -
-    // the bubble's action row mounts it and forwards the sibling index
+    // the chip markup is ONE component (VariantSwitcher).
     assert.match(chatMessage, /<VariantSwitcher/);
     assert.match(chatMessage, /v-if="variant"/);
     assert.match(chatMessage, /@select="\$emit\('select', \$event\)"/);
@@ -296,9 +277,7 @@ describe("ChatMessage markup: switcher + fork affordance", () => {
   });
   it("the styles exist: hover-revealed fork chip, always-on switcher", () => {
     assert.match(css, /\.variant-switcher \{/);
-    // card t_0a9edc72: copy/fork/retry are ONE chip anatomy now - the
-    // fork's own selector rides the shared block instead of a standalone
-    // rule, so the pin matches the grouped selector list.
+    // copy/fork/retry are ONE chip anatomy now.
     assert.match(css, /\.msg-copy,\n\.msg-fork,\n\.msg-retry \{/, "one action-chip anatomy");
     assert.match(css, /\.bubble:hover \.msg-fork/);
     // the switcher is NOT hover-gated: only the action chips fade
@@ -322,8 +301,7 @@ describe("ChatItem + composer wiring", () => {
   });
 });
 
-// --- the host half: stubbed fetch routing by URL - /chat streams, the
-// transcript GET serves a detail, the variants POST captures its body ---
+// the host half: stubbed fetch routing by URL.
 
 let savedFetch: typeof globalThis.fetch;
 afterEach(() => {
@@ -392,7 +370,6 @@ describe("host.selectVariant: POST then the path re-renders", () => {
     try {
       const host = createChatHost(deps());
       host.ensureState("c1", "s1");
-      // seed the stale path (variant 2 active) before the flip
       const st = host.states.get("c1")!;
       st.restored = renderTranscriptItems([
         { kind: "user", id: "1", content: "q" },
@@ -402,8 +379,7 @@ describe("host.selectVariant: POST then the path re-renders", () => {
       assert.equal(ok, true);
       assert.deepEqual(posts, [{ message_id: "1", select: 0 }]);
       assert.equal(transcriptCalls, 1, "the select re-reads the branch truth");
-      // the fallback render was REPLACED by the refetch's render (a
-      // canvas-covered tab repaints through the snapshot refetch)
+      // the fallback render was REPLACED by the refetch's render.
       assert.equal(st.restored[1]?.kind, "message");
       assert.equal((st.restored[1] as { content: string }).content, "selected answer");
       assert.deepEqual(st.variants, [branch]);
@@ -562,8 +538,6 @@ describe("a run end refreshes the variants (switcher appears after retry)", () =
       assert.equal(ok, true);
       assert.equal(transcriptCalls >= 1, true, "the run end refetched the branch truth");
       assert.deepEqual(host.states.get("c1")!.variants, [branch], "the branch block arrived");
-      // the rendered ids come from the canvas rows now - variantOf
-      // resolves them the same way once the panel paints the siblings
       const msg = { kind: "message", role: "assistant", id: "9" } as Parameters<typeof variantOf>[0];
       assert.deepEqual(variantOf(msg, host.states.get("c1")!.variants), branch);
     } finally {

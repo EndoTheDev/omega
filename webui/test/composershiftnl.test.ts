@@ -1,12 +1,4 @@
-// omega webui: the composer's trailing-newline law (t_eb07b315). Chromium
-// hangs a block-final newline in pre-wrap - the draft carries the break
-// but the DOM renders no line box, so one Shift+Enter left the caret glued
-// to line 1 (the double-press bug). capTail appends ONE sentinel <br>
-// after a draft-final newline and removes it otherwise; the sentinel is
-// invisible to the draft reader and the caret arithmetic (non-chip
-// elements weigh zero). The real function text is extracted from the SFC
-// (brace-matched, the composer.test.ts shape) and run against a fake
-// contenteditable. Run: node --test webui/test/ (node >= 23 runs TS).
+// omega webui: the composer's trailing-newline law.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -19,8 +11,7 @@ const source = readFileSync(
   "utf8",
 );
 
-// brace-match a top-level `function <name>(...)` declaration out of the
-// SFC's script text - the extracted text IS the behavior under test
+// brace-match a top-level `function <name>(.)` declaration out of the SFC's script.
 function extractFn(name: string): string {
   const at = source.indexOf(`function ${name}(`);
   assert.ok(at > -1, `AppComposer carries function ${name}`);
@@ -36,10 +27,7 @@ function extractFn(name: string): string {
   assert.fail(`unbalanced braces around ${name}`);
 }
 
-// --- the fake contenteditable --------------------------------------------
-// text node: plain object with nodeType/nodeValue; element: class with a
-// dataset and childNodes; our BR sentinel: instantiates the harness's
-// brClass - capTail sees it through the injected HTMLBRElement binding.
+// the fake contenteditable -------------------------------------------- text node.
 
 const TEXT = 3;
 class FakeElement {
@@ -63,7 +51,6 @@ class FakeElement {
   }
   get previousSibling(): unknown {
     return null; // not needed by capTail; previousSibling walking
-    // happens on the brs themselves (set below)
   }
 }
 
@@ -88,8 +75,7 @@ function appendAll(el: FakeElement, ...kids: unknown[]): void {
 
 const tnode = (value: string) => ({ nodeType: TEXT, nodeValue: value });
 
-// evaluate the real draftTextOf + capTail against the fake DOM world
-// (the composer.test.ts shape: strip the TS annotations, eval the raw text)
+// evaluate the real draftTextOf + capTail against the fake DOM world.
 const draftTextOf = new Function(
   "Node",
   "Element",

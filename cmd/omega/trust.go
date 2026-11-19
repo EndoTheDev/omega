@@ -6,8 +6,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// cwd returns the current working directory, or "." if it cannot be
-// resolved.
+// cwd returns the current working directory, or "." if it cannot be resolved.
 func cwd() string {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -16,12 +15,9 @@ func cwd() string {
 	return dir
 }
 
-// The host's own need faces of the trust capsule (part 3, the seam
-// constitution): consumers declare the interface, Go satisfies it
-// structurally, and the seam resolves by key from the universal
-// registry at call time. The "trust" key is data, not a shared type -
-// delete the capsule and these faces nil-handle exactly as before
-// (proof: TestTrustRemovalProof, removal_test.go, eighth).
+// The host's own need faces of the trust capsule (part 3, the seam constitution). The
+// "trust" key is data, not a shared type - delete the capsule and these faces
+// nil-handle exactly as before (proof: TestTrustRemovalProof, removal_test.go, eighth).
 type trustResolver interface {
 	ResolveContext(dir string, approve, noApprove, interactive bool) string
 }
@@ -30,10 +26,9 @@ type trustStateReader interface {
 	State(dir string, approve, noApprove bool) string
 }
 
-// trustGate walks the trust seam's ResolveContext on behalf of the
-// host entry paths. Nil-guarded by capsule law: an unmounted trust
-// plugin answers "" (the gate simply does not exist) instead of panics
-// at serve/run startup.
+// trustGate walks the trust seam's ResolveContext on behalf of the host entry paths.
+// Nil-guarded by capsule law: an unmounted trust plugin answers "" (the gate simply
+// does not exist) instead of panics at serve/run startup.
 func trustGate(pctx *agent.Context, dir string, flags trustFlags, interactive bool) string {
 	if pctx == nil {
 		return ""
@@ -45,8 +40,7 @@ func trustGate(pctx *agent.Context, dir string, flags trustFlags, interactive bo
 	return seam.ResolveContext(dir, flags.approve, flags.noApprove, interactive)
 }
 
-// trustStatus is trustGate for the frontend status bar: the same
-// nil-guard, an unmounted seam leaves the status line bare.
+// trustStatus is trustGate for the frontend status bar: the same nil-guard,.
 func trustStatus(pctx *agent.Context, dir string, flags trustFlags) string {
 	if pctx == nil {
 		return ""
@@ -58,8 +52,7 @@ func trustStatus(pctx *agent.Context, dir string, flags trustFlags) string {
 	return seam.State(dir, flags.approve, flags.noApprove)
 }
 
-// trustFlags holds the trust-related CLI flags. CLI-only: no YAML or
-// env equivalent.
+// trustFlags holds the trust-related CLI flags.
 type trustFlags struct {
 	approve   bool // --approve
 	noApprove bool // --no-approve
@@ -79,8 +72,7 @@ func parseTrustArgs(args []string) trustFlags {
 	return f
 }
 
-// stripTrustArgs removes --approve and --no-approve from args, so the
-// remaining arguments are the run prompt.
+// stripTrustArgs removes --approve and --no-approve from args, so the remaining.
 func stripTrustArgs(args []string) []string {
 	out := make([]string, 0, len(args))
 	for _, a := range args {

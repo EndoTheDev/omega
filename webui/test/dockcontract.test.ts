@@ -1,12 +1,9 @@
-// omega webui: leaf-contract characterization (v0.14.4 milestone 2).
-// Pins TODAY'S divider-drag outcomes that the contract port touches - the
-// FIXED absorbing neighbor (128 floor, not the chat's 320), the
-// BOTH-FLEXIBLE fraction shift, and the contract factories/resolver.
-// dock.test.ts (floors, snap ladder, the divider wall law) and dockbottom.test.ts
-// (the bottom's share cap + 200 ladder) already characterize the rest.
-// The port's law (ruling 7): defaults reproduce today exactly - a pane
-// ships no contract until v:3 serializes one, so these must stay green
-// through every port step. Render-free; node's built-in test runner.
+// omega webui: leaf-contract characterization (v0.14.4 milestone 2). Pins TODAY'S
+// divider-drag outcomes that the contract port touches - the FIXED absorbing neighbor
+// (128 floor, not the chat's 320), the BOTH-FLEXIBLE fraction shift, and the contract
+// factories/resolver. The port's law: defaults reproduce today exactly - a pane ships
+// no contract until v:3 serializes one, so these must stay green through every port
+// step.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -28,16 +25,10 @@ const asPane = (n: unknown) => n as DockPane;
 const asSplit = (n: unknown) => n as DockSplit;
 
 describe("dragSplitDivider characterization: the fixed absorbing neighbor", () => {
-  // a row of TWO fixed panes (rare - the contract port's real case is the
-  // split pane beside a fixed shell): the absorbing neighbor floors at
-  // 128, not 320. room = 540 - 0 others = 540.
+  // a row of TWO fixed panes.
   const twoFixed = () => makeSplit("row", [makePane("sidebar", 240), makePane("files", 300)]);
 
   it("left fixed over a fixed neighbor: the cap reads the neighbor's 128 floor", () => {
-    // req 240 + 200 = 440 <= cap (540 - 128 = 412? NO: 440 > 412 ->
-    // clamped to the cap; snap 440 -> 320-ladder zone? 440 free (425..455
-    // is the 640 rung's neighborhood? no: 429..455 -> 440 is inside
-    // 425+15 = 440 edge of the 640 zone? 640's zone is 625..655 - free)
     const out = dragSplitDivider(twoFixed(), 1, [240, 300], 200, 540);
     assert.equal(asPane(out.split.children[0]).fixed, 412, "clamped at room - 128");
   });
@@ -50,7 +41,6 @@ describe("dragSplitDivider characterization: the fixed absorbing neighbor", () =
   });
 
   it("snap ladder still applies above a fixed neighbor (320 rung)", () => {
-    // req 320: inside the 320 rung's +-15 zone -> snaps
     const out = dragSplitDivider(twoFixed(), 1, [240, 300], 80, 540);
     assert.equal(asPane(out.split.children[0]).fixed, 320);
   });
@@ -73,14 +63,14 @@ describe("dragSplitDivider characterization: both panes flexible", () => {
     // counted the chat wall), so the chat absorbs to 872
     const out = dragSplitDivider(flex(), 1, [500, 500], 900, CONTENT);
     assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [87, 13]);
-    // huge left drag: finalLeft clamps at pxLo = contractFloorOf(chat) = 320 -
-    // a CHAT pane still walls at 320, never 128 (t_8bcbe72e's law, intact)
+    // huge left drag: finalLeft clamps at pxLo = contractFloorOf(chat) = 320 - a CHAT
+    // pane still walls at 320, never 128
     const back = dragSplitDivider(flex(), 1, [500, 500], -900, CONTENT);
     assert.deepEqual(asSplit(back.split).sizes.map((s) => Math.round(s * 100)), [32, 68]);
   });
 
   it("the +320 attractor snaps a flexible drag like a fixed one", () => {
-    // 500 + 130 = 630 -> inside 640's zone (625..655) -> snaps to 640
+    // 500 + 130 = 630 -> inside 640's zone (625.655) -> snaps to 640
     const out = dragSplitDivider(flex(), 1, [500, 500], 130, CONTENT);
     assert.deepEqual(asSplit(out.split).sizes.map((s) => Math.round(s * 100)), [64, 36]);
   });
@@ -123,12 +113,10 @@ describe("leaf contracts: factories resolve today's constants (ruling 7)", () =>
   });
 
   it("contractFloorOf: the drag caps read it - a 640-floor pane really walls at 640", () => {
-    // chat flexible with a hand-raised contract floor 640: the fixed-left
-    // cap becomes room - 640
+    // chat flexible with a hand-raised contract floor 640.
     const chat = { ...makePane("chat"), contract: { ...chatPaneContract(), minPx: 640 } };
     const sidebar = makePane("sidebar", 240);
     const split = makeSplit("row", [sidebar, chat]);
-    // room 1000 - 0 = 1000; cap = max(128, 1000 - 640) = 360
     const out = dragSplitDivider(split, 1, [240, 760], 900, 1000);
     assert.equal(asPane(out.split.children[0]).fixed, 360, "cap partitions by the contract floor");
     const snap = dragSplitDivider(split, 1, [240, 760], 120, 1000);

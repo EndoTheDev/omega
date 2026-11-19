@@ -1,10 +1,9 @@
 package main
 
-// settings_cli_test.go pins the terminal face of the settings pane
-// (card t_013b4643): `omega settings` / `get` / `set`. The load-bearing
-// assertions are the ones that prove there is no second truth - a CLI
-// set lands in the same config.yaml the webui's Schema() reads back,
-// and a refusal is the seam's own sentence with the file untouched.
+// settings_cli_test.go pins the terminal face of the settings pane. The load-bearing
+// assertions are the ones that prove there is no second truth - a CLI set lands in the
+// same config.yaml the webui's Schema reads back, and a refusal is the seam's own
+// sentence with the file untouched.
 
 import (
 	"os"
@@ -13,9 +12,7 @@ import (
 	"testing"
 )
 
-// settingsCLIHome prepares an OMEGA_HOME whose config.yaml is the file
-// both verbs resolve through resolveConfigPath. It returns the home and
-// the config path.
+// settingsCLIHome prepares an OMEGA_HOME whose config.yaml is the file both verbs.
 func settingsCLIHome(t *testing.T, body string) (home, cfgPath string) {
 	t.Helper()
 	home = t.TempDir()
@@ -27,9 +24,7 @@ func settingsCLIHome(t *testing.T, body string) (home, cfgPath string) {
 	return home, cfgPath
 }
 
-// TestSettingsCLIListsEveryKnobGroup proves the bare verb renders the
-// whole schema the pane's GET serves: groups as headers, every knob as
-// `key = value`, and the api_key masked.
+// TestSettingsCLIListsEveryKnobGroup proves the bare verb renders the whole schema.
 func TestSettingsCLIListsEveryKnobGroup(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML)
 
@@ -58,7 +53,7 @@ func TestSettingsCLIListsEveryKnobGroup(t *testing.T) {
 	}
 }
 
-// schemaKnobKeysFromCLI parses the `  key = value` lines of the list.
+// schemaKnobKeysFromCLI parses the ` key = value` lines of the list.
 func schemaKnobKeysFromCLI(t *testing.T, out string) map[string]bool {
 	t.Helper()
 	keys := map[string]bool{}
@@ -72,8 +67,7 @@ func schemaKnobKeysFromCLI(t *testing.T, out string) map[string]bool {
 	return keys
 }
 
-// TestSettingsCLIGetReadsOneKnob: a single key prints the raw value (no
-// quotes) so a script can consume it; an unknown key is loud.
+// TestSettingsCLIGetReadsOneKnob: a single key prints the raw value (no quotes).
 func TestSettingsCLIGetReadsOneKnob(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML)
 
@@ -94,9 +88,7 @@ func TestSettingsCLIGetReadsOneKnob(t *testing.T) {
 	}
 }
 
-// TestSettingsCLISetLandsInTheSeam: a CLI write persists into the same
-// config.yaml the pane's Schema() loads, and the refreshed schema the
-// seam returns is what prints - the readback, not the typed text.
+// TestSettingsCLISetLandsInTheSeam: a CLI write persists into the same config.yaml.
 func TestSettingsCLISetLandsInTheSeam(t *testing.T) {
 	_, cfgPath := settingsCLIHome(t, testConfigYAML)
 
@@ -135,9 +127,7 @@ func TestSettingsCLISetLandsInTheSeam(t *testing.T) {
 	}
 }
 
-// TestSettingsCLISetCoercesByKnobType: toggles accept the operator's
-// words, numbers the wire's float64, and the instances list the JSON the
-// pane posts.
+// TestSettingsCLISetCoercesByKnobType: toggles accept the operator's words, numbers.
 func TestSettingsCLISetCoercesByKnobType(t *testing.T) {
 	_, cfgPath := settingsCLIHome(t, testConfigYAML)
 
@@ -227,8 +217,7 @@ func TestSettingsCLIRequiresConfig(t *testing.T) {
 	}
 }
 
-// TestSettingsCLIUsageErrors: wrong arity and a leading-dash key are
-// usage refusals, not silent no-ops.
+// TestSettingsCLIUsageErrors: wrong arity and a leading-dash key are usage refusals.
 func TestSettingsCLIUsageErrors(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML)
 
@@ -248,8 +237,7 @@ func TestSettingsCLIUsageErrors(t *testing.T) {
 	}
 }
 
-// TestSettingsArgsStripsConfigFlag: --config is the file selector and
-// keeps working before or after the verb.
+// TestSettingsArgsStripsConfigFlag: --config is the file selector and keeps working.
 func TestSettingsArgsStripsConfigFlag(t *testing.T) {
 	got := settingsArgs([]string{"--config", "C:/tmp/x.yaml", "set", "server.port", "18432"})
 	want := []string{"set", "server.port", "18432"}
@@ -262,8 +250,7 @@ func TestSettingsArgsStripsConfigFlag(t *testing.T) {
 	}
 }
 
-// TestSettingsCLIHonorsConfigFlag: the write lands in the --config file,
-// not the home's.
+// TestSettingsCLIHonorsConfigFlag: the write lands in the --config file, not.
 func TestSettingsCLIHonorsConfigFlag(t *testing.T) {
 	settingsCLIHome(t, testConfigYAML) // home config (untouched)
 	other := filepath.Join(t.TempDir(), "other.yaml")

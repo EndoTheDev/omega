@@ -10,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// mockLogger records all Printf/Warnf/Errorf calls so tests can assert on
-// the logging branches in Run().
+// mockLogger records all Printf/Warnf/Errorf calls so tests can assert on the logging.
 type mockLogger struct {
 	printfCalls []string
 	warnfCalls  []string
@@ -42,8 +41,7 @@ func contains(calls []string, substr string) bool {
 	return false
 }
 
-// drainEvents runs the loop in a goroutine and blocks until the events
-// channel is closed, returning an AgentEnd if one was observed.
+// drainEvents runs the loop in a goroutine and blocks until the events channel is.
 func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 	t.Helper()
 	var endEvent *core.AgentEnd
@@ -59,8 +57,7 @@ func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 	return *endEvent
 }
 
-// TestLoopWithLogger verifies the logger records "agent loop starting"
-// and "agent ended" for a basic one-turn conversation.
+// TestLoopWithLogger verifies the logger records "agent loop starting" and "agent.
 func TestLoopWithLogger(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -91,11 +88,9 @@ func TestLoopWithLogger(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerMaxTurns verifies the logger records "max turns reached"
-// when the turn cap is hit.
+// TestLoopLoggerMaxTurns verifies the logger records "max turns reached" when.
 func TestLoopLoggerMaxTurns(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
-		// Turn 1: emit a tool call so the loop continues.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -139,8 +134,7 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerStreamError verifies the logger records "stream error"
-// when the provider sends a StreamEnd with an Error.
+// TestLoopLoggerStreamError verifies the logger records "stream error" when.
 func TestLoopLoggerStreamError(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},
@@ -167,8 +161,7 @@ func TestLoopLoggerStreamError(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerToolError verifies the logger records a tool error when
-// a tool's Run returns an error.
+// TestLoopLoggerToolError verifies the logger records a tool error when a tool's Run.
 func TestLoopLoggerToolError(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -216,9 +209,7 @@ func TestLoopLoggerToolError(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerOverflowNoCompactor verifies the logger records
-// "context full, no compactor loaded" when the provider sends an
-// overflow error and no compactor is configured.
+// TestLoopLoggerOverflowNoCompactor verifies the logger records "context full, no.
 func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
@@ -246,7 +237,7 @@ func TestLoopLoggerOverflowNoCompactor(t *testing.T) {
 	}
 }
 
-// TestPluginRequires verifies that Plugin.Requires() returns nil.
+// TestPluginRequires verifies that Plugin.Requires returns nil.
 func TestPluginRequires(t *testing.T) {
 	p := NewPlugin()
 	req := p.Requires()

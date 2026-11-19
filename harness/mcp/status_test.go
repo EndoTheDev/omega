@@ -1,6 +1,4 @@
-// Status inventory tests (card t_c7136c50): the read-only GET
-// /mcp/servers surface the webui MCP dock tab lists — shape, empty
-// state, and per-server connection truth.
+// Status inventory tests: the read-only GET /mcp/servers surface the webui MCP dock.
 package mcp
 
 import (
@@ -12,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountPlugin mounts the plugin the api way and returns the live
-// Context (the ModuleRoutes ledger rides it).
+// mountPlugin mounts the plugin the api way and returns the live Context.
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -23,8 +20,7 @@ func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	return ctx
 }
 
-// serveStatusRoute finds the module's GET /mcp/servers route on the
-// context and serves one GET through it.
+// serveStatusRoute finds the module's GET /mcp/servers route on the context.
 func serveStatusRoute(t *testing.T, ctx *core.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -57,9 +53,7 @@ func TestStatusRouteNilBridge(t *testing.T) {
 	if len(rep.Servers) != 0 {
 		t.Fatalf("servers: got %d, want 0", len(rep.Servers))
 	}
-	// the tool seam stays claimed even on a nil bridge (the reload
-	// cycle, card t_d6e94e79): one provider that follows the live
-	// bridge per call - it serves the empty map now
+	// the tool seam stays claimed even on a nil bridge.
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("tool providers: got %d, want 1", len(ctx.ToolProviders))
 	}
@@ -68,9 +62,7 @@ func TestStatusRouteNilBridge(t *testing.T) {
 	}
 }
 
-// TestStatusRouteEmptyBridge verifies an existing-but-empty bridge
-// serves the empty report from its own Status, and the route rides
-// the ModuleRoutes ledger.
+// TestStatusRouteEmptyBridge verifies an existing-but-empty bridge serves the empty.
 func TestStatusRouteEmptyBridge(t *testing.T) {
 	b, err := NewBridge(nil)
 	if err != nil {
@@ -88,16 +80,12 @@ func TestStatusRouteEmptyBridge(t *testing.T) {
 	if len(rep.Servers) != 0 {
 		t.Fatalf("servers: got %v, want empty", rep.Servers)
 	}
-	// the additive tools seam stays claimed the classic way
 	if len(ctx.ToolProviders) != 1 {
 		t.Fatalf("tool providers: got %d, want 1", len(ctx.ToolProviders))
 	}
 }
 
-// TestStatusReportConnectionTruth builds a bridge over three shapes —
-// a live HTTP MCP server, an entry with neither command nor url, and a
-// refusing URL — and verifies the report names transport, connection,
-// failure, and the server-qualified tools.
+// TestStatusReportConnectionTruth builds a bridge over three shapes — a live HTTP MCP.
 func TestStatusReportConnectionTruth(t *testing.T) {
 	srv := mockMCPServer(t, "test-session")
 	cfg := &mcpConfig{Servers: []serverConfig{
@@ -142,9 +130,7 @@ func TestStatusReportConnectionTruth(t *testing.T) {
 	}
 }
 
-// TestStatusRouteWithLiveServer verifies the full env path: config
-// from MCP_SERVERS, a connected server, and the JSON body over the
-// actual route handler.
+// TestStatusRouteWithLiveServer verifies the full env path.
 func TestStatusRouteWithLiveServer(t *testing.T) {
 	srv := mockMCPServer(t, "test-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"proof","url":"`+srv.URL+`"}]}`)

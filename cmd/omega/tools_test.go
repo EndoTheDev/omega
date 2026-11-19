@@ -1,10 +1,9 @@
 package main
 
-// tools_test.go: the `omega tools` verb grammar + the one-write law
-// (card t_441deb04). The toggle's persistence half is exercised against
-// a real config.yaml through writeDisabled - the same writer the PUT
-// /disabled/tools route rides - so the test asserts landed file truth
-// (the fold a boot would read), never a snapshot of internal state.
+// tools_test.go: the `omega tools` verb grammar + the one-write law. The toggle's
+// persistence half is exercised against a real config.yaml through writeDisabled - the
+// same writer the PUT /disabled/tools route rides - so the test asserts landed file
+// truth (the fold a boot would read), never a snapshot of internal state.
 
 import (
 	"os"
@@ -16,7 +15,6 @@ import (
 )
 
 func TestToggleToolFold(t *testing.T) {
-	// disable appends and sorts
 	next, changed := toggleToolFold([]string{"files.write"}, "files.grep", false)
 	if !changed {
 		t.Fatal("disable of a new name reported no change")
@@ -24,20 +22,16 @@ func TestToggleToolFold(t *testing.T) {
 	if strings.Join(next, ",") != "files.grep,files.write" {
 		t.Fatalf("fold = %v, want sorted [files.grep files.write]", next)
 	}
-	// disable of an already-disabled name is an honest no-op
 	if _, changed := toggleToolFold([]string{"files.grep"}, "files.grep", false); changed {
 		t.Fatal("double disable reported a change")
 	}
-	// enable removes
 	next, changed = toggleToolFold([]string{"files.grep", "files.write"}, "files.grep", true)
 	if !changed || strings.Join(next, ",") != "files.write" {
 		t.Fatalf("enable fold = %v (changed %v), want [files.write]", next, changed)
 	}
-	// enable of a name that is not folded is a no-op
 	if _, changed := toggleToolFold([]string{"files.write"}, "files.grep", true); changed {
 		t.Fatal("enable of an unfolded name reported a change")
 	}
-	// the last removal empties the namespace
 	next, changed = toggleToolFold([]string{"files.write"}, "files.write", true)
 	if !changed || len(next) != 0 {
 		t.Fatalf("last enable = %v (changed %v), want empty", next, changed)
@@ -90,10 +84,6 @@ func TestToolBrief(t *testing.T) {
 	}
 }
 
-// TestPersistToolFoldRoundTrip is the CLI's round-trip receipt in
-// miniature: disable lands in the config.yaml fold a boot reads, a
-// reload sees it, enable takes it back out, and the surrounding
-// document (comments, other keys) survives the write.
 func TestPersistToolFoldRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -126,7 +116,6 @@ func TestPersistToolFoldRoundTrip(t *testing.T) {
 		}
 	}
 
-	// a second disable of the same name writes nothing
 	before := string(data)
 	changed, err = persistToolFold(path, cfg.Disabled, "files.write", false)
 	if err != nil || changed {
@@ -136,7 +125,6 @@ func TestPersistToolFoldRoundTrip(t *testing.T) {
 		t.Fatalf("no-op disable rewrote the file:\n%s", after)
 	}
 
-	// enable takes it back out; the empty namespace leaves no key
 	changed, err = persistToolFold(path, cfg.Disabled, "files.write", true)
 	if err != nil || !changed {
 		t.Fatalf("enable = changed %v err %v", changed, err)
@@ -150,9 +138,8 @@ func TestPersistToolFoldRoundTrip(t *testing.T) {
 	}
 }
 
-// TestPersistToolFoldKeepsSiblingNamespaces pins the fold's sibling law:
-// a tools write must not eat the skills/agents/modules namespaces the
-// same config.yaml key carries.
+// TestPersistToolFoldKeepsSiblingNamespaces pins the fold's sibling law: a tools write
+// must not eat the skills/agents/modules namespaces the same config.yaml key carries.
 func TestPersistToolFoldKeepsSiblingNamespaces(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -179,9 +166,7 @@ func TestPersistToolFoldKeepsSiblingNamespaces(t *testing.T) {
 	}
 }
 
-// TestCmdToolsRefusals pins the loud-refusal lanes: a missing name, an
-// extra argument, a flag where the name belongs, and an unknown verb.
-// None of them may touch config.yaml.
+// TestCmdToolsRefusals pins the loud-refusal lanes.
 func TestCmdToolsRefusals(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -216,9 +201,8 @@ func TestCmdToolsRefusals(t *testing.T) {
 	}
 }
 
-// TestCmdToolsListRejectsTrailingArgs pins the same law the crons list
-// nit called out: list takes no positionals, it does not silently
-// ignore them.
+// TestCmdToolsListRejectsTrailingArgs pins the same law the crons list nit called out:
+// list takes no positionals, it does not silently ignore them.
 func TestCmdToolsListRejectsTrailingArgs(t *testing.T) {
 	if err := cmdTools([]string{"list", "stray"}); err == nil ||
 		!strings.Contains(err.Error(), "takes no arguments") {

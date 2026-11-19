@@ -12,13 +12,10 @@ func nudgeObs(n *TurnNudger, tool string, count int) {
 	}
 }
 
-// nudgeWrites feeds n observations of an ordinary write-class tool
-// call - work that changes something but persists no lesson.
+// nudgeWrites feeds n observations of an ordinary write-class tool call.
 func nudgeWrites(n *TurnNudger, count int) { nudgeObs(n, "files.edit", count) }
 
-// nudgeReads feeds n observations of a read-class tool call and
-// checks, on EVERY one, that the turn prep stays quiet - the shape
-// of a probe pass, where each tool batch is followed by a turn prep.
+// nudgeReads feeds n observations of a read-class tool call and checks, on EVERY one.
 func nudgeReads(t *testing.T, n *TurnNudger, count int) {
 	t.Helper()
 	for i := range count {
@@ -29,9 +26,7 @@ func nudgeReads(t *testing.T, n *TurnNudger, count int) {
 	}
 }
 
-// TestNudgeFiresAtFifteen: the default cadence - the line first comes
-// on the 15th write-class iteration after the last lesson, once, and
-// consumes itself (the next one is a full interval away).
+// TestNudgeFiresAtFifteen: the default cadence.
 func TestNudgeFiresAtFifteen(t *testing.T) {
 	n := NewTurnNudger(DefaultNudgeInterval)
 	nudgeWrites(n, DefaultNudgeInterval-1)
@@ -54,13 +49,8 @@ func TestNudgeFiresAtFifteen(t *testing.T) {
 // nudgeLinePrefix is the stable head of the reminder line.
 func nudgeLinePrefix() string { return "Learning loop:" }
 
-// TestNudgeSilentInReadOnlyPass: the QA finding A5 shape - a pass
-// constrained to probing (reads, greps, shell commands, searches)
-// receives ZERO nudges no matter how long it runs.
 func TestNudgeSilentInReadOnlyPass(t *testing.T) {
 	n := NewTurnNudger(DefaultNudgeInterval)
-	// 6 intervals' worth of read-class calls of every probe-pass
-	// flavor: none of them arms the nudge.
 	tools := []string{"files.read", "files.grep", "files.glob", "shell.run", "search", "web.fetch", "skills.read", "delegate.task"}
 	for range 12 {
 		for _, tool := range tools {
@@ -72,9 +62,7 @@ func TestNudgeSilentInReadOnlyPass(t *testing.T) {
 	}
 }
 
-// TestNudgeFiresAfterReadStretchEnds: the counter keeps running while
-// the nudge is backed off, so the FIRST write-class call after a long
-// read-only stretch makes the reminder due at the next turn prep.
+// TestNudgeFiresAfterReadStretchEnds: the counter keeps running while the nudge is.
 func TestNudgeFiresAfterReadStretchEnds(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeReads(t, n, 40)
@@ -82,13 +70,11 @@ func TestNudgeFiresAfterReadStretchEnds(t *testing.T) {
 	if line := n.NudgeLine(); line == "" {
 		t.Fatal("first write-class call after a read stretch did not make the nudge due")
 	}
-	// Consumed: a following read-only stretch is quiet again.
 	nudgeReads(t, n, 30)
 }
 
-// TestNudgeQuietAgainAfterWriteWindow: once a nudge fires, a stretch
-// of plain reads does not produce another - the reminder is armed by
-// writing, never by probing.
+// TestNudgeQuietAgainAfterWriteWindow: once a nudge fires, a stretch of plain reads
+// does not produce another - the reminder is armed by writing, never by probing.
 func TestNudgeQuietAgainAfterWriteWindow(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeWrites(n, 15)
@@ -126,10 +112,7 @@ func TestWriteClass(t *testing.T) {
 	}
 }
 
-// TestNudgeResetsOnSkillsWrite: a skills write or update is the
-// persisted lesson - the counter resets and the next nudge is a full
-// interval later. A failed skills write still counts as the lesson
-// attempt (the reset rides the call, not its success).
+// TestNudgeResetsOnSkillsWrite: a skills write or update is the persisted lesson.
 func TestNudgeResetsOnSkillsWrite(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeWrites(n, 14)
@@ -138,7 +121,6 @@ func TestNudgeResetsOnSkillsWrite(t *testing.T) {
 	if line := n.NudgeLine(); line != "" {
 		t.Fatalf("nudge survived the skills write: %q", line)
 	}
-	// 15 more write-class iterations - fires.
 	nudgeWrites(n, 15)
 	if line := n.NudgeLine(); line == "" {
 		t.Fatal("nudge did not fire a full interval after the write")
@@ -167,9 +149,8 @@ func TestNudgeOffAtZero(t *testing.T) {
 	}
 }
 
-// TestNudgeConcurrentObservation: the loop executes tool calls in
-// goroutines - the counters must survive a fan without tearing
-// (run with -race in CI).
+// TestNudgeConcurrentObservation: the loop executes tool calls in goroutines - the
+// counters must survive a fan without tearing (run with -race in CI).
 func TestNudgeConcurrentObservation(t *testing.T) {
 	n := NewTurnNudger(100)
 	done := make(chan struct{})

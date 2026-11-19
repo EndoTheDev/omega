@@ -13,25 +13,17 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// WebTools is the web search/fetch tool pair the channel mounts
-// (v0.13 shell law 1, card t_f76ecdbe: the modules/web capsule
-// dissolved into the channel - serving and these tools are the
-// channel's job, one place, one word). The pair is built-in vocabulary
-// now: always mounted with the channel at natural names (web.search,
-// web.fetch - the builtin tier carries them, no namespace pairing),
-// never in the disable list.
+// WebTools is the web search/fetch tool pair the channel mounts. The pair is built-in
+// vocabulary now: always mounted with the channel at natural names (web.search,
+// web.fetch - the builtin tier carries them, no namespace pairing), never in the
+// disable list.
 
-// defaultWebToolsURL is the upstream mirror used when no BaseURL is
-// configured.
+// defaultWebToolsURL is the upstream mirror used when no BaseURL is configured.
 const defaultWebToolsURL = "https://ollama.com"
 
 // WebToolsConfig configures the web search/fetch tools.
 type WebToolsConfig struct {
 	APIKey string `yaml:"api_key"`
-	// BaseURL is the host serving the mirrored /api/web_search and
-	// /api/web_fetch endpoints. Empty falls back to the default
-	// upstream mirror. The host's ConfigSection derives it from the
-	// web.base_url override or the provider host.
 	BaseURL string `yaml:"base_url"`
 }
 
@@ -40,21 +32,13 @@ func DefaultWebTools() WebToolsConfig {
 	return WebToolsConfig{}
 }
 
-// webTools provides web search and fetch tools via the configured
-// provider host's mirrored /api/web_search and /api/web_fetch
-// endpoints (the auth swap + key rotation happen upstream, same as
-// every other call through that host). It implements
-// core.ToolProvider directly.
+// webTools provides web search and fetch tools via the configured provider.
 type webTools struct {
 	apiKey  string
 	baseURL string
 }
 
-// NewWebTools creates a webTools pair from config. An empty BaseURL
-// falls back to the default upstream mirror; the API key is whatever
-// the provider seam supplies (the keypool client key when the
-// provider is keypool — the mirror swaps it for a real client key
-// upstream).
+// NewWebTools creates a webTools pair from config.
 func NewWebTools(cfg WebToolsConfig) *webTools {
 	base := strings.TrimRight(cfg.BaseURL, "/")
 	if base == "" {
@@ -69,12 +53,10 @@ const (
 	webFetchDesc  = "Fetch a single web page by URL and return its title, main content, and links found on the page."
 )
 
-// tools returns the web tools as the namespaced pair web.search and
-// web.fetch. The legacy shape - one consolidated "web" domain tool
-// with dotted alias shims - retired with the v0.12 mount migration
-// (Q10: the machine-facing identity is the module.verb pair; alias
-// shims that cannot carry it die). Route through the shared dispatcher
-// so both tools stay one code path.
+// tools returns the web tools as the namespaced pair web.search and web.fetch. The
+// legacy shape - one consolidated "web" domain tool with dotted alias shims - retired
+// with the v0.12 mount migration (Q10: the machine-facing identity is the module.verb
+// pair; alias shims that cannot carry it die).
 func (t *webTools) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"web.search": {
@@ -181,10 +163,9 @@ type fetchResponse struct {
 	Links   []string `json:"links"`
 }
 
-// httpError returns a loud error message for a non-2xx status,
-// embedding a truncated body snippet so auth and upstream failures are
-// visible to the agent — never a silent empty result — and "" for
-// success statuses.
+// httpError returns a loud error message for a non-2xx status, embedding a truncated
+// body snippet so auth and upstream failures are visible to the agent — never a silent
+// empty result — and "" for success statuses.
 func httpError(status int, body []byte, what string) string {
 	if status >= 200 && status < 300 {
 		return ""

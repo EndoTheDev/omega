@@ -1,8 +1,6 @@
 package api
 
-// Inspector-surface helpers for the base-package tests (the shell's
-// inspector test file owns the originals; after the carve these two
-// fixtures serve both sides - card t_905fa502).
+// Inspector-surface helpers for the base-package tests.
 
 import (
 	"net/http"
@@ -12,8 +10,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// offerServices offers the fake supplies into a fresh Context and
-// rewires the server against it (part 3: consumers resolve by key).
+// offerServices offers the fake supplies into a fresh Context and rewires the server.
 func offerServices(t *testing.T, s *Server, offers map[string]any) {
 	t.Helper()
 	ctx := &core.Context{}

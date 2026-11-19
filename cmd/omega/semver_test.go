@@ -19,7 +19,7 @@ func TestCompareVersions(t *testing.T) {
 		// Nightly sorts BELOW stable with the same base version.
 		{"v0.9.1-nightly.20261021", "v0.9.1", -1, true},
 		{"v0.9.1", "v0.9.1-nightly.20261021", 1, true},
-		// A nightly user must be offer-able a newer stable...
+		// A nightly user must be offer-able a newer stable.
 		{"v0.9.1", "v0.9.0-n.b", 1, true},
 		{"v0.9.2-nightly.20261021", "v0.9.2", -1, true},
 		// Numeric core compare, not string: 0.9.2 < 0.9.10.
@@ -28,12 +28,9 @@ func TestCompareVersions(t *testing.T) {
 		{"v0.9.1", "v0.9.1", 0, true},
 		{"v0.10.0", "v0.9.1", 1, true},
 		{"v1.0.0", "v0.99.9", 1, true},
-		// Nightly dates compare numerically.
 		{"v0.9.1-nightly.20261020", "v0.9.1-nightly.20261021", -1, true},
 		{"v0.9.1-nightly.20261104", "v0.9.1-nightly.20261021", 1, true},
-		// Cross-base: a newer base outranks any older-base prerelease.
 		{"v0.9.2-nightly.20261020", "v0.9.1", 1, true},
-		// Prerelease identifier rules.
 		{"v0.9.1-alpha", "v0.9.1-beta", -1, true},
 		{"v0.9.1-nightly.9", "v0.9.1-nightly.10", -1, true}, // numeric, not lexicographic
 		{"v0.9.1-alpha", "v0.9.1-alpha.1", -1, true},        // fewer ids sort below more
@@ -69,9 +66,8 @@ func TestIsNightlyTag(t *testing.T) {
 	}
 }
 
-// TestUpdateGate pins the downgrade-refusal contract: equal skips,
-// newer installs, older refuses unless explicitly allowed, unparseable
-// current versions never gate.
+// TestUpdateGate pins the downgrade-refusal contract: equal skips, newer installs,
+// older refuses unless explicitly allowed, unparseable current versions never gate.
 func TestUpdateGate(t *testing.T) {
 	decide := func(offered, current string, allow bool) string {
 		gate, err := updateGate(offered, current, allow)
@@ -89,7 +85,6 @@ func TestUpdateGate(t *testing.T) {
 	if got := decide("v0.9.1", "v0.9.2", false); got == "install" {
 		t.Error("downgrade offered: installed, want refuse")
 	}
-	// Nightly → stable with the same base is an upgrade by semver.
 	if got := decide("v0.9.2", "v0.9.2-nightly.20261021", false); got != "install" {
 		t.Errorf("nightly->stable same base: %q, want install", got)
 	}
@@ -103,17 +98,12 @@ func TestUpdateGate(t *testing.T) {
 	if got := decide("v0.9.1", "v0.9.2", true); got != "install" {
 		t.Errorf("downgrade with --allow-downgrade: %q, want install", got)
 	}
-	// Dev builds (unparseable current) install without gating.
 	if got := decide("v0.9.1", "dev", false); got != "install" {
 		t.Errorf("dev current offered newer: %q, want install", got)
 	}
 	if got := decide("v0.1.0", "dev", false); got != "install" {
 		t.Errorf("dev current offered older: %q, want install (no gate)", got)
 	}
-	// Short-stamped running versions (tag-hash, card t_8acdfe17): the
-	// hash is build metadata, invisible to the gate. A same-tag nightly
-	// offered is "skip", the next nightly installs, an older one still
-	// refuses.
 	if got := decide("v0.9.1-nightly.20261022", "v0.9.1-nightly.20261022-c268097e", false); got != "skip" {
 		t.Errorf("offered the running build's own tag: %q, want skip", got)
 	}
@@ -146,9 +136,8 @@ func TestParseUpdateFlags(t *testing.T) {
 	if err != nil || opts.nightly {
 		t.Errorf("positional arg ignored: %+v, %v", opts, err)
 	}
-	// --yes (card t_dc91a94b): parses alone and alongside other flags;
-	// near-misses must still error so a typo'd flag does not silently
-	// skip the prompt.
+	// yes: parses alone and alongside other flags; near-misses must still error so a
+	// typo'd flag does not silently skip the prompt.
 	opts, err = parseUpdateFlags([]string{"--yes"})
 	if err != nil || !opts.yes || opts.nightly || opts.rollback || opts.allowDowngrade {
 		t.Errorf("--yes: opts = %+v, %v", opts, err)
@@ -166,10 +155,8 @@ func TestParseUpdateFlags(t *testing.T) {
 	}
 }
 
-// TestCountNewer pins the behind-count math: newest-first list, current
-// at index k yields N = k tags strictly newer. The current version's
-// build hash is build metadata and never counts for or against;
-// unparseable tags never count as ahead.
+// TestCountNewer pins the behind-count math. The current version's build hash is build
+// metadata and never counts for or against; unparseable tags never count as ahead.
 func TestCountNewer(t *testing.T) {
 	list := []string{"v0.9.4", "v0.9.3", "v0.9.2", "v0.9.1"}
 	tests := []struct {
@@ -195,9 +182,7 @@ func TestCountNewer(t *testing.T) {
 	}
 }
 
-// TestChannelTags pins the channel split the behind-count relies on:
-// stable = not draft, not prerelease (what /releases/latest serves);
-// nightly = the -nightly.* tags, everything else invisible.
+// TestChannelTags pins the channel split the behind-count relies.
 func TestChannelTags(t *testing.T) {
 	list := []githubRelease{
 		{TagName: "v0.9.2"},
@@ -215,10 +200,7 @@ func TestChannelTags(t *testing.T) {
 	}
 }
 
-// runUpdatePrompt drives cmdUpdate against a release fixture with the
-// running version pinned to current, a scripted stdin answer, captured
-// stderr and a stubbed install. terminal simulates tty-ness of the
-// process the update runs in.
+// runUpdatePrompt drives cmdUpdate against a release fixture with the running version.
 func runUpdatePrompt(t *testing.T, current string, flags []string, terminal bool, answer string) (stdout, stderr string, installedTag string, installErr error) {
 	t.Helper()
 	t.Setenv("OMEGA_UPDATE_API_BASE", "")
@@ -250,7 +232,6 @@ func runUpdatePrompt(t *testing.T, current string, flags []string, terminal bool
 	}
 	w.Close()
 
-	// Captured stderr and stdout.
 	or, ow, pipeErr := os.Pipe()
 	if pipeErr != nil {
 		t.Fatalf("stdout pipe: %v", pipeErr)
@@ -282,11 +263,10 @@ func runUpdatePrompt(t *testing.T, current string, flags []string, terminal bool
 	return string(ob), string(b), installedTag, installErr
 }
 
-// TestCmdUpdatePrompt pins the bare-update contract (card t_dc91a94b):
-// behind report + y/N prompt; only y installs; n, junk, EOF and a
-// non-tty stdin decline with the --yes hint and never touch the binary.
+// TestCmdUpdatePrompt pins the bare-update contract: behind report + y/N prompt; only y
+// installs; n, junk, EOF and a non-tty stdin decline with the --yes hint and never
+// touch the binary.
 func TestCmdUpdatePrompt(t *testing.T) {
-	// y installs, after the behind line and the prompt.
 	_, stderr, tag, err := runUpdatePrompt(t, "v0.9.1", nil, true, "y\n")
 	if err != nil {
 		t.Fatalf("bare update, answer y: %v", err)
@@ -301,7 +281,6 @@ func TestCmdUpdatePrompt(t *testing.T) {
 		t.Errorf("prompt missing: %q", stderr)
 	}
 
-	// n declines: exit 0, no install, hint printed.
 	_, stderr, tag, err = runUpdatePrompt(t, "v0.9.1", nil, true, "n\n")
 	if err != nil || tag != "" {
 		t.Errorf("answer n: err = %v, installed = %q, want nil/\"\"", err, tag)
@@ -310,7 +289,6 @@ func TestCmdUpdatePrompt(t *testing.T) {
 		t.Errorf("decline hint missing: %q", stderr)
 	}
 
-	// Junk declines.
 	_, _, tag, err = runUpdatePrompt(t, "v0.9.1", nil, true, "no\n")
 	if err != nil || tag != "" {
 		t.Errorf("answer no: err = %v, installed = %q", err, tag)
@@ -322,9 +300,8 @@ func TestCmdUpdatePrompt(t *testing.T) {
 		t.Errorf("EOF: err = %v, installed = %q, want nil/\"\"", err, tag)
 	}
 
-	// Non-tty declines without even reading: a scripted y in the pipe
-	// must NOT install (unattended bare updates never replace the
-	// binary; the scripted path is --yes).
+	// Non-tty declines without even reading: a scripted y in the pipe must NOT install
+	// (unattended bare updates never replace the binary; the scripted path is --yes).
 	_, stderr, tag, err = runUpdatePrompt(t, "v0.9.1", nil, false, "y\n")
 	if err != nil || tag != "" {
 		t.Errorf("non-tty: err = %v, installed = %q, want nil/\"\"", err, tag)
@@ -334,9 +311,9 @@ func TestCmdUpdatePrompt(t *testing.T) {
 	}
 }
 
-// TestCmdUpdateYesSkipsPrompt: --yes installs even with an empty stdin
-// (EOF) — if it read stdin at all it would decline, so an install here
-// proves the prompt is never consulted. The behind line still prints.
+// TestCmdUpdateYesSkipsPrompt: --yes installs even with an empty stdin (EOF) — if it
+// read stdin at all it would decline, so an install here proves the prompt is never
+// consulted.
 func TestCmdUpdateYesSkipsPrompt(t *testing.T) {
 	_, stderr, tag, err := runUpdatePrompt(t, "v0.9.1", []string{"--yes"}, true, "")
 	if err != nil {
@@ -353,8 +330,7 @@ func TestCmdUpdateYesSkipsPrompt(t *testing.T) {
 	}
 }
 
-// TestCmdUpdateSkipNoPrompt: already-current runs print the old
-// "already up to date" line - no behind fetch, no prompt, no install.
+// TestCmdUpdateSkipNoPrompt: already-current runs print the old "already up to date".
 func TestCmdUpdateSkipNoPrompt(t *testing.T) {
 	stdout, _, tag, err := runUpdatePrompt(t, "v0.9.2", nil, true, "")
 	if err != nil {

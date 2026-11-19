@@ -14,18 +14,13 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Compile-time interface checks. The seam interfaces are consumer-owned
-// now (part 3): the provider proves the std-typed faces the serving
-// surface and the host registry assert structurally.
+// Compile-time interface checks.
 var (
 	_ core.ToolProvider = (*SkillsProvider)(nil)
 	_ agent.Plugin      = (*Plugin)(nil)
 )
 
-// makeSkillDir creates a temp skills directory with one skill in the
-// contracted shape: <name>/SKILL.md, the folder name is the skill
-// name. The frontmatter deliberately carries a different name to pin
-// the ruling that the folder wins (card t_5baad951).
+// makeSkillDir creates a temp skills directory with one skill in the contracted shape.
 func makeSkillDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -72,9 +67,7 @@ func TestLoadSkillsMissingDir(t *testing.T) {
 	}
 }
 
-// TestLoadSkillsLegacyShapeNotLoaded pins the retired format: a folder
-// holding <name>.md without SKILL.md is invisible to discovery (card
-// t_5baad951). Only the SKILL.md sibling loads.
+// TestLoadSkillsLegacyShapeNotLoaded pins the retired format.
 func TestLoadSkillsLegacyShapeNotLoaded(t *testing.T) {
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, "old-skill", "old-skill.md")
@@ -99,8 +92,7 @@ func TestLoadSkillsLegacyShapeNotLoaded(t *testing.T) {
 	}
 }
 
-// TestWarnLegacyShape covers the boot warning: a legacy folder is
-// reported by name with the rename cure, a proper folder is silent.
+// TestWarnLegacyShape covers the boot warning.
 func TestWarnLegacyShape(t *testing.T) {
 	dir := t.TempDir()
 	writeProperSkill(t, dir, "proper-skill")
@@ -125,7 +117,6 @@ func TestWarnLegacyShape(t *testing.T) {
 		t.Fatalf("warning must name the skill and the rename, got: %q", log.msgs[0])
 	}
 
-	// A proper skills tree warns nothing.
 	clean := NewSkillsProvider(makeSkillDir(t))
 	log2 := &captureLogger{}
 	if got := clean.WarnLegacyShape(log2); len(got) != 0 || len(log2.msgs) != 0 {
@@ -133,9 +124,8 @@ func TestWarnLegacyShape(t *testing.T) {
 	}
 }
 
-// TestPluginMountWarnsLegacyShape covers the mount-time hook: a legacy
-// folder under the configured dir surfaces the boot warning through
-// the context logger.
+// TestPluginMountWarnsLegacyShape covers the mount-time hook: a legacy folder under the
+// configured dir surfaces the boot warning through the context logger.
 func TestPluginMountWarnsLegacyShape(t *testing.T) {
 	dir := t.TempDir()
 	legacyDir := filepath.Join(dir, "old-skill")
@@ -161,8 +151,7 @@ func TestPluginMountWarnsLegacyShape(t *testing.T) {
 	}
 }
 
-// writeProperSkill seeds dir with <name>/SKILL.md in the contracted
-// shape (card t_5baad951).
+// writeProperSkill seeds dir with <name>/SKILL.md in the contracted shape.
 func writeProperSkill(t *testing.T, dir, name string) {
 	t.Helper()
 	skillDir := filepath.Join(dir, name)
@@ -263,9 +252,8 @@ func TestPluginMount(t *testing.T) {
 }
 
 func TestPluginMountWithConfig(t *testing.T) {
-	// The Configs map routes per-extension config. The nil-Configs path
-	// is covered above; the config path is exercised in integration.
-	// This test just verifies Mount doesn't
+	// The Configs map routes per-extension config. The nil-Configs path is covered above;
+	// the config path is exercised in integration. This test just verifies Mount doesn't
 	// panic with a nil Config.
 	p := NewPlugin()
 	log := &captureLogger{}
@@ -276,7 +264,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	}
 }
 
-// --- Coverage tests for uncovered branches ---
+// Coverage tests for uncovered branches
 
 // TestRunReadDirNotConfigured covers the sp.Dir == "" branch of runRead.
 func TestRunReadDirNotConfigured(t *testing.T) {
@@ -291,8 +279,7 @@ func TestRunReadDirNotConfigured(t *testing.T) {
 	}
 }
 
-// TestRunReadSkillNotFound covers the os.IsNotExist path of runRead,
-// including the available skill listing.
+// TestRunReadSkillNotFound covers the os.IsNotExist path of runRead, including.
 func TestRunReadSkillNotFound(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
@@ -304,14 +291,12 @@ func TestRunReadSkillNotFound(t *testing.T) {
 	if !strings.Contains(err.Error(), `skill "nonexistent" not found`) {
 		t.Fatalf("expected 'not found' error, got: %v", err)
 	}
-	// The available listing should mention the test-skill directory.
 	if !strings.Contains(err.Error(), "test-skill") {
 		t.Fatalf("expected available listing to contain 'test-skill', got: %v", err)
 	}
 }
 
-// TestRunReadSkillNotFoundEmptyDir covers the os.IsNotExist path when
-// the skills directory has no subdirectories (empty available list).
+// TestRunReadSkillNotFoundEmptyDir covers the os.IsNotExist path when the skills.
 func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -325,30 +310,22 @@ func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	}
 }
 
-// TestRunReadNonNotExistError covers the non-NotExist error path from
-// loadSkill in runRead. We trigger this by making the skill file a
-// directory instead of a readable file, which causes os.Open to fail
-// with a non-NotExist error.
+// TestRunReadNonNotExistError covers the non-NotExist error path from loadSkill.
 func TestRunReadNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
 	}
 	dir := t.TempDir()
-	// Create a skill "directory" where the .md file would be, but make
-	// it a directory with no read permission so os.Open fails with a
-	// non-IsNotExist error.
 	skillName := "badskill"
 	skillDir := filepath.Join(dir, skillName)
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create the SKILL.md path as a directory (not a file) so os.Open
-	// fails with a non-IsNotExist error.
 	mdPath := filepath.Join(skillDir, "SKILL.md")
 	if err := os.MkdirAll(mdPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Remove read permission on the .md "file" (which is a dir).
+	// Remove read permission on the.md "file" (which is a dir).
 	if err := os.Chmod(mdPath, 0o000); err != nil {
 		t.Fatal(err)
 	}
@@ -368,15 +345,13 @@ func TestRunReadNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestScanSkillsNonNotExistError covers the non-NotExist error on
-// os.ReadDir in scanSkills.
+// TestScanSkillsNonNotExistError covers the non-NotExist error on os.ReadDir.
 func TestScanSkillsNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
 	}
 	dir := t.TempDir()
-	// Create a subdirectory, then revoke all permissions on the parent
-	// so ReadDir fails with a permission error (not IsNotExist).
+	// Create a subdirectory, then revoke all permissions on the parent so ReadDir fails.
 	if err := os.Mkdir(filepath.Join(dir, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -396,8 +371,7 @@ func TestScanSkillsNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestScanSkillsLoadSkillNonNotExistError covers the non-NotExist error
-// from loadSkill inside the scanSkills loop.
+// TestScanSkillsLoadSkillNonNotExistError covers the non-NotExist error.
 func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -408,8 +382,6 @@ func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Create the SKILL.md path as a directory (not a file) so os.Open
-	// fails with a non-IsNotExist error.
 	mdPath := filepath.Join(skillDir, "SKILL.md")
 	if err := os.MkdirAll(mdPath, 0o755); err != nil {
 		t.Fatal(err)
@@ -433,8 +405,7 @@ func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestLoadSkillNoFrontmatter covers the branch in loadSkill where the
-// first line is not "---" — the file has no frontmatter.
+// TestLoadSkillNoFrontmatter covers the branch in loadSkill where the first line is.
 func TestLoadSkillNoFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nofrontmatter.md")
@@ -457,8 +428,7 @@ func TestLoadSkillNoFrontmatter(t *testing.T) {
 	}
 }
 
-// TestHandleCommandEmptySkills covers the [no skills loaded] path in
-// HandleCommand when scanSkills returns an empty slice.
+// TestHandleCommandEmptySkills covers the [no skills loaded] path in HandleCommand.
 func TestHandleCommandEmptySkills(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -471,8 +441,7 @@ func TestHandleCommandEmptySkills(t *testing.T) {
 	}
 }
 
-// TestPluginMountWithDirConfig covers the Mount path where
-// ctx.Configs has a skills config with Dir set.
+// TestPluginMountWithDirConfig covers the Mount path where ctx.Configs has a skills.
 func TestPluginMountWithDirConfig(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
@@ -489,7 +458,6 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 	if ctx.Services().Resolve("skills") == nil {
 		t.Fatal("the skills offer is not populated")
 	}
-	// Verify the provider uses the configured dir by loading skills.
 	sp, ok := ctx.Services().Resolve("skills").(*SkillsProvider)
 	if !ok {
 		t.Fatal("expected *SkillsProvider")
@@ -537,7 +505,7 @@ func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
 	var _ core.PromptSectioner = (*SkillsProvider)(nil)
 }
 
-// --- inspector snapshot (card t_db430fea) ---
+// inspector snapshot
 
 func TestListSkillsSortedAndLive(t *testing.T) {
 	dir := t.TempDir()
@@ -569,16 +537,14 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 	}
 }
 
-// Compile-time proof that the provider satisfies the std-typed faces
-// the consumers assert (part 3: the inspector inventory view; the seam
-// interfaces themselves are consumer-owned).
+// Compile-time proof that the provider satisfies the std-typed faces the consumers.
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
 	var _ interface {
 		SkillsEntries() (index map[string]string, contents map[string]string, err error)
 	} = (*SkillsProvider)(nil)
 }
 
-// --- the write + update actions (t_e06b38bc part 3) ---
+// the write + update actions
 
 func TestToolsWriteCreatesSkill(t *testing.T) {
 	dir := t.TempDir()
@@ -603,7 +569,6 @@ func TestToolsWriteCreatesSkill(t *testing.T) {
 	if !strings.HasPrefix(content, "---\ndescription: A fresh skill\nauthor: agent\n---\n") {
 		t.Fatalf("SKILL.md frontmatter = %q", content)
 	}
-	// the loader sees it: available in the listing with the description
 	skills, err := sp.LoadSkills("")
 	if err != nil {
 		t.Fatal(err)
@@ -646,7 +611,6 @@ func TestToolsWriteRefusals(t *testing.T) {
 	if err := write(map[string]any{"body": "---\nevil\n---\n"}); err == nil || !strings.Contains(err.Error(), `must not start with a "---" fence`) {
 		t.Fatalf("fenced body: %v", err)
 	}
-	// existing skill dirs refuse; update is the patch path
 	if err := write(map[string]any{"name": "s"}); err != nil {
 		t.Fatalf("first write: %v", err)
 	}
@@ -700,13 +664,10 @@ func TestToolsUpdateFailurePaths(t *testing.T) {
 	if err := update(map[string]any{"name": "nope"}); err == nil || !strings.Contains(err.Error(), `skill "nope" not found`) {
 		t.Fatalf("unknown skill: %v", err)
 	}
-	// two occurrences of the same text is ambiguous, refuse
 	if err := update(map[string]any{"old_text": "is", "new_text": "IS"}); err == nil || !strings.Contains(err.Error(), "must be unique") {
 		t.Fatalf("ambiguous old_text: %v", err)
 	}
-	// the frontmatter guard: a replace that eats the opening fence
-	// dies ("-" + newline + "name:" is unique; its removal would
-	// break the "---" opening)
+	// the frontmatter guard: a replace that eats the opening fence dies.
 	raw0, _ := os.ReadFile(filepath.Join(dir, "test-skill", "SKILL.md"))
 	if err := update(map[string]any{"old_text": "-\nname", "new_text": "-gone"}); err == nil || !strings.Contains(err.Error(), "break the frontmatter") {
 		t.Fatalf("frontmatter guard: %v", err)
@@ -720,8 +681,7 @@ func TestToolsUpdateFailurePaths(t *testing.T) {
 func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
 	shared := t.TempDir()
 	own := t.TempDir()
-	// same skill name in both: shared wins the merge law, so the
-	// update action must land on the shared file
+	// same skill name in both: shared wins the merge law, so the update action must land.
 	writeSKILL := func(base string) {
 		if err := os.MkdirAll(filepath.Join(base, "dup-skill"), 0o755); err != nil {
 			t.Fatal(err)
@@ -759,9 +719,7 @@ func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
 	}
 }
 
-// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
-// exactly the four dotted skills tools, the flat `skills` name gone,
-// each required list its own and no action property anywhere.
+// TestDottedWirePin pins the split's registry shape: exactly the four dotted skills.
 func TestDottedWirePin(t *testing.T) {
 	sp := NewSkillsProvider(t.TempDir())
 	tools := sp.Tools()
@@ -804,9 +762,7 @@ func TestDottedWirePin(t *testing.T) {
 	}
 }
 
-// stubProvides satisfies the logging Requires edge in the mount set
-// without registering anything: the seam it names is already
-// populated on the Context the test built.
+// stubProvides satisfies the logging Requires edge in the mount set without.
 type stubProvides struct {
 	plugin agent.Plugin
 	seam   string
@@ -822,8 +778,6 @@ func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) e
 }
 
 // stubProviderPlugin mounts the provider seam with a fake provider.
-// The skills plugin Requires("provider") (the curator pins the seam
-// at mount), so every plugin-mount test carries this stub.
 type stubProviderPlugin struct{ prov agent.Provider }
 
 func (stubProviderPlugin) Name() string       { return "stub-provider" }

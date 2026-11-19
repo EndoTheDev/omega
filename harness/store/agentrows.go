@@ -1,15 +1,8 @@
 package store
 
-// agentrows.go: the one-time boot migration out of the shared
-// sessions-store shape (card t_72ecca67, ruling 4 - full data
-// isolation). Under the retired shape a delegated child wrote its
-// sessions into the main store tagged with a sessions.agent column;
-// the settled shape gives every agent home its OWN store at
-// <agent>/data/omega.db. This move relocates each agent-tagged session
-// row - with its message history, FTS indexes and read state intact -
-// into that agent's store, leaving the main store with main sessions
-// only. Copy-then-verify-then-delete inside one transaction: a failed
-// move leaves both stores untouched, never truncated.
+// agentrows.go: the one-time boot migration out of the shared sessions-store shape.
+// Copy-then-verify-then-delete inside one transaction: a failed move leaves both stores
+// untouched, never truncated.
 
 import (
 	"context"
@@ -18,20 +11,14 @@ import (
 	"os"
 )
 
-// MigrateAgentRows moves agent-tagged rows out of mainDSN into their
-// per-agent stores. agentDSNs maps agent name -> that agent's
-// omega.db path. An agent with no rows in the main store is skipped
-// entirely - no store file appears for an agent that never ran.
-// Idempotent: an already-migrated home has no rows left, so the second
-// boot is a no-op.
+// MigrateAgentRows moves agent-tagged rows out of mainDSN into their per-agent stores.
+// An agent with no rows in the main store is skipped entirely - no store file appears
+// for an agent that never ran. Idempotent: an already-migrated home has no rows left,
+// so the second boot is a no-op.
 func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
 	if len(agentDSNs) == 0 {
 		return nil
 	}
-	// The pre-count runs on its own short-lived handle, closed before
-	// any move: the attach-side copy below wants the main db lock-free
-	// (DETACH fails with "database maindb is locked" when another
-	// pooled handle holds a read transaction).
 	mainDB, err := sql.Open("sqlite", mainDSN+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return fmt.Errorf("agent rows migration: open main store: %w", err)
@@ -59,13 +46,9 @@ func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
 	return nil
 }
 
-// sessionInsertCols / sessionSelectCols share one column order. The
-// SELECT keeps the row's own parent_id when the parent moves to the
-// same agent store and NULLs a stale reference into the main store -
-// an FK violation on insert would otherwise abort the whole move. The
-// delegate_parent link gets the same treatment (t_6c4ab302): delegate
-// lineage is display metadata, never context, so a NULLed stale link
-// costs nothing.
+// sessionInsertCols / sessionSelectCols share one column order. The delegate_parent
+// link gets the same treatment: delegate lineage is display metadata, never context, so
+// a NULLed stale link costs nothing.
 const sessionInsertCols = `id, parent_id, delegate_parent, label, created_at, updated_at,
 	prompt_tokens, completion_tokens,
 	pinned, archived, title_state, last_read_at,
@@ -81,9 +64,7 @@ const sessionSelectCols = `id,
 	pinned, archived, title_state, last_read_at,
 	agent, last_run, model, workspace, summary, listed, context_start, context_summary`
 
-// moveAgentRows performs one agent's copy-verify-delete move. The agent
-// store is opened first (its schema migrates into existence); the whole
-// move then runs on the AGENT connection, maindb ATTACHed read-through.
+// moveAgentRows performs one agent's copy-verify-delete move.
 func moveAgentRows(mainDSN, name, agentDSN string) error {
 	agentStore, err := Open(agentDSN)
 	if err != nil {
@@ -113,12 +94,7 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 		WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name); err != nil {
 		return fmt.Errorf("agent rows migration: %s: copy messages: %w", name, err)
 	}
-	// Verify before deleting: moved row counts must equal the source
-	// counts, message histories inclusive. On mismatch the whole move
-	// rolls back and both stores stand untouched.
-	// movedSessions counts only the moved subset - the agent store may
-	// hold its own native sessions (a wake that wrote directly to its
-	// isolated store), and counting the whole table bricked every boot.
+	// Verify before deleting: moved row counts must equal the source counts, message.
 	var movedSessions, sourceSessions, movedMessages, sourceMessages int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&movedSessions); err != nil {
 		return fmt.Errorf("agent rows migration: %s: count moved: %w", name, err)
@@ -142,8 +118,7 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 	if _, err := tx.Exec(`DELETE FROM maindb.sessions WHERE agent = ?1`, name); err != nil {
 		return fmt.Errorf("agent rows migration: %s: clear source sessions: %w", name, err)
 	}
-	// SQLite refuses a DETACH inside an open transaction: the move
-	// commits first, the alias is dropped after on the same conn.
+	// SQLite refuses a DETACH inside an open transaction.
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("agent rows migration: %s: commit: %w", name, err)
 	}
@@ -153,18 +128,9 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 	return nil
 }
 
-// RetagAgentSessions rewrites the agent tag of every session row in ONE
-// store (0.17.3 make-over, card t_f47319d2 - the clone law's last
-// step). A clone is a materialized copy: its store file carries the
-// SOURCE's sessions, and until they are re-tagged the roster reads them
-// as the source's own, which would make the clone look empty and the
-// source look doubled. agents/<dst>/data/omega.db is the destination;
-// from lists every tag the source could have written (main's rows
-// predate the agent column, so "" is a real tag, not a typo).
-//
-// A missing destination store is a no-op: a source that never ran has
-// nothing to re-tag, and the clone must not create a database it has no
-// rows for.
+// RetagAgentSessions rewrites the agent tag of every session row in ONE store. A
+// missing destination store is a no-op: a source that never ran has nothing to re-tag,
+// and the clone must not create a database it has no rows.
 func RetagAgentSessions(dsn, to string, from ...string) error {
 	if _, err := os.Stat(dsn); err != nil {
 		if os.IsNotExist(err) {

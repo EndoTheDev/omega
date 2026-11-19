@@ -32,8 +32,7 @@ func (f *fakeNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// card t_5d9032d3: a task that ENTERS done emits one finished-things
-// record; moving through every other status path emits none.
+// a task that ENTERS done emits one finished-things record.
 func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 	s := testStore(t)
 	n := &fakeNotifier{}
@@ -45,7 +44,6 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	// a non-done move emits nothing
 	if _, err := s.UpdateTask(ctx, "", in.ID, KanbanPatch{Status: "running"}); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -73,8 +71,7 @@ func TestUpdateTaskEmitsOnEnterDone(t *testing.T) {
 		t.Fatalf("title carries more than metadata: %q", rec.Title)
 	}
 
-	// a second done move (already settled, completed_at untouched)
-	// emits nothing - one transition, one record
+	// a second done move (already settled, completed_at untouched) emits nothing.
 	if _, err := s.UpdateTask(ctx, "", in.ID, KanbanPatch{Status: StatusDone}); err != nil {
 		t.Fatalf("re-close: %v", err)
 	}

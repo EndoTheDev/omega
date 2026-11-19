@@ -1,12 +1,9 @@
-// omega webui: post-render enhancement for fenced code blocks. The
-// markdown renderer emits plain <pre><code>; this pass wraps each block
-// in a header container (language + line count + copy + collapse) after
-// a render lands in the DOM. Idempotent: already-wrapped blocks are
-// skipped, so it can run on every streaming render tick without piling
-// up wrappers. Collapse state is index-keyed and owned by the caller,
+// omega webui: post-render enhancement for fenced code blocks. Idempotent:
+// already-wrapped blocks are skipped, so it can run on every streaming render tick
+// without piling up wrappers. Collapse state is index-keyed and owned by the caller,
 // because v-html replacement tears the wrapped DOM down on each tick.
 
-// the ONE copy path (card t_a92450ea) - insecure-context-proof
+// the ONE copy path - insecure-context-proof
 import { copyText } from "./clipboard.ts";
 
 // "language-go" / "hljs language-go" -> "go"; anything else -> "code".
@@ -62,9 +59,8 @@ export function decorateCodeblocks(
     // any html:false fallout never reach the clipboard.
     copy.addEventListener("click", (ev) => {
       ev.stopPropagation();
-      // card t_a92450ea: the ONE copy path (composables/clipboard.ts) -
-      // the "copied" affordance is conditional on real success, never a
-      // voided rejection. Empty code still copies (a true no-op).
+      // the ONE copy path (composables/clipboard.ts) - the "copied" affordance is
+      // conditional on real success, never a voided rejection.
       copyText(code?.textContent ?? "").then((ok) => {
         copy.textContent = ok ? "copied" : "copy failed";
       });

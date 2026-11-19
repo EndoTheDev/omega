@@ -1,9 +1,7 @@
-// omega webui: the Files tab root resolution law (card t_a5f9d185). The
-// client half: every /files request carries the focused session's ID
-// (never a root - the trust boundary resolves server-side), the tab
-// re-roots on session focus change, and the header shows the basename
-// of what the server resolved, hidden entirely on the cwd fallback.
-// Run: node --test test/filesroot.test.ts
+// omega webui: the Files tab root resolution law. The client half: every /files request
+// carries the focused session's ID (never a root - the trust boundary resolves
+// server-side), the tab re-roots on session focus change, and the header shows the
+// basename of what the server resolved, hidden entirely on the cwd fallback.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -130,7 +128,6 @@ describe("header name + visibility (pure predicates)", () => {
     assert.equal(filesHeaderVisible("session"), true);
     assert.equal(filesHeaderVisible("default"), true);
     assert.equal(filesHeaderVisible("cwd"), false);
-    // a pre-law server sends no source at all - the row stays hidden
     assert.equal(filesHeaderVisible(undefined), false);
   });
 });
@@ -145,7 +142,6 @@ describe("the re-root contract (structural pins)", () => {
     assert.match(tab, /inject\(FOCUSED_SESSION_KEY/);
     assert.match(tab, /watch\(\[sessionId, rowWorkspace\]/);
     assert.match(tab, /fetchFilesBrowse\(\s*"",\s*sessionId\.value/, "every browse carries the id");
-    // the row workspace is a second trigger: a re-pin re-roots live
     assert.match(tab, /sessionRow\(id\)\?\.workspace/);
   });
 
@@ -167,14 +163,7 @@ describe("the re-root contract (structural pins)", () => {
 });
 
 describe("the ChatHost carries sessionRow (behavior pin, card t_cd2f25b0)", () => {
-  // The defect class the source-grep pins cannot catch: FilesTab.vue's
-  // row-workspace computed calls chatHost?.sessionRow(id) on the HOST
-  // the app injects - but sessionRow lived only on the createChatHost
-  // DEPS. A missing host method does not throw "inject null" and does
-  // not stay quiet: the computed throws TypeError mid-render and the
-  // whole Files tab render tree dies (the blank pane, the missing
-  // re-root). This pins the host surface itself, the way the component
-  // consumes it.
+  // The defect class the source-grep pins cannot catch.
   const ROW = {
     id: "sess-1",
     created_at: "2026-10-29T00:00:00Z",

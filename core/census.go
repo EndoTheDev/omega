@@ -1,9 +1,5 @@
-// The teardown census (v0.12 phase E1, implementation sketch 2): a
-// snapshot of every registration surface on a Context plus the
-// lifecycle run-group. Dismount proofs demand after-dismount ==
-// before-mount; the census is the equality that proves - or fails.
-//
-// stdlib-only by the core law: this is vocabulary, never behavior.
+// The teardown census (v0.12 phase E1, implementation sketch 2). stdlib-only by the
+// core law: this is vocabulary, never behavior.
 package core
 
 import (
@@ -15,19 +11,12 @@ import (
 // Context alone - a fresh Context and a fully dismounted Context must
 // produce equal snapshots (zero surface, zero run-group entries).
 type CensusSnapshot struct {
-	// Slots records the exclusive seams that are mounted (one flag
-	// each of the closed 15-key census + the host-built captioner).
 	Slots map[string]bool
 
-	// Tools are the model-facing tool names across every provider,
-	// alias entries hidden from the inventory.
 	Tools []string
 
-	// Commands are the slash command names, in registration order.
 	Commands []string
 
-	// Additive surfaces by count; channels and providers carry no
-	// name seam, so counts are the identity the census can hold.
 	Channels         int
 	PromptSectioners int
 	PanelProviders   int
@@ -37,13 +26,10 @@ type CensusSnapshot struct {
 	// a double-registered additive surface.
 	Panels []string
 
-	// Routes are the registered module REST route patterns, in
-	// registration order - the module surface the serving channels
-	// re-read live (E2). Sort-stable like Panels.
+	// Routes are the registered module REST route patterns, in registration order.
+	// Sort-stable like Panels.
 	Routes []string
 
-	// Handles are the run-group entries as "owner/name" plus an
-	// started marker folded into the string, in registration order.
 	Handles []string
 }
 
@@ -54,11 +40,6 @@ func Census(ctx *Context) CensusSnapshot {
 		s.Routes = append(s.Routes, rt.Pattern)
 	}
 	for _, slot := range []string{
-		// The universal registry reads presence (part 3, the seam
-		// constitution): need-key offers and capsule services resolve
-		// from the same one tenant ledger. chat-runs is the first
-		// shell-offered key (Endo ruling 2026-11-04). The captioner
-		// stays host-built (not an offer), read from the Context field.
 		"provider",
 		"store",
 		"loop",
@@ -127,8 +108,7 @@ func Census(ctx *Context) CensusSnapshot {
 	return s
 }
 
-// Equal reports whether two censuses hold the same surface. Empty
-// slice and missing slice are the same zero.
+// Equal reports whether two censuses hold the same surface.
 func (s CensusSnapshot) Equal(o CensusSnapshot) bool {
 	return maps.Equal(s.Slots, o.Slots) &&
 		slices.Equal(s.Tools, o.Tools) &&
@@ -141,9 +121,7 @@ func (s CensusSnapshot) Equal(o CensusSnapshot) bool {
 		slices.Equal(s.Handles, o.Handles)
 }
 
-// Diff lists the first surface names that differ between two
-// censuses - the failure message a dismount proof wants. Returns an
-// empty slice when they are equal.
+// Diff lists the first surface names that differ between two censuses.
 func (s CensusSnapshot) Diff(o CensusSnapshot) []string {
 	var out []string
 	if !maps.Equal(s.Slots, o.Slots) {

@@ -1,11 +1,6 @@
 package api
 
-// The chat panel's tests (chat-last 1/3, card t_ec45b670): the view-
-// model vocabulary's mapping, the mount registration, the delta
-// cadence law (tokens batch, structure flushes) and the action pipe's
-// chat verbs. Chat is the repo's most journey-asserted surface - these
-// tests pin the shapes the chained renderer cards (2a webui)
-// render from.
+// The chat panel's tests: the view- model vocabulary's mapping, the mount.
 
 import (
 	"github.com/EndoTheDev/omega/agent"
@@ -25,8 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// chatRecorder collects the deltas a capsule pushes through its
-// registered canvas closure. all() blocks until closeDeltas().
+// chatRecorder collects the deltas a capsule pushes through its registered canvas.
 type chatRecorder struct {
 	ch   chan core.Panel
 	done chan []core.Panel
@@ -45,11 +39,10 @@ func newChatRecorder() *chatRecorder {
 	return r
 }
 
-// closeDeltas closes the collection point; every queued delta is
-// consumed before all() returns.
+// closeDeltas closes the collection point.
 func (r *chatRecorder) closeDeltas() { r.once.Do(func() { close(r.ch) }) }
 
-// all returns every recorded delta. Blocks until closeDeltas.
+// all returns every recorded delta.
 func (r *chatRecorder) all() []core.Panel { return <-r.done }
 
 // waitRunQuiescent spins until the session's run slot is free.
@@ -65,8 +58,7 @@ func waitRunQuiescent(t *testing.T, s *Server, id string) {
 	t.Fatalf("run on %q never finished", id)
 }
 
-// chatPanelPayload decodes one panel's payload verbatim (the wire
-// shape, not the Go struct's convenience).
+// chatPanelPayload decodes one panel's payload verbatim.
 func chatPanelPayload(t *testing.T, p core.Panel) core.ChatPayload {
 	t.Helper()
 	b, err := json.Marshal(p.Payload)
@@ -88,9 +80,7 @@ func chatRowRoles(rows []core.ChatRow) []string {
 	return roles
 }
 
-// TestChatRowsMapTheTranscriptVocabulary: the view-model row map is
-// one row per transcript item - roles, blocks and statuses straight
-// off the item's kind and running hint.
+// TestChatRowsMapTheTranscriptVocabulary: the view-model row map is one row.
 func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	rows := chatRows([]transcriptItem{
 		{Kind: "user", ID: "u1", Content: "hi", Time: "2026-11-15T09:00:00Z", Images: []core.ImageContent{{MediaType: "image/png", Base64: "aGk="}}},
@@ -114,17 +104,12 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	if rows[1].Role != core.ChatRoleAssistant || rows[1].Blocks[0].Type != core.ChatBlockThinking || rows[1].Status != core.ChatStatusStreaming {
 		t.Fatalf("thinking row = %+v", rows[1])
 	}
-	// the streaming reasoning row owns its meter anchor: the running
-	// hint plus the elapsed-so-far the client counts on from (card
-	// t_95385aba)
 	if !rows[1].Blocks[0].Running || rows[1].Blocks[0].ElapsedMs != 2600 {
 		t.Fatalf("thinking block anchor = %+v", rows[1].Blocks[0])
 	}
 	if rows[2].Status != core.ChatStatusComplete {
 		t.Fatalf("message status = %+v", rows[2])
 	}
-	// a completed answer row carries its measured span so a remount
-	// keeps the frozen duration
 	if rows[2].Blocks[0].ResponseMs != 1800 || rows[2].Blocks[0].Running {
 		t.Fatalf("message block span = %+v", rows[2].Blocks[0])
 	}
@@ -134,23 +119,20 @@ func TestChatRowsMapTheTranscriptVocabulary(t *testing.T) {
 	if rows[4].Role != core.ChatRoleTool || rows[4].Blocks[0].ToolCallID != "tcl" || !rows[4].Blocks[0].IsError {
 		t.Fatalf("tool_result row = %+v", rows[4])
 	}
-	// the row's wall clock rides it (card t_3a857a2d): the answer row's
-	// turn-total badge reads the turn's two stamps, so the live canvas
-	// must serve the same created_at the transcript wire does
+	// the row's wall clock rides it: the answer row's turn-total badge reads the turn's
+	// two stamps, so the live canvas must serve the same created_at the transcript wire
+	// does
 	if rows[0].Time != "2026-11-15T09:00:00Z" || rows[2].Time != "2026-11-15T09:00:51Z" {
 		t.Fatalf("row stamps = %q / %q, want the transcript wire's times", rows[0].Time, rows[2].Time)
 	}
-	// the response-return window rides the result block beside the
-	// call's elapsed (card t_e27c8347)
 	if rows[4].Blocks[0].AnswerMs != 9 {
 		t.Fatalf("tool_result block answer_ms = %d, want 9", rows[4].Blocks[0].AnswerMs)
 	}
 }
 
-// TestComposeItemsDropsPersistedTwins: the open record can carry items
-// the loop already persisted (it empties only at the next segment
-// split) - they duplicate the persisted rows and the compose drops
-// them, while genuinely new stream content flows.
+// TestComposeItemsDropsPersistedTwins: the open record can carry items the loop already
+// persisted (it empties only at the next segment split) - they duplicate the persisted
+// rows and the compose drops them, while genuinely new stream content flows.
 func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 	persisted := []transcriptItem{
 		{Kind: "user", ID: "u1", Content: "hi"},
@@ -158,12 +140,9 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	}
 	composed := composeItems(persisted, []transcriptItem{
-		// already persisted twins (AssistantMessageEvent landed, the
-		// accumulator's split has not)
+		// already persisted twins.
 		{Kind: "message", Content: "hello"},
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
-		// genuinely in-flight: the next turn's fresh call and its
-		// growing answer prefix
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl2", Name: "shell.run"}, Running: true},
 		{Kind: "message", Content: "hel"},
 	})
@@ -176,13 +155,7 @@ func TestComposeItemsDropsPersistedTwins(t *testing.T) {
 	}
 }
 
-// TestComposeItemsAdoptsTheRunningAnchor (card t_6bad9f6f): the loop
-// persists the assistant row with its calls BEFORE the calls execute, so
-// mid-call the composition holds the call twice - the persisted row (no
-// running bit, no elapsed) and the accumulator's running twin. The
-// persisted row keeps its place in the stream and adopts the twin's
-// anchor; without that the rendered row carries no anchor at all and a
-// remount restarted the meter at zero.
+// TestComposeItemsAdoptsTheRunningAnchor: the loop persists the assistant row.
 func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	persisted := []transcriptItem{
 		{Kind: "user", ID: "u1", Content: "run it"},
@@ -204,7 +177,6 @@ func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	if call.StartedAt != "2026-11-15T10:00:00Z" {
 		t.Fatalf("persisted call row started_at = %q, want the twin's stamp", call.StartedAt)
 	}
-	// a settled twin donates nothing: the settled row stays settled
 	composed = composeItems(persisted, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl", Name: "shell.run"}},
 	})
@@ -213,9 +185,7 @@ func TestComposeItemsAdoptsTheRunningAnchor(t *testing.T) {
 	}
 }
 
-// TestChatPanelSnapshotDeclaresNewestSession: the load-time catch-up
-// names the module's panel kind, its actions and the most recent
-// conversation's rows.
+// TestChatPanelSnapshotDeclaresNewestSession: the load-time catch-up names.
 func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -262,11 +232,9 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	}
 }
 
-// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their
-// own when the cadence holds - the deltas carry whole turn states at
-// the structural boundaries, and the run's exit paints the persisted
-// truth with running off. batch=1h pins the law: exactly the
-// structural flushes plus the exit one, no token deltas in between.
+// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their own when.
+// batch=1h pins the law: exactly the structural flushes plus the exit one, no token
+// deltas in between.
 func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	prov := newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
@@ -323,7 +291,6 @@ func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	if last.Rows[1].Status != core.ChatStatusComplete || last.Rows[1].Blocks[0].Content != "hello" {
 		t.Fatalf("final assistant row = %+v", last.Rows[1])
 	}
-	// The persisted truth, not the live tail: no row streams at exit.
 	for _, row := range last.Rows {
 		if row.Status == core.ChatStatusStreaming {
 			t.Fatalf("exit flush still streams: %+v", last)
@@ -331,9 +298,7 @@ func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
 	}
 }
 
-// TestChatPanelCadenceFlushesTokenBatches: with the cadence ticking,
-// a token-dirty run gets its rows pushed without any structural
-// event - the batcher owns the between-token deltas.
+// TestChatPanelCadenceFlushesTokenBatches: with the cadence ticking, a token-dirty.
 func TestChatPanelCadenceFlushesTokenBatches(t *testing.T) {
 	s := newTestServer() // no store: rows compose empty, the cadence still rides
 	s.chat.batch = 20 * time.Millisecond
@@ -351,7 +316,6 @@ func TestChatPanelCadenceFlushesTokenBatches(t *testing.T) {
 	mu.Unlock()
 	s.chat.runEvent("sess-panel", core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
 	s.chat.runEvent("sess-panel", core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
-	// the cadence tick carries the batch without any structural event
 	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		mu.Lock()
@@ -368,13 +332,12 @@ func TestChatPanelCadenceFlushesTokenBatches(t *testing.T) {
 	s.chat.endRun("sess-panel")
 }
 
-// TestChatPanelRunningCallRepushesFreshElapsed (card t_6bad9f6f): a tool
-// run emits NO event between the call opening and its result, so the
-// token batch never re-arms and only the batcher can keep the panel's
-// running row honest. The row must re-push at the cadence carrying the
-// call's true elapsed-so-far (the snapshot's anchor plus the snapshot's
-// age) - that anchor is what a tab-switch remount counts on from, and
-// without it the remount restarted the visible meter at 0:00.
+// TestChatPanelRunningCallRepushesFreshElapsed: a tool run emits NO event between the
+// call opening and its result, so the token batch never re-arms and only the batcher
+// can keep the panel's running row honest. The row must re-push at the cadence carrying
+// the call's true elapsed-so-far (the snapshot's anchor plus the snapshot's age) - that
+// anchor is what a tab-switch remount counts on from, and without it the remount
+// restarted the visible meter at 0:00.
 func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	if err := st.CreateSession(context.Background(), "sess-tool", "", "Tool run"); err != nil {
@@ -394,10 +357,6 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 		t.Fatalf("start run")
 	}
 	s.chat.beginRun("sess-tool")
-	// the loop's snapshot at the call event: the call had just opened
-	// (anchor ~0), and no event follows it until the result lands. Built
-	// through the production flattener so the snapshot carries what the
-	// hub really stores - the aged anchor AND the call's start stamp.
 	builtAt := time.Now().Add(-2 * time.Second)
 	s.runs.setOpenTail(run, liveTranscriptItems(nil, assistantRecord{
 		toolCalls:  []core.ToolCall{{ID: "tcl", Name: "shell.run"}},
@@ -415,8 +374,7 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 		}
 		return -1
 	}
-	// NO run event: the batcher alone must re-push, and each push must
-	// carry the aged anchor (>= 2s), not the call-open 5ms
+	// NO run event: the batcher alone must re-push, and each push must carry the aged.
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := int64(-1) // the newest push's call anchor (-1 = no row)
 	for time.Now().Before(deadline) {
@@ -434,8 +392,6 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 	if seen < 1900 {
 		t.Fatalf("the panel never re-pushed a fresh call anchor while the call ran: newest elapsed = %d, want >= 1900", seen)
 	}
-	// the same row carries the call's start STAMP: the anchor a pane
-	// rebuilt from a cached payload derives from (round 3)
 	mu.Lock()
 	last, _ := lastPanel(panels)
 	mu.Unlock()
@@ -444,15 +400,12 @@ func TestChatPanelRunningCallRepushesFreshElapsed(t *testing.T) {
 		t.Fatalf("running call started_at = %q (parse err %v), want the call's open clock ~%v", stamp, err, builtAt)
 	}
 	s.chat.endRun("sess-tool")
-	// the aging read copies: the hub's snapshot still carries its own
-	// anchor for the next rebuild
 	if open, _, live := s.runs.openSnapshot("sess-tool"); live && len(open) > 0 && open[0].ElapsedMs != 0 {
 		t.Fatalf("the stored snapshot was mutated in place: %d, want the call-open 0", open[0].ElapsedMs)
 	}
 }
 
-// lastPanel returns the newest recorded panel and the count (zero value
-// and 0 when nothing was pushed yet).
+// lastPanel returns the newest recorded panel and the count.
 func lastPanel(panels []core.Panel) (core.Panel, int) {
 	if len(panels) == 0 {
 		return core.Panel{}, 0
@@ -460,19 +413,13 @@ func lastPanel(panels []core.Panel) (core.Panel, int) {
 	return panels[len(panels)-1], len(panels)
 }
 
-// toolStartStamp reads the single tool_call block's started_at out of a
-// recorded panel.
+// toolStartStamp reads the single tool_call block's started_at out of a recorded panel.
 func toolStartStamp(t *testing.T, p core.Panel) string {
 	t.Helper()
 	return toolCallBlock(t, chatPanelPayload(t, p)).StartedAt
 }
 
-// slowCallLoop mirrors the real loop around ONE tool call: the
-// streamed call, the assistant turn persisted WITH its call (the real
-// loop's order - the row is in the store before the tool runs, which
-// is why the panel holds two copies of the call mid-run), then the
-// tool's own wall clock (nothing lands on the event spine until it
-// returns), then its result.
+// slowCallLoop mirrors the real loop around ONE tool call.
 type slowCallLoop struct{}
 
 func (slowCallLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
@@ -503,12 +450,10 @@ func (slowCallLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	return nil
 }
 
-// TestChatPanelToolRowStaysFreshThroughTheCall (card t_6bad9f6f): the
-// end-to-end shape of the live repro - a run blocked in a tool call,
-// with the panel payload the tab-switch remount rebuilds from. The
-// payload must keep re-pushing during the call carrying the row's true
-// elapsed-so-far; before the fix the canvas held the call-open anchor
-// (~0) for the whole call and the remounted meter restarted at 0:00.
+// TestChatPanelToolRowStaysFreshThroughTheCall: the end-to-end shape of the live repro.
+// The payload must keep re-pushing during the call carrying the row's true
+// elapsed-so-far; before the fix the canvas held the call-open anchor (~0) for the
+// whole call and the remounted meter restarted at 0:00.
 func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
 	a := agent.NewAgent(newMockProvider("mock", scripted()), nil, 0)
 	a.SetLoopProvider(slowCallLoop{})
@@ -547,8 +492,6 @@ func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
 		t.Fatal("the run never reached its tool call")
 	}
 
-	// the canvas snapshot is what a remounted pane rebuilds its items
-	// from (the last pushed payload) - read it while the tool blocks
 	toolElapsed := func() int64 {
 		for _, p := range s.canvas.Snapshot() {
 			if p.Kind != core.PanelKindChat {
@@ -573,9 +516,7 @@ func TestChatPanelToolRowStaysFreshThroughTheCall(t *testing.T) {
 	waitRunQuiescent(t, s, "t1")
 }
 
-// TestChatPanelStaleRunNeverPaints: a run whose session lost focus (a
-// newer run took the panel over) stops pushing; the focus session
-// keeps painting.
+// TestChatPanelStaleRunNeverPaints: a run whose session lost focus.
 func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 	s := newTestServer()
 	s.chat.batch = 0 // flush per token event
@@ -601,7 +542,6 @@ func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 	if after != before {
 		t.Fatalf("stale run flushed from %d to %d pushes", before, after)
 	}
-	// The focus session still paints.
 	s.chat.runEvent("sess-second", core.ToolResultEvent{})
 	mu.Lock()
 	if pushes == after {
@@ -611,12 +551,10 @@ func TestChatPanelStaleRunNeverPaints(t *testing.T) {
 	s.chat.endRun("sess-second")
 }
 
-// TestChatPanelStaleBatcherNeverRepaints (card t_6bad9f6f, review round
-// 1): the running-call dirty arm reads the RunHub, so it must also be
-// gated on the panel's lifecycle. A session that lost the panel while
-// mid-call (a newer run took it over) keeps its batcher until endRun,
-// and the single ChatPanelID has one owner - the stale session must
-// never paint it again.
+// TestChatPanelStaleBatcherNeverRepaints: the running-call dirty arm reads the RunHub,
+// so it must also be gated on the panel's lifecycle. A session that lost the panel
+// while mid-call (a newer run took it over) keeps its batcher until endRun, and the
+// single ChatPanelID has one owner - the stale session must never paint it again.
 func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	for _, id := range []string{"sess-stale", "sess-focus"} {
@@ -638,8 +576,6 @@ func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 		t.Fatalf("start run")
 	}
 	s.chat.beginRun("sess-stale")
-	// the stale session sits in a tool call: its run is live with an
-	// unanswered call, so the hub alone would answer dirty every tick
 	s.runs.setOpenTail(run, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-stale", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 	}, time.Now())
@@ -655,7 +591,6 @@ func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 	if payload := chatPanelPayload(t, last); payload.Session != "sess-focus" {
 		t.Fatalf("the focus change did not take the panel: last payload = %+v", payload)
 	}
-	// several cadences of the stale session's batcher
 	time.Sleep(6 * s.chat.batch)
 	mu.Lock()
 	stale := panels[mark:]
@@ -667,15 +602,10 @@ func TestChatPanelStaleBatcherNeverRepaints(t *testing.T) {
 	s.chat.endRun("sess-focus")
 }
 
-// TestChatPanelTickAfterTheExitFlushStaysQuiet (card t_6bad9f6f, review
-// round 1): endRun runs before the run's finish (LIFO in launchRun) -
-// its own comment says so. A run that ended with an unanswered call
-// (cancel mid-call) therefore leaves a hub slot whose open tail still
-// reads Running=true, while endRun has already deleted the watch and
-// flushed the finished panel. A batcher tick that got past its select
-// before endRun must stay quiet in that window: a running=true push
-// after the exit flush is the t_877f4bce failure the paint lock exists
-// to prevent.
+// TestChatPanelTickAfterTheExitFlushStaysQuiet: endRun runs before the run's finish. A
+// batcher tick that got past its select before endRun must stay quiet in that window: a
+// running=true push after the exit flush is the failure the paint lock exists to
+// prevent.
 func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	if err := st.CreateSession(context.Background(), "sess-cancel", "", "Cancelled run"); err != nil {
@@ -695,8 +625,6 @@ func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 		t.Fatalf("start run")
 	}
 	s.chat.beginRun("sess-cancel")
-	// the call opened and the run was cancelled before its result: the
-	// open tail still says running
 	s.runs.setOpenTail(run, []transcriptItem{
 		{Kind: "tool_call", ToolCall: &core.ToolCall{ID: "tcl-cancel", Name: "shell.run"}, Running: true, ElapsedMs: 5},
 	}, time.Now())
@@ -710,8 +638,7 @@ func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 	mu.Lock()
 	before := len(panels)
 	mu.Unlock()
-	// the tick the window's race would run once the flush releases the
-	// paint lock
+	// the tick the window's race would run once the flush releases the paint lock
 	s.chat.tick("sess-cancel")
 	mu.Lock()
 	after, _ := lastPanel(panels)
@@ -725,9 +652,7 @@ func TestChatPanelTickAfterTheExitFlushStaysQuiet(t *testing.T) {
 	}
 }
 
-// TestChatActionStopThroughThePipe: the pipe's stop verb cancels the
-// run - the same face POST /sessions/{id}/stop serves - and the run's
-// exit flush paints the completed state.
+// TestChatActionStopThroughThePipe: the pipe's stop verb cancels the run.
 func TestChatActionStopThroughThePipe(t *testing.T) {
 	gated := newGatedProvider()
 	a := agent.NewAgent(gated, nil, 0)
@@ -741,9 +666,7 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	s.store = st
 	s.chat.batch = time.Hour
 	recorder := newChatRecorder()
-	// The real wiring order: newCanvas registers the capsule (the
-	// runtime installs its own closure), then the test overrides the
-	// closure to record - one frontend is live per process.
+	// The real wiring order: newCanvas registers the capsule.
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
 	}
@@ -775,9 +698,8 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 			out = body
 			break
 		}
-		// The start-to-launch window answers "run not started" while
-		// the cancel registers - a retry is exactly how a frontend
-		// rides that transient.
+		// The start-to-launch window answers "run not started" while the cancel registers - a
+		// retry is exactly how a frontend rides that transient.
 		if time.Now().After(deadline) {
 			t.Fatalf("stop never landed: %d", status)
 		}
@@ -800,34 +722,25 @@ func TestChatActionStopThroughThePipe(t *testing.T) {
 	}
 }
 
-// TestBranchPathCutsTheOldSiblingKeepsRunRows: the pure cut behind the
-// in-place retry composition (t_19c100dd) - rows up to and including
-// the branch row stay, old rows after it go, and rows above the
-// pre-run floor (the run's own mid-stream persisted segments) stay.
+// TestBranchPathCutsTheOldSiblingKeepsRunRows: the pure cut behind the in-place retry.
 func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	path := []core.StoredMessage{
 		{ID: 1},
 		{ID: 2},
 		{ID: 3},
 	}
-	// plain send: no pin, the path renders whole
 	if got := branchPath(path, "", 3); len(got) != 3 {
 		t.Fatalf("unpinned path = %d rows, want 3", len(got))
 	}
-	// dangling branch id pins nothing
 	if got := branchPath(path, "99", 3); len(got) != 3 {
 		t.Fatalf("dangling branch = %d rows, want 3", len(got))
 	}
-	// malformed branch id pins nothing
 	if got := branchPath(path, "zap", 3); len(got) != 3 {
 		t.Fatalf("malformed branch = %d rows, want 3", len(got))
 	}
-	// the retry window: everything after the branch row pre-dates the
-	// run - the old sibling's subtree leaves
 	if got := branchPath(path, "1", 3); len(got) != 1 || got[0].ID != 1 {
 		t.Fatalf("retry cut = %+v, want row 1 only", got)
 	}
-	// mid-run persisted segments (id > floor) stream into the slot
 	live := []core.StoredMessage{
 		{ID: 1},
 		{ID: 4},
@@ -840,11 +753,7 @@ func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	}
 }
 
-// gateHoldProvider streams one response chunk, then holds the stream
-// open until release closes, then ends - the deterministic mid-run
-// window the in-place retry test pins the payload in. Every Stream
-// call gates the same way, so a detached title call rides the gate
-// harmlessly.
+// gateHoldProvider streams one response chunk, then holds the stream open until.
 type gateHoldProvider struct {
 	release chan struct{}
 }
@@ -867,12 +776,7 @@ func (p *gateHoldProvider) Stream(context.Context, []core.Message, []llm.ToolSch
 	return events
 }
 
-// TestRetryRendersInPlaceMidRun (t_19c100dd, Endo ruling 1): while a
-// retry streams, the panel payload carries the old response NOWHERE -
-// the fresh answer streams into the old row's place. The exit keeps
-// one assistant row (the fresh sibling active), the transcript
-// endpoint's reattach merge agrees, and the store still holds the old
-// answer as a selectable sibling.
+// TestRetryRendersInPlaceMidRun: while a retry streams, the panel payload carries.
 func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := agent.NewAgent(prov, nil, 0)
@@ -891,8 +795,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	// one complete exchange, seeded straight into the store (legacy
-	// adjacency rows): user + the answer the retry will re-run.
 	ctx := context.Background()
 	if err := st.CreateSession(ctx, "s-ip", "", ""); err != nil {
 		t.Fatalf("create: %v", err)
@@ -903,7 +805,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	if err := st.AppendMessage(ctx, "s-ip", core.NewAssistant("first answer")); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	// idle panel: the exchange renders whole
 	idle := chatPanelPayload(t, s.chat.buildPanel("s-ip", false))
 	if got := chatRowRoles(idle.Rows); strings.Join(got, ",") != "user,assistant" {
 		t.Fatalf("idle rows = %v", got)
@@ -912,7 +813,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 		t.Fatalf("idle assistant = %q", idle.Rows[1].Blocks[0].Content)
 	}
 
-	// retry through the pipe
 	retryBody := `{"module":"http_channel","action":"retry","args":{"session":"s-ip"}}`
 	res, err := http.Post(ts.URL+"/ui/actions", "application/json", strings.NewReader(retryBody))
 	if err != nil {
@@ -925,8 +825,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 		t.Fatalf("retry = %d: %v", res.StatusCode, out)
 	}
 
-	// mid-run: the fresh chunk is in the open tail and the OLD answer
-	// is gone from the payload - the retry streams in place
 	deadline := time.Now().Add(testWaitTimeout)
 	var mid []transcriptItem
 	for time.Now().Before(deadline) {
@@ -955,8 +853,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 		t.Fatalf("mid-run panel assistant = %+v", midPanel.Rows[1])
 	}
 
-	// the transcript endpoint's reattach merge agrees: a mid-retry
-	// refresh renders the fresh stream in the old row's place
 	tres, err := http.Get(ts.URL + "/sessions/s-ip/transcript")
 	if err != nil {
 		t.Fatalf("get transcript: %v", err)
@@ -975,7 +871,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 		}
 	}
 
-	// release: the run completes, the exit paints the persisted truth
 	close(prov.release)
 	waitRunQuiescent(t, s, "s-ip")
 	final := chatPanelPayload(t, s.chat.buildPanel("s-ip", false))
@@ -985,7 +880,6 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	if final.Rows[1].Blocks[0].Content != "fresh" || final.Rows[1].Status != core.ChatStatusComplete {
 		t.Fatalf("final assistant = %+v", final.Rows[1])
 	}
-	// the old answer survived as a selectable sibling, not as a row
 	view, err := st.GetActiveView(ctx, "s-ip")
 	if err != nil {
 		t.Fatalf("view: %v", err)
@@ -995,9 +889,7 @@ func TestRetryRendersInPlaceMidRun(t *testing.T) {
 	}
 }
 
-// TestChatActionRetryThroughThePipe: the pipe's retry verb replays
-// the session's last user turn as a sibling variant, detached - the
-// same variant hop /chat's retry body drives.
+// TestChatActionRetryThroughThePipe: the pipe's retry verb replays the session's last.
 func TestChatActionRetryThroughThePipe(t *testing.T) {
 	a := agent.NewAgent(newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "first answer"},
@@ -1018,7 +910,6 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	// One complete exchange: user + assistant on the active path.
 	sessionID := postChatGetSessionID(t, ts)
 	waitRunQuiescent(t, s, sessionID)
 	view, err := s.store.GetActiveView(context.Background(), sessionID)
@@ -1040,16 +931,12 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	if res.StatusCode != http.StatusOK {
 		t.Fatalf("retry = %d: %v", res.StatusCode, out)
 	}
-	// The retry run is live - OR already finished. The run slot is
-	// registered synchronously inside the action's 200 (prepareRun's
-	// runs.start), so "not live at this instant" has exactly one
-	// product meaning: the whole run (dummy provider, near-instant;
-	// persist -> finish) completed inside the gap between the action
-	// response and this check - a window that widens under runner
-	// load, where this test process can be descheduled long past a
-	// run's entire lifetime. active() is a transient; the persisted
-	// sibling branch is the durable proof the retry launched. Accept
-	// either; a single instantaneous check reds ~1 run per nightly.
+	// The retry run is live - OR already finished. The run slot is registered
+	// synchronously inside the action's 200 (prepareRun's runs.start), so "not live at
+	// this instant" has exactly one product meaning: the whole run (dummy provider,
+	// near-instant; persist -> finish) completed inside the gap between the action
+	// response and this check - a window that widens under runner load, where this test
+	// process can be descheduled long past a run's entire lifetime.
 	deadline := time.Now().Add(testWaitTimeout)
 	for {
 		if s.runs.active(sessionID) {
@@ -1076,9 +963,7 @@ func TestChatActionRetryThroughThePipe(t *testing.T) {
 	}
 }
 
-// TestChatPanelEphemeralRowsFromRegistry: a store-less session
-// composes its rows from the registry plus the live tail - the
-// conversation the canvas can render even when nothing persists.
+// TestChatPanelEphemeralRowsFromRegistry: a store-less session composes its rows.
 func TestChatPanelEphemeralRowsFromRegistry(t *testing.T) {
 	s := newTestServer()
 	s.chat.batch = time.Hour
@@ -1090,8 +975,7 @@ func TestChatPanelEphemeralRowsFromRegistry(t *testing.T) {
 	}
 }
 
-// postChatGetSessionID posts one /chat send and returns the session
-// id from the session frame.
+// postChatGetSessionID posts one /chat send and returns the session id.
 func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 	t.Helper()
 	res, err := http.Post(ts.URL+"/chat", "application/json",
@@ -1111,14 +995,10 @@ func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 	if err := json.Unmarshal(frame.data, &f); err != nil || f.ID == "" {
 		t.Fatalf("session frame = %q (%v)", frame.data, err)
 	}
-	// The run is detached; this client's remaining frames stream while
-	// the test lives (ts.Close cuts the wire, the run persists on).
 	return f.ID
 }
 
-// TestChatDeltaRidesTheRunStream (settled Q1): the chat panel's deltas
-// serialize as view_model_delta frames on the same stream the chat
-// already rides - no new transport.
+// TestChatDeltaRidesTheRunStream (settled Q1).
 func TestChatDeltaRidesTheRunStream(t *testing.T) {
 	a := agent.NewAgent(newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
@@ -1133,8 +1013,7 @@ func TestChatDeltaRidesTheRunStream(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 	s.store = st
-	// Cadence OFF: every token flushes - deltas flow while the stream
-	// is open, so the frames are guaranteed inside its lifetime.
+	// Cadence OFF: every token flushes.
 	s.chat.batch = 0
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
@@ -1173,9 +1052,7 @@ func TestChatDeltaRidesTheRunStream(t *testing.T) {
 	}
 }
 
-// nextFrameW is nextFrame's non-fatal variant: the caller breaks at
-// the first interesting frame, and a live stream's tail (closed early)
-// is just ok=false - not a wedge.
+// nextFrameW is nextFrame's non-fatal variant: the caller breaks at the first.
 func nextFrameW(t *testing.T, rd *bufio.Reader) (sseFrame, bool) {
 	t.Helper()
 	type result struct {
@@ -1215,10 +1092,9 @@ func nextFrameW(t *testing.T, rd *bufio.Reader) (sseFrame, bool) {
 	}
 }
 
-// gateStore arms ONCE: the first GetActiveView after arm blocks until
-// release - the chat panel's build composes through this store, so the
-// test pins a batcher tick inside its build window exactly, and fires
-// endRun there (t_877f4bce's race window, made deterministic).
+// gateStore arms ONCE: the first GetActiveView after arm blocks until release - the
+// chat panel's build composes through this store, so the test pins a batcher tick
+// inside its build window exactly, and fires endRun there.
 type gateStore struct {
 	agent.StoreProvider
 	mu      sync.Mutex
@@ -1253,15 +1129,7 @@ func (g *gateStore) GetActiveView(ctx context.Context, sessionID string) (core.A
 	return g.StoreProvider.GetActiveView(ctx, sessionID)
 }
 
-// TestBatcherPushCannotOutliveTheRun (t_877f4bce, audit gate): a
-// batcher tick past takeDirty builds for ms-scale with no liveness
-// check; endRun fires inside that window and the stale running=true
-// push lands after the exit push - the canvas then serves a panel that
-// claims the session streams forever, and the webui reattach busy-gate
-// blocks the composer until an unrelated push heals it. The tick and
-// the exit flush now serialize under the capsule's paint lock, so the
-// exit push is last: the recorded deltas end running=false and the
-// canvas snapshot agrees.
+// TestBatcherPushCannotOutliveTheRun: a batcher tick past takeDirty builds.
 func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	prov := newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},
@@ -1277,8 +1145,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	gated := &gateStore{StoreProvider: st}
 	s := NewServer(a, nil, gated, nil, nil, nil)
 	s.chat.batch = 20 * time.Millisecond
-	// Real wiring order: the canvas registers the capsule, the test
-	// overrides the closure to record (one frontend is live).
 	if err := s.newCanvas(&core.Context{PanelProviders: []core.PanelProvider{s.chat}}); err != nil {
 		t.Fatalf("newCanvas: %v", err)
 	}
@@ -1290,13 +1156,9 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	ts := httptest2.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 
-	// One real run streamed to completion behind the gate-unarmed
-	// store: persisted truth exists, no run is live from here on.
 	sessionID := postChatGetSessionID(t, ts)
 	waitRunQuiescent(t, s, sessionID)
 
-	// Stage the doomed interleaving: a batcher session dirty with a
-	// pending token batch, pinned inside its build, while endRun fires.
 	s.chat.beginRun(sessionID) // the batcher spawns; its begin push composes behind the unarmed store
 	entered, closeRelease := gated.arm()
 	s.chat.runEvent(sessionID, core.StreamEvent{Event: core.ResponseChunk{Type: "response_chunk", Content: "tok"}})
@@ -1310,9 +1172,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 		s.chat.endRun(sessionID)
 		close(done)
 	}()
-	// Old code: the exit push landed here already, and the tick still
-	// stuck mid-build pushed running=true after it. New code: endRun
-	// holds for the paint lock until the build returns.
 	time.Sleep(30 * time.Millisecond)
 	closeRelease()
 	select {
@@ -1321,7 +1180,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 		t.Fatal("endRun never returned - the paint lock does not release")
 	}
 
-	// Settle past any further tick (3+ cadences), then close the gate.
 	time.Sleep(80 * time.Millisecond)
 	recorder.closeDeltas()
 	panels := recorder.all()
@@ -1332,7 +1190,6 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	if last.Session != sessionID {
 		t.Fatalf("last delta session = %q, want %q", last.Session, sessionID)
 	}
-	// The canvas state agrees (GET /ui/canvas's snapshot source).
 	snap := s.canvas.Snapshot()
 	if len(snap) != 1 {
 		t.Fatalf("snapshot = %d panels, want 1", len(snap))
@@ -1345,16 +1202,7 @@ func TestBatcherPushCannotOutliveTheRun(t *testing.T) {
 	}
 }
 
-// TestChatPanelPendingCallCarriesItsStart (card t_6bad9f6f round 3):
-// a YIELD-class call (past the loop's inline budget) persists its
-// assistant turn with the call and no result - the session goes idle
-// and both wires serve the bare pending row. The idle payload emits no
-// delta at all (no run, so no batcher), so the pane keeps that payload
-// until something else changes the panel: a duration measured at build
-// time would freeze the row's clock at whatever it was then, and a
-// dock-tab remount would restart the visible meter. The row therefore
-// carries the call's own START stamp, which the client derives from at
-// every paint.
+// TestChatPanelPendingCallCarriesItsStart: a YIELD-class call.
 func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -1369,8 +1217,6 @@ func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	if err := st.AppendMessage(ctx, "sess-yield", assistant); err != nil {
 		t.Fatalf("append assistant: %v", err)
 	}
-	// the run that opened the call is gone: the ledger holds the
-	// dispatch, the panel holds the call
 	panels := s.chat.Panels()
 	if len(panels) != 1 {
 		t.Fatalf("panels = %d, want 1", len(panels))
@@ -1390,9 +1236,6 @@ func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("start stamp %q does not parse: %v", block.StartedAt, err)
 	}
-	// the anchor is the assistant row's write time - the instant the
-	// loop persisted the turn that carries the call (the calls execute
-	// right after it)
 	msgs, err := st.GetActiveView(ctx, "sess-yield")
 	if err != nil {
 		t.Fatalf("active view: %v", err)
@@ -1413,7 +1256,6 @@ func TestChatPanelPendingCallCarriesItsStart(t *testing.T) {
 	if !start.Equal(want) {
 		t.Fatalf("start stamp = %v, want the assistant row's write time %v", start, want)
 	}
-	// the transcript wire answers the same row for a reload
 	rec := httptest2.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest2.NewRequest(http.MethodGet, "/sessions/sess-yield/transcript", nil))
 	if rec.Code != http.StatusOK {
@@ -1450,10 +1292,7 @@ func toolCallBlock(t *testing.T, payload core.ChatPayload) core.ChatBlock {
 	return core.ChatBlock{}
 }
 
-// TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's
-// own HTTP status through - a retry against a session with a live run
-// answers 409 through the action pipe, the same face POST /chat serves,
-// not a flattened 500.
+// TestUIActionRetryOnLiveRunIsA409: handleUIActions passes a runError's own HTTP.
 func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
 	prov := &gateHoldProvider{release: make(chan struct{})}
 	a := agent.NewAgent(prov, nil, 0)
@@ -1472,8 +1311,6 @@ func TestUIActionRetryOnLiveRunIsA409(t *testing.T) {
 	t.Cleanup(ts.Close)
 
 	sessionID := postChatGetSessionID(t, ts)
-	// The run is live (held on the gate) until release closes - the
-	// retry below lands while a run holds the slot.
 	body := `{"module":"http_channel","action":"retry","args":{"session":"` + sessionID + `"}}`
 	res, err := http.Post(ts.URL+"/ui/actions", "application/json", strings.NewReader(body))
 	if err != nil {

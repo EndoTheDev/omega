@@ -1,8 +1,4 @@
-// omega webui: unit tests for the URL<->view route helpers in
-// composables/omega.ts (parseSessionPath / sessionPath / isSettingsPath,
-// pure functions) plus the /settings landing's wiring in app.vue (card
-// t_6d6a6dc4: a reload of /settings keeps the settings tab mounted).
-// Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
+// omega webui: unit tests for the URL<->view route helpers in composables/omega.ts.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -57,9 +53,7 @@ describe("isSettingsPath", () => {
   });
 
   it("never claims the settings API's own path", () => {
-    // the bare noun is the HTTP API route (agent/api/server.go registers it
-    // exactly); the SPA only gets the catch-all, so the app's own path is
-    // the trailing-slash form - the same split /board/ has
+    // the bare noun is the HTTP API route (agent/api/server.go registers it exactly).
     assert.equal(isSettingsPath("/settings"), false);
   });
 
@@ -79,8 +73,7 @@ describe("isSettingsPath", () => {
   });
 
   it("carries no query axis (the section rides ?settings=<id>)", () => {
-    // callers hand this helper a PATHNAME only; a pathname string carrying
-    // a query is not the route
+    // callers hand this helper a PATHNAME only.
     assert.equal(isSettingsPath("/settings/?settings=general"), false);
   });
 });
@@ -92,9 +85,7 @@ describe("settingsAddress", () => {
   });
 
   it("keeps the section query the deep link carried", () => {
-    // the claim must never drop ?settings=<id>: SettingsTab owns that
-    // parameter on the same URL, and a claim that rewrote the path alone
-    // would lose the pre-filtered landing
+    // the claim must never drop ?settings=<id>.
     assert.equal(settingsAddress("?settings=dock"), "/settings/?settings=dock");
     assert.equal(settingsAddress("?a=1&settings=dock"), "/settings/?a=1&settings=dock");
   });
@@ -104,11 +95,11 @@ describe("settingsAddress", () => {
   });
 });
 
-// --- the landing's wiring (source pin) --------------------------------------
-// The helpers above cannot prove the app CALLS them, and the node suite has
-// no DOM. The landing has exactly two doors (boot, popstate) and one guard
-// (the chat URL derivation pauses while the path is up) - pin that shape so
-// a rewrite cannot silently drop the route while the helper tests stay green.
+// the landing's wiring (source pin) -------------------------------------- The helpers
+// above cannot prove the app CALLS them, and the node suite has no DOM. The landing has
+// exactly two doors (boot, popstate) and one guard (the chat URL derivation pauses
+// while the path is up) - pin that shape so a rewrite cannot silently drop the route
+// while the helper tests stay green.
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const appSrc = readFileSync(join(root, "webui", "app", "app.vue"), "utf8");
@@ -128,8 +119,7 @@ describe("/settings landing wiring (app.vue)", () => {
 
   it("opens the tab through the gear's opener, never a second opener", () => {
     const land = appSrc.match(/function landSettingsRoute\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
-    // the mark has ONE writer now (card t_a5ef6340): the landing claims, it
-    // never pokes settingsRoute itself
+    // the mark has ONE writer now: the landing claims, it never pokes settingsRoute.
     assert.match(land, /claimSettingsPath\(\)/);
     assert.doesNotMatch(land, /settingsRoute\.value = true/);
     assert.match(land, /openSettingsTab\(\)/);
@@ -157,14 +147,9 @@ describe("/settings landing wiring (app.vue)", () => {
       refocus.slice(refocus.indexOf("no chat focus in this gesture")) || "";
     assert.ok(fallback.length > 0, "the fallback branch is where the release lives");
     assert.match(fallback, /settingsRoute\.value = false/);
-    // live state, not a blanket clear: the same watcher runs right after the
-    // landing OPENS its tab (a mounted settings tab is not a release)
     assert.match(fallback, /settingsRoute\.value && !settingsTabMounted\(\)/);
-    // the release adopts the tab the dock is SHOWING, so the URL names what
-    // the user is looking at and not the boot-resolved focus
+    // the release adopts the tab the dock is SHOWING, so the URL names what the user.
     assert.match(fallback, /dock\.activeChatTab\(\)/);
-    // the mark falls before the focus transition, so the focus watcher's
-    // composer gate (suppressed while the landing is up) sees it clear
     const release = fallback.slice(fallback.indexOf("settingsTabMounted()"));
     assert.ok(
       release.indexOf("settingsRoute.value = false") < release.indexOf("focusedKey.value = showing"),
@@ -190,8 +175,6 @@ describe("/settings landing wiring (app.vue)", () => {
   it("the chat openers clear the mark - before their focus-existing returns", () => {
     const open = appSrc.match(/function openChatTab\([\s\S]*?\n  \}\n/)?.[0] ?? "";
     assert.match(open, /settingsRoute\.value = false/);
-    // the focus-existing / focus-draft branches return early, so a late
-    // clear would miss the very gesture this pin exists for
     assert.ok(
       open.indexOf("settingsRoute.value = false") <
         open.indexOf("if (sessionId)"),
@@ -208,9 +191,6 @@ describe("/settings landing wiring (app.vue)", () => {
   });
 
   it("a released landing WRITES the path the pause held", () => {
-    // the pause suppresses every derivation, so a release whose derived path
-    // did not change (a draft tab focused before and after) writes nothing
-    // on its own - the sidebar's '+' on a landing would keep /settings/view
     const release =
       appSrc.match(/watch\(settingsRoute, \(up\) => \{[\s\S]*?\n  \}\);/)?.[0] ?? "";
     assert.match(release, /if \(up\) return;/);
@@ -222,17 +202,13 @@ describe("/settings landing wiring (app.vue)", () => {
     assert.match(release, /history\.replaceState\(\{\}, "", urlPath\.value\)/);
   });
 
-  // card t_a5ef6340 inverts the old "nothing WRITES the settings path" law:
-  // the address bar now names the tab while it is up. The WRITE has exactly
-  // one home (claimSettingsPath) - the three doors call it, nothing else
-  // touches the path.
+  // inverts the old "nothing WRITES the settings path" law. The WRITE has exactly one
+  // home (claimSettingsPath) - the three doors call it, nothing else touches the path.
   it("the write lives in ONE claim helper, replaceState only", () => {
     const claim =
       appSrc.match(/function claimSettingsPath\(\)[\s\S]*?\n  \}/)?.[0] ?? "";
     assert.ok(claim.length > 0, "claimSettingsPath is the one writer");
     assert.match(claim, /settingsRoute\.value = true/);
-    // the path is already the settings one on a landing: nothing to write,
-    // and the section query is SettingsTab's to keep
     assert.match(claim, /if \(isSettingsPath\(window\.location\.pathname\)\) return;/);
     assert.match(
       claim,
@@ -257,9 +233,7 @@ describe("/settings landing wiring (app.vue)", () => {
   });
 
   it("the bare noun is never written - only the SPA form", () => {
-    // the API path in an address bar answers knob JSON: the claim must
-    // never mint /settings (the helper adds the trailing slash, and no
-    // other literal in the shell carries the bare route)
+    // the API path in an address bar answers knob JSON: the claim must never mint.
     assert.doesNotMatch(appSrc, /"\/settings"/);
     assert.doesNotMatch(appSrc, /"\/settings\/view"/);
   });

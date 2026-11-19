@@ -1,9 +1,6 @@
 package kanban
 
-// Kanban CLI tests (t_d7a7beaa, argv homed to the capsule in v0.12
-// phase D t_69322045): board registry ops against a temp home, and the
-// isolation probe the card asks for - two boards, a card on each, no
-// bleed across list calls.
+// Kanban CLI tests: board registry ops against a temp home, and the isolation probe.
 
 import (
 	"context"
@@ -13,8 +10,7 @@ import (
 	"testing"
 )
 
-// captureStdout reroutes os.Stdout through a pipe for the duration of
-// fn (the CLI handlers print straight to stdout).
+// captureStdout reroutes os.Stdout through a pipe for the duration of fn.
 func captureStdout(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -34,8 +30,7 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	return <-outCh, fnErr
 }
 
-// cardCount opens the board's db and counts tasks (registry wired,
-// the way a mount does it).
+// cardCount opens the board's db and counts tasks.
 func cardCount(t *testing.T, home, board string) int {
 	t.Helper()
 	s := openRegistryStore(t, home)
@@ -50,7 +45,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 
-	// create two boards
 	if err := cmdKanban([]string{"board", "create", "alpha"}); err != nil {
 		t.Fatalf("create alpha: %v", err)
 	}
@@ -61,7 +55,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 		t.Fatal("illegal name accepted")
 	}
 
-	// current pointer is main; use lands on existing boards only
 	if out, err := captureStdout(t, func() error {
 		return cmdKanban([]string{"board", "current"})
 	}); err != nil || strings.TrimSpace(out) != "main" {
@@ -79,7 +72,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 		t.Fatalf("current after use = %q err %v", out, err)
 	}
 
-	// card ops: omitted --board follows the pointer (alpha)
 	if err := cmdKanban([]string{"create", "flows", "to", "pointer"}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -89,7 +81,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 	if n := cardCount(t, home, "main"); n != 0 {
 		t.Fatalf("main bleed = %d", n)
 	}
-	// explicit --board overrides the pointer
 	if err := cmdKanban([]string{"create", "--board", "main", "on main"}); err != nil {
 		t.Fatalf("create main: %v", err)
 	}
@@ -97,7 +88,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 		t.Fatalf("main cards = %d", n)
 	}
 
-	// list on both boards: no bleed across list calls
 	for _, probe := range []struct {
 		args []string
 		want string
@@ -115,7 +105,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 		}
 	}
 
-	// done completes on the right board
 	tasks := listBoardTasks(t, home, "alpha")
 	if len(tasks) != 1 {
 		t.Fatalf("alpha tasks = %d", len(tasks))
@@ -127,8 +116,6 @@ func TestKanbanBoardRegistryCLI(t *testing.T) {
 		t.Fatalf("status = %q, want done", done)
 	}
 
-	// delete: refuses the pointer target, then a non-empty board, then
-	// an empty board lands
 	if err := cmdKanban([]string{"board", "delete", "alpha"}); err == nil {
 		t.Fatal("delete of pointer target accepted")
 	}

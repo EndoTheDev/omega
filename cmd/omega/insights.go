@@ -11,7 +11,6 @@ import (
 )
 
 // cmdInsights handles the `omega insights` subcommand.
-// It aggregates session data over the last N days and prints a report.
 func cmdInsights(configPath string, args []string) error {
 	fs := flag.NewFlagSet("insights", flag.ContinueOnError)
 	days := fs.Int("days", 30, "number of days to analyze")

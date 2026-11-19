@@ -19,8 +19,6 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 		return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "anthropic: ANTHROPIC_API_KEY not set"}
 	}
 
-	// Anthropic requires system prompt as top-level field, and tool
-	// results folded into user messages.
 	system, apiMessages := anthropicConvertMessages(messages)
 
 	payload := map[string]any{
@@ -28,9 +26,8 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 		"messages": apiMessages,
 		"stream":   true,
 	}
-	// A thinking budget larger than max_tokens is a 400 on the real
-	// Anthropic API (budget_tokens must be less than max_tokens). Grow
-	// max_tokens with the budget.
+	// A thinking budget larger than max_tokens is a 400 on the real Anthropic API
+	// (budget_tokens must be less than max_tokens).
 	maxTokens := 4096
 	if budget := anthropicBudgetTokens(p.thinkingLevel); budget > 0 {
 		if budget >= maxTokens {
@@ -86,9 +83,7 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 	reader := bufio.NewReader(resp.Body)
 	pending := make(map[int]*pendingTool)
 	finishReason := "stop"
-	// Usage arrives on message_start (input side) and message_delta
-	// (output side, and on keypool also the input side). Either may
-	// omit fields; only report what was actually seen.
+	// Usage arrives on message_start (input side) and message_delta.
 	var promptTokens, completionTokens, cachedTokens *int
 
 	for {
@@ -195,7 +190,6 @@ func (p *Provider) streamAnthropic(ctx context.Context, events chan<- core.Provi
 		}
 	}
 
-	// Flush accumulated tool calls in block-index order.
 	flushToolCalls(ctx, events, pending,
 		func(pt *pendingTool) string { return pt.id },
 		func(pt *pendingTool) string { return pt.name },
@@ -214,11 +208,10 @@ type anthropicUsage struct {
 	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
 }
 
-// --- Anthropic message conversion ---
+// Anthropic message conversion
 
-// userImageBlocks lifts a user message's images key (the object shape
-// core.User marshals: [{"media_type","base64"}]) into Anthropic image
-// source blocks. Messages without images yield nil.
+// userImageBlocks lifts a user message's images key.
+// Messages without images yield nil.
 func userImageBlocks(msg map[string]any) []any {
 	imgs, ok := msg["images"].([]any)
 	if !ok || len(imgs) == 0 {
@@ -247,9 +240,7 @@ func userImageBlocks(msg map[string]any) []any {
 	return blocks
 }
 
-// anthropicConvertMessages converts generic message maps to Anthropic
-// format: system prompt lifted to top-level, tool results folded into
-// user messages.
+// anthropicConvertMessages converts generic message maps to Anthropic format.
 func anthropicConvertMessages(messages []map[string]any) (system string, result []map[string]any) {
 	for i := 0; i < len(messages); i++ {
 		role, _ := messages[i]["role"].(string)
@@ -258,8 +249,6 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 			content, _ := messages[i]["content"].(string)
 			system += content + "\n"
 		case "user":
-			// Images ride alongside the text as image source blocks;
-			// content stays a plain string when there are none.
 			imgs := userImageBlocks(messages[i])
 			if content, ok := messages[i]["content"].([]any); ok {
 				blocks := append([]any(nil), imgs...)
@@ -301,7 +290,6 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 			}
 			result = append(result, map[string]any{"role": "assistant", "content": blocks})
 		case "tool":
-			// Fold consecutive tool results into one user message.
 			var blocks []map[string]any
 			for i < len(messages) {
 				r, ok := messages[i]["role"].(string)
@@ -329,11 +317,10 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 	return system, result
 }
 
-// --- shared helpers ---
+// shared helpers
 
-// sendEvent sends an event on the channel, respecting context
-// cancellation. Non-blocking: if the context is cancelled, the event
-// is dropped.
+// sendEvent sends an event on the channel, respecting context cancellation.
+// Non-blocking: if the context is cancelled, the event is dropped.
 
 func anthropicBudgetTokens(level string) int {
 	switch level {

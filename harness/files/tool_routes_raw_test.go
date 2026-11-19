@@ -9,8 +9,7 @@ import (
 	"testing"
 )
 
-// rawGet runs a GET request against the file surface's raw route and
-// returns the response plus (for the JSON error paths) the decoded body.
+// rawGet runs a GET request against the file surface's raw route and returns.
 func rawGet(t *testing.T, path string) (*http.Response, []byte) {
 	t.Helper()
 	s := filesRouteMux(t)
@@ -21,14 +20,13 @@ func rawGet(t *testing.T, path string) (*http.Response, []byte) {
 	return res, rec.Body.Bytes()
 }
 
-// pngFixture is a real PNG signature plus a IHDR-ish payload of filler;
-// DetectContentType only needs the magic.
+// pngFixture is a real PNG signature plus a IHDR-ish payload of filler.
 var pngFixture = append([]byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A}, make([]byte, 32)...)
 
 // jpgFixture is a real JPEG SOI + APP0-ish payload.
 var jpgFixture = append([]byte{0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, 'J', 'F', 'I', 'F', 0}, make([]byte, 32)...)
 
-// svgFixture is the text an .svg file actually carries.
+// svgFixture is the text an.svg file actually carries.
 const svgFixture = `<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><rect width="4" height="4" fill="red"/></svg>`
 
 func TestDetectFileMime(t *testing.T) {
@@ -136,11 +134,9 @@ func TestFilesRawServesImage(t *testing.T) {
 
 func TestFilesRawRefusesNonImage(t *testing.T) {
 	chdirToWorkdir(t)
-	// a text file sniffs text/plain - not an image, refused
 	if err := os.WriteFile("notes.txt", []byte("plain text"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	// an ELF binary sniffs application/octet-stream - refused too
 	bin := append([]byte{0x7F, 'E', 'L', 'F', 0x02, 0x01, 0x01, 0x00}, make([]byte, 64)...)
 	if err := os.WriteFile("omega.bin", bin, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
@@ -156,13 +152,11 @@ func TestFilesRawRefusesNonImage(t *testing.T) {
 
 func TestFilesRawServesPdf(t *testing.T) {
 	chdirToWorkdir(t)
-	// a minimal pdf: DetectContentType sniffs the %PDF- magic to
-	// application/pdf, the browser's native viewer needs nothing more
 	pdf := append([]byte("%PDF-1.7\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>"), make([]byte, 32)...)
 	if err := os.WriteFile("doc.pdf", pdf, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	// a text file with a .pdf name sniffs text/plain - no magic, no pdf
+	// a text file with a.pdf name sniffs text/plain - no magic, no pdf
 	if err := os.WriteFile("fake.pdf", []byte("plain text"), 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
@@ -180,7 +174,6 @@ func TestFilesRawServesPdf(t *testing.T) {
 	if len(raw) != len(pdf) {
 		t.Errorf("raw(doc.pdf) served %d bytes; want %d", len(raw), len(pdf))
 	}
-	// the sniff is the gate, not the extension: a text-named-pdf refuses
 	res, _ = rawGet(t, "/files/raw?path=fake.pdf")
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("raw(fake.pdf) = %d; want 400 (sniff, not extension, decides)", res.StatusCode)
@@ -215,7 +208,6 @@ func TestFilesRawDownloadLane(t *testing.T) {
 			t.Errorf("raw(%q, download) served no bytes", rel)
 		}
 	}
-	// the render lane still refuses the unrenderable pair
 	for _, rel := range []string{"omega.bin", "notes.txt"} {
 		res, _ := rawGet(t, "/files/raw?path="+rel)
 		if res.StatusCode != http.StatusBadRequest {
@@ -230,8 +222,7 @@ func TestFilesRawRidesTheReadJail(t *testing.T) {
 	if err := os.WriteFile("shot.png", pngFixture, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	// a symlink pointing OUTSIDE the root must be refused, exactly like
-	// /files/read: resolved-target containment, not name tricks
+	// a symlink pointing OUTSIDE the root must be refused, exactly like /files/read.
 	if err := os.Symlink(dir, "inside"); err != nil { // a self symlink is legal and stays contained
 		t.Fatalf("symlink inside: %v", err)
 	}
@@ -244,12 +235,10 @@ func TestFilesRawRidesTheReadJail(t *testing.T) {
 		t.Fatalf("symlink escape: %v", err)
 	}
 
-	// the traversal + absolute cases are 400s with the error envelope
 	for _, rel := range []string{"a/../x.png", "a/./x.png", ".", "..", "/etc/passwd"} {
 		res, body := rawGet(t, "/files/raw?path="+rel)
 		res.Body.Close()
 		if rel == ".." {
-			// "path=..&..." may url-escape; run it escaped too
 			res, body = rawGet(t, "/files/raw?path=a%2F..%2Fx")
 		}
 		if res.StatusCode != http.StatusBadRequest {
@@ -269,19 +258,16 @@ func TestFilesRawRidesTheReadJail(t *testing.T) {
 		t.Errorf("raw(escape.png) = %d; want 400 (symlink out of root)", res.StatusCode)
 	}
 	res.Body.Close()
-	// a legal in-root symlink to an image serves (jail passes it)
 	res, _ = rawGet(t, "/files/raw?path=inside/shot.png")
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("raw(inside/shot.png) = %d; want 200 (in-root symlink ok)", res.StatusCode)
 	}
 	res.Body.Close()
-	// the root itself is a directory: 400 "not a file", not a serve
 	res, _ = rawGet(t, "/files/raw?path=")
 	if res.StatusCode != http.StatusBadRequest {
 		t.Errorf("raw(root) = %d; want 400", res.StatusCode)
 	}
 	res.Body.Close()
-	// a missing leaf is a 404, the same shape /files/read reports
 	res, _ = rawGet(t, "/files/raw?path=missing.png")
 	if res.StatusCode != http.StatusNotFound {
 		t.Errorf("raw(missing) = %d; want 404", res.StatusCode)
@@ -294,7 +280,6 @@ func TestFilesRawMethodAndSessionRooting(t *testing.T) {
 	if err := os.WriteFile("shot.png", pngFixture, 0o644); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	// the raw route is GET-only, like its read sibling
 	s := filesRouteMux(t)
 	req := httptest.NewRequest(http.MethodPost, "/files/raw?path=shot.png", nil)
 	rec := httptest.NewRecorder()
@@ -302,8 +287,6 @@ func TestFilesRawMethodAndSessionRooting(t *testing.T) {
 	if rec.Code != http.StatusMethodNotAllowed {
 		t.Errorf("POST /files/raw = %d; want 405", rec.Code)
 	}
-	// an unknown session id falls through the root chain - the cwd
-	// fallback roots the fetch (resolution law), the image still serves
 	res, _ := rawGet(t, "/files/raw?path=shot.png&session=i-do-not-exist")
 	if res.StatusCode != http.StatusOK {
 		t.Errorf("raw with unknown session = %d; want 200", res.StatusCode)

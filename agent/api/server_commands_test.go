@@ -1,11 +1,6 @@
 package api
 
-// /commands palette surface tests (card t_07aed3f9): the registry read
-// is the rewire's snapshot (ctx.Commands), dispatch runs the same
-// chain-on-miss handler the loop uses, and an unregistered "/skill"
-// name resolves into the skill kind. Direct seam injection for the
-// registry - the rewire machinery (mount → ctx → rewireSeams) is
-// extensionapi's job and already covered there.
+// /commands palette surface tests.
 
 import (
 	"context"
@@ -25,13 +20,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
-// listingSkills serves the serving surface's own face (part 3): the
-// std-typed inventory view for the /<skill-name> dispatch path.
+// listingSkills serves the serving surface's own face (part 3).
 type listingSkills struct{}
 
-// errNotFound: the skill provider's plain not-found phrasing (the
-// skills capsule moved home with the shrink wave 3; the phrase law
-// pins here for the fake reader).
+// errNotFound: the skill provider's plain not-found phrasing.
 type errNotFound struct{}
 
 func (*errNotFound) Error() string { return `skill %q not found. Available: none` }
@@ -81,7 +73,6 @@ func TestHandleCommandsListsRegistrySnapshot(t *testing.T) {
 	if len(got[1].Args) != 2 || got[1].Args[0] != "formal" {
 		t.Fatalf("args = %+v, want the declared completions", got[1].Args)
 	}
-	// empty registry still lists as an array
 	s2 := NewServer(nil, nil, nil, nil, nil, nil)
 	rec2 := httptest.NewRecorder()
 	s2.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/commands", nil))
@@ -142,7 +133,6 @@ func TestHandleCommandDispatchErrors(t *testing.T) {
 			}
 		})
 	}
-	// handler failure surfaces as 500 with the error text
 	s2 := NewServer(nil, nil, nil, nil, nil, nil)
 	s2.seams.mu.Lock()
 	s2.seams.commands = []core.ExtensionCommand{{Name: "/boom"}}
@@ -185,10 +175,7 @@ func TestHandleCommandDispatchSkillResolves(t *testing.T) {
 	}
 }
 
-// realChainCapsules mounts the capsules a dispatch actually reaches -
-// for real, not as fakes - and hands the server their live Context.
-// cron mounts LAST, which is the pre-fix shape that made it the chain's
-// head: every dispatch answered with cron's text (card t_d923b50a).
+// realChainCapsules mounts the capsules a dispatch actually reaches.
 func realChainCapsules(t *testing.T) *Server {
 	t.Helper()
 	s := NewServer(nil, nil, nil, nil, nil, nil)
@@ -198,9 +185,7 @@ func realChainCapsules(t *testing.T) *Server {
 	return s
 }
 
-// realChainServer is realChainCapsules with the store seam wired into
-// the server too, so a test can seed a session through the shell's own
-// POST /sessions and then dispatch a command that acts on it.
+// realChainServer is realChainCapsules with the store seam wired into the server too.
 func realChainServer(t *testing.T) *Server {
 	t.Helper()
 	ctx := mountRealChain(t)
@@ -215,8 +200,7 @@ func realChainServer(t *testing.T) *Server {
 	return s
 }
 
-// mountRealChain mounts the real capsule chain into a fresh temp home
-// (nothing writes into the operator's files) and returns the Context.
+// mountRealChain mounts the real capsule chain into a fresh temp home.
 func mountRealChain(t *testing.T) *core.Context {
 	t.Helper()
 	t.Setenv("OMEGA_HOME", t.TempDir())
@@ -236,12 +220,9 @@ func mountRealChain(t *testing.T) *core.Context {
 	return ctx
 }
 
-// TestCommandDispatchReachesTheOwningCapsule is the wire boundary of
-// the chain-on-miss law: POST /commands/dispatch answers with the
-// capsule that OWNS the name, and no other capsule's text leaks in.
-// /logs is the argument-less case (its answer may be the capsule's own
-// refusal on a home with no log file) - it still may never carry the
-// cron text.
+// TestCommandDispatchReachesTheOwningCapsule is the wire boundary of the. /logs is the
+// argument-less case (its answer may be the capsule's own refusal on a home with no log
+// file) - it still may never carry the cron text.
 func TestCommandDispatchReachesTheOwningCapsule(t *testing.T) {
 	s := realChainCapsules(t)
 
@@ -280,12 +261,9 @@ func TestCommandDispatchReachesTheOwningCapsule(t *testing.T) {
 	}
 }
 
-// ---- the dispatch contract (card t_d1fe01da) ------------------------
+// - the dispatch contract ---------------------
 
-// TestCommandDispatchDistinguishesMissFromRefusal is the wire boundary
-// of the miss sentinel: an unclaimed name answers 404, an owner's
-// refusal answers 500 with its OWN message. Before the sentinel both
-// read as "unknown command".
+// TestCommandDispatchDistinguishesMissFromRefusal is the wire boundary of the miss.
 func TestCommandDispatchDistinguishesMissFromRefusal(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
@@ -320,9 +298,7 @@ func TestCommandDispatchDistinguishesMissFromRefusal(t *testing.T) {
 	}
 }
 
-// TestCommandDispatchBindsTheInvokingSession: the wire session reaches
-// the handler through the command context, and an absent one stays
-// absent (the terminal loop's args-only shape).
+// TestCommandDispatchBindsTheInvokingSession: the wire session reaches the handler.
 func TestCommandDispatchBindsTheInvokingSession(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	s.seams.mu.Lock()
@@ -356,11 +332,7 @@ func TestCommandDispatchBindsTheInvokingSession(t *testing.T) {
 	}
 }
 
-// TestCommandDispatchSessionCommandsActOnTheTab drives the five
-// session commands the palette could not reach (card t_d1fe01da) over
-// the real capsule chain: /export, /label and /branch answer for the
-// session on the wire, /export without one keeps its honest refusal,
-// and the session-free commands are untouched.
+// TestCommandDispatchSessionCommandsActOnTheTab drives the five session commands.
 func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 	s := realChainServer(t)
 
@@ -414,8 +386,7 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 		t.Fatalf("/export without a session: %d %q, want the owner's refusal", code, raw)
 	}
 
-	// the session-free commands answer exactly as before: /sessions
-	// lists, /search needs its term
+	// the session-free commands answer exactly.
 	for _, name := range []string{"/sessions", "/tree", "/search"} {
 		code, _, got := dispatch(t, body(name, "", ""))
 		if strings.Contains(got, "no handler for") {

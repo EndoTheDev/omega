@@ -1,14 +1,9 @@
 package notifications
 
-// The finished-things REST face's self-check (moved whole from
-// agent/api/server_notify_test.go by the shell-ring shrink wave 3,
-// card t_b75df168 - re-aimed at the capsule's Routes over a real
-// Store). The wire contract: list (newest first, the live unread count
-// whole-set even under limit=1 - the badge math), pagination, the
-// read marks (one, ghost-id 404, all) and the live SSE stream where a
-// background emission surfaces as one "notification" frame. The old
-// 501-without-seam probe died with the surface's home: the route is a
-// module route now, a disabled capsule answers 404 at the module mux.
+// The finished-things REST face's self-check. The wire contract: list (newest first,
+// the live unread count whole-set even under limit=1 - the badge math), pagination, the
+// read marks (one, ghost-id 404, all) and the live SSE stream where a background
+// emission surfaces as one "notification" frame.
 
 import (
 	"bufio"
@@ -25,8 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// serveRoutes builds the capsule routes over a fresh emittingStore on
-// a throwaway db, muxed with the exact patterns RegisterRoute uses.
+// serveRoutes builds the capsule routes over a fresh emittingStore on a throwaway db.
 func serveRoutes(t *testing.T) (*httptest.Server, *Store) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "notifications.db")
@@ -55,7 +49,6 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		}
 	}
 
-	// full list: newest first, unread count in the payload
 	res, err := http.Get(ts.URL + "/notifications")
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +66,6 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		t.Fatalf("newest row wrong: %+v", page.Notifications[0])
 	}
 
-	// pagination: limit=1 keeps the unread count whole-set
 	res, err = http.Get(ts.URL + "/notifications?limit=1")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +87,6 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		t.Fatalf("bad limit = %d, want 400", res.StatusCode)
 	}
 
-	// mark one read
 	res, err = http.Post(ts.URL+"/notifications/read", "application/json", strings.NewReader(`{"id":1}`))
 	if err != nil {
 		t.Fatal(err)
@@ -111,14 +102,12 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 		t.Fatalf("after mark one: %d unread rows / %d unread", len(page.Notifications), page.Unread)
 	}
 
-	// ghost id is a 404
 	res, _ = http.Post(ts.URL+"/notifications/read", "application/json", strings.NewReader(`{"id":99}`))
 	res.Body.Close()
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("ghost mark = %d, want 404", res.StatusCode)
 	}
 
-	// mark all: the badge clears server-side
 	res, _ = http.Post(ts.URL+"/notifications/read", "application/json", strings.NewReader(`{"all":true}`))
 	res.Body.Close()
 	res, _ = http.Get(ts.URL + "/notifications")
@@ -129,10 +118,7 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 	}
 }
 
-// The clear-all: DELETE /notifications drops every record (the feed
-// empties, not just its read flags), the count comes back, a
-// subsequent emit still records, and a read or POST on the list route
-// is still refused.
+// The clear-all: DELETE /notifications drops every record.
 func TestNotificationsClearAll(t *testing.T) {
 	ts, st := serveRoutes(t)
 	for i := 0; i < 3; i++ {
@@ -173,7 +159,6 @@ func TestNotificationsClearAll(t *testing.T) {
 		t.Fatalf("after clear: %d rows / %d unread", len(page.Notifications), page.Unread)
 	}
 
-	// the store still works after a clear: the next emit records
 	if _, err := st.Emit(core.Notice{Kind: "cron", SourceID: "nightly", Title: "cron nightly finished"}); err != nil {
 		t.Fatalf("emit after clear: %v", err)
 	}

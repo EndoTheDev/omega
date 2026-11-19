@@ -1,6 +1,6 @@
 package main
 
-// The command chain's contract, at the real mount (card t_d923b50a).
+// The command chain's contract, at the real mount.
 //
 // agent.RegisterCommand builds ONE chain: every module's handler wraps
 // the previous one, and a handler that returns an ERROR lets the call
@@ -11,12 +11,12 @@ package main
 // discarded its name parameter.
 //
 // Two laws pin it:
-//   - the canary law: a capsule mounted FIRST (the chain's innermost
+// the canary law: a capsule mounted FIRST (the chain's innermost
 //     link) answers a private name. Every other module is consulted
 //     before it, so a canary answer proves no module in the chain
 //     swallows a foreign name. A swallow hands back that module's own
 //     text instead - the red names what it got.
-//   - the per-name law: no module's banner may appear under another
+// the per-name law: no module's banner may appear under another
 //     module's command name.
 //
 // The CLI loop (cmd/omega/loop.go) rides this very chain through
@@ -36,9 +36,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// commandCanary is a capsule that owns exactly one private command
-// name. It is mounted first so every real module sits above it in the
-// chain and gets first refusal (RegisterCommand wraps outward).
+// commandCanary is a capsule that owns exactly one private command name.
 type commandCanary struct{}
 
 func (commandCanary) Name() string       { return "canary" }
@@ -55,9 +53,7 @@ func (commandCanary) MountWithAPI(_ *core.Context, api *agent.ExtensionAPI) erro
 		})
 }
 
-// mountCommandChain mounts the plugin set into a fresh Context (a temp
-// home, so no capsule writes into the operator's files) and returns the
-// live Context.
+// mountCommandChain mounts the plugin set into a fresh Context.
 func mountCommandChain(t *testing.T, plugins []agent.Plugin) *agent.Context {
 	t.Helper()
 	ctx := &agent.Context{CWD: cwd(), Configs: agent.RouteConfigs(plugins, DefaultConfig())}
@@ -69,11 +65,9 @@ func mountCommandChain(t *testing.T, plugins []agent.Plugin) *agent.Context {
 	return ctx
 }
 
-// TestNoModuleSwallowsAForeignCommand is the canary law: the innermost
-// capsule's own name still answers after every real module was offered
-// it first. A module that answers a foreign name with a nil error
-// (cron's discarded name parameter was exactly this) swallows the
-// chain and the assertion reports the text it returned instead.
+// TestNoModuleSwallowsAForeignCommand is the canary law. A module that answers a
+// foreign name with a nil error swallows the chain and the assertion reports the text
+// it returned instead.
 func TestNoModuleSwallowsAForeignCommand(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	plugins := append([]agent.Plugin{commandCanary{}}, fullPlugins(t)...)
@@ -88,23 +82,18 @@ func TestNoModuleSwallowsAForeignCommand(t *testing.T) {
 			"(chain-on-miss violated)", res.Text)
 	}
 
-	// A name nobody claims must end at the miss error, never at a
-	// command result.
+	// A name nobody claims must end at the miss error, never at a command result.
 	res, err = ctx.CommandHandler(context.Background(), "/no-such-command", "")
 	if err == nil {
 		t.Fatalf("/no-such-command answered with %q, want the chain's miss error", res.Text)
 	}
 }
 
-// TestCommandChainAnswersPerName is the per-name law over the real
-// mount: each registered command answers its own name, and no module's
-// banner shows up under another module's name.
+// TestCommandChainAnswersPerName is the per-name law over the real mount.
 func TestCommandChainAnswersPerName(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	ctx := mountCommandChain(t, fullPlugins(t))
 
-	// Every banner a module prints for itself. A banner may appear only
-	// under the name that owns it.
 	owners := map[string]string{
 		"[cron]":                   "/cron",
 		"[verdicts]":               "/verdict",
@@ -122,11 +111,6 @@ func TestCommandChainAnswersPerName(t *testing.T) {
 	}
 
 	for _, c := range ctx.Commands {
-		// one run per name; args stay empty - this asserts OWNERSHIP of
-		// the answer, not the argument handling. A module MAY refuse an
-		// argument-less call (session commands need a session id,
-		// /search needs a query); what it may not do is answer with
-		// someone else's output - the banner law is the assertion.
 		res, _ := ctx.CommandHandler(context.Background(), c.Name, "")
 		for banner, owner := range owners {
 			if banner == owner || c.Name == owner {
@@ -138,7 +122,6 @@ func TestCommandChainAnswersPerName(t *testing.T) {
 		}
 	}
 
-	// The two capsule answers the webui report named are exact.
 	res, err := ctx.CommandHandler(context.Background(), "/cron", "")
 	if err != nil || !strings.HasPrefix(res.Text, "[cron]") {
 		t.Fatalf("/cron = %q err %v, want the cron listing", res.Text, err)
@@ -149,11 +132,9 @@ func TestCommandChainAnswersPerName(t *testing.T) {
 	}
 }
 
-// TestCLILoopCommandReachesTheOwningModule drives the terminal surface:
-// the loop's own commandExtension runs the same chain, so /models must
-// print the models surface (or the provider's own refusal) and never
-// another module's text. /verdict answers offline, which pins the
-// positive case on a lane with no provider.
+// TestCLILoopCommandReachesTheOwningModule drives the terminal surface: the loop's own
+// commandExtension runs the same chain, so /models must print the models surface (or
+// the provider's own refusal) and never another module's text.
 func TestCLILoopCommandReachesTheOwningModule(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	ctx := mountCommandChain(t, fullPlugins(t))
@@ -179,9 +160,8 @@ func TestCLILoopCommandReachesTheOwningModule(t *testing.T) {
 		t.Fatalf("/verdict printed %q, want the verdict listing", out)
 	}
 
-	// /models needs a live provider: the listing on a configured lane,
-	// the provider's own refusal otherwise. Either way it is never the
-	// cron text (the reported symptom) and never a silent empty turn.
+	// /models needs a live provider. Either way it is never the cron text (the reported
+	// symptom) and never a silent empty turn.
 	out, err = run("/models")
 	if strings.Contains(out, "[cron]") {
 		t.Fatalf("/models printed the cron text in the loop: %q", out)
@@ -199,12 +179,9 @@ func TestCLILoopCommandReachesTheOwningModule(t *testing.T) {
 	}
 }
 
-// TestChainSurfacesTheOwnersRefusal (card t_d1fe01da): the second half
-// of the chain contract. A module that owns a name and refuses for want
-// of a session - /export with no active one - must have its refusal
-// heard. Before the miss sentinel the chain walked past it and reported
-// the name as unclaimed, so "no active session to export" reached the
-// operator as "no handler for /export".
+// TestChainSurfacesTheOwnersRefusal: the second half of the chain contract. A module
+// that owns a name and refuses for want of a session - /export with no active one -
+// must have its refusal heard.
 func TestChainSurfacesTheOwnersRefusal(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	ctx := mountCommandChain(t, fullPlugins(t))

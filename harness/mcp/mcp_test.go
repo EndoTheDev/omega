@@ -29,8 +29,7 @@ func TestPluginInterface(t *testing.T) {
 	var _ core.ToolProvider = bridgeToolProvider{}
 }
 
-// TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools
-// and a no-op plugin that mounts without error.
+// TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools.
 func TestEmptyBridge(t *testing.T) {
 	b, err := NewBridge(nil)
 	if err != nil {
@@ -67,10 +66,7 @@ func TestPluginMetadata(t *testing.T) {
 	}
 }
 
-// TestNilBridgePlugin verifies a nil-bridge plugin still registers the
-// runtime tool provider (the reload cycle, card t_d6e94e79): Tools()
-// follows the live bridge per call, so the no-op shape serves an empty
-// map now and wakes up on the first POST /mcp/reload.
+// TestNilBridgePlugin verifies a nil-bridge plugin still registers the runtime tool.
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
@@ -85,8 +81,7 @@ func TestNilBridgePlugin(t *testing.T) {
 	}
 }
 
-// TestBridgeWithFakeServer verifies tool discovery and call routing work
-// through a fake MCP server connection.
+// TestBridgeWithFakeServer verifies tool discovery and call routing work through.
 func TestBridgeWithFakeServer(t *testing.T) {
 	b := &Bridge{
 		servers:  make(map[string]MCPConn),
@@ -94,7 +89,6 @@ func TestBridgeWithFakeServer(t *testing.T) {
 		toolDefs: make(map[string]mcpTool),
 	}
 
-	// Manually register a fake server with one tool.
 	fake := fakeConn{
 		tools: []mcpTool{
 			{Name: "echo", Description: "Echoes input", InputSchema: map[string]any{"type": "object"}},
@@ -119,7 +113,6 @@ func TestBridgeWithFakeServer(t *testing.T) {
 		t.Fatalf("description: got %q, want %q", tool.description, "Echoes input")
 	}
 
-	// Execute the tool — should route to the fake server.
 	result, err := tool.run(context.Background(), map[string]any{"msg": "hello"})
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -131,7 +124,6 @@ func TestBridgeWithFakeServer(t *testing.T) {
 
 // TestConfigParsing verifies YAML and JSON config parsing both work.
 func TestConfigParsing(t *testing.T) {
-	// JSON config
 	jsonData := []byte(`{"servers":[{"name":"test","command":"echo"}]}`)
 	cfg, err := parseConfig(jsonData)
 	if err != nil {
@@ -141,7 +133,6 @@ func TestConfigParsing(t *testing.T) {
 		t.Fatalf("JSON config: %+v", cfg)
 	}
 
-	// YAML config
 	yamlData := []byte("servers:\n  - name: test2\n    url: http://localhost:8080\n")
 	cfg2, err := parseConfig(yamlData)
 	if err != nil {

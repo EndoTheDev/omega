@@ -12,8 +12,6 @@ func NowISO() string {
 }
 
 // Message is the sealed interface for all message types.
-// Consumers use type switches or type assertions to access
-// concrete types.
 type Message interface {
 	isMessage()
 }
@@ -32,21 +30,16 @@ func NewSystem(content string) System {
 }
 
 // ImageContent carries a base64-encoded image with its MIME type.
-// When present on a User message, providers serialize it as image
-// content blocks alongside the text content.
 type ImageContent struct {
 	MediaType string `json:"media_type"` // "image/png", "image/jpeg", etc.
 	Base64    string `json:"base64"`     // base64-encoded image data (no data: prefix)
 }
 
-// Attachment is a typed reference to a non-image file the user attached
-// to a message (card t_1ffd07de). The bytes live on disk in the
-// session's upload directory; the wire - and the persisted message -
-// carry only this reference. Nothing here extracts, inlines or parses
-// the content: Kind is a LABEL of the media class the filename declares
-// (the lowercased extension without its dot, "file" when it has none),
-// Path is the absolute file the agent can open with its own tools, and
-// Size is the byte count on disk.
+// Attachment is a typed reference to a non-image file the user attached to a message.
+// Nothing here extracts, inlines or parses the content: Kind is a LABEL of the media
+// class the filename declares (the lowercased extension without its dot, "file" when it
+// has none), Path is the absolute file the agent can open with its own tools, and Size
+// is the byte count on disk.
 type Attachment struct {
 	Kind string `json:"kind"`
 	Name string `json:"name"`
@@ -54,15 +47,8 @@ type Attachment struct {
 	Path string `json:"path"`
 }
 
-// User is a user chat message. Images is optional; when empty the
-// message is text-only and providers send content as a plain string.
-// Attachments is the non-image sibling of Images (card t_1ffd07de):
+// User is a user chat message. Attachments is the non-image sibling of Images:
 // references only, never bytes.
-// ParentID is the message tree pointer (branching, t_17365247): the
-// store-row id of the message this one follows on the conversation
-// tree. Empty = legacy message (no pointers) or the session's first
-// message. Providers strip it from wire payloads; it only ever
-// matters to store-side tree derivation.
 type User struct {
 	Content     string         `json:"content"`
 	Images      []ImageContent `json:"images,omitempty"`
@@ -83,10 +69,7 @@ func NewUserWithImages(content string, images []ImageContent) User {
 	return User{Content: content, Images: images, Timestamp: NowISO()}
 }
 
-// Timing carries server-measured generation durations so a reloaded
-// session renders real elapsed values - client-side meters die with
-// the SSE stream. Assistant messages carry the thinking/response
-// spans; ToolResult carries the elapsed from its matching call.
+// Timing carries server-measured generation durations so a reloaded session renders.
 type Timing struct {
 	ThinkingMs int64 `json:"thinking_ms,omitempty"`
 	ResponseMs int64 `json:"response_ms,omitempty"`
@@ -94,7 +77,6 @@ type Timing struct {
 }
 
 // Assistant is the model's response in a turn.
-// ParentID: see User's field comment (message tree pointer).
 type Assistant struct {
 	Thinking  *string    `json:"thinking,omitempty"`
 	ToolCalls []ToolCall `json:"tool_calls,omitempty"`
@@ -112,16 +94,7 @@ func NewAssistant(content string) Assistant {
 	return Assistant{Content: content, Timestamp: NowISO()}
 }
 
-// ToolResult is the result of a tool execution, appended to the
-// message history so the model can see the result. ParentID chains it
-// to the message it follows within one run (see User's comment).
-// Gate is the smart-approval gate's decision record (card
-// t_1b3e2a8b): the transcript-facing verdict line the gate produced
-// for the call this result answers, written by the approval capsule
-// and rendered by the webui on the call's own row. Empty = no machine
-// decision (ungated command, manual mode, an escalation with no
-// resolution) - no transcript line. It rides the persisted payload,
-// so a reloaded session shows the same record.
+// ToolResult is the result of a tool execution, appended to the message history.
 type ToolResult struct {
 	Content    string  `json:"content"`
 	ToolCallID string  `json:"tool_call_id"`
@@ -144,26 +117,19 @@ func NewToolResult(content, toolCallID string, isError bool) ToolResult {
 	}
 }
 
-// YieldResult is the synthetic re-entry message for a yield-class tool
-// call (async agent loop, design of record
-// Workshop/omega/async-agent-loop.md): the executor that ran the
-// dispatched call writes one through the home's input path when the
-// call settles, and it starts a new turn exactly like a user message
-// does. First-class and RAP-compatible from day one (ruling 3): an
-// out-of-process executor, a gateway webhook, or another omega machine
-// is just another writer of this shape - the loop never changes.
-// Timeout marks the synthetic recovery injections (boot recovery and a
-// runtime expiry): the agent sees an interrupted result and may retry.
-// Store role: "yield_result". Render role: "tool" - every transcript
-// surface treats it as its call's result row.
+// YieldResult is the synthetic re-entry message for a yield-class tool call (async
+// agent loop, design of record Workshop/omega/async-agent-loop.md): the executor that
+// ran the dispatched call writes one through the home's input path when the call
+// settles, and it starts a new turn exactly like a user message does. First-class and
+// RAP-compatible from day one: an out-of-process executor, a gateway webhook, or
+// another omega machine is just another writer of this shape - the loop never changes.
 type YieldResult struct {
 	ToolCallID string `json:"tool_call_id"`
 	ToolName   string `json:"tool_name,omitempty"`
 	Content    string `json:"content"`
 	IsError    bool   `json:"is_error,omitempty"`
-	// Timeout marks the synthetic "interrupted" injection - boot
-	// recovery and a dispatched call's runtime expiry - never a real
-	// tool's verdict.
+	// Timeout marks the synthetic "interrupted" injection - boot recovery and a dispatched
+	// call's runtime expiry - never a real tool's verdict.
 	Timeout   bool    `json:"timeout,omitempty"`
 	Gate      string  `json:"gate,omitempty"`
 	Timing    *Timing `json:"timing,omitempty"`
@@ -184,8 +150,7 @@ func NewYieldResult(content, toolCallID string, isError, timeout bool) YieldResu
 	}
 }
 
-// ModelChange is a session entry recording a model switch. It is
-// persisted to the store and replayed on resume to restore the model.
+// ModelChange is a session entry recording a model switch.
 type ModelChange struct {
 	Model     string `json:"model"`
 	Timestamp string `json:"timestamp,omitempty"`
@@ -198,8 +163,7 @@ func NewModelChange(model string) ModelChange {
 	return ModelChange{Model: model, Timestamp: NowISO()}
 }
 
-// ThinkingLevelChange is a session entry recording a thinking level
-// change. It is persisted to the store and replayed on resume.
+// ThinkingLevelChange is a session entry recording a thinking level change.
 type ThinkingLevelChange struct {
 	Level     string `json:"level"`
 	Timestamp string `json:"timestamp,omitempty"`
@@ -212,14 +176,10 @@ func NewThinkingLevelChange(level string) ThinkingLevelChange {
 	return ThinkingLevelChange{Level: level, Timestamp: NowISO()}
 }
 
-// VariantSelect records the ACTIVE variant of one message branch point
-// (t_17365247). It is a store bookkeeping entry exactly like
-// ModelChange: appended to the linear list (no schema or payload
-// mutation of existing rows), read by tree derivation, invisible to
-// rendering and context assembly. Branch is the parent message id (the
-// branch point - a user message row id); Child is the id of the run's
-// head message (assistant row id) the selection activates. The LAST
-// entry per branch wins.
+// VariantSelect records the ACTIVE variant of one message branch point. It is a store
+// bookkeeping entry exactly like ModelChange: appended to the linear list (no schema or
+// payload mutation of existing rows), read by tree derivation, invisible to rendering
+// and context assembly.
 type VariantSelect struct {
 	Branch    string `json:"branch"`
 	Child     string `json:"child"`
@@ -233,11 +193,7 @@ func NewVariantSelect(branch, child string) VariantSelect {
 	return VariantSelect{Branch: branch, Child: child, Timestamp: NowISO()}
 }
 
-// QuestionOption is one pick row on a verdict card (verdict cards
-// v1.1): the label the card shows, plus an optional one-line
-// description rendered under the label. UnmarshalJSON accepts the
-// v1 shape (a bare string) so old audit rows keep decoding; the
-// marshal side is always the object form.
+// QuestionOption is one pick row on a verdict card.
 type QuestionOption struct {
 	Label       string `json:"label"`
 	Description string `json:"description,omitempty"`
@@ -258,13 +214,10 @@ func (v *QuestionOption) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// QuestionCard is the transcript record of one agent-issued question
-// (verdict cards v1): appended when the verdict tool issues the
-// card, before the user answers. A bookkeeping entry exactly like
-// ModelChange: persisted to the store, invisible to context assembly
-// (the model sees the tool call and result, never this row), rendered
-// by every transcript surface that wants the audit trail. Roles on the
-// store row: "verdict_card".
+// QuestionCard is the transcript record of one agent-issued question. A bookkeeping
+// entry exactly like ModelChange: persisted to the store, invisible to context assembly
+// (the model sees the tool call and result, never this row), rendered by every
+// transcript surface that wants the audit trail.
 type QuestionCard struct {
 	CardID    string           `json:"card_id"`
 	Title     string           `json:"title"`
@@ -292,13 +245,7 @@ func NewQuestionCard(cardID, title, body string, options []QuestionOption, multi
 	}
 }
 
-// QuestionRecord is the transcript record of one answer: a single
-// pick, a multi-select pick (every selected index), free text, a
-// recorded skip (no silent dismissal), or the expiry firing with no
-// answer. Role on the store row: "verdict". Named QuestionRecord (not
-// Verdict) because core.QuestionAnswer is already the runtime answer record
-// returned by the verdict seam - the transcript row is a superset with
-// the store timestamp.
+// QuestionRecord is the transcript record of one answer.
 type QuestionRecord struct {
 	CardID        string   `json:"card_id"`
 	OptionIndex   int      `json:"option_index,omitempty"`
@@ -313,10 +260,7 @@ type QuestionRecord struct {
 
 func (QuestionRecord) isMessage() {}
 
-// NewVerdictRecord creates a QuestionRecord entry with timestamp set. A
-// single pick indexes one option (optionIndex >= 1, option its label);
-// a multi pick carries the selected indexes and their labels; text,
-// skip, and expiry carry none.
+// NewVerdictRecord creates a QuestionRecord entry with timestamp set.
 func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text string, skipped, expired bool) QuestionRecord {
 	v := QuestionRecord{
 		CardID:    cardID,
@@ -336,12 +280,9 @@ func NewVerdictRecord(cardID string, optionIndexes []int, options []string, text
 	return v
 }
 
-// MessageRole returns the role string for a message ("user", "assistant",
-// "system", "tool", or "unknown"). Lived in ai until messagetree moved
-// into core (arc 1c, t_483de955) and dragged its closure: tree
-// derivation classifies rows by role, and the law test forbids core
-// importing omega/llm. Shared by export, store commands, the CLI, and
-// the transcript surfaces to avoid duplicating the type switch.
+// MessageRole returns the role string for a message.
+// Shared by export, store commands, the CLI, and the transcript surfaces to avoid
+// duplicating the type switch.
 func MessageRole(m Message) string {
 	switch m.(type) {
 	case System:
@@ -351,8 +292,6 @@ func MessageRole(m Message) string {
 	case Assistant:
 		return "assistant"
 	case ToolResult, YieldResult:
-		// The synthetic re-entry message renders as its call's tool
-		// result row on every transcript surface.
 		return "tool"
 	case QuestionCard:
 		return "verdict_card"
@@ -363,9 +302,7 @@ func MessageRole(m Message) string {
 	}
 }
 
-// EncodeMessage serializes a Message to its role discriminator
-// and JSON payload. Used by the store extension for persistence
-// and wire transfer.
+// EncodeMessage serializes a Message to its role discriminator and JSON payload.
 func EncodeMessage(msg Message) (string, []byte, error) {
 	var role string
 	switch msg.(type) {
@@ -399,8 +336,7 @@ func EncodeMessage(msg Message) (string, []byte, error) {
 	return role, payload, nil
 }
 
-// DecodeMessage reconstructs a Message from a role discriminator
-// and JSON payload. Inverse of EncodeMessage.
+// DecodeMessage reconstructs a Message from a role discriminator and JSON payload.
 func DecodeMessage(role string, payload []byte) (Message, error) {
 	switch role {
 	case "system":

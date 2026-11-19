@@ -1,17 +1,4 @@
-// omega webui: the ANSWER row's elapsed badge is the TURN TOTAL, not the
-// last segment (card t_3a857a2d). Endo's report (2026-11-15): a multi-phase
-// turn showed the last segment alone, so his sleep-30 turn read "841ms"
-// while it had actually cost ~51s. His ruling: the last badge is the sum
-// from prompt arrival to the final answer - wall-clock truth, so thinking,
-// tool runs and smart-gate waits all bill into it - while the per-phase
-// badges (thinking block, tool rows) keep their own segment times.
-//
-// The total is COMPUTED from the two timestamps the transcript already
-// carries (the user row's created_at and the answer row's), so the live
-// canvas and a restored transcript render the same number and no ticker
-// survives the stream end. These tests pin the pure pass, both render
-// sources feeding it the same stamps, and the component wiring.
-// Run: node --test webui/test/ (node >= 23 runs TS)
+// omega webui: the ANSWER row's elapsed badge is the TURN TOTAL, not the last segment.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -37,9 +24,6 @@ const src = (p: string) => readFileSync(join(root, p), "utf8");
 const T0 = "2026-11-15T09:00:00.000000000Z";
 const at = (ms: number) => new Date(Date.parse(T0) + ms).toISOString();
 
-// Endo's screenshot turn: 1s of thinking, his 18s answer on the smart gate,
-// a 30.8s sleep (the gate wait bills inside the call's own window), then the
-// answer's own 841ms. The badge read 841ms; the honest total is ~51s.
 function gateTurn(answerMs = 841): TranscriptWireItem[] {
   return [
     { kind: "user", content: "sleep 30 then tell me", time: T0 },
@@ -59,9 +43,7 @@ function gateTurn(answerMs = 841): TranscriptWireItem[] {
   ];
 }
 
-// a phase row (thinking, tool) is not a MessageItem - the total is the
-// answer row's field only, so reading it off a phase is a type-level
-// absence, asserted through a widened view
+// a phase row (thinking, tool) is not a MessageItem.
 const phaseTotal = (item: TranscriptItem): number | undefined =>
   (item as { turnMs?: number }).turnMs;
 
@@ -78,10 +60,7 @@ describe("the turn total on the restored transcript", () => {
     const answer = answerItem(items);
     assert.equal(answer.role, "assistant");
     assert.equal(answer.turnMs, 51_000, "prompt arrival -> answer landing");
-    // the segment's own measurement is not destroyed - the badge prefers the
-    // total, the field still tells the truth about the phase
     assert.equal(answer.finalMs, 841);
-    // per-phase anatomy unchanged: thinking and tool rows keep their spans
     const think = items[1];
     assert.ok(think.kind === "thinking");
     if (think.kind !== "thinking") return;
@@ -187,7 +166,6 @@ describe("the pass is a paint, not an event (idempotent + self-clearing)", () =>
   });
 
   it("a row that stops being the answer drops its total (the live delta)", () => {
-    // the live paint before the call lands: prose is the last segment
     const items: TranscriptItem[] = [
       { kind: "message", role: "user", content: "check", time: T0 },
       { kind: "message", role: "assistant", content: "on it.", time: at(2000), finalMs: 2000 },
@@ -197,7 +175,6 @@ describe("the pass is a paint, not an event (idempotent + self-clearing)", () =>
     assert.ok(prose.kind === "message");
     if (prose.kind !== "message") return;
     assert.equal(prose.turnMs, 2000);
-    // then the call streams in under it: that prose was a phase after all
     items.push({ kind: "tool", name: "shell.run", status: "running" });
     applyTurnTotals(items);
     assert.equal(prose.turnMs, undefined, "the stale total is cleared, not left standing");
@@ -230,7 +207,6 @@ describe("the LIVE canvas serves the same two stamps", () => {
     const live = createCanvasTranscript().apply(payload(true));
     assert.equal(answerItem(live).turnMs, 51_000);
     assert.equal(answerItem(live).finalMs, 841);
-    // and the restore of the same stamps agrees, number for number
     assert.equal(answerItem(renderTranscriptItems(gateTurn())).turnMs, 51_000);
   });
 
@@ -265,7 +241,6 @@ describe("the wiring: item field -> component prop -> meter", () => {
       /\(\) => props\.turnMs \?\? props\.finalMs/,
       "the frozen label prefers the turn total",
     );
-    // the live meter arguments are untouched - a streaming answer still ticks
     assert.match(message, /\(\) => props\.streaming \?\? false/);
     assert.match(message, /\(\) => props\.elapsedMs \?\? 0/);
   });

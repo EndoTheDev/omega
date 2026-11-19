@@ -1,6 +1,4 @@
-// omega webui: the registry-browser TOOLS tab toggle behavior (v0.14.1,
-// card t_372b9e9a). Pure-surface test like moduletoggle.test.ts + the
-// source greps (the composition-test convention).
+// omega webui: the registry-browser TOOLS tab toggle behavior.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -12,11 +10,10 @@ import {
 } from "../app/composables/omega.ts";
 import { toolRows, toggleTargets } from "../../harness/tools/ui/toolRows.ts";
 
-// module UI source lives at the repo root (webui/test is three
-// levels under it)
+// module UI source lives at the repo root (webui/test is three levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-// --- tools rows: the one-domain grouping (t_e06b38bc) ---
+// tools rows: the one-domain grouping
 
 test("tool rows group by domain: actions as dotted detail, siblings merged, lone dotted rows stay", () => {
   const tools = [
@@ -29,11 +26,8 @@ test("tool rows group by domain: actions as dotted detail, siblings merged, lone
     { name: "shell.run", description: "run a command" },
   ];
   const rows = toolRows(tools, ["shell.run"]);
-  // dotless domain tools are parent rows with dotted action children
   assert.deepEqual(rows[0].detail, ["files.write - write a file"]);
   assert.equal(rows[0].name, "files");
-  // sibling-verb tools merge under their prefix: one parent, both
-  // full identities nested
   const delegateRow = rows.find((r) => r.name === "delegate");
   assert.ok(delegateRow, "delegate renders as one parent row");
   assert.deepEqual(delegateRow.detail, [
@@ -48,8 +42,6 @@ test("tool rows group by domain: actions as dotted detail, siblings merged, lone
 });
 
 test("the kanban split groups under one kanban row: seven dotted tools, one parent (t_f616ed78)", () => {
-  // the real post-split wire: the flat action-protocol tool is gone,
-  // the seven dotted siblings are the domain
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "kanban.list", description: "list board tasks" },
@@ -77,8 +69,6 @@ test("the kanban split groups under one kanban row: seven dotted tools, one pare
     "each member keeps its full dotted identity as a detail line",
   );
   assert.equal(rows.some((r) => r.name.startsWith("kanban.")), false, "no orphan kanban.* rows");
-  // the group parent is not a tool name - the toggle fans out to the
-  // exact members (the fold keeps real names)
   assert.deepEqual(toggleTargets("kanban", tools), [
     "kanban.list",
     "kanban.create",
@@ -91,9 +81,6 @@ test("the kanban split groups under one kanban row: seven dotted tools, one pare
 });
 
 test("the phase-2 split renders pure-dotted domains as one group row each (t_d8fbad57)", () => {
-  // the real post-split wire: files/memory/skills/verdict carry no
-  // dotless domain tool - every member is a dotted sibling, so each
-  // domain is a group parent row like kanban's
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "files.read", description: "read a file" },
@@ -148,9 +135,9 @@ test("toggleTargets: an exact tool toggles itself, a group parent fans out to it
   assert.deepEqual(toggleTargets("shell.run", tools), ["shell.run"]);
 });
 
-// --- t_7871a56a: the dotless/dotted collision (files + files.grep +
-// files.glob) - the domain row ABSORBS the dotted siblings; two rows
-// on one domain is a red shape that must stay impossible ---
+// the dotless/dotted collision (files + files.grep + files.glob) - the domain row
+// ABSORBS the dotted siblings; two rows on one domain is a red shape that must stay
+// impossible
 
 test("a dotless domain row absorbs its dotted siblings: ONE files row, actions + grep + glob nested (t_7871a56a)", () => {
   const tools = [
@@ -177,8 +164,7 @@ test("a dotless domain row absorbs its dotted siblings: ONE files row, actions +
 });
 
 test("absorption holds wherever the domain tool sits in the inventory (order law)", () => {
-  // dotted members BEFORE the dotless tool: the skip law must still
-  // deliver one merged row, seated at the domain tool's position
+  // dotted members BEFORE the dotless tool: the skip law must still deliver one.
   const tools = [
     { name: "files.grep", description: "search file contents" },
     { name: "files.glob", description: "list matching paths" },
@@ -210,15 +196,9 @@ test("a merged domain row's disabled is group-style: off only when every member 
   assert.equal(domainOnly[0].disabled, false, "the domain tool off but siblings on = row on (the toggle fans to all)");
 });
 
-// --- t_5c9bb50a: the fold-aware management read (GET /tools?disabled=1)
-// - a disabled tool KEEPS its row (dimmed) and its re-enable path.
-// The inventory shrinking on a disable is the red shape: the one-way
-// door ("i disabled web, and now its so gone, i cant even re-enable
-// it") ---
+// the fold-aware management read (GET /tools?disabled=1).
 
 test("the fold-aware inventory keeps disabled web.* in their group row - dimmed, never gone", () => {
-  // the wire the fold-aware read serves: the web pair rides the
-  // inventory with disabled:true stamps, the fold names both
   const tools = [
     { name: "shell.run", description: "run a command" },
     { name: "web.search", description: "search the web", disabled: true },
@@ -226,7 +206,6 @@ test("the fold-aware inventory keeps disabled web.* in their group row - dimmed,
   ];
   const rows = toolRows(tools, ["web.search", "web.fetch"]);
   const webRow = rows.find((r) => r.name === "web");
-  // the row exists - a vanished row has no toggle to flip back
   assert.ok(webRow, "the disabled web group keeps its row");
   assert.equal(webRow.disabled, true, "both members off = the group row dims");
   assert.deepEqual(webRow.detail, [
@@ -243,16 +222,13 @@ test("red shape: disabling a tool can never remove its re-enable path (t_5c9bb50
   ];
   const fold = ["web.search", "web.fetch"];
   const rows = toolRows(tools, fold);
-  // every fold-disabled tool still holds a row seat - its own row or
-  // a member line inside a domain/group row
   for (const name of fold) {
     const seated = rows.some(
       (r) => r.name === name || r.detail.some((d) => d.startsWith(`${name} - `)),
     );
     assert.ok(seated, `${name} keeps a row seat after its disable`);
   }
-  // and the row's toggle still fans out to the EXACT disabled names -
-  // the re-enable PUT has real targets, the door stays two-way
+  // and the row's toggle still fans out to the EXACT disabled names.
   assert.deepEqual(toggleTargets("web", tools), ["web.search", "web.fetch"]);
 });
 
@@ -271,8 +247,6 @@ test("a fold-disabled absorbed sibling stays a member of its domain row, not a s
     "files.grep - search file contents",
     "files.glob - list matching paths",
   ]);
-  // the re-enable target survives: the domain row's toggle still
-  // reaches the disabled member by its exact fold name
   assert.deepEqual(toggleTargets("files", tools), ["files", "files.grep", "files.glob"]);
 });
 
@@ -301,11 +275,10 @@ test("ToolsList consumes the shared component and the fold wire", () => {
   const src = readFileSync(join(root, "harness", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes('kind="tools"'), "the tools namespace rides to the note law");
-  // t_5c9bb50a: the tab's source is the FOLD-AWARE read - a disabled
-  // tool keeps its row. The bare GET /tools (the executable registry
-  // the chat loop consumes) must never be this tab's source: it
-  // shrinks on a disable and strands the tool with no re-enable
-  // toggle - the one-way door.
+  // the tab's source is the FOLD-AWARE read - a disabled tool keeps its row. The bare
+  // GET /tools (the executable registry the chat loop consumes) must never be this
+  // tab's source: it shrinks on a disable and strands the tool with no re-enable toggle
+  // - the one-way door.
   assert.ok(src.includes('fetch("/tools?disabled=1")'), "self-contained fold-aware inventory fetch");
   assert.ok(!src.includes('fetch("/tools")'), "the bare executable-registry fetch is never the tab's source");
   assert.ok(src.includes("/disabled/tools"), "the toggle PUTs the tools namespace");
@@ -313,14 +286,11 @@ test("ToolsList consumes the shared component and the fold wire", () => {
   assert.ok(src.includes("toggleTargets"), "the group-parent toggle fans out to exact tool names");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
   assert.ok(src.includes("status === 501") && src.includes("toggleable.value = false"), "a missing seam renders read-only");
-  // the grouping contract lives in toolRows.ts (node-tested above); the
-  // component only wires the computed rows + the fan-out toggle
+  // the grouping contract lives in toolRows.ts (node-tested above).
 });
 
-// t_504a78ca regression: RegistryList gates with `v-if="rows.length"`.
-// rows as a plain function makes .length the ARITY (0) - data loads,
-// the tab renders empty. The rows binding must hand RegistryList an
-// array (computed, the AgentsPanel shape), not a function.
+// regression: RegistryList gates with `v-if="rows.length"`. The rows binding must hand
+// RegistryList an array (computed, the AgentsPanel shape), not a function.
 test("ToolsList builds rows as a computed (arity trap: a plain function rows() renders empty)", () => {
   const src = readFileSync(join(root, "harness", "tools", "ui", "ToolsList.vue"), "utf8");
   assert.ok(src.includes("const rows = computed("), "rows computed, so :rows unwraps to the array");

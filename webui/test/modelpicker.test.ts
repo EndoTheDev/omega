@@ -1,14 +1,6 @@
-// omega webui: the chat picker groups by provider (card t_1914a8c9).
-// The regression: the picker was a flat searchable list - Endo asked for
-// the Hermes-desktop shape: models grouped under collapsible provider
-// sections, a listing failure shown inline in its section, and footer
-// actions (refresh models / add custom model... / edit models...). A
-// pick carries the slot grammar ("instance:model" / "default:model")
-// the server's resolveSlotModel resolves. These are structural
-// source-contract tests (house pattern: read the .vue/.ts, assert the
-// wiring); the server-side grammar is Go-tested
-// (TestChatModelSlotPickerGrammar, TestModelsGroupedSections).
-// Run: node --test test/modelpicker.test.ts
+// omega webui: the chat picker groups by provider. These are structural source-contract
+// tests (house pattern: read the.vue/.ts, assert the wiring); the server-side grammar
+// is Go-tested (TestChatModelSlotPickerGrammar, TestModelsGroupedSections).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,14 +25,11 @@ const css = () =>
 describe("model picker groups by provider (t_1914a8c9)", () => {
   it("ModelSelect renders collapsible provider sections (searchable)", () => {
     const src = picker();
-    // one section per provider group ...
     assert.match(src, /v-for="g in visibleGroups"/, "sections iterate");
     assert.match(src, /class="model-section"/, "the section wrapper");
-    // ... with a COLLAPSIBLE head (aria-expanded + toggle)
     assert.match(src, /class="model-sec-head"/, "the section header button");
     assert.match(src, /:aria-expanded="isExpanded\(g\)"/, "the collapse state");
     assert.match(src, /function toggle\(/, "the toggle");
-    // ... searchable across sections
     assert.match(src, /model-search/, "the search input survives");
     assert.match(
       src,
@@ -92,7 +81,6 @@ describe("model picker groups by provider (t_1914a8c9)", () => {
 
   it("ModelSelect's pick emits the slot grammar the server resolves", () => {
     const src = picker();
-    // a named section: "instance:model"; default: "default:model"
     assert.match(
       src,
       /g\.name === "default" \? `default:\$\{m\}` : `\$\{g\.name\}:\$\{m\}`/,

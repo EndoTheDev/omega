@@ -14,28 +14,14 @@ import (
 	agentapi "github.com/EndoTheDev/omega/agent/api"
 )
 
-// The inspector HTTP surface (card t_db430fea, read-only v1):
-// GET /cron/jobs, GET /skills and GET /logs - the data behind the
-// inspector's Cron | Skills | Tools | Logs tabs. Every handler here is
-// a pure read: no config writes, no state mutation, nothing the API
-// could use to change cron, skills or the log. The tool inventory
-// behind the Tools tab already lives in server.go (GET /tools).
+// The inspector HTTP surface.
 
 // handleCronJobs serves GET /cron/jobs: the cron runner's job set as a
-// name/schedule/enabled/next array, sorted by name. When the cron
-// module is unmounted (or a mounted CronProvider predates the
-// listing), the answer is an EMPTY LIST, not 501 - an unconfigured
-// scheduler is a normal state of a running omega, not a missing
-// feature.
+// name/schedule/enabled/next array, sorted by name.
 func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
-	// The consumer face (part 3 seam constitution): the route is the
-	// shell's, the job rows pre-marshaled by the cron capsule - std
-	// types only, the wire bytes identical to what the shared row type
-	// produced. Unmounted module: an empty list, the same normal state
-	// the empty-list law ever served.
 	rows := []json.RawMessage{}
 	if svc, ok := s.LiveServices().Resolve("cron").(interface{ JobRows() []json.RawMessage }); ok {
 		if got := svc.JobRows(); got != nil {
@@ -45,44 +31,27 @@ func (s *Server) handleCronJobs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rows)
 }
 
-// extensionListing is one GET /extensions row: the same facts the
-// /extensions command renders (name, tools, commands, seams) plus the
-// module's own one-line description (agent.Describer, omitted when the
-// module doesn't implement it). has-ui does NOT ride this wire: the
-// webui derives it at build time from the composition manifest
-// (harness/<name>/ui/dockable.json - compose.ts), the runtime doesn't
-// ship module source. Extensions carry no versions.
+// extensionListing is one GET /extensions row.
 type extensionListing struct {
 	Name        string   `json:"name"`
 	Description string   `json:"description,omitempty"`
 	Tools       int      `json:"tools"`
 	Commands    int      `json:"commands"`
 	Seams       []string `json:"seams"`
-	// tool_names / command_names carry the EXPANSION detail (card
-	// t_210a0d19): the webui extensions tab lists this module's tools
-	// and slash commands inside its expanded row. Names ride the wire;
-	// descriptions do not (the inspector column is ~300px - a list of
-	// verbatim names fits, prompt-quality prose does not).
+	// tool_names / command_names carry the EXPANSION detail. Names ride the wire;
+	// descriptions do not (the inspector column is ~300px - a list of verbatim names fits,
+	// prompt-quality prose does not).
 	ToolNames    []string `json:"tool_names"`
 	CommandNames []string `json:"command_names"`
 }
 
-// handleExtensions serves GET /extensions: the loaded-extension
-// inventory in mount order - the webui parity of the /extensions
-// command. Mount order is the dependency order MountAllAPI built, the
-// same order the inspector renders; keep it, don't alphabetize away the
-// seams-require-providers structure. A no-extension run lists as an
-// empty array, like the other inspector reads.
-//
-// THE LAW (card t_b2654d6b): this endpoint lists the MOUNTED capsules
-// exactly - ctx.Infos, the inventory the mount journal keeps exact
-// across boot-disables (never mounted, never a row) and live toggles
-// (dismount ctxUndo, remount ctxApply). The read goes through
-// agent.ExtensionInfos, whose serving copy core.LiveSeams refreshes
-// after every successful toggle (rewireSeams →
-// agent.RefreshExtensionInfos, the same law as /tools). A disabled
-// module therefore cannot appear here while GET /modules reports it
-// disabled, and a re-enabled one is back the moment it remounts.
+// handleExtensions serves GET /extensions. Mount order is the dependency order
+// MountAllAPI built, the same order the inspector renders; keep it, don't alphabetize
+// away the seams-require-providers structure. THE LAW: this endpoint lists the MOUNTED
+// capsules exactly - ctx.Infos, the inventory the mount journal keeps exact across
+// boot-disables (never mounted, never a row) and live toggles (dismount ctxUndo,
+// remount ctxApply). A disabled module therefore cannot appear here while GET /modules
+// reports it disabled, and a re-enabled one is back the moment it remounts.
 func (s *Server) handleExtensions(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -123,9 +92,8 @@ type skillListing struct {
 	Description string `json:"description"`
 }
 
-// handleSkills serves GET /skills: the loaded skill inventory as a
-// name+description array, sorted by name. An unmounted skills module
-// lists as empty, like cron.
+// handleSkills serves GET /skills: the loaded skill inventory as a name+description
+// array, sorted by name.
 func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -154,16 +122,10 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// logTail bounds one GET /logs read. 512 KiB covers far more than the
-// default 200 lines of a timestamped omega.log line, and caps memory
-// if someone asks for a huge N or leaves a huge log.
+// logTail bounds one GET /logs read.
 const logTailWindow = 512 << 10
 
-// handleLogs serves GET /logs?lines=N: the tail of the omega log the
-// server itself writes, default 200 lines. 404 when there is no log
-// file - logging disabled, or a logger without a readable path. The
-// read is positional (tail window, no file rewrite), so it is safe
-// against the logger's own appends.
+// handleLogs serves GET /logs?lines=N.
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
@@ -182,9 +144,7 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"path": path, "lines": tail})
 }
 
-// parseLogLines reads the ?lines= parameter with the endpoint's
-// defaults: 200 when absent, clamped to 1..2000 so neither empty-file
-// reads nor unbounded tails are possible.
+// parseLogLines reads the ?lines= parameter with the endpoint's defaults.
 func parseLogLines(raw string) int {
 	n := 200
 	if raw != "" {
@@ -201,10 +161,7 @@ func parseLogLines(raw string) int {
 	return n
 }
 
-// logPathOf extracts the log file path from the logger seam. The
-// FileLogger carries its own path (harness/logging); any other logger
-// implementation, including NopLogger for logging-disabled installs,
-// has none and the /logs endpoint 404s.
+// logPathOf extracts the log file path from the logger seam.
 func logPathOf(logger agent.LoggerProvider) string {
 	if p, ok := logger.(interface{ Path() string }); ok {
 		return p.Path()
@@ -212,12 +169,7 @@ func logPathOf(logger agent.LoggerProvider) string {
 	return ""
 }
 
-// tailLines returns the last n lines of the file at path. It reads at
-// most logTailWindow from the end: seek to the window, split on
-// newlines, drop the cut-off head line (unless the window covers the
-// whole file), then keep the last n. The final newline is dropped -
-// trailing "" is not a log line. Line contents are returned raw
-// (timestamps included, as written).
+// tailLines returns the last n lines of the file at path.
 func tailLines(path string, n int) ([]string, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -245,8 +197,6 @@ func tailLines(path string, n int) ([]string, error) {
 
 	text := string(buf)
 	if window < size {
-		// the window starts mid-file: the first fragment is the cut-off
-		// TAIL of an earlier line, not a line of its own
 		if i := strings.IndexByte(text, '\n'); i >= 0 {
 			text = text[i+1:]
 		} else {
@@ -274,37 +224,24 @@ func splitLines(s string) []string {
 	return strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 }
 
-// logPushInterval is the logs topic's cadence. The follower reads only
-// the bytes the file gained since the last tick (one stat, at most one
-// read), and no bytes are read and nothing is published while no pane
-// holds the topic.
+// logPushInterval is the logs topic's cadence.
 const logPushInterval = time.Second
 
-// logPushWindow bounds one tick's read: a log that grew past this in a
-// second is caught up over the following ticks rather than read in one
-// allocation.
+// logPushWindow bounds one tick's read.
 const logPushWindow = 256 << 10
 
-// followLogs pushes log lines onto the logs topic (the delta, never the
-// snapshot) until the server context ends. Started by Serve, after the
-// listener is up - the goroutine fence's law (mount never starts
-// background work; the host does).
-//
-// THE HOOK POINT. Omega's only log-write site is harness/logging's
-// FileLogger (logging.go: Printf/Errorf/Warnf -> log.Logger -> the
-// file handle), and the module tier cannot reach this hub - a module
-// importing the shell ring (api/, agent/api/) is the module-imports-
-// shell violation. So the seam is the FILE: this follower reads the
-// path GET /logs already tails (logPathOf), by offset. A write lands
-// there once, and both readers - the REST tail and this push - read the
-// same bytes, so the REST snapshot and the pushed lines can never
-// disagree about what the log says.
-//
-// Subscription-gating is the hub's: while nobody holds the topic the
-// offset still advances but no bytes are read and nothing is published,
-// so a pane that mounts later starts from its own GET /logs snapshot
-// and receives only what is appended after it - the tail never replays
-// boot history at a new subscriber.
+// followLogs pushes log lines onto the logs topic (the delta, never the snapshot).
+// Started by Serve, after the listener is up - the goroutine fence's law (mount never
+// starts background work; the host does). Omega's only log-write site is
+// harness/logging's FileLogger (logging.go: Printf/Errorf/Warnf -> log.Logger -> the
+// file handle), and the module tier cannot reach this hub - a module importing the
+// shell ring (api/, agent/api/) is the module-imports- shell violation. A write lands
+// there once, and both readers - the REST tail and this push - read the same bytes, so
+// the REST snapshot and the pushed lines can never disagree about what the log says.
+// Subscription-gating is the hub's: while nobody holds the topic the offset still
+// advances but no bytes are read and nothing is published, so a pane that mounts later
+// starts from its own GET /logs snapshot and receives only what is appended after it -
+// the tail never replays boot history at a new subscriber.
 func (s *Server) followLogs(ctx context.Context) {
 	path := logPathOf(s.Logger())
 	if path == "" {
@@ -321,8 +258,6 @@ func (s *Server) followLogs(ctx context.Context) {
 			return
 		case <-ticker.C:
 			offset, carry = s.pushLogDelta(path, offset, carry)
-			// The baseline is what makes the next append publishable; a
-			// failed open keeps offset at -1 and retries next tick.
 			if seeded != nil && offset >= 0 {
 				close(seeded)
 				seeded = nil
@@ -331,13 +266,9 @@ func (s *Server) followLogs(ctx context.Context) {
 	}
 }
 
-// pushLogDelta publishes the complete lines appended to path since
-// offset and returns the new offset plus the incomplete trailing line (a
-// write can land mid-line; the fragment is emitted on the tick that
-// completes it, so a pushed line is always whole).
-//
-// A first call, or a file that shrank (truncated, rotated), resyncs the
-// offset to the end: history belongs to GET /logs, never to this topic.
+// pushLogDelta publishes the complete lines appended to path since offset and returns.
+// A first call, or a file that shrank (truncated, rotated), resyncs the offset to the
+// end: history belongs to GET /logs, never to this topic.
 func (s *Server) pushLogDelta(path string, offset int64, carry string) (int64, string) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -356,8 +287,7 @@ func (s *Server) pushLogDelta(path string, offset int64, carry string) (int64, s
 		return offset, carry
 	}
 	if !s.Sockets().Wants(agentapi.TopicLogs) {
-		// nobody asked: skip the bytes, keep the offset at the end so a
-		// later subscriber is not handed a backlog
+		// nobody asked: skip the bytes, keep the offset at the end so a later subscriber is.
 		return size, ""
 	}
 	n := size - offset
@@ -371,8 +301,6 @@ func (s *Server) pushLogDelta(path string, offset int64, carry string) (int64, s
 	}
 	offset += int64(read)
 	text := carry + string(buf[:read])
-	// the last element is either "" (the chunk ended on a newline) or the
-	// incomplete tail of a line still being written
 	parts := strings.Split(text, "\n")
 	carry = parts[len(parts)-1]
 	lines := parts[:len(parts)-1]

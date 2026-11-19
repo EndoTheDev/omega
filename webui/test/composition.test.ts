@@ -1,8 +1,4 @@
-// omega webui: unit tests for the module-UI composition - the scan that
-// turns harness/<name>/ui/ into Nuxt component dirs with a namespace
-// prefix, the generated panel list the inspector mounts, and (structurally,
-// like the other component tests here) the canary's wiring. Run:
-// node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the module-UI composition.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -13,7 +9,7 @@ import { scanModuleUIs } from "../app/composables/compose.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 
-// --- scanModuleUIs: a directory is the registration ---
+// scanModuleUIs: a directory is the registration
 
 test("scanModuleUIs finds module ui dirs with their components", () => {
   const scratch = makeScratch();
@@ -35,7 +31,6 @@ test("scanModuleUIs covers the shell ring: second root registers shell module ui
   try {
     mkdirSync(join(scratch, "tools", "ui"), { recursive: true });
     writeFileSync(join(scratch, "tools", "ui", "ToolsList.vue"), "<template/>");
-    // shell ring: the second root is api/; the channel module ships ui/ in it
     mkdirSync(join(webui, "http_channel", "ui"), { recursive: true });
     writeFileSync(join(webui, "http_channel", "ui", "LogsList.vue"), "<template/>");
     // the shell dir never registers - the shell ships its UI in place
@@ -55,12 +50,9 @@ test("scanModuleUIs skips empty ui dirs, dot dirs, and the shell dir", () => {
   try {
     // a module with an empty ui/ ships no UI - not a registration
     mkdirSync(join(scratch, "cron", "ui"), { recursive: true });
-    // the shell dir never registers under a module name - the shell
-    // ships its UI in place (webui/webui/app), registering "webui" would
-    // double-register the shell inside its own shell
+    // the shell dir never registers under a module name.
     mkdirSync(join(scratch, "webui", "ui"), { recursive: true });
     writeFileSync(join(scratch, "webui", "ui", "Loop.vue"), "<template/>");
-    // tooling junk dirs are invisible
     mkdirSync(join(scratch, "node_modules", "ui"), { recursive: true });
     writeFileSync(join(scratch, "node_modules", "ui", "Junk.vue"), "<template/>");
     assert.deepEqual(scanModuleUIs(scratch), []);
@@ -87,7 +79,7 @@ test("scanModuleUIs tolerates a missing or unreadable modules root", () => {
   assert.deepEqual(scanModuleUIs("/definitely/not/here/o/omega"), []);
 });
 
-// --- ui/dockable.json: the module's dockable declaration (card t_30ee04fb) ---
+// ui/dockable.json: the module's dockable declaration
 
 test("scanModuleUIs reads a valid dockable.json alongside the components", () => {
   const scratch = makeScratch();
@@ -112,7 +104,6 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
   try {
     mkdirSync(join(scratch, "a", "ui"), { recursive: true });
     writeFileSync(join(scratch, "a", "ui", "A.vue"), "<template/>");
-    // absent -> null
     const a = scanModuleUIs(scratch)[0]!;
     assert.equal(a.dockable, null);
 
@@ -144,18 +135,15 @@ test("scanModuleUIs yields null dockable for absent, malformed or wrong-shaped d
   }
 });
 
-// --- the canary wiring (structural): ToolsList ships from the tools
-// module dir and the shell mounts whatever the generated list carries ---
+// the canary wiring (structural).
 
 test("the canary component lives in the tools module, not the shell", () => {
   const src = readFileSync(`${root}/../harness/tools/ui/ToolsList.vue`, "utf8");
-  // t_5c9bb50a: the fetch is self-contained AND fold-aware - the
-  // module carries its own wiring against the management read, whose
-  // inventory keeps disabled tools (the re-enable door)
+  // the fetch is self-contained AND fold-aware.
   assert.ok(src.includes('fetch("/tools?disabled=1")'), "self-contained fold-aware GET /tools fetch");
-  // card t_73994e55 -> t_372b9e9a: a domain tool's actions[] renders as
-  // the row's EXPANDABLE detail lines (memory.add - description), the
-  // RegistryList contract; the list itself is the shared component
+  // >: a domain tool's actions[] renders as the row's EXPANDABLE detail lines
+  // (memory.add - description), the RegistryList contract; the list itself is the
+  // shared component
   assert.ok(src.includes("<RegistryList"), "the shared component, not a bespoke list");
   assert.ok(src.includes('from "./toolRows"'), "the dotted action detail naming lives in the pure row model (t_e06b38bc grouping)");
   assert.ok(
@@ -177,9 +165,6 @@ test("the inspector's module tab hosts only the active panel's module", () => {
   );
   assert.ok(panelVue.includes("module-panels.generated"), "imports the generated list");
   assert.ok(panelVue.includes('class="module-panels"'), "has the mount section");
-  // card t_4ae27e0d: the tab bar lives in the dock tabbar; the host only
-  // resolves THIS tab's module body. The dock unmounts inactive tabs'
-  // outlets, so lazy (fetch/poll while up) carries over.
   assert.ok(panelVue.includes('v-if="panel"'), "renders the resolved panel only");
   // the module tab ids ARE the composition's module names (no alias map)
   assert.ok(panelVue.includes("module === props.module"));

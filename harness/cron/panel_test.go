@@ -1,10 +1,6 @@
 package cron
 
-// The canvas surface tests (arc 6, t_31174f80): the jobs panel is
-// declared at mount, a hot reload pushes the refreshed panel through
-// the sink the canvas runtime installed, and the read-only action
-// posture holds. The removal proof that runs against the full plugin
-// set lives in cmd/omega/removal_test.go (TestCronRemovalProof).
+// The canvas surface tests.
 
 import (
 	"encoding/json"
@@ -16,8 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// mountedPanelPlugin mounts a plugin (explicit config + temp home) and
-// returns the context with the PanelProviders registered.
+// mountedPanelPlugin mounts a plugin (explicit config + temp home) and returns.
 func mountedPanelPlugin(t *testing.T, jobs ...Job) (*core.Context, *Plugin) {
 	t.Helper()
 	home := t.TempDir()
@@ -63,8 +58,7 @@ func TestCapsulePanelDeclaresJobs(t *testing.T) {
 	if !strings.Contains(payload, `"name":"aa-minute"`) || !strings.Contains(payload, `"total":2`) {
 		t.Fatalf("payload lost the jobs: %s", payload)
 	}
-	// the capsule's declared face: exactly one action, the
-	// mutation-free refresh - cron proposes nothing, edits nothing
+	// the capsule's declared face: exactly one action, the mutation-free refresh.
 	if len(panel.Actions) != 1 {
 		t.Fatalf("actions = %+v, want exactly the refresh binding", panel.Actions)
 	}
@@ -74,9 +68,7 @@ func TestCapsulePanelDeclaresJobs(t *testing.T) {
 	}
 }
 
-// TestHotReloadPushesPanelDelta: a crons.yaml reload (the module's one
-// internal mutation face) pushes the refreshed jobs panel through the
-// live canvas - the snapshot reflects it too.
+// TestHotReloadPushesPanelDelta: a crons.yaml reload.
 func TestHotReloadPushesPanelDelta(t *testing.T) {
 	ctx, p := mountedPanelPlugin(t, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
 	var deltas []core.Panel
@@ -113,8 +105,7 @@ func TestHotReloadPushesPanelDelta(t *testing.T) {
 	if !found {
 		t.Fatalf("reload pushed no refreshed jobs panel (deltas=%d): %+v", len(deltas), deltas)
 	}
-	// the snapshot converges on the same state (applyDelta replaces in
-	// place; the runtime's store is the snapshot source)
+	// the snapshot converges on the same state.
 	panel, ok := findPanel(canvas.Snapshot(), jobsPanelID)
 	if !ok {
 		t.Fatal("jobs panel missing after reload")
@@ -143,10 +134,7 @@ func TestReloadWithoutCanvasNeverBlocks(t *testing.T) {
 	}
 }
 
-// TestCapsuleActionsAreReadOnly: the module's declared posture - the
-// refresh arm answers the live payload (a read, no mutation), and any
-// other action id is refused with core.ErrUnknownAction. An unknown
-// module keeps its own sentinel - the two 404s stay distinguishable.
+// TestCapsuleActionsAreReadOnly: the module's declared posture.
 func TestCapsuleActionsAreReadOnly(t *testing.T) {
 	ctx, _ := mountedPanelPlugin(t, Job{Name: "j", Schedule: "0 5 1 * *", Prompt: "p"})
 	canvas, err := agent.NewCanvas(ctx, nil)
@@ -167,15 +155,12 @@ func TestCapsuleActionsAreReadOnly(t *testing.T) {
 	if _, err := canvas.Dispatch(core.ActionCall{Module: "cron", Action: "toggle_job", Args: []byte(`{"name":"j"}`)}); !errors.Is(err, core.ErrUnknownAction) {
 		t.Fatalf("toggle_job answered %v, want ErrUnknownAction", err)
 	}
-	// an unknown module has its own sentinel - the two 404s stay
-	// distinguishable
 	if _, err := canvas.Dispatch(core.ActionCall{Module: "nope", Action: "x"}); !errors.Is(err, core.ErrUnknownModule) {
 		t.Fatalf("unknown module answered %v, want ErrUnknownModule", err)
 	}
 }
 
-// jsonOf marshals a panel payload through its wire serialization (the
-// same law removal_test.go's payloadJSON follows).
+// jsonOf marshals a panel payload through its wire serialization.
 func jsonOf(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {

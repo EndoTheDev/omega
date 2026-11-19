@@ -1,12 +1,6 @@
 package cron
 
-// toggle_test.go: the per-job `enabled:` flag write (card t_561dc4e0).
-// The write is the fold-write pattern: parse at the yaml.Node level,
-// mutate the one scalar, marshal the whole document - so every test
-// that flips a flag also pins the file's surviving style (comments,
-// key order, untouched siblings). The route test pins the wire: the
-// fresh job set rides the response body, unknown keys are the loud
-// 404 lane.
+// toggle_test.go: the per-job `enabled:` flag write.
 
 import (
 	"bytes"
@@ -46,10 +40,7 @@ func newToggleTestRunner(t *testing.T, mainYAML string) (*Runner, string) {
 	return NewRunner(cfg, home), path
 }
 
-// TestToggleJobWritesFlagAndKeepsStyle: disabling a job appends the
-// `enabled: false` flag to that one entry, comments and siblings
-// survive, and the fresh listing reports the landed state (Jobs is the
-// re-read after the reload).
+// TestToggleJobWritesFlagAndKeepsStyle: disabling a job appends the `enabled: false`.
 func TestToggleJobWritesFlagAndKeepsStyle(t *testing.T) {
 	r, path := newToggleTestRunner(t, toggleTestCrons)
 	before, err := os.ReadFile(path)
@@ -96,9 +87,6 @@ func TestToggleJobWritesFlagAndKeepsStyle(t *testing.T) {
 	if got := strings.Count(text, "enabled:"); got != 2 {
 		t.Errorf("enabled: count = %d, want 2 (one per entry, no duplicate)", got)
 	}
-	// the flag belongs to the daily-journal entry's own key set - the
-	// exact indentation is yaml's marshal call (the node style re-flows
-	// sequences); the entry location is what the fold-write owns
 	lines := strings.Split(text, "\n")
 	inJournal := false
 	found := false
@@ -219,9 +207,7 @@ func TestToggleJobAgentHomeWrite(t *testing.T) {
 	}
 }
 
-// TestHandleToggleWire: the route answers the fresh job set as JSON,
-// unknown keys are the 404 lane, junk bodies the 400 lane, wrong
-// methods the 405 lane.
+// TestHandleToggleWire: the route answers the fresh job set as JSON, unknown keys are.
 func TestHandleToggleWire(t *testing.T) {
 	r, _ := newToggleTestRunner(t, toggleTestCrons)
 	p := &Plugin{runner: r}

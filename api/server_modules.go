@@ -8,35 +8,26 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The module-toggle surface (v0.12 E2). The settings pane renders the
-// registry introspection and applies live toggles through it - the
-// settings capsule RENDERS the data, the registry (behind the host's
-// core.ModuleToggles seam) provides it. A host without the seam (nil
-// modules) answers 501 so the pane can hide the list.
+// The module-toggle surface (v0.12 E2). A host without the seam (nil modules) answers
+// 501 so the pane can hide the list.
 
-// shellModules never appear in the list (the tier law: the shell ring,
-// always on - the frontend does not render its own on/off switch).
+// shellModules never appear in the list.
 var shellModules = map[string]bool{
 	"http_channel": true,
 }
 
-// alwaysOnModules is the always-on tier (0.17.3 tier re-law, card
-// t_ee3a968b; Endo verbatim: "always on: agent-loop, provider and
-// logging; toggleable: the rest" - logging is the folded observability
-// module). Those three are what the process cannot serve without, so the
-// toggle endpoint refuses them AT THE SEAM - the refusal is the guard,
-// and the UI's non-toggleable always-on row only mirrors it. (The
-// frontend reads the trio off the introspection's toggleable flag; it
-// never carries a second copy of this list.)
+// alwaysOnModules is the always-on tier. Those three are what the process cannot serve
+// without, so the toggle endpoint refuses them AT THE SEAM - the refusal is the guard,
+// and the UI's non-toggleable always-on row only mirrors it. (The frontend reads the
+// trio off the introspection's toggleable flag; it never carries a second copy of this
+// list.)
 var alwaysOnModules = map[string]bool{
 	"agent-loop":    true,
 	"provider":      true,
 	"observability": true,
 }
 
-// handleModules serves GET: the module list (introspection, shell
-// modules filtered out) plus the refusal ledger tail (Q12 - rejections
-// visible as events). no-store: the state changes under the pane.
+// handleModules serves GET.
 func (s *Server) handleModules(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -64,8 +55,7 @@ type modulesPayload struct {
 	Refusals []refusalRow        `json:"refusals,omitempty"`
 }
 
-// refusalRow is one ledger entry on the wire - the error as text (the
-// error interface marshals empty and that is a Q12 lie on the wire).
+// refusalRow is one ledger entry on the wire.
 type refusalRow struct {
 	Module    string `json:"module"`
 	Predicate string `json:"predicate"`
@@ -93,10 +83,7 @@ func refusalsTail(sink core.ModuleToggles) []refusalRow {
 	return out
 }
 
-// handleModuleToggle applies PUT /modules/{name}: {"enabled": bool}
-// through the seam's Toggle (the Q7 one code path). A rejection comes
-// back 400 with the ledger text (Q11: the roll-back text the pane
-// surfaces); success returns the refreshed introspection.
+// handleModuleToggle applies PUT /modules/{name}.
 func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -115,8 +102,7 @@ func (s *Server) handleModuleToggle(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "module "+name+" is shell - always on, never toggled", http.StatusBadRequest)
 		return
 	}
-	// card t_81d0901b: the load-bearing pair is locked here, not in the
-	// UI - a disabled row in front of an open endpoint is a lying guard.
+	// the load-bearing pair is locked here, not in the UI.
 	if alwaysOnModules[name] {
 		http.Error(w, "module "+name+" is always on", http.StatusBadRequest)
 		return

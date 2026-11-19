@@ -76,7 +76,6 @@ func TestCompactSummarizes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Expect: [first] + [system: summary] + [last] = 3
 	if len(out) != 3 {
 		t.Fatalf("expected 3 messages (first+summary+last), got %d", len(out))
 	}
@@ -90,13 +89,10 @@ func TestCompactSummarizes(t *testing.T) {
 	}
 }
 
-// TestSummarizeDoctrinePrompt pins the billion-context KEEP/DROP doctrine
-// (card t_5e39d5ca) as the prompt the summarizer actually receives. The
-// doctrine is the deliverable - the controlled evidence credited it with
-// ~62% of the re-fetch reduction - so a rewrite that silently drops a
-// KEEP/DROP class or leaks the fill percentage must go red HERE, not in
-// production summaries. It pins the prompt shape handed to the provider;
-// the model output is irrelevant to this test.
+// TestSummarizeDoctrinePrompt pins the billion-context KEEP/DROP doctrine as the. The
+// doctrine is the deliverable - the controlled evidence credited it with ~62% of the
+// re-fetch reduction - so a rewrite that silently drops a KEEP/DROP class or leaks the
+// fill percentage must go red HERE, not in production summaries.
 func TestSummarizeDoctrinePrompt(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "folded."},
@@ -123,10 +119,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// summarize() sends the provider exactly one user message: the
-	// doctrine header, then the folded middle as tagged lines. The
-	// empty Model slot keeps ResolveModelSlot on the original fake, so
-	// LastMessages is the recording of what the summarizer received.
+	// summarize sends the provider exactly one user message.
 	if len(provider.LastMessages) != 1 {
 		t.Fatalf("expected 1 message to the summarizer, got %d", len(provider.LastMessages))
 	}
@@ -167,9 +160,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 		}
 	}
 
-	// The no-fill-percentage rule: the prompt must never disclose how
-	// full the context window is - a model told it is only part-way
-	// full refuses to compress.
+	// The no-fill-percentage rule: the prompt must never disclose how full the context.
 	if strings.ContainsRune(header, '%') {
 		t.Errorf("doctrine prompt discloses a percentage\nheader:\n%s", header)
 	}
@@ -179,7 +170,6 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 		}
 	}
 
-	// The folded middle rides along as tagged lines after the header.
 	for _, want := range []string{"- [user] middle alpha", "- [user] middle beta"} {
 		if !strings.Contains(prompt, want) {
 			t.Errorf("prompt lost folded line %q\nprompt:\n%s", want, prompt)
@@ -200,18 +190,15 @@ func TestPluginInterface(t *testing.T) {
 	}
 }
 
-// TestCompactCommand verifies /compact is registered and returns
-// a run_compact CmdAction (the TUI interprets it).
+// TestCompactCommand verifies /compact is registered and returns a run_compact.
 func TestCompactCommand(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
-	// Compactor requires provider seam — mount a fake provider.
 	ctx.ApplyOffer("provider", "test", agent.NewFakeProvider("test"))
 	if _, err := agent.MountAllAPI([]agent.Plugin{stubProvides{plugin: p, seam: "provider"}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
 
-	// Verify /compact command was registered.
 	found := false
 	for _, c := range ctx.Commands {
 		if c.Name == "/compact" {
@@ -233,9 +220,7 @@ func TestCompactCommand(t *testing.T) {
 	}
 }
 
-// stubProvides satisfies a Requires edge in the mount set without
-// registering anything: the seam it names is already populated on the
-// Context the test built (a fake provider, a logging stub).
+// stubProvides satisfies a Requires edge in the mount set without registering anything.
 type stubProvides struct {
 	plugin agent.Plugin
 	seam   string

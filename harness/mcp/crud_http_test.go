@@ -1,10 +1,5 @@
 package mcp
 
-// crud_http_test.go: the entry CRUD wire (card t_2a649d87) - the API
-// round trip (save lands a live server, delete removes it and the
-// listing returns to the starting state) plus the unmount receipt: a
-// deleted stdio server's process is killed and reaped by the bridge
-// swap, no orphan connection left behind.
 
 import (
 	"encoding/json"
@@ -17,8 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// serveJSON serves one request with a JSON body through the named
-// route pattern on the mounted context (serveRoute's body sibling).
+// serveJSON serves one request with a JSON body through the named route pattern.
 func serveJSON(t *testing.T, ctx *core.Context, pattern, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -44,8 +38,6 @@ func crudHome(t *testing.T) string {
 	return home
 }
 
-// TestCRUDRoundTrip is the API receipt: save -> listing/tools show the
-// server, delete -> listing back to the exact starting state.
 func TestCRUDRoundTrip(t *testing.T) {
 	home := crudHome(t)
 	srv := mockMCPServer(t, "crud-session")
@@ -56,8 +48,6 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Fatalf("baseline: got %+v, want empty", baseline.Servers)
 	}
 
-	// save: the entry lands in the file, the bridge swaps, the tool
-	// provider serves the discovered tool - all on one response
 	w := serveJSON(t, ctx, "POST /mcp/save", "/mcp/save",
 		`{"name":"mock","url":"`+srv.URL+`","enabled":true}`)
 	if w.Code != 200 {
@@ -78,14 +68,12 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Fatalf("landed file missing the entry:\n%s", text)
 	}
 
-	// GET is the same truth as the save response
 	got := decodeReport(t, serveRoute(t, ctx, "GET /mcp/servers", "GET", "/mcp/servers"))
 	if len(got.Servers) != 1 || got.Servers[0].Name != "mock" || !got.Servers[0].Connected {
 		t.Fatalf("GET after save: %+v", got.Servers)
 	}
 
-	// delete: the listing is back to the starting state, the tool seam
-	// is empty again, the file keeps an empty servers list
+	// delete: the listing is back to the starting state, the tool seam is empty again.
 	w = serveJSON(t, ctx, "POST /mcp/delete", "/mcp/delete", `{"name":"mock"}`)
 	if w.Code != 200 {
 		t.Fatalf("POST /mcp/delete: %d %s", w.Code, w.Body.String())
@@ -103,15 +91,13 @@ func TestCRUDRoundTrip(t *testing.T) {
 	if string(baselineJSON) != string(finalJSON) {
 		t.Fatalf("listing not back to the starting state:\nbaseline: %s\nfinal:    %s", baselineJSON, finalJSON)
 	}
-	// the add/delete round trip on a home that started with no file
-	// leaves no file behind either (the no-residue law)
+	// the add/delete round trip on a home that started with no file leaves no file.
 	if _, err := os.Stat(landed); !os.IsNotExist(err) {
 		t.Fatalf("empty mcp.yaml left behind after the last delete (stat err: %v)", err)
 	}
 }
 
-// TestCRUDSaveValidation pins the refusals the wire carries: a bad
-// entry is a 400 and writes nothing.
+// TestCRUDSaveValidation pins the refusals the wire carries.
 func TestCRUDSaveValidation(t *testing.T) {
 	crudHome(t)
 	ctx := mountReloadPlugin(t, NewPlugin(nil))
@@ -143,9 +129,6 @@ func TestCRUDDeleteUnknown404(t *testing.T) {
 	}
 }
 
-// TestCRUDDeleteUnmountsStdioCleanly is the no-orphan receipt: the
-// deleted stdio server's child process is killed and reaped by the
-// bridge swap, and the tool seam stops serving its tools.
 func TestCRUDDeleteUnmountsStdioCleanly(t *testing.T) {
 	home := crudHome(t)
 	script := writeFakeServer(t)
@@ -176,7 +159,6 @@ func TestCRUDDeleteUnmountsStdioCleanly(t *testing.T) {
 		t.Fatalf("POST /mcp/delete: %d %s", w.Code, w.Body.String())
 	}
 
-	// the replaced bridge is stopped and its child reaped - the unmount
 	if !old.isStopped() {
 		t.Fatal("replaced bridge not marked stopped")
 	}

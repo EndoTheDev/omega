@@ -1,15 +1,4 @@
 <template>
-  <!-- card t_63204dfd: the chat surface of a pending gate question. The
-       escalated shell.run froze the run; this card rides its tool call
-       row with the three options (approve runs it, deny skips it,
-       follow-up prompt swaps to a text input whose typed guidance
-       resolves the question WITHOUT running the command). The card
-       answers the SAME pending card id through the SAME verdict
-       endpoint the notification card and the CLI loop use - first
-       resolution wins, every other surface collapses. When the
-       tool_result lands (the gate's stamp line on the call row), the
-       binding that owns this card is gone and it unmounts - the stamp
-       is the permanent record. -->
   <div
     class="verdict-card gate-card"
     :class="{ settled: resolved }">
@@ -22,14 +11,9 @@
       class="verdict-body">{{ card.body }}</p>
 
     <template v-if="resolved">
-      <!-- the resolution (this client or another surface): collapse.
-           The permanent stamp arrives on the call's tool_result. -->
       <p class="verdict-outcome">{{ resolvedText }}</p>
     </template>
     <template v-else-if="mode === 'followup'">
-      <!-- the follow-up input swaps the three rows: typed text resolves
-           the question (deny + guidance); a blank send is the plain
-           deny -->
       <div class="verdict-free">
         <input
           v-model="draft"
@@ -84,10 +68,7 @@
   import { gateAnswerBody, isSettledRace, postVerdict } from "../../composables/omega";
 
   const props = defineProps<{
-    // the pending card (the /verdicts listing row) - the answer posts
-    // by its id, one click among any surfaces
     card: PendingVerdictCard;
-    // the answer endpoint's session boundary
     sessionId?: string;
   }>();
 
@@ -95,8 +76,7 @@
   const answering = ref(false);
   const error = ref("");
   const mode = ref<"choose" | "followup">("choose");
-  // the resolution holder: set by this client's own POST, or by a lost
-  // race (the 409's settled vocabulary) - both collapse, no error
+  // the resolution holder: set by this client's own POST, or by a lost race.
   const resolved = ref<"" | "approve" | "deny" | "race">("");
   const resolvedText = computed(() => {
     switch (resolved.value) {
@@ -128,7 +108,7 @@
     }
   }
 
-  // the follow-up send: empty input IS the plain deny (ruling 1)
+  // the follow-up send: empty input IS the plain deny
   function sendFollowup() {
     const text = draft.value;
     if (!text.trim()) {

@@ -1,14 +1,9 @@
 package skills
 
-// The skills content-view face's self-check (moved from
-// agent/api/server_skills_test.go by the shell-ring shrink wave 3,
-// card t_b75df168 - re-aimed at the capsule's Routes over a REAL
-// SkillsProvider in a throwaway dir). The wire contract: one skill's
-// name+description+body with the truncation flag, the loud refusals
-// (illegal names - traversal, hidden, untrimmed), a 404 for an
-// unknown name, and the read-only posture (405 on POST). The old
-// 501-without-reader probe died with the surface's home: the route is
-// a module route now, a disabled capsule answers 404 at the module mux.
+// The skills content-view face's self-check. The wire contract: one skill's
+// name+description+body with the truncation flag, the loud refusals (illegal names -
+// traversal, hidden, untrimmed), a 404 for an unknown name, and the read-only posture
+// (405 on POST).
 
 import (
 	"net/http"
@@ -19,8 +14,7 @@ import (
 	"testing"
 )
 
-// skillsRoutes builds the capsule Routes over a real provider scanning
-// a throwaway skills dir seeded with one skill.
+// skillsRoutes builds the capsule Routes over a real provider scanning a throwaway.
 func skillsRoutes(t *testing.T) (*Routes, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -62,8 +56,6 @@ func TestSkillsContentHappyPath(t *testing.T) {
 
 func TestSkillsContentCapMarksTruncated(t *testing.T) {
 	rt, dir := skillsRoutes(t)
-	// grow the body past the 64 KiB cap - many short lines, the loader
-	// scans line-wise (one over-long line is a loader error, not a cap)
 	p := filepath.Join(dir, "worker-onboarding", "SKILL.md")
 	fat := "---\ndescription: fat\n---\n" + strings.Repeat("x line\n", 12000)
 	if err := os.WriteFile(p, []byte(fat), 0o644); err != nil {

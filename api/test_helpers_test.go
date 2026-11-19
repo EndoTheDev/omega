@@ -1,10 +1,6 @@
 package api
 
-// The shell's mock helpers. After the carve (card t_905fa502) the
-// agent-surface tests took the original fixtures to agent/api; the
-// shell-integration tests (plugin mount wiring, multi-bind, the live
-// serve path) stay here and need the same doubles. Test-only
-// duplication, same-shaped as agent/api's.
+// The shell's mock helpers. Test-only duplication, same-shaped as agent/.
 
 import (
 	"bufio"
@@ -25,11 +21,9 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// testWaitTimeout bounds every poll-until-true wait in this package's tests.
-// It exists to catch a HANG, not to time correctness: a healthy condition can
-// take seconds when the full suite runs packages in parallel and starves the
-// goroutine under test. Bounding it tightly (2-5s) made load-sensitive tests
-// red on a loaded machine and green in isolation - the worst kind of flake.
+// testWaitTimeout bounds every poll-until-true wait in this package's tests. It exists
+// to catch a HANG, not to time correctness: a healthy condition can take seconds when
+// the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
 type mockProvider struct {
@@ -37,16 +31,8 @@ type mockProvider struct {
 	scripts   [][]core.ProviderStreamEvent
 	mu        *sync.Mutex
 	calls     *int
-	// thinkingLevel is the ladder value a WithThinkingLevel copy
-	// carries; tests assert per-run threading from it.
 	thinkingLevel string
-	// seenLevels records the thinkingLevel of every Stream call,
-	// shared with WithModel/WithThinkingLevel copies behind mu.
 	seenLevels *[]string
-	// seenModels records the modelName of every Stream call, shared
-	// with WithModel copies behind mu (same pattern as seenLevels) so
-	// tests can assert which model a call - e.g. the title_model-routed
-	// title call - actually streamed through.
 	seenModels *[]string
 }
 type testLoop struct{}
@@ -127,8 +113,6 @@ func (m *mockProvider) servedModelNames() []string {
 }
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
-	// Persistence outlives the run ctx - same WithoutCancel law the
-	// real loop applies, so a cancelled run still lands its copy.
 	persistCtx := context.WithoutCancel(ctx)
 	persist := func(msg core.Message) {
 		if sink == nil {
@@ -157,8 +141,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 		opts.Events <- core.StreamEvent{Event: event}
 		if end, ok := event.(core.StreamEnd); ok && end.FinishReason == "stop" {
-			// Persist BEFORE the event, like the real loop: a reload
-			// mid-run must find the record already in the store.
+			// Persist BEFORE the event, like the real loop: a reload mid-run must find.
 			assistant := core.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
@@ -167,20 +150,14 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
 		}
 	}
-	// The stream unwound without a stop StreamEnd - a cancelled run
-	// (stop mid-turn) or a script that closed early. What streamed
-	// persists as the turn's partial: the transcript keeps the copy
-	// the user already saw rendered.
+	// The stream unwound without a stop StreamEnd.
 	if !persisted && content.Len() > 0 {
 		persist(core.NewAssistant(content.String()))
 	}
 	return nil
 }
 
-// newTestServerWithStore returns a server with an in-memory store and
-// a handle to the store for assertions. The store seams onto the base
-// at construction: the base field is unexported to the shell, so the
-// constructor path carries it.
+// newTestServerWithStore returns a server with an in-memory store and a handle.
 func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(":memory:")
@@ -330,10 +307,7 @@ func startExchange(t *testing.T, prov *multiProvider, s *Server, ts *httptest.Se
 	cancel()
 }
 
-// newTestServerWithStoreSeam is newTestServerWithStore with the
-// registry-toggle seam injected at construction (the base field is
-// unexported to the shell; the constructor path is the same wire the
-// host uses).
+// newTestServerWithStoreSeam is newTestServerWithStore with the registry-toggle seam.
 func newTestServerWithStoreSeam(t *testing.T, rt core.RegistryToggles) (*Server, *store.Store) {
 	t.Helper()
 	st, err := store.Open(":memory:")
@@ -362,11 +336,9 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only (the generic
-// postJSON helper in server_variants_test.go returns a decoded map,
+// postAny posts a JSON body and returns the status only.
 
-// postChatStream POSTs a "/chat" run and leaves the stream open (the
-// agents' agents-test original moved to agent/api).
+// postChatStream POSTs a "/chat" run and leaves the stream open.
 func postChatStream(t *testing.T, ts *httptest.Server, sessionID string) (*http.Response, context.CancelFunc, *bufio.Scanner) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{

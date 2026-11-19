@@ -9,12 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestSessionEventObserversSeeTheRunSession pins the session-attributed
-// spine (card t_8de82cff): the observer shape that carries the run's
-// session id delivers EVERY event of the run under that id, while the
-// plain observers keep seeing the same events unchanged. The id comes
-// from the run context, so the attribution default (a store sink's
-// session) applies here too.
+// TestSessionEventObserversSeeTheRunSession pins the session-attributed spine.
 func TestSessionEventObserversSeeTheRunSession(t *testing.T) {
 	var mu sync.Mutex
 	var sessions []string
@@ -66,10 +61,7 @@ func TestSessionEventObserversSeeTheRunSession(t *testing.T) {
 	}
 }
 
-// TestSessionObserverCarriesTheSinkDefault pins the attribution default
-// on this rail: a run whose host wrapped only a turn sink is still
-// attributed (the RunWithProvider default resolves it before the spine
-// snapshot), and a sessionless run reports the honest empty id.
+// TestSessionObserverCarriesTheSinkDefault pins the attribution default on this rail.
 func TestSessionObserverCarriesTheSinkDefault(t *testing.T) {
 	var mu sync.Mutex
 	var sessions []string
@@ -100,9 +92,7 @@ func TestSessionObserverCarriesTheSinkDefault(t *testing.T) {
 	}
 }
 
-// TestSessionEventObserverRegistrationIsSnapshotted pins the per-run
-// snapshot rule: an observer registered AFTER a run started does not see
-// that run (registration lands for later runs), matching the plain rail.
+// TestSessionEventObserverRegistrationIsSnapshotted pins the per-run snapshot rule.
 func TestSessionEventObserverRegistrationIsSnapshotted(t *testing.T) {
 	var mu sync.Mutex
 	seen := 0
@@ -110,7 +100,6 @@ func TestSessionEventObserverRegistrationIsSnapshotted(t *testing.T) {
 	ag := newTestAgent(NewFakeProvider("fake", core.StreamEnd{Type: "stream_end", FinishReason: "stop"}), nil, 0)
 	ag.SetSessionEventObserverSource(ctx.SessionEventObservers)
 
-	// Snapshot taken here, before any registration.
 	events := ag.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil)
 	ctx.AddSessionEventObserver(func(string, core.Event) {
 		mu.Lock()
@@ -125,7 +114,6 @@ func TestSessionEventObserverRegistrationIsSnapshotted(t *testing.T) {
 	if first != 0 {
 		t.Fatalf("a mid-run registration saw %d events; the snapshot must exclude it", first)
 	}
-	// The next run does see it.
 	collect(t, ag.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 	mu.Lock()
 	defer mu.Unlock()

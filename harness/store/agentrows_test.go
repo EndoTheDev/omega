@@ -1,9 +1,5 @@
 package store
 
-// agentrows_test.go: the ruling-4 data isolation migration (card
-// t_72ecca67). Law: an agent-tagged session row moves out of the main
-// store whole - label, read state, message history, FTS index - and
-// the main store no longer holds it. A failed move truncates nothing.
 
 import (
 	"context"
@@ -21,7 +17,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// a main session plus two agent-tagged ones, each with messages.
 	if err := main.CreateSession(ctx, "main-sess", "", ""); err != nil {
 		t.Fatal(err)
 	}
@@ -52,10 +47,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 		t.Fatalf("migrate: %v", err)
 	}
 
-	// the agent store holds both sessions with full history and keeps
-	// the tree link. The store binds its identity from OMEGA_AGENT at
-	// open (the wake child's environment) - an isolated store's list
-	// is the agent's own history, filter-free.
 	t.Setenv("OMEGA_AGENT", "scout")
 	agentStore, err := Open(agentDSN)
 	if err != nil {
@@ -70,8 +61,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 	if err != nil || len(msgs) != 2 {
 		t.Fatalf("scout-sess messages = %d %v, want 2", len(msgs), err)
 	}
-	// read state rides the row (sessions are born read; verify the
-	// column survived).
 	gotMain, err := agentStore.GetSession(ctx, "scout-sess")
 	if err != nil || gotMain.Label != "probe run" || gotMain.Agent != "scout" {
 		t.Errorf("moved session = %+v %v, want label/agent intact", gotMain, err)
@@ -91,8 +80,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 		t.Errorf("FTS lost the moved history: %v", results)
 	}
 
-	// the main store holds main only (identity back to main first -
-	// the env var IS the binding).
 	t.Setenv("OMEGA_AGENT", "")
 	reopened, err := Open(mainDSN)
 	if err != nil {
@@ -137,7 +124,6 @@ func TestMigrateAgentRowsKeepsNativeDestRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the agent store already exists with one native session.
 	agentDSN := filepath.Join(t.TempDir(), "scout", "data", "omega.db")
 	if err := os.MkdirAll(filepath.Dir(agentDSN), 0o755); err != nil {
 		t.Fatal(err)
@@ -168,7 +154,6 @@ func TestMigrateAgentRowsKeepsNativeDestRows(t *testing.T) {
 		t.Fatalf("agent store sessions = %v %v, want native + moved", sessions, err)
 	}
 
-	// main no longer holds the scout row.
 	t.Setenv("OMEGA_AGENT", "")
 	reopened, err := Open(mainDSN)
 	if err != nil {
@@ -180,8 +165,7 @@ func TestMigrateAgentRowsKeepsNativeDestRows(t *testing.T) {
 	}
 }
 
-// TestMigrateAgentRowsSkipsChildlessAgents pins the no-phantom-store
-// law: an agent with no rows gets no store file.
+// TestMigrateAgentRowsSkipsChildlessAgents pins the no-phantom-store law.
 func TestMigrateAgentRowsSkipsChildlessAgents(t *testing.T) {
 	mainDSN := filepath.Join(t.TempDir(), "omega.db")
 	main, err := Open(mainDSN)
@@ -198,9 +182,7 @@ func TestMigrateAgentRowsSkipsChildlessAgents(t *testing.T) {
 	}
 }
 
-// TestRetagAgentSessions pins the clone law's last step: a materialized
-// copy carries the source's rows, and re-tagging makes them the clone's
-// own - including the pre-column "" tag main's oldest rows carry.
+// TestRetagAgentSessions pins the clone law's last step.
 func TestRetagAgentSessions(t *testing.T) {
 	ctx := context.Background()
 	dsn := filepath.Join(t.TempDir(), "omega.db")
@@ -232,7 +214,6 @@ func TestRetagAgentSessions(t *testing.T) {
 	if len(rows) != 2 {
 		t.Fatalf("probe sessions = %d, want both copied rows", len(rows))
 	}
-	// The source agent owns nothing any more.
 	if rows, err := st.ListAgentSessions(ctx, "scout"); err != nil || len(rows) != 0 {
 		t.Errorf("scout still owns %d rows (err %v)", len(rows), err)
 	}

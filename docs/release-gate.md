@@ -51,6 +51,33 @@ original comment stands until the code resolves it or Endo overrules
 it. A reviewer who finds themselves re-writing a round-1 finding has
 hit the round cap's spirit: the review is looped, not progressing.
 
+## The comment law
+
+Comment mass is a maintenance tax, and omega ran it at roughly twice a
+well-documented codebase. The law, enforced by this gate:
+
+- **A comment earns its line.** Keep one only when deleting it would
+  let a competent reader break the code: an invariant, a non-obvious
+  why, a hazard, a contract with another file. Narration of the next
+  line, prose over self-describing struct fields, yaml keys restated in
+  English, section banners and commented-out code all go.
+- **History never lives in source comments.** No card ids
+  (`t_xxxxxxxx`), no dates, no incident narratives, no
+  "proven"/"ruling"/"receipt" citations. Commit messages, card bodies
+  and the vault Log own that record; a comment repeating it is the
+  fifth copy every refactor must drag along.
+- **Directives are exempt:** `//go:build`, `//go:embed`, shebangs and
+  tool pragmas are machine input, not prose.
+- **Density target:** ~10% of nonblank lines repo-wide, near zero in
+  config plumbing. Measure it, do not eyeball it:
+  `python3 scripts/comment-census.py` prints the per-language totals and
+  the files above the 30% ceiling; `--marks` lists the provenance lines
+  that must not exist.
+
+Findings: a new comment that fails the earns-its-line test is a `Nit`;
+a new comment carrying provenance is `Important` (see
+`.agents/REVIEW.md`, comment lens).
+
 ## The lens brief (template)
 
 The reviewer works from a brief, filled at each round start. Copy it

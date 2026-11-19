@@ -1,4 +1,4 @@
-// omega webui: the AGENTS tab's sessions feel (card t_db378a0d, round 1 of
+// omega webui: the AGENTS tab's sessions feel
 // the unified theming language).
 //
 // The sessions sidebar is the REFERENCE and does not move: an agents row
@@ -8,15 +8,15 @@
 // interaction layer.
 //
 // What the node suite can honestly hold:
-// - the consumer OPT-IN (feel/expander/activeName are props with the
+// the consumer OPT-IN (feel/expander/activeName are props with the
 //   quiet defaults, so the four other registry tabs render byte-identical
 //   until their own round);
-// - the token facts the vocabulary is made of (chip radius, z1-raised,
+// the token facts the vocabulary is made of (chip radius, z1-raised,
 //   the accent, the 0.12s rotate) - as source pins on the ONE stylesheet
 //   that carries them;
-// - the no-toggle law for the default agent, both ends: the row model
+// the no-toggle law for the default agent, both ends: the row model
 //   never sets a toggle, and the shared list never renders one for it;
-// - the shell->panel focus seam, both literals identical (the house
+// the shell->panel focus seam, both literals identical (the house
 //   module-UI law: a module copies the shell's event spelling).
 // The rendered result - the hover raising, the hairline fading, the
 // chevron turning - is Endo's lane eyeball, and the before/after
@@ -46,7 +46,7 @@ const QUIET_CONSUMERS: Array<[string, string[]]> = [
   ["insights", ["harness", "store", "ui", "InsightsTab.vue"]],
 ];
 
-// --- the opt-in: quiet by default, sessions on request ------------------
+// the opt-in: quiet by default, sessions on request ---------------
 
 test("the sessions feel is a consumer opt-in with the quiet list as its default", () => {
   assert.match(
@@ -60,13 +60,11 @@ test("the sessions feel is a consumer opt-in with the quiet list as its default"
     /'feel-sessions': feel === 'sessions'/,
     "the consumer class is the only way in",
   );
-  // not one other registry tab has taken its round yet
   for (const [name, parts] of QUIET_CONSUMERS) {
     const src = read(...parts);
     assert.ok(!src.includes('feel="sessions"'), `${name}: still the quiet list`);
     assert.ok(!src.includes('expander="chevron"'), `${name}: still the text chevron`);
   }
-  // and the agents tab asks for the vocabulary
   assert.match(panelSrc, /feel="sessions"/, "the agents tab opts in");
 });
 
@@ -94,7 +92,7 @@ test("every feel rule is gated on the consumer class - the quiet list is untouch
   }
 });
 
-// --- the vocabulary itself (the sessions sidebar's row law) -------------
+// the vocabulary itself (the sessions sidebar's row law) ----------
 
 test("the hover raise speaks the sessions row law", () => {
   assert.match(listSrc, /border-radius: var\(--r-chip\)/, "the chip radius");
@@ -133,8 +131,6 @@ test("the hairline fades under the raised chip and is untouched at rest", () => 
 });
 
 test("the seam ABOVE the raised chip fades too - the chip crosses no border", () => {
-  // round 1 faded only the row's own border-bottom, so the preceding
-  // row's seam stayed drawn across the chip's top edge (review finding 2)
   const seam = listSrc.match(
     /\.registry-list\.feel-sessions \.registry-row:has\(\+ \.registry-row:hover\),\n\s*\.registry-list\.feel-sessions \.registry-row:has\(\+ \.registry-row\.reg-row-active\) \{\n\s*border-bottom-color: transparent;/,
   );
@@ -142,7 +138,6 @@ test("the seam ABOVE the raised chip fades too - the chip crosses no border", ()
     seam,
     "the preceding sibling's seam fades for BOTH raises (hover and the permanently raised active row)",
   );
-  // and every :has() rule rides the consumer gate like the rest of the feel
   const hasRules = listSrc.match(/[^{}]*:has\([^{}]*\{[^}]*\}/g) ?? [];
   assert.ok(hasRules.length > 0, "the sibling-seam rule is a real rule");
   for (const rule of hasRules) {
@@ -154,8 +149,6 @@ test("the seam ABOVE the raised chip fades too - the chip crosses no border", ()
 });
 
 test("the chip is a DRESS: the resting row keeps the row law's own box", () => {
-  // round 1 wore the negative margin at rest, widening the quiet list's
-  // separator ~16px - "at rest the hairline is untouched" is literal
   const restRule = listSrc.match(/\.registry-list\.feel-sessions \.registry-row \{[^}]*\}/);
   assert.ok(restRule, "the rest rule exists");
   for (const decl of ["margin:", "padding:", "border-radius:"]) {
@@ -164,7 +157,6 @@ test("the chip is a DRESS: the resting row keeps the row law's own box", () => {
       `rest must not carry ${decl.trim()}`,
     );
   }
-  // the raise is where the geometry lives
   const raise = listSrc.slice(
     listSrc.indexOf(".registry-list.feel-sessions .registry-row:hover,"),
     listSrc.indexOf(".registry-list.feel-sessions .registry-row:hover:not("),
@@ -181,7 +173,6 @@ test("the active row is the open one: raised surface, accent name", () => {
     /\.registry-row\.reg-row-active \.reg-row-name \{\n\s*color: var\(--accent\)/,
     "the open row's name is the accent at rest, not only on hover",
   );
-  // and the panel feeds it from the shell's focused session
   assert.match(panelSrc, /:active-name="activeAgentName"/, "the panel passes the open agent");
   assert.match(
     panelSrc,
@@ -190,7 +181,7 @@ test("the active row is the open one: raised surface, accent name", () => {
   );
 });
 
-// --- the expander: the sessions chevron, per consumer ------------------
+// the expander: the sessions chevron, per consumer ---------------
 
 test("the expander glyph is per consumer: text at home, the lucide chevron on request", () => {
   assert.match(listSrc, /expander\?: "text" \| "chevron"/, "a typed glyph choice");
@@ -217,7 +208,7 @@ test("the expander glyph is per consumer: text at home, the lucide chevron on re
   );
 });
 
-// --- the default agent has no toggle at all ----------------------------
+// the default agent has no toggle at all -------------------------
 
 test("the default agent renders NO toggle - the main badge is the reason", () => {
   assert.match(
@@ -240,12 +231,10 @@ test("the default agent renders NO toggle - the main badge is the reason", () =>
     /if \(r\.noToggle\) return;/,
     "and the write path refuses it by another door",
   );
-  // the old locked pill is GONE, not merely unused: no locked aria, no
-  // locked class, no locked branch left to rot
+  // the old locked pill is GONE, not merely unused.
   assert.ok(!listSrc.includes("toggle-locked"), "the dead locked class died");
   assert.ok(!listSrc.includes("locked on"), "the locked aria died with the pill");
   assert.ok(!panelSrc.includes("locked: a.name"), "the row model carries no lock flag");
-  // the badge stays, and now explains the absence
   assert.match(panelSrc, /class="agents-main-badge"/, "the main tag stays");
   assert.match(
     panelSrc,
@@ -259,7 +248,7 @@ test("the default agent renders NO toggle - the main badge is the reason", () =>
   );
 });
 
-// --- the shell -> panel focus seam -------------------------------------
+// the shell -> panel focus seam ----------------------------------
 
 test("the focused-session event spells the same in the shell and the panel", () => {
   assert.equal(FOCUSED_SESSION_EVENT, "omega:focused-session");
@@ -294,10 +283,7 @@ test("the focused-session event spells the same in the shell and the panel", () 
 });
 
 test("the seam has a PULL: a panel that mounts late asks for the id", () => {
-  // The dock renders only the ACTIVE tab's pane slot (DockPane's v-if),
-  // so AgentsPanel unmounts on switch-away and mounts again later - both
-  // pushes above are spent by then. The panel asks; the shell answers
-  // (review round 1, finding 1).
+  // The dock renders only the ACTIVE tab's pane slot (DockPane's v-if),.
   assert.equal(FOCUSED_SESSION_QUERY_EVENT, "omega:query-focused-session");
   assert.match(chatSrc, /FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session"/);
   assert.match(
@@ -305,8 +291,7 @@ test("the seam has a PULL: a panel that mounts late asks for the id", () => {
     /FOCUSED_SESSION_QUERY_EVENT = "omega:query-focused-session"/,
     "the panel copies the literal (module UI imports no shell code)",
   );
-  // the pull is dispatched AFTER the listener is up: the shell answers
-  // synchronously, so an early ask is answered to nobody
+  // the pull is dispatched AFTER the listener is up.
   const mount = panelSrc.slice(
     panelSrc.indexOf("onMounted(() => {"),
     panelSrc.indexOf("onUnmounted(() => {"),
@@ -319,7 +304,6 @@ test("the seam has a PULL: a panel that mounts late asks for the id", () => {
   );
   assert.ok(listen >= 0, "the panel listens on mount");
   assert.ok(ask > listen, "and asks on mount, listener first");
-  // the shell answers with what it is showing right now
   assert.match(
     appSrc,
     /import \{[\s\S]*?FOCUSED_SESSION_QUERY_EVENT,[\s\S]*?\} from "\.\/composables\/chat";/,

@@ -1,9 +1,6 @@
 package continuous
 
-// continuous_test.go: the home machinery self-checks (card t_72ecca67).
-// Folder presence is registration (ruling 2); the canonical chat is one
-// permanent session in the agent's OWN store (rulings 4+6); the roster
-// reads are the only cross-home reads (ruling 5).
+// continuous_test.go: the home machinery self-checks.
 
 import (
 	"context"
@@ -18,8 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// testHome writes a minimal omega home: the main persona files and one
-// scaffolded agent, nothing else. Every test starts here.
+// testHome writes a minimal omega home.
 func testHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
@@ -38,7 +34,6 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 		t.Fatalf("CreateHome: %v", err)
 	}
 	dir := agent.AgentDir(home, "scout")
-	// The scaffold: config/, data/, skills/ (ruling 1).
 	for _, sub := range []string{"config", "data", "skills"} {
 		if fi, err := os.Stat(filepath.Join(dir, sub)); err != nil || !fi.IsDir() {
 			t.Errorf("agent home missing %s/", sub)
@@ -52,7 +47,6 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if !strings.Contains(string(data), "system_prompt") || !strings.Contains(string(data), "patrol the journals") {
 		t.Errorf("directive not seeded as system_prompt:\n%s", data)
 	}
-	// The schedule rides the agent's own crons.yaml (rulings 12+15).
 	crons, err := os.ReadFile(filepath.Join(dir, "config", "crons.yaml"))
 	if err != nil {
 		t.Fatalf("wake schedule: %v", err)
@@ -60,9 +54,7 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if !strings.Contains(string(crons), "17 * * * *") {
 		t.Errorf("schedule not seeded:\n%s", crons)
 	}
-	// The canonical chat exists in the agent's OWN store (ruling 6),
-	// bound to the agent, under the home's OWN id (card t_5df01d0f:
-	// agent-qualified, so two homes' chats are two ids).
+	// The canonical chat exists in the agent's OWN store, bound to the agent,.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		t.Fatalf("agent store: %v", err)
@@ -80,16 +72,13 @@ func TestCreateHomeScaffoldsAndSeeds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("canonical chat agent = %q, want scout", sess.Agent)
 	}
-	// The row /new reads must be MACHINE-OWNED: handleSessionNew
-	// (agent/api) folds exactly when it is, and answers "fork" otherwise
-	// - which forks the agent relationship (ruling 2) on the create path
-	// every scaffold-created agent takes.
+	// The row /new reads must be MACHINE-OWNED: handleSessionNew (agent/api) folds exactly
+	// when it is, and answers "fork" otherwise - which forks the agent relationship on the
+	// create path every scaffold-created agent takes.
 	if !sess.MachineOwned {
 		t.Error("the seeded canonical chat is not machine-owned - /new would fork the relationship instead of compacting it")
 	}
-	// The bare id never exists in an agent home: it is the id the
-	// daemon's own store answers, and a second copy of it in a home is
-	// the collision this card fixes.
+	// The bare id never exists in an agent home.
 	if _, err := st.GetSession(ctx, CanonicalSessionID); err == nil {
 		t.Error("agent home carries the BARE canonical id - two homes would collide again")
 	}
@@ -109,8 +98,7 @@ func TestCreateHomeTwiceIsAnError(t *testing.T) {
 
 func TestRosterSkipsMainAndShowsWakes(t *testing.T) {
 	home := testHome(t)
-	// Pre-migration residue: agents/default dies in the move (ruling 3)
-	// and must never come back as a roster row.
+	// Pre-migration residue: agents/default dies in the move and must never come back.
 	if err := os.MkdirAll(filepath.Join(home, "agents", "default"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -125,8 +113,6 @@ func TestRosterSkipsMainAndShowsWakes(t *testing.T) {
 	if rows[0].Name != "scout" || !rows[0].Continuous {
 		t.Errorf("row = %+v", rows[0])
 	}
-	// Empty home: no rows at all under an agents/ dir holding nothing
-	// but the dead default.
 	m2 := NewMachine(home, Default())
 	if rows := m2.Roster(); len(rows) != 1 || rows[0].Name != "scout" {
 		t.Errorf("after default residue, roster rows = %v", rows)
@@ -134,12 +120,11 @@ func TestRosterSkipsMainAndShowsWakes(t *testing.T) {
 	_ = m2
 }
 
-// TestCurrentCanonicalPicksTheHighestGenerationOnASecondTie pins the
-// same-second tie-break: the store writes ISO stamps with second
-// resolution, so two generations minted inside one second resolve by
-// the generation NUMBER, never by the id string ("-10" sorts before
-// "-2"). Archived generations never win, and a non-canonical id that
-// merely starts with the base never competes.
+// TestCurrentCanonicalPicksTheHighestGenerationOnASecondTie pins the same-second
+// tie-break: the store writes ISO stamps with second resolution, so two generations
+// minted inside one second resolve by the generation NUMBER, never by the id string
+// ("-10" sorts before "-2"). Archived generations never win, and a non-canonical id
+// that merely starts with the base never competes.
 func TestCurrentCanonicalPicksTheHighestGenerationOnASecondTie(t *testing.T) {
 	at := "2026-11-17T10:00:00Z"
 	rows := []core.Session{
@@ -173,8 +158,6 @@ func TestCanonicalPreviewUnreadFlow(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), storeTimeout)
 	defer cancel()
-	// First the report (assistant) lands - the wake ran while the human
-	// slept. Unread because last_read_at is empty.
 	id := CanonicalSessionIDFor("scout")
 	if err := st.AppendMessage(ctx, id, core.Assistant{Content: "patrol complete, 0 anomalies"}); err != nil {
 		t.Fatalf("append report: %v", err)
@@ -190,7 +173,6 @@ func TestCanonicalPreviewUnreadFlow(t *testing.T) {
 	if at == "" {
 		t.Error("empty report timestamp")
 	}
-	// The webui chat view marks it read; the roster clears the flag.
 	if _, err := m.CanonicalChat("scout"); err != nil {
 		t.Fatalf("CanonicalChat: %v", err)
 	}

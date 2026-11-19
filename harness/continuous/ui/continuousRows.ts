@@ -1,13 +1,5 @@
-// continuousRows.ts: the pure view-model helpers for the continuous
-// roster pane (card t_72ecca67, ruling 18). Render-free; every function
-// is unit-tested in webui/test/continuous.test.ts. card t_617c2ad0: the
-// continuous capsule owns this file (harness/continuous/ui/) - the
-// merged Agents tab (shell-owned) imports the row model from here, so
-// removing the capsule is visible in the shell's own imports.
+// continuousRows.ts: the pure view-model helpers for the continuous roster pane.
 
-// OmegaContinuousRow is one roster payload row (GET /continuous/roster):
-// the agent profile facts plus the wake state (rulings 5, 10, 18) - the
-// last report preview, when it landed, the next wake, the unread flag.
 export interface OmegaContinuousRow {
   name: string;
   description?: string;
@@ -23,9 +15,7 @@ export interface OmegaContinuousRow {
   unread: boolean;
 }
 
-// OmegaEvidenceRow is one ledger row (GET /continuous/{name}/evidence):
-// ruling 11's runtime-owned record - tool, args hash, ok/failed, the
-// cheap verifier's verdict.
+// OmegaEvidenceRow is one ledger row (GET /continuous/{name}/evidence).
 export interface OmegaEvidenceRow {
   id: number;
   ts: string;
@@ -36,16 +26,13 @@ export interface OmegaEvidenceRow {
   verifier?: string;
 }
 
-// OmegaChatMessage is one canonical-chat tail message (the view
-// renders only what the store returned - the tail, not an archive).
+// OmegaChatMessage is one canonical-chat tail message.
 export interface OmegaChatMessage {
   content: string;
   timestamp?: string;
 }
 
-// rowStatus is the list-row status voice: awake (a wake runs), the
-// next scheduled wake, or the quiet sleeper. Nothing is invented: an
-// empty next_wake renders as the sleeper.
+// rowStatus is the list-row status voice.
 export function rowStatus(row: OmegaContinuousRow): string {
   if (row.unread) return "unread report";
   if (row.next_wake) return `next wake ${shortWhen(row.next_wake)}`;
@@ -58,9 +45,7 @@ export function shortWhen(iso: string): string {
   return cut || "-";
 }
 
-// The under-row last-report preview helper is DELETED (card
-// t_2d8deb8c, ruling 3): the row stays a two-line anatomy with the
-// status word, no third line.
+// The under-row last-report preview helper is DELETED.
 
 // evidenceSummary is the detail strip's evidence line: the run's
 // verdict counts in one voice ("4 ok, 1 failed" style), empty when no
@@ -72,8 +57,7 @@ export function evidenceSummary(rows: OmegaEvidenceRow[]): string {
   return failed === 0 ? `${ok} ok` : `${ok} ok, ${failed} failed`;
 }
 
-// verifierVoice renders one row's verifier verdict or a dash (absent
-// verifier = the call carried nothing cheap to check).
+// verifierVoice renders one row's verifier verdict or a dash.
 export function verifierVoice(row: OmegaEvidenceRow): string {
   return row.verifier || "-";
 }

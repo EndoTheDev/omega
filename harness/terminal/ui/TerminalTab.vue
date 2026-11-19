@@ -1,16 +1,5 @@
 <template>
-  <!-- card t_55a3fc4b: the webui Terminal tab - the integrated shell,
-       VS Code-style with zero restrictions (the owner's ruling; no
-       gate, no enable step). card t_617c2ad0: THE TERMINAL CAPSULE'S
-       OWN view (harness/terminal/ui/) - the shell's dock outlet binds
-       it from module-tabs.generated.ts; the registry only opens the
-       tab. One terminal per pane: the pane's session is
-       claimed on mount (the terminal module's POST /terminal/sessions
-       reattaches to the pane's last shell when one idles - the dock
-       unmounts this outlet on sibling activation and the shell keeps
-       running server-side). The output is SSE from
-       /terminal/{id}/stream (the replay tail first), the keystrokes
-       POST /terminal/{id}/input, the pane size POST /terminal/{id}/resize. -->
+  <!-- the webui Terminal tab - the integrated shell, VS Code-style with zero. -->
   <section class="terminal-pane">
     <div class="terminal-toolbar">
       <span class="terminal-state" :class="{ dead }">{{ stateLine }}</span>
@@ -45,16 +34,10 @@
   import { FitAddon } from "@xterm/addon-fit";
   import type { ITheme } from "@xterm/xterm";
 
-  // The shell's spawn workspace follows the focused chat session (card
-  // t_62d72028): the shell starts where the workspace is defined -
-  // the session's pinned folder, else the server's default_workspace,
-  // else the process cwd. The SHELL ONLY reads it at claim time; a
-  // later focus change never re-roots a living shell.
+  // The shell's spawn workspace follows the focused chat session. The SHELL ONLY reads
+  // it at claim time; a later focus change never re-roots a living shell.
   const props = defineProps<{ focusedSession?: string | null }>();
 
-  // the module routes (harness/terminal): claim, stream, input, resize,
-  // kill. The ids are server-minted hex - encodeURIComponent is the
-  // honest form even for them.
   const CLAIM = "/terminal/sessions";
 
   const host = ref<HTMLElement | null>(null);
@@ -89,8 +72,6 @@
     return out;
   }
 
-  /** the pane's xterm palette reads the shell's own tokens - the
-      theme tokens (main.css) ARE the terminal theme. */
   function termTheme(): ITheme {
     const cs = getComputedStyle(document.documentElement);
     const tok = (n: string, fallback: string) =>
@@ -110,14 +91,8 @@
     }
   }
 
-  /** claim the pane's session (reattach-else-spawn server-side).
-      A failure's body is the module's own error text - a platform gap
-      (no pty on this build, a 409 cap, a dead module) names itself,
-      and the pane repeats it verbatim instead of the generic line. */
   async function claim(): Promise<string | null> {
-    // the focused session id rides the claim (never a root!) - the
-    // server resolves the spawn cwd from the session row, the
-    // default_workspace knob, or its own cwd (card t_62d72028).
+    // the focused session id rides the claim (never a root!).
     const url = props.focusedSession
       ? `${CLAIM}?session=${encodeURIComponent(props.focusedSession)}`
       : CLAIM;
@@ -168,15 +143,13 @@
       }
     };
     source.onerror = () => {
-      // EventSource auto-retries the same url; a vanished session
-      // (kill, prune, restart) 404s into the missed path below
+      // EventSource auto-retries the same url.
       if (sessionId.value === id && connectSeq === seq && !dead.value) {
         void reconnect();
       }
     };
   }
 
-  /** a dropped stream: one quiet beat, then re-claim + re-stream. */
   async function reconnect() {
     closeStream();
     if (killed.value) return;
@@ -185,7 +158,6 @@
     await open();
   }
 
-  /** the claim's failure text (the module's error body, see claim()). */
   let claimFail = "";
 
   async function open() {
@@ -200,12 +172,10 @@
     sessionId.value = id;
     dead.value = false;
     stream(id);
-    // the pane's size on (re)attach - after the layout settles
     requestAnimationFrame(() => void resize());
   }
 
-  /** keystrokes ride POST .../input as raw frame bodies (control
-     chars are data; JSON would quote them into ambiguity). */
+  /** keystrokes ride POST./input as raw frame bodies (control chars are data. */
   async function input(s: string) {
     const id = sessionId.value;
     if (!id || dead.value) return;
@@ -269,8 +239,7 @@
   });
 
   onBeforeUnmount(() => {
-    // the outlet unmount unbinds the SSE, never the SHELL - the pty
-    // idles server-side and the remount reattaches with its replay
+    // the outlet unmount unbinds the SSE, never the SHELL.
     killed.value = false;
     connectSeq++;
     observer?.disconnect();
@@ -286,14 +255,6 @@
     flex-direction: column;
     height: 100%;
     min-height: 120px;
-    /* card t_5b269761: the flex shrink guard. The pane is a `.pane` (flex: 1)
-       inside `.dock-content`, so without a min-width of its own its AUTOMATIC
-       MINIMUM is the xterm's min-content width - the 78-column grid the
-       FitAddon last fitted (624px). The pane then refuses to shrink below
-       that, the xterm (638px wide in a 220px pane) paints OVER the
-       terminal->files divider, and the divider is dead for the whole band it
-       covers. overflow: hidden clips the pre-refit grid so the divider is
-       reachable even on the frame before fit() runs. */
     min-width: 0;
     overflow: hidden;
     background: var(--z1, #1a1a1c);
@@ -326,10 +287,6 @@
   .terminal-host {
     flex: 1 1 auto;
     min-height: 0;
-    /* card t_5b269761: the same guard one level down - the host reports the
-       pane's real inner width (the ResizeObserver refit's input) instead of
-       stretching to the grid it contains, and clips the stale grid until the
-       fit lands. */
     min-width: 0;
     overflow: hidden;
     padding: 4px 6px;

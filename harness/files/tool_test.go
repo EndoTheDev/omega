@@ -9,10 +9,7 @@ import (
 	"testing"
 )
 
-// TestDottedWirePin pins the split's registry shape (t_d8fbad57):
-// exactly the four dotted files tools, the flat `files` tool and its
-// alias shims gone, each required list its own and no action property
-// anywhere - the verb IS the tool name.
+// TestDottedWirePin pins the split's registry shape: exactly the four dotted files.
 func TestDottedWirePin(t *testing.T) {
 	p := &FileProvider{}
 	tools := p.Tools()
@@ -58,8 +55,7 @@ func TestDottedWirePin(t *testing.T) {
 	}
 }
 
-// TestDottedVerbsCoverAllBehaviors is the reachability gate: every
-// pre-split verb's behavior is reachable through its own dotted tool.
+// TestDottedVerbsCoverAllBehaviors is the reachability gate.
 func TestDottedVerbsCoverAllBehaviors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
@@ -67,16 +63,13 @@ func TestDottedVerbsCoverAllBehaviors(t *testing.T) {
 	p := &FileProvider{}
 	tools := p.Tools()
 
-	// write
 	if _, err := tools["files.write"].Run(context.Background(), map[string]any{"path": path, "content": "alpha\nbeta\n"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	// read
 	out, err := tools["files.read"].Run(context.Background(), map[string]any{"path": path})
 	if err != nil || !strings.Contains(out, "1|alpha") {
 		t.Fatalf("read: %q %v", out, err)
 	}
-	// edit
 	if _, err := tools["files.edit"].Run(context.Background(), map[string]any{"path": path, "old_string": "beta", "new_string": "gamma"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -86,9 +79,8 @@ func TestDottedVerbsCoverAllBehaviors(t *testing.T) {
 	}
 }
 
-// TestRunFilesBatchAtomicRollback is the atomicity gate: a batch whose
-// second write fails leaves the first write rolled back. Multi-file
-// writes are truly atomic - a half-applied batch is impossible.
+// TestRunFilesBatchAtomicRollback is the atomicity gate. Multi-file writes are truly
+// atomic - a half-applied batch is impossible.
 func TestRunFilesBatchAtomicRollback(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "exists.txt")
@@ -118,8 +110,7 @@ func TestRunFilesBatchAtomicRollback(t *testing.T) {
 	}
 }
 
-// TestRunFilesBatchSuccess covers the happy path: both ops apply and
-// the result summarises each.
+// TestRunFilesBatchSuccess covers the happy path.
 func TestRunFilesBatchSuccess(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.txt")

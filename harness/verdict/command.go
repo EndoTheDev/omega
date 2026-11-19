@@ -1,10 +1,6 @@
 package verdict
 
-// Module-owned command surface (card t_0744eb8e): /verdict belongs to
-// the verdict module and rides the extension command seam - the CLI
-// loop dispatches it when idle, the busy-time answer path goes through
-// AnswerInline. The webui answers cards in the pane; no storage or
-// seam is reimplemented here.
+// Module-owned command surface.
 
 import (
 	"context"
@@ -15,20 +11,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// verdictHandler serves the /verdict extension command:
-//
-//	/verdict            list every pending card (oldest first), numbered
-//	/verdict N          pick one to answer: prints the card and its options
-//	/verdict N 2        answer card N with option number 2
-//	/verdict N 1,3      answer a multi card with options 1 and 3
-//	/verdict N y        y/n shortcuts map to the first two options
-//	/verdict N skip     record a skip
-//	/verdict N <text>   free text (only when the card allows it)
-//
-// A foreign name is a chain MISS: the command seam's wrapper falls
-// through to the next module only on an error, so this handler answers
-// /verdict alone (card t_d923b50a - an unconditional answer here
-// swallowed every command registered earlier in the chain).
+// verdictHandler serves the /verdict extension command.
 func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/verdict" {
@@ -51,7 +34,6 @@ func verdictHandler(p *Plugin) func(context.Context, string, string) (core.Comma
 		}
 		card := cards[idx-1]
 
-		// Select-only: print the card so the next command can answer it.
 		if len(parts) == 1 {
 			return core.CommandResult{
 				Text: "card " + strconv.Itoa(idx) + ": " + formatCard(card) +
@@ -103,8 +85,6 @@ func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionA
 		}
 		return core.QuestionAnswer{OptionIndex: 2, Option: card.Options[1].Label}, nil
 	}
-	// a multi card takes a comma-separated pick list ("1,3"); a lone
-	// number ("2") is the one-row multi-select.
 	if card.Multi {
 		if ixs, err := parseOptionIndexes(tok); err == nil {
 			labels := make([]string, 0, len(ixs))
@@ -128,10 +108,7 @@ func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionA
 	return core.QuestionAnswer{Text: tok}, nil
 }
 
-// parseOptionIndexes parses a comma-separated pick list ("1,3"). It
-// returns an error when any token is not an option number, so a
-// malformed multi answer falls through to the free-text path with a
-// clear rejection rather than a partial pick.
+// parseOptionIndexes parses a comma-separated pick list ("1,3").
 func parseOptionIndexes(tok string) ([]int, error) {
 	fields := strings.Split(tok, ",")
 	ixs := make([]int, 0, len(fields))

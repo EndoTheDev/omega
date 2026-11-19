@@ -9,9 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// countingCaptioner implements core.Captioner by returning a fixed caption
-// per call and counting them, so tests can assert the once-per-image
-// discipline.
+// countingCaptioner implements core.Captioner by returning a fixed caption per call.
 type countingCaptioner struct {
 	calls   int
 	caption string
@@ -23,9 +21,7 @@ func (c *countingCaptioner) Caption(ctx context.Context, img core.ImageContent) 
 	return c.caption, c.err
 }
 
-// recordingLoop is a LoopProvider that captures the messages it was
-// handed and streams one assistant response, so tests can inspect what
-// the loop would send to the main model.
+// recordingLoop is a LoopProvider that captures the messages it was handed.
 type recordingLoop struct {
 	messages   []core.Message
 	streamCall bool
@@ -48,9 +44,7 @@ func (l *recordingLoop) Run(ctx context.Context, opts LoopOptions) error {
 	return nil
 }
 
-// capsFakeProvider is a FakeProvider that also answers the capability
-// upgrade (ModelCapabilitiesProvider) - the shape harness/provider
-// implements against the ollama /api/tags "capabilities" array.
+// capsFakeProvider is a FakeProvider that also answers the capability upgrade.
 type capsFakeProvider struct {
 	*FakeProvider
 	entries []core.ModelEntry
@@ -61,9 +55,7 @@ func (p *capsFakeProvider) ListModelEntries() ([]core.ModelEntry, error) {
 	return p.entries, p.err
 }
 
-// WithModel keeps the capability upgrade on the derived copy: the
-// production provider copies its whole struct through WithModel and
-// the shell hands that per-run copy to RunWithProvider.
+// WithModel keeps the capability upgrade on the derived copy.
 func (p *capsFakeProvider) WithModel(model string) Provider {
 	cp := *p
 	cp.FakeProvider = p.FakeProvider.WithModel(model).(*FakeProvider)
@@ -77,8 +69,7 @@ func imageUserMessage(content string) core.User {
 	})
 }
 
-// runOnce drives one RunWithProvider to completion and returns the
-// terminal event.
+// runOnce drives one RunWithProvider to completion and returns the terminal event.
 func runOnce(t *testing.T, ag *Agent, messages []core.Message) (core.AgentEnd, *recordingLoop) {
 	t.Helper()
 	loop := &recordingLoop{}
@@ -92,10 +83,9 @@ func runOnce(t *testing.T, ag *Agent, messages []core.Message) (core.AgentEnd, *
 	return end, loop
 }
 
-// The gate: caption-once, then the main model reasons over captions -
-// the loop-visible copy carries "[image: ...]" and no binary images,
-// while the caller's original message keeps its images untouched
-// (channels persist and re-render the originals).
+// The gate: caption-once, then the main model reasons over captions - the loop-visible
+// copy carries "[image:.]" and no binary images, while the caller's original message
+// keeps its images untouched (channels persist and re-render the originals).
 func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
@@ -113,7 +103,6 @@ func TestRunCaptionsImagesBeforeLoop(t *testing.T) {
 		t.Fatalf("captioner calls = %d, want 1", captioner.calls)
 	}
 
-	// The loop-visible copy: no images, caption as text.
 	if len(loop.messages) != 1 {
 		t.Fatalf("loop messages = %d, want 1", len(loop.messages))
 	}
@@ -151,9 +140,7 @@ func TestRunTextOnlySkipsCaptioner(t *testing.T) {
 	}
 }
 
-// vision_model IS set (a captioner installed) but the captioner fails:
-// the run ends with a LOUD, captioner-attributed error before any
-// streaming - not a provider 400 about unseen pixels.
+// vision_model IS set (a captioner installed) but the captioner fails.
 func TestRunCaptionFailureEndsRun(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -171,9 +158,8 @@ func TestRunCaptionFailureEndsRun(t *testing.T) {
 	}
 }
 
-// The loud-400 fallback: vision_model unset (no captioner) means today's
-// behavior, byte for byte - images ride to the main provider, which
-// surfaces its own refusal.
+// The loud-400 fallback: vision_model unset (no captioner) means today's behavior, byte
+// for byte.
 func TestRunNoCaptionerKeepsImages(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("main", []core.ProviderStreamEvent{
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "model does not support images (400)"},
@@ -188,9 +174,7 @@ func TestRunNoCaptionerKeepsImages(t *testing.T) {
 	}
 }
 
-// visionRegistry builds a capability-carrying provider whose listing
-// marks the named model vision-capable - the shape the keypool mirror
-// answers for an ollama-family catalog.
+// visionRegistry builds a capability-carrying provider whose listing marks the named.
 func visionRegistry(model string, vision bool) *capsFakeProvider {
 	caps := []string{"completion", "tools", "thinking"}
 	if vision {
@@ -207,9 +191,7 @@ func visionRegistry(model string, vision bool) *capsFakeProvider {
 	}
 }
 
-// runOnceOn drives one RunWithProvider on the given provider to
-// completion - the shape the shell uses when it hands the per-run
-// model copy to the agent.
+// runOnceOn drives one RunWithProvider on the given provider to completion.
 func runOnceOn(t *testing.T, ag *Agent, p Provider, messages []core.Message) (core.AgentEnd, *recordingLoop) {
 	t.Helper()
 	loop := &recordingLoop{}
@@ -223,11 +205,10 @@ func runOnceOn(t *testing.T, ag *Agent, p Provider, messages []core.Message) (co
 	return end, loop
 }
 
-// The gate: a vision-capable SELECTED main model receives the pixels
-// itself - the auxiliary caption hop never runs, so the image is
-// processed once (one provider stream, zero captioner calls), not
-// twice. The per-run copy is derived through WithModel exactly as the
-// shell derives it.
+// The gate: a vision-capable SELECTED main model receives the pixels itself - the
+// auxiliary caption hop never runs, so the image is processed once (one provider
+// stream, zero captioner calls), not twice. The per-run copy is derived through
+// WithModel exactly as the shell derives it.
 func TestRunVisionMainModelSkipsCaptionHop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
 	captioner := &countingCaptioner{caption: "unused"}
@@ -260,9 +241,7 @@ func TestRunVisionMainModelSkipsCaptionHop(t *testing.T) {
 	}
 }
 
-// Regression: a main model the registry does NOT mark vision-capable
-// keeps today's aux behavior - one caption per image, the loop sees
-// the description and no binary.
+// Regression: a main model the registry does NOT mark vision-capable keeps.
 func TestRunBlindMainModelKeepsCaptionHop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
 	captioner := &countingCaptioner{caption: "an 8x8 solid red square"}
@@ -285,9 +264,8 @@ func TestRunBlindMainModelKeepsCaptionHop(t *testing.T) {
 	}
 }
 
-// A capability listing that fails leaves the aux hop in place - the
-// pre-existing behavior, never an image turn that silently skips the
-// caption for a blind model.
+// A capability listing that fails leaves the aux hop in place - the pre-existing
+// behavior, never an image turn that silently skips the caption for a blind model.
 func TestRunCapabilityListingFailureKeepsCaptionHop(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("blind-model"), nil, 0)
 	captioner := &countingCaptioner{caption: "described"}
@@ -304,9 +282,7 @@ func TestRunCapabilityListingFailureKeepsCaptionHop(t *testing.T) {
 	}
 }
 
-// modelRecordingCaptioner records the model of the run provider each
-// caption call saw on the context - the stamp the "default" aux lane
-// resolves against.
+// modelRecordingCaptioner records the model of the run provider each caption call saw.
 type modelRecordingCaptioner struct{ models []string }
 
 func (c *modelRecordingCaptioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
@@ -318,11 +294,8 @@ func (c *modelRecordingCaptioner) Caption(ctx context.Context, img core.ImageCon
 	return "described", nil
 }
 
-// The run stamps the model it serves for the auxiliary lane (card
-// t_df46c8cf): Run carries the agent's own model, RunWithProvider the
-// per-request copy the channel derived from the composer's chip. The
-// "default" vision lane follows exactly that stamp - no config write, no
-// value frozen at save time.
+// The run stamps the model it serves for the auxiliary lane. The "default" vision lane
+// follows exactly that stamp - no config write, no value frozen at save time.
 func TestRunStampsMainModelForAuxLanes(t *testing.T) {
 	ag := NewAgent(NewFakeProvider("model-a"), nil, 0)
 	captioner := &modelRecordingCaptioner{}
@@ -331,7 +304,6 @@ func TestRunStampsMainModelForAuxLanes(t *testing.T) {
 	if end, _ := runOnce(t, ag, []core.Message{imageUserMessage("one")}); end.Error != "" {
 		t.Fatalf("first run ended with error: %s", end.Error)
 	}
-	// The chip switched to model B: the channel hands the run a copy.
 	if end, _ := runOnceOn(t, ag, ag.Provider().WithModel("model-b"), []core.Message{imageUserMessage("two")}); end.Error != "" {
 		t.Fatalf("second run ended with error: %s", end.Error)
 	}

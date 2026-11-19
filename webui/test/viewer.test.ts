@@ -1,8 +1,6 @@
-// omega webui: the content viewer (card t_36ceb99b) - a skill row click /
-// a file tree click opens a main-pane viewer tab. The suite pins the
-// contract half (registry entry, tab payload, focus-reuse, persistence)
-// and the structural wiring (ViewerTab fetches, the openers, the module
-// event seam literal). Run: node --test test/viewer.test.ts
+// omega webui: the content viewer. The suite pins the contract half (registry entry,
+// tab payload, focus-reuse, persistence) and the structural wiring (ViewerTab fetches,
+// the openers, the module event seam literal).
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -44,7 +42,7 @@ const repo = fileURLToPath(new URL("../../", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 const readRepo = (rel: string) => readFileSync(`${repo}${rel}`, "utf8");
 
-// --- helpers -----------------------------------------------------------------
+// helpers --------------------------------------------------------------
 
 function asSplit(n: DockNode): DockNode {
   assert.equal(n.kind, "split");
@@ -64,7 +62,7 @@ const fileRef = (name = "README.md"): ViewerRef => ({ kind: "file", name });
 const skillRef = (name = "worker-onboarding"): ViewerRef => ({ kind: "skill", name });
 const dirRef = (name = "artifacts_mmo"): ViewerRef => ({ kind: "dir", name });
 
-// --- the registry contract -----------------------------------------------------
+// the registry contract --------------------------------------------------
 
 describe("the viewer dockable (t_36ceb99b)", () => {
   it("registers: multi, main-area, closable, iconset-named icon", () => {
@@ -74,8 +72,7 @@ describe("the viewer dockable (t_36ceb99b)", () => {
     assert.equal(d.policy, "multi");
     assert.equal(d.area, "main");
     assert.equal(d.closable, true);
-    // the fallback icon is a NAME in the iconset (the iconset test pins
-    // the union; here the vocabulary membership is re-read directly)
+    // the fallback icon is a NAME in the iconset.
     const icons = read("app/composables/icons.ts");
     assert.match(icons, /"file-text":/, "the fallback icon is vocabulary");
     assert.match(icons, /skills:/, "the skill-chip icon is vocabulary");
@@ -88,7 +85,7 @@ describe("the viewer dockable (t_36ceb99b)", () => {
   });
 });
 
-// --- the payload + focus-reuse ---------------------------------------------------
+// the payload + focus-reuse ------------------------------------------------
 
 describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
   it("validViewerRef: the three kinds with a non-empty name; everything else invalid", () => {
@@ -151,7 +148,7 @@ describe("the viewer tab payload (focus-reuse, t_36ceb99b fix 4)", () => {
   });
 });
 
-// --- persistence -----------------------------------------------------------------
+// persistence --------------------------------------------------------------
 
 describe("the viewer payload persists (card 3's tab record laws)", () => {
   const viewerTree = (): DockNode => {
@@ -188,7 +185,6 @@ describe("the viewer payload persists (card 3's tab record laws)", () => {
     };
     assert.ok(corrupt(rec.tree), "the fixture hit the tab");
     assert.equal(deserializeLayout(JSON.stringify(rec)), null, "the strict reader refuses");
-    // the tolerant reader repairs: a receipt, the tab dropped
     const total = parseAnyLayout(JSON.stringify(rec), () => viewerTree());
     assert.ok(
       total.repairs.includes("a viewer tab's unreadable payload dropped the tab"),
@@ -202,13 +198,11 @@ describe("the viewer payload persists (card 3's tab record laws)", () => {
     assert.equal(viewerTabTitle(fileRef("notes.txt")), "notes.txt");
     assert.equal(viewerTabTitle(skillRef("worker-onboarding")), "worker-onboarding");
     assert.equal(viewerTabTitle(fileRef("")), "");
-    // a folder tab is named by its last segment (t_c3fe4ea6)
     assert.equal(viewerTabTitle(dirRef("artifacts_mmo")), "artifacts_mmo");
     assert.equal(viewerTabTitle(dirRef("docs/deep")), "deep");
   });
 
-  // t_c3fe4ea6: a folder ref opens a folder TAB - its own listing,
-  // drilled from /files/browse, with rows that open the child refs.
+  // a folder ref opens a folder TAB.
   it("a dir ref mints its own viewer tab (focus-reuse, never a file tab)", () => {
     const pane = makePane("chat", null);
     const first = openViewerTab(pane, dirRef("artifacts_mmo"), pane.id);
@@ -222,7 +216,7 @@ describe("the viewer payload persists (card 3's tab record laws)", () => {
   });
 });
 
-// --- the wiring (structural pins, no DOM - the filestoolbar recipe) --------------
+// the wiring (structural pins, no DOM - the filestoolbar recipe) -----------
 
 describe("the viewer wiring contracts", () => {
   const app = read("app/app.vue");
@@ -242,8 +236,6 @@ describe("the viewer wiring contracts", () => {
     assert.match(viewer, /viewer-skill-desc/, "the skill's description line");
   });
 
-  // t_c3fe4ea6: the folder body - the third viewer kind. The listing is
-  // /files/browse (the tree's own read), rows open the child refs.
   it("ViewerTab hosts a folder body: browse rows that open child refs", () => {
     assert.match(viewer, /fetchFilesBrowse\(/, "the folder tab lists /files/browse");
     assert.match(viewer, /class="viewer-dir"/, "the folder body");
@@ -276,7 +268,6 @@ describe("the viewer wiring contracts", () => {
     assert.ok(!filesTab.includes("preview-body"), "no inline preview body");
     assert.ok(!filesTab.includes("fetchFilesRead"), "the inline fetch is retired");
     assert.match(filesTab, /DOCK_VIEWER_OPEN_KEY/, "the opener seam is injected");
-    // (not a /\?\(/ regex: this Node's V8 refuses that escape pair)
     assert.ok(
       filesTab.includes('openViewerRef?.({ kind: "file", name: path } satisfies ViewerRef)'),
       "a file click hands the ref to the opener",
@@ -293,7 +284,6 @@ describe("the viewer wiring contracts", () => {
   it("the module->shell event literal is copied IDENTICALLY (the narrowing.ts copy law)", () => {
     assert.match(viewerComposable, /VIEWER_OPEN_EVENT = "omega:open-viewer"/);
     assert.match(skillsList, /VIEWER_OPEN_EVENT = "omega:open-viewer"/);
-    // the dispatch shape: { kind: "skill", name }
     assert.match(
       skillsList,
       /CustomEvent\(VIEWER_OPEN_EVENT,\s*\{\s*detail: \{ kind: "skill", name: r\.name \}/,
@@ -301,7 +291,7 @@ describe("the viewer wiring contracts", () => {
   });
 });
 
-// --- the fetch wire ----------------------------------------------------------------
+// the fetch wire -------------------------------------------------------------
 
 describe("fetchSkillContent wire", () => {
   let savedFetch: typeof globalThis.fetch;
@@ -337,6 +327,4 @@ describe("fetchSkillContent wire", () => {
   });
 });
 
-// nextNodeId is imported to keep the tree helpers honest - a lint guard
-// that the minting path is what the tests exercised above
 void nextNodeId;

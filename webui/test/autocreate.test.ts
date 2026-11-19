@@ -1,11 +1,4 @@
-// omega webui: unit tests for the auto-create contract (Endo
-// 2026-10-18: POST /chat without session_id IS a new session, the
-// create-then-send dance is dead). Covers the wire half (omega.ts:
-// bare body, the leading `event: session` frame names the created id)
-// and the host half (chat.ts submit binds the arriving id onto the
-// state + the dock tree; the conversation itself paints through the
-// canvas chat panel's deltas - no transcript is built here).
-// Run: node --test test/
+// omega webui: unit tests for the auto-create contract.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -134,7 +127,6 @@ describe("chat host: auto-create bind half", () => {
     const st = host.states.get("c1")!;
     assert.equal(st.sessionId, "sess-created", "the state binds the created id");
     assert.deepEqual(bound, [["c1", "sess-created"]], "the dock tree binds it too");
-    // the canvas panel paints the conversation - the host builds none
     assert.equal(st.restored.length, 0);
   });
 

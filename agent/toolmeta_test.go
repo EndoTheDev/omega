@@ -76,12 +76,10 @@ func TestSchemaParametersDerivesActionEnum(t *testing.T) {
 	if action["description"] != "What to do." {
 		t.Fatalf("action description lost: %v", action["description"])
 	}
-	// Sibling properties are untouched.
 	target := got["properties"].(map[string]any)["target"].(map[string]any)
 	if !reflect.DeepEqual(target["enum"], []string{"memory", "user"}) {
 		t.Fatalf("sibling property mutated: %v", target)
 	}
-	// The original schema is not mutated.
 	orig := tool.Parameters["properties"].(map[string]any)["action"].(map[string]any)
 	origEnum, _ := orig["enum"].([]string)
 	if len(origEnum) != 4 {
@@ -89,9 +87,7 @@ func TestSchemaParametersDerivesActionEnum(t *testing.T) {
 	}
 }
 
-// TestSchemaParametersInjectsActionProperty covers a domain tool that
-// declares Actions but forgot the property in its schema: the enum is
-// still derived, the property appears.
+// TestSchemaParametersInjectsActionProperty covers a domain tool that declares.
 func TestSchemaParametersInjectsActionProperty(t *testing.T) {
 	tool := core.Tool{
 		Actions:    []core.ToolAction{{Name: "task"}, {Name: "status"}},
@@ -110,8 +106,7 @@ func TestSchemaParametersInjectsActionProperty(t *testing.T) {
 	}
 }
 
-// TestSchemaParametersPassthrough covers plain tools: the schema map is
-// returned untouched when no Actions are declared.
+// TestSchemaParametersPassthrough covers plain tools.
 func TestSchemaParametersPassthrough(t *testing.T) {
 	params := map[string]any{"type": "object", "properties": map[string]any{"command": map[string]any{"type": "string"}}}
 	tool := core.Tool{Parameters: params}
@@ -124,10 +119,7 @@ func TestSchemaParametersPassthrough(t *testing.T) {
 	}
 }
 
-// TestMountAllAliasesHiddenFromInventory pins the alias contract:
-// compat-shim entries stay registered (the model can still call them)
-// but the extension metadata - prompt, /extensions, /tools - shows only
-// the folded tool.
+// TestMountAllAliasesHiddenFromInventory pins the alias contract.
 func TestMountAllAliasesHiddenFromInventory(t *testing.T) {
 	ctx := &Context{Configs: map[string]any{}}
 	p := fakeMountPlugin{

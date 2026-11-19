@@ -1,9 +1,4 @@
-// Terminal module tests (card t_55a3fc4b): the store laws (claim
-// reattach, the cap, the orphan prune, the lifecycle stop), the route
-// surface through the real mux (the wire shapes the webui's Terminal
-// tab rides - claim, replay+live SSE stream, input, resize, kill),
-// and the pty seam on this machine (a real shell on a real pty pair,
-// skipped on boxes without /dev/ptmx).
+// Terminal module tests: the store laws.
 package terminal
 
 import (
@@ -26,9 +21,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeProc is the pipe-backed process: Read/Write are real pipes (the
-// blocking semantics the session loops expect), Done/Kill/ExitCode
-// are the test's hand on the child.
+// fakeProc is the pipe-backed process: Read/Write are real pipes.
 type fakeProc struct {
 	read    *os.File
 	write   *os.File
@@ -38,17 +31,14 @@ type fakeProc struct {
 	closed  bool
 	code    int
 	kills   int
-	// inFlight counts ops announced on the pipes under mu - the read
-	// close handshake, the fake's mirror of ptyProcess.closeMaster. The
-	// FIRST shape here announced reads in a WaitGroup and Kill waited
-	// it out before closing the read handle; that was the linux -race
-	// red this card is about (the WaitGroup law: a positive Add at
-	// counter zero must happen BEFORE the Wait, and the readLoop's Add
-	// had no happens-before edge to Kill's Wait - the detector pairs
-	// Add's first-increment read of wg.sema against Wait's first-waiter
-	// write). The owned close has no announce/wait pair at all: the
-	// closer and the parked reader are ordered by the counter under
-	// mu, never by a WaitGroup.
+	// inFlight counts ops announced on the pipes under mu. The FIRST shape here announced
+	// reads in a WaitGroup and Kill waited it out before closing the read handle; that was
+	// the linux -race red this card is about (the WaitGroup law: a positive Add at counter
+	// zero must happen BEFORE the Wait, and the readLoop's Add had no happens-before edge
+	// to Kill's Wait - the detector pairs Add's first-increment read of wg.sema against
+	// Wait's first-waiter write). The owned close has no announce/wait pair at all: the
+	// closer and the parked reader are ordered by the counter under mu, never by a
+	// WaitGroup.
 	inFlight int
 }
 
@@ -72,8 +62,7 @@ func (f *fakeProc) enter() bool {
 	return true
 }
 
-// leave settles one op; the last op out after a close request owns
-// the read handle's close.
+// leave settles one op; the last op out after a close request owns the read.
 func (f *fakeProc) leave() {
 	f.mu.Lock()
 	f.inFlight--
@@ -109,14 +98,11 @@ func (f *fakeProc) Resize(rows, cols uint16) error {
 
 func (f *fakeProc) Done() <-chan struct{} { return f.done }
 
-// Kill takes the shell down with the REAL pty shape (pty_linux.go:
-// Kill routes the master's close through the handshake): the write
-// end closes now - its EOF is what breaks the parked read, so the
-// read handle NEVER closes behind a pending read (posix
-// close-unblocks-reader; windows does not - closing an os.File behind
-// a still-pending pipe Read hung a full-suite run there to the 10m
-// alarm). The read end closes now only when no op is parked on it,
-// else the last op out closes it on its way home.
+// Kill takes the shell down with the REAL pty shape (pty_linux.go: Kill routes the
+// master's close through the handshake): the write end closes now - its EOF is what
+// breaks the parked read, so the read handle NEVER closes behind a pending read (posix
+// close-unblocks-reader; windows does not - closing an os.File behind a still-pending
+// pipe Read hung a full-suite run there to the 10m alarm).
 func (f *fakeProc) Kill() error {
 	f.kills++
 	f.mu.Lock()
@@ -136,9 +122,7 @@ func (f *fakeProc) Close() error {
 	return nil
 }
 
-// closePipes retires the pipe pair: the write end now, the read end
-// through the handshake (idle closes now, else the last op out owns
-// it). Idempotent.
+// closePipes retires the pipe pair. Idempotent.
 func (f *fakeProc) closePipes() {
 	f.mu.Lock()
 	if f.closed {
@@ -156,8 +140,7 @@ func (f *fakeProc) closePipes() {
 
 func (f *fakeProc) ExitCode() int { return f.code }
 
-// exit completes the fake's life the way a real child departing on
-// its own reports (code first, then the reap fence).
+// exit completes the fake's life the way a real child departing on its own reports.
 func (f *fakeProc) exit(code int) {
 	f.mu.Lock()
 	f.code = code
@@ -165,8 +148,7 @@ func (f *fakeProc) exit(code int) {
 	close(f.done)
 }
 
-// spawnFakes builds a spawn seam handing out fresh fakes; the
-// returned func reads their life through.
+// spawnFakes builds a spawn seam handing out fresh fakes.
 func spawnFakes() (spawnFunc, func() []*fakeProc) {
 	mu := sync.Mutex{}
 	held := []*fakeProc{}
@@ -184,8 +166,7 @@ func spawnFakes() (spawnFunc, func() []*fakeProc) {
 		}
 }
 
-// newTestStore mounts a store on the fake seam; tests inject their
-// own clock when they need the prune math.
+// newTestStore mounts a store on the fake seam.
 func newTestStore(t *testing.T, now func() time.Time) (*Store, func() []*fakeProc) {
 	t.Helper()
 	spawn, procs := spawnFakes()
@@ -194,8 +175,7 @@ func newTestStore(t *testing.T, now func() time.Time) (*Store, func() []*fakePro
 	return st, procs
 }
 
-// mountTerminal mounts the plugin through the real registration path
-// and returns the module mux (real pattern matching: PathValue set).
+// mountTerminal mounts the plugin through the real registration path and returns.
 func mountTerminal(t *testing.T, st *Store) *http.ServeMux {
 	t.Helper()
 	plug := NewPluginWithStore(st)
@@ -245,8 +225,7 @@ func sseFrames(body string) []string {
 	return out
 }
 
-// sseWithCancel streams with a deadline-backed context and records the
-// SSE frames the stream had written by then.
+// sseWithCancel streams with a deadline-backed context and records the SSE frames.
 func sseWithCancel(t *testing.T, mux *http.ServeMux, id string, d time.Duration) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), d)
@@ -257,7 +236,7 @@ func sseWithCancel(t *testing.T, mux *http.ServeMux, id string, d time.Duration)
 	return sseFrames(w.Body.String())
 }
 
-// --- the store laws ------------------------------------------------------
+// the store laws ---------------------------------------------------
 
 func TestClaimReattachOneShellPerPane(t *testing.T) {
 	st, procs := newTestStore(t, nil)
@@ -265,13 +244,11 @@ func TestClaimReattachOneShellPerPane(t *testing.T) {
 	if err != nil || claimed {
 		t.Fatalf("first claim: claimed=%v err=%v", claimed, err)
 	}
-	// the pane's stream subscribes - the claim mark clears at the attach
 	sub, replay, _ := s1.subscribe()
 	if len(replay) != 0 {
 		t.Fatalf("empty session replay: %d bytes", len(replay))
 	}
-	// an ATTACHED session is no longer claimable - the next pane gets
-	// a fresh shell (one terminal per pane)
+	// an ATTACHED session is no longer claimable.
 	s2, claimed, err := st.Claim("")
 	if err != nil || claimed || s2 == s1 {
 		t.Fatalf("second claim while s1 attached: claimed=%v err=%v", claimed, err)
@@ -287,10 +264,8 @@ func TestClaimReattachOneShellPerPane(t *testing.T) {
 	}
 }
 
-// The claim mark (card t_d12c83bc): a claim whose stream never
-// subscribed is taken - a second racing pane must never adopt the
-// shell. The adopt (subscribe) hands the ownership to the sub, so the
-// later detach/reattach takes the same shell back.
+// The claim mark: a claim whose stream never subscribed is taken - a second racing pane
+// must never adopt the shell.
 func TestUnadoptedClaimBlocksReattach(t *testing.T) {
 	st, _ := newTestStore(t, nil)
 	s1, claimed, err := st.Claim("")
@@ -303,7 +278,6 @@ func TestUnadoptedClaimBlocksReattach(t *testing.T) {
 	if err != nil || claimed || s2 == s1 {
 		t.Fatalf("second unadopted claim: claimed=%v err=%v (want a fresh spawn)", claimed, err)
 	}
-	// the adopt unblocks the reattach: subscribe clears the mark
 	sub, _, _ := s1.subscribe()
 	s1.unsubscribe(sub)
 	s3, claimed, err := st.Claim("")
@@ -312,9 +286,8 @@ func TestUnadoptedClaimBlocksReattach(t *testing.T) {
 	}
 }
 
-// The race finding 2 pins: panes racing Open (a page reload with
-// several terminal tabs) all claim concurrently - each gets its own
-// shell, no two share one.
+// The race finding 2 pins: panes racing Open (a page reload with several terminal tabs)
+// all claim concurrently.
 func TestRacingClaimsSpawnDistinctShells(t *testing.T) {
 	st, procs := newTestStore(t, nil)
 	var mu sync.Mutex
@@ -352,8 +325,6 @@ func TestRacingClaimsSpawnDistinctShells(t *testing.T) {
 
 func TestCapLawReapsThenRefuses(t *testing.T) {
 	st, procs := newTestStore(t, nil)
-	// fill the cap with live+attached sessions: every claim rides a
-	// fresh shell because the previous one is already attached
 	first := ""
 	for i := range maxSessions {
 		s, _, err := st.Claim("")
@@ -373,7 +344,6 @@ func TestCapLawReapsThenRefuses(t *testing.T) {
 	if !errors.As(err, &capErr) {
 		t.Fatalf("claim 5: %v is not the cap refusal", err)
 	}
-	// the reap order: an EXITED session dies first, attached or not
 	all := procs()
 	all[0].exit(3)
 	waitExited(t, st.Get(first))
@@ -448,18 +418,15 @@ func TestStopIsIdempotent(t *testing.T) {
 	}
 }
 
-// TestKillHandshakeOwnsTheClose is the race pin (card t_5dba57a3):
-// the kill path (Session.remove -> Kill) and a parked readLoop must
-// retire the read handle through the close handshake, never an
-// announce/wait pair or a bare close under the parked read. This is
-// the exact shape that reded the linux -race suite: the report frames
-// named Session.remove's Kill call and readLoop's Read call, and the
-// racing memory was the WaitGroup the fake used to sequence them (the
-// WaitGroup law: a positive Add at counter zero must happen BEFORE the
-// Wait - the readLoop's Add had no happens-before edge to Kill's
-// Wait). Under -race this pin reds if the handshake regresses to that
-// shape; without -race it pins the post-kill contract regardless of
-// build.
+// TestKillHandshakeOwnsTheClose is the race pin: the kill path (Session.remove -> Kill)
+// and a parked readLoop must retire the read handle through the close handshake, never
+// an announce/wait pair or a bare close under the parked read. This is the exact shape
+// that reded the linux -race suite: the report frames named Session.remove's Kill call
+// and readLoop's Read call, and the racing memory was the WaitGroup the fake used to
+// sequence them (the WaitGroup law: a positive Add at counter zero must happen BEFORE
+// the Wait - the readLoop's Add had no happens-before edge to Kill's Wait). Under -race
+// this pin reds if the handshake regresses to that shape; without -race it pins the
+// post-kill contract regardless of build.
 func TestKillHandshakeOwnsTheClose(t *testing.T) {
 	st, procs := newTestStore(t, nil)
 	s, _, err := st.Claim("")
@@ -474,7 +441,6 @@ func TestKillHandshakeOwnsTheClose(t *testing.T) {
 	if f.kills != 1 {
 		t.Fatalf("kill count: %d, want 1", f.kills)
 	}
-	// the handshake marked the door: a later op refuses at the threshold
 	if _, err := f.Read(make([]byte, 8)); !errors.Is(err, os.ErrClosed) {
 		t.Fatalf("post-kill read: %v, want os.ErrClosed", err)
 	}
@@ -486,7 +452,7 @@ func TestKillHandshakeOwnsTheClose(t *testing.T) {
 	}
 }
 
-// --- the route surface through the real mux ------------------------------
+// the route surface through the real mux ---------------------------
 
 func TestRoutesClaimStreamInputKill(t *testing.T) {
 	st, _ := newTestStore(t, nil)
@@ -500,7 +466,6 @@ func TestRoutesClaimStreamInputKill(t *testing.T) {
 		t.Fatal("the store lost the claimed session")
 	}
 
-	// input lands in the shell (the fake's write side is the proof)
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("POST", "/terminal/"+id+"/input", strings.NewReader("echo hi\n")))
 	if w.Code != http.StatusOK {
@@ -510,8 +475,6 @@ func TestRoutesClaimStreamInputKill(t *testing.T) {
 		t.Fatalf("input body: %s", n)
 	}
 
-	// record output nobody watches, then exit: the stream replays the
-	// tail and carries the exit frame with the real code
 	sess.record([]byte("hello\n"))
 	st.Get(id).proc.(*fakeProc).exit(7)
 	waitExited(t, sess)
@@ -537,7 +500,6 @@ func TestRoutesClaimStreamInputKill(t *testing.T) {
 		t.Fatalf("exit frame: %q", last)
 	}
 
-	// input against the exited shell = 410
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("POST", "/terminal/"+id+"/input", strings.NewReader("x")))
 	if w.Code != http.StatusGone {
@@ -558,7 +520,6 @@ func TestRoutesClaimStreamInputKill(t *testing.T) {
 		t.Fatalf("stream unknown: %d, want 404", w.Code)
 	}
 
-	// the killed shell does not row in the listing
 	w = httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("GET", "/terminal/sessions", nil))
 	if strings.Contains(w.Body.String(), id) {
@@ -570,14 +531,10 @@ func TestStreamReplaysTailAfterDetach(t *testing.T) {
 	st, _ := newTestStore(t, nil)
 	mux := mountTerminal(t, st)
 	id, _ := claimSession(t, mux)
-	// the pane's stream: subscribe then the SSE drop - the claim mark
-	// clears at the attach, nobody is attached at the next claim
 	sess := st.Get(id)
 	sub, _, _ := sess.subscribe()
 	sess.unsubscribe(sub)
 	sess.record([]byte("written while detached"))
-	// a claim with the session attached by nobody: the SAME shell comes
-	// back (the detaching is the lazy unmount's SSE drop)
 	id2, claimed := claimSession(t, mux)
 	if !claimed || id2 != id {
 		t.Fatalf("reattach claim: id=%s claimed=%v (want %s true)", id2, claimed, id)
@@ -592,7 +549,6 @@ func TestResizeRouteShapes(t *testing.T) {
 	st, _ := newTestStore(t, nil)
 	mux := mountTerminal(t, st)
 	id, _ := claimSession(t, mux)
-	// the real handler path carries the resize to the process seam
 	proc := st.Get(id).proc.(*fakeProc)
 	post := func(body string) *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
@@ -616,7 +572,6 @@ func TestResizeRouteShapes(t *testing.T) {
 			t.Fatalf("resize %q: %d, want 400", body, w.Code)
 		}
 	}
-	// unknown id = 404; exited shell = 410
 	w := httptest.NewRecorder()
 	mux.ServeHTTP(w, httptest.NewRequest("POST", "/terminal/unknown-id/resize", strings.NewReader(`{"rows":4,"cols":4}`)))
 	if w.Code != http.StatusNotFound {
@@ -630,7 +585,6 @@ func TestResizeRouteShapes(t *testing.T) {
 }
 
 func TestClaimCapAtTheWire(t *testing.T) {
-	// a fully-attached cap: the refusal is 409 at the wire
 	st, _ := newTestStore(t, nil)
 	attacher := make([]*fakeProc, 0, maxSessions)
 	for range maxSessions {
@@ -649,7 +603,6 @@ func TestClaimCapAtTheWire(t *testing.T) {
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "cap") {
 		t.Fatalf("cap at the wire: %d %s", w.Code, w.Body.String())
 	}
-	// a broken spawn seam: 503 with the seam's own words
 	broken := NewStore(func(string) (process, error) {
 		return nil, errors.New("no pty on this box")
 	}, ".", nil)
@@ -689,9 +642,8 @@ func sseDecoded(frame string) string {
 	return string(b)
 }
 
-// waitExited spins until a session's exit mark landed (the watchLoop
-// is its own goroutine; handler-side assertions need the settled
-// state, not the race).
+// waitExited spins until a session's exit mark landed (the watchLoop is its own
+// goroutine; handler-side assertions need the settled state, not the race).
 func waitExited(t *testing.T, s *Session) {
 	t.Helper()
 	for range 200 {
@@ -706,14 +658,11 @@ func waitExited(t *testing.T, s *Session) {
 	t.Fatal("the session never reported its exit")
 }
 
-// drainUntil reads the output stream until the needle appears or the
-// deadline passes. The read loop lives in a goroutine feeding a
-// buffered channel: proc.Read is a blocking syscall on the pty
-// master, so a deadline checked only after Read returns can never
-// fire against silent output. Select is the deadline - a missing
-// needle fails within the window instead of hanging the suite forever.
-// On timeout the goroutine stays parked in Read; the caller's Kill
-// (the master close) unblocks it, and its one buffered send drops.
+// drainUntil reads the output stream until the needle appears or the deadline passes.
+// The read loop lives in a goroutine feeding a buffered channel: proc.Read is a
+// blocking syscall on the pty master, so a deadline checked only after Read returns can
+// never fire against silent output. On timeout the goroutine stays parked in Read; the
+// caller's Kill (the master close) unblocks it, and its one buffered send drops.
 func drainUntil(t *testing.T, proc process, needle string, d time.Duration) error {
 	t.Helper()
 	var mu sync.Mutex
@@ -760,12 +709,9 @@ func TestRealPTYShellEcho(t *testing.T) {
 	if _, err := os.Stat("/bin/sh"); err != nil {
 		t.Skipf("no /bin/sh: %v", err)
 	}
-	// Hermetic shell pin: the spawn reads $SHELL first (the VS Code
-	// preference law stands - that is product behavior, not test
-	// behavior), so whatever shell the invoking env carries decides
-	// the prompt. An interactive zsh here prints updates and waits
-	// before any prompt bytes - the literal needle never arrives.
-	// Pinning keeps the test hermetic on every box.
+	// Hermetic shell pin: the spawn reads $SHELL first.
+	// An interactive zsh here prints updates and waits before any prompt bytes - the
+	// literal needle never arrives.
 	t.Setenv("SHELL", "/bin/sh")
 	proc, err := spawnProcess(t.TempDir())
 	if err != nil {
@@ -786,12 +732,11 @@ func TestRealPTYShellEcho(t *testing.T) {
 	}
 }
 
-// TestDrainUntilDeadlineOnMissingNeedle pins the drain's own law: a
-// needle that never arrives fails inside the window, never hangs.
-// The shell prints a prompt (so the pty stream is alive) but the
-// needle cannot appear in it; a deadline checked only after the
-// blocking master read returns would be unreachable from now to the
-// package timeout.
+// TestDrainUntilDeadlineOnMissingNeedle pins the drain's own law: a needle that never
+// arrives fails inside the window, never hangs. The shell prints a prompt (so the pty
+// stream is alive) but the needle cannot appear in it; a deadline checked only after
+// the blocking master read returns would be unreachable from now to the package
+// timeout.
 func TestDrainUntilDeadlineOnMissingNeedle(t *testing.T) {
 	if _, err := os.Stat("/dev/ptmx"); err != nil {
 		t.Skipf("no /dev/ptmx on this box: %v", err)
@@ -820,10 +765,9 @@ func TestDrainUntilDeadlineOnMissingNeedle(t *testing.T) {
 	}
 }
 
-// --- the bounded terminal runtime (the scrollback caps) -------------------
+// the bounded terminal runtime (the scrollback caps) ----------------
 
-// countProc is a fake wrapping a WRITE COUNTER: the scrollback tests
-// drive record() directly and assert the pty writer stays silent.
+// countProc is a fake wrapping a WRITE COUNTER.
 type countProc struct {
 	process
 	mu     sync.Mutex
@@ -842,19 +786,16 @@ func newBareSession() (*Session, *countProc) {
 	return &Session{id: "t", proc: f, createdAt: time.Now(), lastUse: time.Now()}, f
 }
 
-// TestScrollbackByteCap: retention stops at 8 MiB - the OLDEST output
-// evicts, the newest stays complete.
+// TestScrollbackByteCap: retention stops at 8 MiB.
 func TestScrollbackByteCap(t *testing.T) {
 	s, _ := newBareSession()
-	// 12 x 1 MiB > 8 MiB: retention hits the cap and starts evicting -
-	// record() ALWAYS trims back under it, so the loop is fixed-length.
+	// 12 x 1 MiB > 8 MiB: retention hits the cap and starts evicting.
 	for more := 0; more < 12; more++ {
 		s.record(bytes.Repeat([]byte{byte('a' + more%26)}, 1024*1024))
 	}
 	if len(s.buf) > scrollbackMax {
 		t.Fatalf("retention over the byte cap: %d", len(s.buf))
 	}
-	// the newest chunk's letter is the retained tail's letter
 	if last := s.lastByte(); last != byte('a'+11%26) {
 		t.Fatalf("eviction took the wrong end: tail %q", last)
 	}
@@ -882,8 +823,7 @@ func TestScrollbackLineCap(t *testing.T) {
 	if got := bytes.Count(s.buf, []byte{'\n'}); got != s.lines {
 		t.Fatalf("line counting desynced: counted %d, tracked %d", got, s.lines)
 	}
-	// the oldest whole lines are gone, the newest stay: line 0 is out,
-	// line total-1 is in
+	// the oldest whole lines are gone, the newest stay: line 0 is out, line total-1 is in
 	if strings.Contains(string(s.buf), "\nl0\n") || strings.HasPrefix(string(s.buf), "l0\n") {
 		t.Fatal("the oldest line survived the eviction")
 	}
@@ -892,8 +832,7 @@ func TestScrollbackLineCap(t *testing.T) {
 	}
 }
 
-// TestScrollbackWhicheverFirst: a few long lines hit the BYTE cap
-// before the line cap can move - "whichever hits first" binds.
+// TestScrollbackWhicheverFirst: a few long lines hit the BYTE cap before the line cap.
 func TestScrollbackWhicheverFirst(t *testing.T) {
 	s, _ := newBareSession()
 	line := bytes.Repeat([]byte{'x'}, 1024*1024)
@@ -933,9 +872,8 @@ func TestScrollbackUnicodeSafe(t *testing.T) {
 	}
 }
 
-// TestReplayTailBounded: the subscribe() restoration reads ONLY the
-// bounded tail and the snapshot is a copy (later records never leak
-// into a delivered replay).
+// TestReplayTailBounded: the subscribe restoration reads ONLY the bounded tail and the
+// snapshot is a copy (later records never leak into a delivered replay).
 func TestReplayTailBounded(t *testing.T) {
 	s, _ := newBareSession()
 	mark := []byte("HEAD-MARKER-")
@@ -956,7 +894,6 @@ func TestReplayTailBounded(t *testing.T) {
 	if !bytes.HasSuffix(replay, bytes.Repeat([]byte{'z'}, 16)) {
 		t.Fatal("the replay is not the history's tail")
 	}
-	// the snapshot does not alias the live buffer
 	after := len(replay)
 	s.record([]byte("LATER"))
 	s.mu.Lock()

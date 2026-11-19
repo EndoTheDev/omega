@@ -13,7 +13,6 @@ import (
 )
 
 // mockStore is a minimal StoreProvider for testing @session: injection.
-// Only GetActiveMessages has configurable behavior; the rest are no-ops.
 type mockStore struct {
 	messages []Message
 	err      error
@@ -89,8 +88,7 @@ func testMessageText(m Message) string {
 	return ""
 }
 
-// testDetectImage is the DetectImage seam: magic-byte PNG/JPEG sniffing
-// with no ai import (core tests are stdlib-only like core itself).
+// testDetectImage is the DetectImage seam: magic-byte PNG/JPEG sniffing with no ai.
 func testDetectImage(path string) (*ImageContent, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -240,7 +238,7 @@ func TestExpandAtMentionsNoTokens(t *testing.T) {
 	}
 }
 
-// --- branch coverage tests ---
+// branch coverage tests
 
 func TestExpandAtMentionsSkillInjection(t *testing.T) {
 	tests := []struct {
@@ -401,8 +399,7 @@ func TestExpandAtMentionsDirectoryToken(t *testing.T) {
 	}
 }
 
-// Dir roots relative paths and globs - the webui's workspace-scoping
-// seam. Absolute tokens ignore Dir; relative ones resolve against it.
+// Dir roots relative paths and globs - the webui's workspace-scoping seam.
 func TestExpandAtMentionsDirBase(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "ws")
@@ -498,8 +495,7 @@ func TestExpandAtMentionsDirBase(t *testing.T) {
 	})
 }
 
-// DetectImage read failure surfaces as the error return, token as-is -
-// the same notice every submit surface rendered.
+// DetectImage read failure surfaces as the error return, token as-is.
 func TestExpandAtMentionsDetectImageError(t *testing.T) {
 	e := env(nil, nil)
 	called := false
@@ -523,8 +519,7 @@ func TestExpandAtMentionsDetectImageError(t *testing.T) {
 	}
 }
 
-// --- unresolved reporting (the submit notice law, ported from the
-// old shell's image_test.go when the law moved into core, t_07aed3f9) ---
+// unresolved reporting
 
 // TestExpandAtMentionsUnresolvedReports verifies a standalone unresolvable
 // token rides along literally AND is reported so the caller can notice it.
@@ -545,9 +540,8 @@ func TestExpandAtMentionsUnresolvedReports(t *testing.T) {
 	}
 }
 
-// TestExpandAtMentionsMidWordNotUnresolved verifies a mid-word @ (email
-// address, handle) resolves nothing and is never reported: it is a
-// name, not a file reference.
+// TestExpandAtMentionsMidWordNotUnresolved verifies a mid-word @ (email address,
+// handle) resolves nothing and is never reported: it is a name, not a file reference.
 func TestExpandAtMentionsMidWordNotUnresolved(t *testing.T) {
 	input := "email me at user@gmail.com please"
 	_, _, unresolved, err := ExpandAtMentions(input, AtMentionEnv{})
@@ -559,8 +553,7 @@ func TestExpandAtMentionsMidWordNotUnresolved(t *testing.T) {
 	}
 }
 
-// TestExpandAtMentionsUnresolvedPrefixedTokens verifies the @-namespaced
-// species report their misses like plain paths do.
+// TestExpandAtMentionsUnresolvedPrefixedTokens verifies the @-namespaced species.
 func TestExpandAtMentionsUnresolvedPrefixedTokens(t *testing.T) {
 	input := "@skill:nope and @session:gone and @*.nomatch"
 	_, _, unresolved, err := ExpandAtMentions(input, AtMentionEnv{})
@@ -581,8 +574,7 @@ func TestExpandAtMentionsUnresolvedPrefixedTokens(t *testing.T) {
 	}
 }
 
-// TestExpandAtMentionsResolvedNotUnresolved verifies resolved tokens never
-// land in the unresolved list alongside literal ones.
+// TestExpandAtMentionsResolvedNotUnresolved verifies resolved tokens never land.
 func TestExpandAtMentionsResolvedNotUnresolved(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "real.txt")

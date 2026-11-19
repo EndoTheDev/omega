@@ -1,7 +1,6 @@
-// Package core holds the host's shared contracts: the agent event
-// stream, the wire/session message shapes, the message vocabulary, the
-// provider stream events, and the provider contract. Zero behavior, no
-// dependencies outside stdlib (factory-flow ADR, v0.11 arc 1b2).
+// Package core holds the host's shared contracts: the agent event stream, the
+// wire/session message shapes, the message vocabulary, the provider stream events, and
+// the provider contract.
 package core
 
 import "encoding/json"
@@ -28,10 +27,6 @@ type TurnStart struct {
 func (TurnStart) isEvent() {}
 
 // TurnEnd is emitted after a turn completes, including tool execution.
-// PendingCalls counts the turn's outstanding calls - immediate-yield
-// dispatches and inline-budget escalations (card t_1501cb04) - that
-// did not execute in this turn; the host's wake path owns their
-// re-entry (async agent loop phase 1). Loop-back turns always carry 0.
 type TurnEnd struct {
 	Type         string `json:"type"`
 	Turn         int    `json:"turn"`
@@ -41,9 +36,7 @@ type TurnEnd struct {
 
 func (TurnEnd) isEvent() {}
 
-// AgentEnd is emitted when Run finishes. Message carries the final
-// assistant response (with thinking) so the host can persist it without
-// reconstructing from the stream buffer.
+// AgentEnd is emitted when Run finishes.
 type AgentEnd struct {
 	Type         string    `json:"type"`
 	Turns        int       `json:"turns"`
@@ -61,8 +54,7 @@ type StreamEvent struct {
 
 func (StreamEvent) isEvent() {}
 
-// ToolResultEvent is emitted after a tool executes, carrying the result
-// message so the host can persist it to the session store.
+// ToolResultEvent is emitted after a tool executes, carrying the result message.
 type ToolResultEvent struct {
 	Type    string     `json:"type"`
 	Message ToolResult `json:"message"`
@@ -70,9 +62,7 @@ type ToolResultEvent struct {
 
 func (ToolResultEvent) isEvent() {}
 
-// AssistantMessageEvent is emitted after the provider finishes a turn,
-// carrying the assistant message (with thinking and tool calls) so the
-// host can persist it to the session store.
+// AssistantMessageEvent is emitted after the provider finishes a turn, carrying.
 type AssistantMessageEvent struct {
 	Type    string    `json:"type"`
 	Message Assistant `json:"message"`
@@ -80,35 +70,23 @@ type AssistantMessageEvent struct {
 
 func (AssistantMessageEvent) isEvent() {}
 
-// EventObserver is a module subscription on the run event spine (card
-// t_72ecca67, M3): mounted by the continuous-agents ledger, runnable by
-// any spine consumer the future needs. Observers block ONE goroutine of
-// the live run - the tee forwards events to the host consumer only
-// after every observer returned - so an observer must be cheap (one
-// local sqlite insert, a stat, never network). Observers see the full
-// spine: ToolCallEvent (before execution) and ToolResultEvent (after),
-// in encounter order.
+// EventObserver is a module subscription on the run event spine. Observers block ONE
+// goroutine of the live run - the tee forwards events to the host consumer only after
+// every observer returned - so an observer must be cheap (one local sqlite insert, a
+// stat, never network).
 type EventObserver func(Event)
 
-// SessionEventObserver is an EventObserver that also receives the id of
-// the session the emitting run belongs to (card t_8de82cff, the
-// observability arc): "" for a sessionless run (a one-shot CLI run, a
-// test). The plain observer shape cannot attribute an event to a
-// conversation - the session rides the RUN CONTEXT
-// (agent.SessionIDFromContext), never the event payload, because the
-// events are the loop's transport and a session is the host's label.
-// The forward goroutine in Agent.RunWithProvider holds that context, so
-// it is the one place that can hand the id to a spine consumer; a
-// consumer that must scope by session subscribes through this shape
-// instead. Same contract as EventObserver: cheap, blocking, one
+// SessionEventObserver is an EventObserver that also receives the id of the session.
+// The plain observer shape cannot attribute an event to a conversation - the session
+// rides the RUN CONTEXT (agent.SessionIDFromContext), never the event payload, because
+// the events are the loop's transport and a session is the host's label. The forward
+// goroutine in Agent.RunWithProvider holds that context, so it is the one place that
+// can hand the id to a spine consumer; a consumer that must scope by session subscribes
+// through this shape instead. Same contract as EventObserver: cheap, blocking, one
 // goroutine of the live run.
 type SessionEventObserver func(sessionID string, ev Event)
 
-// TickEvent is a module-emitted spine payload (card t_72ecca67, M4):
-// cron owns WHEN and fires a wake tick; continuous owns WHAT and
-// consumes it. The v0.12 payload law holds: the emitter namespace is a
-// namespaced string, the payload travels as raw JSON, and no consumer
-// ever parses another module's Go types.
+// TickEvent is a module-emitted spine payload.
 type TickEvent struct {
 	Module  string          `json:"module"`  // the emitting capsule ("cron")
 	Kind    string          `json:"kind"`    // the tick vocabulary ("wake")
@@ -117,8 +95,7 @@ type TickEvent struct {
 
 func (TickEvent) isEvent() {}
 
-// Tick returns the event's tick data as a TickEvent, or zero when ev is
-// not one (single type-assertion site for spine consumers).
+// Tick returns the event's tick data as a TickEvent, or zero when ev is not one.
 func Tick(ev Event) (TickEvent, bool) {
 	t, ok := ev.(TickEvent)
 	return t, ok

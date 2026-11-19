@@ -6,12 +6,9 @@ import (
 	"path/filepath"
 )
 
-// WriteFileAtomic writes data to path via a temp file in the same
-// directory + rename, so a crash, OOM, or power loss mid-write can
-// never leave the target truncated or half-written. os.WriteFile
-// truncates in place BEFORE writing - a power blip during a memory or
-// files write empties months of accumulated content. mode applies to
-// the final file.
+// WriteFileAtomic writes data to path via a temp file in the same directory + rename,
+// so a crash, OOM, or power loss mid-write can never leave the target truncated or
+// half-written.
 func WriteFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if dir != "" && dir != "." {

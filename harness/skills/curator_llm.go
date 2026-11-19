@@ -10,11 +10,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The curator's LLM access (card t_9972dfd0): the thin bridge over
-// the provider seam. The pass streams one completion per consult and
-// collects the text - no tool loop, no retries beyond the client's
-// own (llm/RetryHTTP), failures surface to the caller and the
-// pass moves on.
+// The curator's LLM access: the thin bridge over the provider seam. The pass streams
+// one completion per consult and collects the text - no tool loop, no retries beyond
+// the client's own (llm/RetryHTTP), failures surface to the caller and the pass moves
+// on.
 
 // complete runs ONE collect-the-text completion over the provider.
 func complete(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
@@ -35,11 +34,9 @@ func complete(ctx context.Context, prov agent.Provider, prompt string) (string, 
 	return sb.String(), nil
 }
 
-// extractJSON pulls the first JSON object out of a model answer that
-// may wrap it in prose or fences.
+// extractJSON pulls the first JSON object out of a model answer that may wrap it.
 func extractJSON(s string) string {
 	if i := strings.Index(s, "{"); i >= 0 {
-		// Prefer a fenced block when one opens after the first brace.
 		if start := strings.Index(s, "```"); start >= 0 && start <= i {
 			b := strings.TrimPrefix(s[start:], "```")
 			b = strings.TrimPrefix(b, "json")

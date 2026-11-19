@@ -3,7 +3,7 @@
 // side by side, because the shell's two columns ARE the two sidebars. This file
 // pins the three halves of that law:
 //   1. the shape predicate (panes.ts) and the bounded pointer read (dockdnd.ts)
-//      - a sidebar body offers no left/right half at all, so the deleted
+// a sidebar body offers no left/right half at all, so the deleted
 //      split-sidebar gesture has no entry point to enter through;
 //   2. the pure one-time migration (resetSidebarShape) - a sidebar carrying a
 //      local split tree was the deleted model's work and resets to the clean
@@ -118,10 +118,8 @@ describe("the shape predicate (canvas C2: tabs + stacks only)", () => {
     for (let x = rect.x; x <= rect.x + rect.w; x += 4) sides.add(zoneForPointer("left", x, 400, rect));
     for (let x = rect.x; x <= rect.x + rect.w; x += 4) sides.add(zoneForPointer("right", x, 400, rect));
     assert.deepEqual([...sides], ["center"], "every x in a sidebar's height band is the fold");
-    // ...while the vertical lane is the stack the shape keeps
     assert.equal(zoneForPointer("left", 5, rect.y + 20, rect), "top");
     assert.equal(zoneForPointer("left", 5, rect.y + rect.h - 20, rect), "bottom");
-    // a main pane keeps the whole four-half read
     assert.equal(zoneForPointer("main", rect.x + 10, 400, rect), "left");
     assert.equal(zoneForPointer("main", rect.x + rect.w - 10, 400, rect), "right");
     const zone: PaneZone = "bottom";
@@ -158,7 +156,7 @@ describe("resetSidebarShape (the one-time migration, pure)", () => {
     const bottomGrown = growRoot(col, bottom.id, "row", "before");
     assert.ok(bottomGrown, "the bottom shell grows a side-by-side pair - legal there");
     const grownBottomTree = bottomGrown.tree;
-    // ...and a grown SIDEBAR beside it
+    // .and a grown SIDEBAR beside it
     const leftId = findPane(grownBottomTree, "n2")!.id;
     const withGrownSidebar = growRoot(grownBottomTree, leftId, "column", "after");
     assert.ok(withGrownSidebar);
@@ -201,7 +199,6 @@ describe("the loader's one-time run (createDock)", () => {
       "a sidebar with no stack tree is NOT reset - it keeps its own order");
     assert.deepEqual([...tabComps(right)].sort(), [...fresh.right].sort(),
       "and still holds the whole class (the seat repair only appends what was missing)");
-    // the main column - the whole point of the dock - is untouched
     const main = paneWith(tree, "chat")!;
     assert.deepEqual(tabComps(main), ["chat"], "the main pane kept its work");
     assert.ok(dock.bootRepairs.some((r) => /sidebar shape law/.test(r)),
@@ -216,7 +213,6 @@ describe("the loader's one-time run (createDock)", () => {
     const persisted = deserializeLayout(store.getItem(DOCK_LAYOUT_KEY))!;
     assert.equal(persisted.version, 4, "the record is the shape law's now");
 
-    // a SECOND load of the v4 record: no reset receipt, the tree is verbatim
     const store2 = new MemoryStorage();
     store2.setItem(DOCK_LAYOUT_KEY, store.getItem(DOCK_LAYOUT_KEY)!);
     const dock2 = createDock(store2 as unknown as Storage);

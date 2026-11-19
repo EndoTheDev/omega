@@ -11,61 +11,57 @@ import (
 )
 
 // Derivations, stated plainly because the spine does not carry them
-// (the card's probe report):
 //
-//   - TIME: no spine event carries a timestamp. The recorder stamps
+//
+// TIME: no spine event carries a timestamp. The recorder stamps
 //     each record at observation.
-//   - DURATION: derived by PAIRING, never measured. A turn's duration is
+// DURATION: derived by PAIRING, never measured. A turn's duration is
 //     TurnStart(now) -> TurnEnd for the same (session, turn); a tool
 //     call's duration is StreamEvent{ToolCallEvent}(now) ->
 //     ToolResultEvent for the same (session, tool_call_id). A pair whose
 //     start was missed (a ring started mid-run, a result the loop
 //     emitted without the matching call) yields the event with no
 //     duration rather than a fabricated one.
-//   - LEVEL: derived from what already exists. StreamEnd.Error and
+// LEVEL: derived from what already exists. StreamEnd.Error and
 //     AgentEnd.Error make an error; a ToolResult.IsError makes an error;
 //     a run that ended without a clean stop (cancelled, max_turns) and a
 //     stream cut by the token ceiling (length) make a warning.
-//   - SESSION: the one thing the event rail genuinely lacks. The plain
+// SESSION: the one thing the event rail genuinely lacks. The plain
 //     observer carries no session (the id rides the run context), so
 //     this capsule subscribes through core.SessionEventObserver, the
 //     additive session-attributed shape the agent's forward goroutine
-//     feeds (card t_8de82cff, core/events.go).
+// feeds.
 //
 // Token-level stream chunks (ThinkingChunk, ResponseChunk) are dropped
 // on purpose: one record per delta would drown every structural row the
 // tab exists to show, and the chat transcript already renders them.
 
-// callTrackCap / callTrackTTL bound the in-flight pairing tables. A tool
-// result normally arrives within the call's own lifetime; an entry that
-// never pairs (a cancelled run, a crashing tool) must not accumulate
-// forever, so the sweep drops stale entries once the table outgrows the
-// cap. Losing a duration is acceptable; losing an event is not.
+// callTrackCap / callTrackTTL bound the in-flight pairing tables. A tool result
+// normally arrives within the call's own lifetime; an entry that never pairs (a
+// cancelled run, a crashing tool) must not accumulate forever, so the sweep drops stale
+// entries once the table outgrows the cap.
 const (
 	callTrackCap = 4096
 	callTrackTTL = 15 * time.Minute
 )
 
-// summaryRunes bounds a record's one-line summary; errorRunes bounds the
-// error excerpt a row carries. A tool result can be a megabyte - the
-// ring holds the shape of the failure, never the payload (the disk log
-// and the session store keep the content).
+// summaryRunes bounds a record's one-line summary. A tool result can be a megabyte -
+// the ring holds the shape of the failure, never the payload (the disk log and the
+// session store keep the content).
 const (
 	summaryRunes = 160
 	errorRunes   = 400
 )
 
-// callStart is one in-flight tool call: the name (the result message
-// does not carry it) and the moment the call was observed.
+// callStart is one in-flight tool call.
 type callStart struct {
 	tool string
 	at   time.Time
 }
 
-// Recorder converts spine events into ring records. It is the capsule's
-// only write path into the ring, driven by the agent's forward
-// goroutine - so every method here must stay cheap (map writes, no I/O,
-// never a network call: the spine contract).
+// Recorder converts spine events into ring records. It is the capsule's only write path
+// into the ring, driven by the agent's forward goroutine - so every method here must
+// stay cheap (map writes, no I/O, never a network call: the spine contract).
 type Recorder struct {
 	ring *Ring
 	// active gates recording. A dismounted capsule's observer stays
@@ -78,7 +74,6 @@ type Recorder struct {
 	turns map[string]time.Time
 	calls map[string]callStart
 
-	// now is the clock seam (tests pin deterministic durations).
 	now func() time.Time
 }
 
@@ -98,12 +93,10 @@ func NewRecorder(ring *Ring) *Recorder {
 // Start arms recording (the lifecycle handle's Start).
 func (r *Recorder) Start() { r.active.Store(true) }
 
-// Stop disarms recording (the lifecycle handle's Stop, and the
-// capsule's Dismount): the ring keeps what it has, nothing new lands.
+// Stop disarms recording (the lifecycle handle's Stop, and the capsule's Dismount).
 func (r *Recorder) Stop() { r.active.Store(false) }
 
-// Observe is the spine subscription: one structured record per
-// structural event, attributed to the run's session.
+// Observe is the spine subscription.
 func (r *Recorder) Observe(session string, ev core.Event) {
 	if !r.active.Load() {
 		return
@@ -129,8 +122,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 	case core.TurnEnd:
 		summary := fmt.Sprintf("turn %d ended with %d tool call(s)", e.Turn, e.ToolCalls)
 		if e.PendingCalls > 0 {
-			// The async loop's yield-class calls: dispatched, not yet
-			// executed in this turn - the wake path owns their re-entry.
 			summary += fmt.Sprintf(", %d pending", e.PendingCalls)
 		}
 		r.add(session, Event{
@@ -148,9 +139,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		call := r.takeCall(session, e.Message.ToolCallID)
 		tool := call.tool
 		if tool == "" {
-			// No matching call observed (a ring that started mid-run, or
-			// a result the loop emitted without its call). The RESULT is
-			// still a fact worth showing - name it honestly.
 			tool = "unknown"
 		}
 		level := LevelInfo
@@ -185,15 +173,11 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		r.add(session, record)
 
 	case core.AssistantMessageEvent:
-		// Dropped on purpose: the stream already reports this turn's
-		// content, and the turn_end row carries the shape the tab shows.
 		return
 	}
 }
 
-// observeStream handles the wrapped provider events: tool calls (the
-// only place a call's NAME exists) and stream ends (the only place a
-// provider failure surfaces).
+// observeStream handles the wrapped provider events.
 func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Time) {
 	switch s := e.Event.(type) {
 	case core.ToolCallEvent:
@@ -214,8 +198,6 @@ func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Ti
 		case s.FinishReason != "":
 			record.Summary = "stream finished (" + s.FinishReason + ")"
 			if s.FinishReason == "length" {
-				// The provider cut the answer at its token ceiling: not a
-				// failure, but not a clean stop either.
 				record.Level = LevelWarn
 			}
 		}
@@ -231,8 +213,7 @@ func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Ti
 		}
 		r.add(session, record)
 	}
-	// ThinkingChunk / ResponseChunk: dropped (one record per token delta
-	// would bury every structural row - see the header).
+	// ThinkingChunk / ResponseChunk.
 }
 
 // add stamps the session and appends to the ring.
@@ -264,8 +245,7 @@ func (r *Recorder) takeTurn(session string, turn int, now time.Time) int64 {
 	return sinceMs(start, now)
 }
 
-// rememberCall / takeCall pair a tool call with its result by the
-// provider's call id.
+// rememberCall / takeCall pair a tool call with its result by the provider's call id.
 func (r *Recorder) rememberCall(session, callID, tool string, now time.Time) {
 	if callID == "" {
 		return
@@ -289,9 +269,8 @@ func (r *Recorder) takeCall(session, callID string) callStart {
 	return call
 }
 
-// sweepCallsLocked drops entries too old to pair, once the table has
-// outgrown its cap (the bounded-state rule: an unpaired call is a lost
-// duration, not a leak).
+// sweepCallsLocked drops entries too old to pair, once the table has outgrown its cap
+// (the bounded-state rule: an unpaired call is a lost duration, not a leak).
 func (r *Recorder) sweepCallsLocked(now time.Time) {
 	if len(r.calls) <= callTrackCap {
 		return
@@ -303,8 +282,7 @@ func (r *Recorder) sweepCallsLocked(now time.Time) {
 	}
 }
 
-// sinceMs is the elapsed milliseconds between two observations, floored
-// at zero; a zero start (no pair) yields zero, which the wire omits.
+// sinceMs is the elapsed milliseconds between two observations, floored at zero.
 func sinceMs(start, now time.Time) int64 {
 	if start.IsZero() {
 		return 0
@@ -323,9 +301,7 @@ func finishReason(fr string) string {
 	return fr
 }
 
-// shorten collapses whitespace and cuts s to n runes with a plain
-// trailing marker - one line, no embedded newlines (a record row is one
-// line on the wire, always).
+// shorten collapses whitespace and cuts s to n runes with a plain trailing marker.
 func shorten(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" {

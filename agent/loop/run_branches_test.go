@@ -10,12 +10,11 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ---------------------------------------------------------------------------
-// Mock implementations for PromptBuilder and CompactionProvider
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------ Mock
+// implementations for PromptBuilder and CompactionProvider
+// ------------------------------------------------------------------------
 
-// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt
-// and guidelines for testing the system-prompt prepend path.
+// mockPromptBuilder implements agent.PromptBuilder, returning a fixed prompt.
 type mockPromptBuilder struct {
 	prompt     string
 	guidelines []string
@@ -31,8 +30,7 @@ func (m *mockPromptBuilder) Guidelines() []string {
 	return m.guidelines
 }
 
-// mockCompactionProvider implements agent.CompactionProvider, recording
-// calls and returning a compacted message set.
+// mockCompactionProvider implements agent.CompactionProvider, recording calls.
 type mockCompactionProvider struct {
 	called    bool
 	callCount int
@@ -41,18 +39,13 @@ type mockCompactionProvider struct {
 func (m *mockCompactionProvider) Compact(_ context.Context, messages []core.Message) ([]core.Message, error) {
 	m.called = true
 	m.callCount++
-	// Replace the message history with a single system message so
-	// len(compacted) < len(messages) and the log branch fires.
 	return []core.Message{core.NewSystem("compacted")}, nil
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------ Tests
+// ------------------------------------------------------------------------
 
-// TestRunContextCancellation covers lines 105-108: Run with a cancelled
-// context. The loop should emit AgentEnd with FinishReason="cancelled" and
-// an error containing "context canceled".
+// TestRunContextCancellation covers lines 105-108: Run with a cancelled context.
 func TestRunContextCancellation(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -81,9 +74,7 @@ func TestRunContextCancellation(t *testing.T) {
 	}
 }
 
-// TestRunToolProvidersMerging covers lines 39-57: passing ToolProviders
-// (plural) with tools that get merged. The merged tool should be callable
-// by the provider.
+// TestRunToolProvidersMerging covers lines 39-57.
 func TestRunToolProvidersMerging(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		// Turn 1: call a tool provided by ToolProviders.
@@ -91,7 +82,6 @@ func TestRunToolProvidersMerging(t *testing.T) {
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "merged_tool", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -132,9 +122,7 @@ func TestRunToolProvidersMerging(t *testing.T) {
 	}
 }
 
-// TestRunPromptBuilder covers lines 69-87: a PromptBuilder that returns a
-// prompt and guidelines. The loop should prepend a system message containing
-// the prompt and guidelines to the message history.
+// TestRunPromptBuilder covers lines 69-87.
 func TestRunPromptBuilder(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -165,7 +153,6 @@ func TestRunPromptBuilder(t *testing.T) {
 		t.Error("PromptBuilder.BuildPrompt was not called")
 	}
 	// The FakeProvider records the messages passed to Stream in LastMessages.
-	// The first message should be a System message containing the prompt and guidelines.
 	if len(provider.LastMessages) == 0 {
 		t.Fatal("no messages recorded by provider")
 	}
@@ -184,9 +171,7 @@ func TestRunPromptBuilder(t *testing.T) {
 	}
 }
 
-// TestRunCompactionProvider covers lines 119-131: a CompactionProvider
-// that compacts messages. It should be called each turn and the compacted
-// messages should replace the original history.
+// TestRunCompactionProvider covers lines 119-131.
 func TestRunCompactionProvider(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -216,26 +201,20 @@ func TestRunCompactionProvider(t *testing.T) {
 	if compactor.callCount < 1 {
 		t.Errorf("Compact call count = %d, want >= 1", compactor.callCount)
 	}
-	// After compaction, the provider should have received the compacted
-	// messages (a single system message), not the original 3 messages.
 	if len(provider.LastMessages) != 1 {
 		t.Errorf("provider received %d messages, want 1 (compacted)", len(provider.LastMessages))
 	}
 }
 
-// TestRunMaxToolOutputTruncation covers lines 232-234: setting MaxToolOutput
-// to a small value so a tool's long output is truncated with the
-// "... [truncated, N bytes total]" suffix.
+// TestRunMaxToolOutputTruncation covers lines 232-234.
 func TestRunMaxToolOutputTruncation(t *testing.T) {
 	longOutput := strings.Repeat("a", 100)
 
 	provider := agent.NewFakeProviderScripts("test",
-		// Turn 1: call the verbose tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "verbose", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -278,9 +257,8 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 	if !strings.Contains(toolResult.Content, "... [truncated") {
 		t.Errorf("tool result = %q, want it to contain truncation suffix", toolResult.Content)
 	}
-	// The note names BOTH numbers (card t_a54ef2ce): the kept prefix
-	// and the real total. A bare total left the model unable to tell a
-	// 36-byte tail from a 36 KB one.
+	// The note names BOTH numbers: the kept prefix and the real total. A bare total left
+	// the model unable to tell a 36-byte tail from a 36 KB one.
 	for _, want := range []string{
 		fmt.Sprintf("kept the first %d bytes", 10),
 		fmt.Sprintf("of %d", len(longOutput)),
@@ -294,17 +272,13 @@ func TestRunMaxToolOutputTruncation(t *testing.T) {
 	}
 }
 
-// TestRunUnknownTool covers line 219: the provider calls a tool that doesn't
-// exist in the tools map. The result should contain "unknown tool: <name>"
-// and have IsError=true.
+// TestRunUnknownTool covers line 219.
 func TestRunUnknownTool(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
-		// Turn 1: call a non-existent tool.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nonexistent", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -341,9 +315,7 @@ func TestRunUnknownTool(t *testing.T) {
 	}
 }
 
-// TestRunThinkingChunk covers lines 153-154: the provider sends
-// ThinkingChunk events. They should appear in the assistant message's
-// Thinking field.
+// TestRunThinkingChunk covers lines 153-154: the provider sends ThinkingChunk events.
 func TestRunThinkingChunk(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ThinkingChunk{Type: "thinking_chunk", Content: "Let me think..."},
@@ -385,8 +357,7 @@ func TestRunThinkingChunk(t *testing.T) {
 	}
 }
 
-// TestRunToolProviderSingular covers passing a single ToolProvider
-// via ToolProviders (plural) should merge its tools.
+// TestRunToolProviderSingular covers passing a single ToolProvider via ToolProviders.
 func TestRunToolProviderSingular(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -433,8 +404,7 @@ func TestRunToolProviderSingular(t *testing.T) {
 	}
 }
 
-// TestRunCompactionError covers lines 121-124: CompactionProvider.Compact
-// returns an error. The loop should emit AgentEnd with FinishReason="error".
+// TestRunCompactionError covers lines 121-124.
 func TestRunCompactionError(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -469,15 +439,12 @@ func (errorCompactor) Compact(_ context.Context, _ []core.Message) ([]core.Messa
 	return nil, fmt.Errorf("compaction failed")
 }
 
-// TestRunOverflowRetryWithCompactor covers lines 174-187: an overflow error
-// with a CompactionProvider triggers one auto-compaction and retry.
+// TestRunOverflowRetryWithCompactor covers lines 174-187.
 func TestRunOverflowRetryWithCompactor(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
-		// Turn 1: overflow error with no content streamed.
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "context length exceeded"},
 		},
-		// Turn 2 (retry): respond normally.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "recovered"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -501,11 +468,9 @@ func TestRunOverflowRetryWithCompactor(t *testing.T) {
 	if end.FinishReason != "stop" {
 		t.Errorf("FinishReason = %q, want stop", end.FinishReason)
 	}
-	// The compactor should have been called at least once for the retry.
 	if compactor.callCount < 1 {
 		t.Errorf("compactor call count = %d, want >= 1", compactor.callCount)
 	}
-	// The provider should have been called twice (original + retry).
 	if provider.Calls() != 2 {
 		t.Errorf("provider calls = %d, want 2", provider.Calls())
 	}

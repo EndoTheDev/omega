@@ -1,16 +1,8 @@
 package api
 
-// The importability law (restructure part 2, t_905fa502): agent/api is
-// the agent's base endpoint set and imports the stdlib plus the three
-// mechanism tiers below it - core, agent (and its sub-packages), llm -
-// and NEVER harness. The extension pattern is the capsule's
-// core.RegisterRoute, not a service import: a harness edge here would
-// invert the tier order the tree just learned. The machinery clones
-// core's importability test (arc 1c, t_483de955), scoped to production
-// files: _test.go fixtures ride the real harness store (the standing
-// pattern the cmd tests use), so the shipped graph is what the law
-// guards. The shell gate (scripts/gate-deps.sh) backs this up on the
-// llm/agent package set.
+// The importability law: agent/api is the agent's base endpoint set and imports the
+// stdlib plus the three mechanism tiers below it - core, agent (and its sub-packages),
+// llm - and NEVER harness.
 
 import (
 	"go/parser"
@@ -31,8 +23,7 @@ func isStdlib(path string) bool {
 	return first != "" && !strings.ContainsAny(first, ".")
 }
 
-// isAgentAPILegalImport reports whether path is legal in production
-// agent/api code: the stdlib plus {core, agent, agent/*, llm}.
+// isAgentAPILegalImport reports whether path is legal in production agent/api code.
 func isAgentAPILegalImport(path string) bool {
 	const mod = "github.com/EndoTheDev/omega"
 	switch {
@@ -46,10 +37,7 @@ func isAgentAPILegalImport(path string) bool {
 	return false
 }
 
-// TestAPIImportsMechanismOnly parses every non-test agent/api/*.go file
-// and fails if any import falls outside {stdlib, core, agent, llm}.
-// Offenders are listed with file names so the fix is the next edit, not
-// a mystery.
+// TestAPIImportsMechanismOnly parses every non-test agent/api/*.go file and fails if.
 func TestAPIImportsMechanismOnly(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

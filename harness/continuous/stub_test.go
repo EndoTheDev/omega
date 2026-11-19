@@ -1,11 +1,8 @@
 package continuous
 
-// stub_test.go: the windows wake-child stub. CreateProcess cannot run
-// a shebang script, and a .bat sleeper spawns a grandchild that keeps
-// the wake log open after the kill - an open file cannot be removed,
-// so the temp-dir cleanup dies with it. The stub is a compiled Go exe
-// instead: one process, no grandchildren, TestMain builds it once per
-// test run. Posix keeps the sh stub in wake_test.go.
+// stub_test.go: the windows wake-child stub. CreateProcess cannot run a shebang script,
+// and a.bat sleeper spawns a grandchild that keeps the wake log open after the kill -
+// an open file cannot be removed, so the temp-dir cleanup dies with it.
 
 import (
 	"fmt"
@@ -17,9 +14,7 @@ import (
 	"time"
 )
 
-// stubSource is the wake-child stub program: it records argv, cwd, and
-// the OMEGA_ env deltas into the file named by WAKE_STUB_OUT, prints
-// the DONE sentinel, then sleeps out its 30s budget.
+// stubSource is the wake-child stub program.
 const stubSource = `package main
 
 import (
@@ -87,10 +82,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// wakeSleep ends a live wake and waits for it to die: the roster's
-// sleep button plus the death the guards observe. Windows cannot
-// remove a temp-dir file an in-flight wake still holds, so a test
-// never ends with a live child.
+// wakeSleep ends a live wake and waits for it to die. Windows cannot remove a temp-dir
+// file an in-flight wake still holds, so a test never ends with a live child.
 func wakeSleep(t *testing.T, m *Machine, name string) {
 	t.Helper()
 	m.Sleep(name)

@@ -1,14 +1,3 @@
-// omega webui: unit tests for the async pending chips (agent loop
-// phase 3, rulings 6/7/8 - result-at-once v1). The pure halves are
-// tested directly: the transcript restore's pending derivation, the
-// canvas transcript's pending chip + identity-preserving fill, the
-// agent_end finish_reason reaching the transport (the watcher's
-// arming signal), and the open-state laws that keep a chip visible.
-// The watcher's arming/wake laws and the browser-level wake witness are
-// pinned by the node suite here and by the push-channel journey
-// (scripts/journeys/recipes/111-socket-push.journey.sh) - the browser
-// is the honest witness for the socket, the node suite pins the shapes.
-// Run: node --test webui/test/ (node >= 23)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
@@ -36,8 +25,7 @@ import { isLive, isStreaming, isYielded } from "../app/composables/toolStatus.ts
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "app");
 const src = (p: string) => readFileSync(join(root, p), "utf8");
 
-// walk: every source file under app/ (the inline-spelling sweep needs the
-// whole render tree, not a hand-listed set that rots as files move).
+// walk: every source file under app/.
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -48,7 +36,7 @@ function walk(dir: string): string[] {
   return out;
 }
 
-// --- renderTranscriptItems: the pending derivation ------------------------
+// renderTranscriptItems: the pending derivation ---------------------
 
 test("a call without its result row renders as the pending chip", () => {
   const items: TranscriptWireItem[] = [
@@ -71,8 +59,6 @@ test("a settled call renders done - its result row lands in the same transcript"
 });
 
 test("still-pending siblings render pending beside a settled one", () => {
-  // two yield-class calls in one turn: the first result re-entered,
-  // the second still awaits its wake - history shows both truthfully
   const items: TranscriptWireItem[] = [
     { kind: "user", content: "run both" },
     { kind: "tool_call", tool_call: { id: "c1", name: "delegate.task", arguments: {} } },
@@ -102,7 +88,7 @@ test("an id-less call keeps the done shape - nothing to match a result against",
   assert.equal(t.status, "done");
 });
 
-// --- transcriptHasPending: the watcher's arming truth ----------------------
+// transcriptHasPending: the watcher's arming truth -------------------
 
 test("transcriptHasPending reads the rendered items", () => {
   const pending = renderTranscriptItems([
@@ -117,7 +103,7 @@ test("transcriptHasPending reads the rendered items", () => {
   assert.equal(transcriptHasPending([]), false);
 });
 
-// --- the canvas transcript: pending chip + identity-preserving fill ------
+// the canvas transcript: pending chip + identity-preserving fill ---
 
 const wireRow = (
   id: string,
@@ -133,9 +119,6 @@ const wireRow = (
 
 test("the exit flush of a yielded turn paints the pending chip", () => {
   const ct = createCanvasTranscript();
-  // the run ended (running=false): the assistant row carries the
-  // dispatched call, no result row follows - the panel's exit-flush
-  // shape of a yielded turn
   const items = ct.apply({
     session: "s1",
     running: false,
@@ -160,8 +143,6 @@ test("the wake turn fills the SAME chip in place", () => {
   });
   const chip = before.find((i) => i.kind === "tool");
   assert.ok(chip);
-  // the wake run's first delta: the yield_result row (render role
-  // tool) lands right after the call, the panel runs again
   const after = ct.apply({
     session: "s1",
     running: true,
@@ -207,14 +188,7 @@ test("canvas siblings: settled beside pending in one payload", () => {
   assert.equal(tools[1]!.status, "pending", "the still-pending sibling chips in history");
 });
 
-// --- the pending chip's clock (card t_6bad9f6f round 3) ------------------
-//
-// A yielded call emits NO delta between its conversion and its wake, so
-// the canvas store hands a rebuilt pane a payload whose last build
-// predates the call's yield. A duration (elapsed_ms) therefore anchors a
-// remount on the wrong instant - the round-3 defect: every dock-tab
-// switch restarted the meter at 0. The wire's started_at is the call's
-// own open clock; the reader derives now - started_at at paint time.
+// the pending chip's clock ------------------ A yielded call emits NO delta.
 
 test("a pending chip meters from started_at, not from the payload's build instant", () => {
   const started = new Date(Date.now() - 12_000).toISOString();
@@ -259,9 +233,6 @@ test("a dock-tab rebuild of the SAME cached payload keeps the meter monotonic", 
     .find((i) => i.kind === "tool") as { elapsedMs?: number };
   const firstAnchor = first.elapsedMs ?? -1;
   assert.ok(firstAnchor >= 11_500, `anchored on the call's start (got ${firstAnchor})`);
-  // the switch away and back: the pane's identity cache is gone (a
-  // remount), the store payload is the same object it left - only the
-  // clock moved
   const realNow = Date.now;
   try {
     Date.now = () => realNow() + 7_000;
@@ -291,7 +262,7 @@ test("a stamp-less pending row keeps the old shape (no meter offset)", () => {
   assert.equal(tool.elapsedMs, undefined, "nothing to anchor on - documented degradation");
 });
 
-// --- handlePayload: the agent_end finish_reason reaches the transport -----
+// handlePayload: the agent_end finish_reason reaches the transport --
 
 test("agent_end yields its finish_reason to onRunEnd - the watcher's arming signal", () => {
   const seen: string[] = [];
@@ -324,7 +295,7 @@ test("stream_end usage keeps its onUsage consumer (no transport regression)", ()
   assert.deepEqual(usage, { promptTokens: 10, completionTokens: 5, cachedTokens: 0 });
 });
 
-// --- the open-state laws keep a chip visible ------------------------------
+// the open-state laws keep a chip visible ---------------------------
 
 test("auto opens a pending row - the chip is the visible half of the contract", () => {
   assert.equal(toolRowWantOpen("pending", "auto" as ToolDisplay), true);
@@ -342,21 +313,12 @@ test("a group with a pending child stays open in auto", () => {
   assert.equal(toolGroupWantOpen(true, false, "collapsed"), false);
 });
 
-// --- one live-set predicate: the consumers cannot drift apart --------------
-//
-// Card t_008f5d27 (audit F3). The live set `running | pending` was spelled
-// inline at five consumer sites, and the spellings were already free to
-// diverge: the gate binding carried `running` only while the rest carried
-// `pending`. That is precisely the shape t_6bad9f6f cost three rounds to -
-// the row rendered the word `pending` while its meter gate spelled
-// `running`, so for the state the row displayed no meter ever started.
-// The predicate lives in composables/toolStatus.ts. These tests are the
-// AGREEMENT between consumers, never a second definition of the set.
+// one live-set predicate: the consumers cannot drift apart -------------- (audit. These
+// tests are the AGREEMENT between consumers, never a second definition of the set.
 
-// The status vocabulary the two mappers can mint (omega.ts
-// renderTranscriptItems, chat.ts canvas apply) plus the next state a future
-// card is most likely to add. The predicate must answer NARROWLY for an
-// unknown value instead of inheriting a stale default.
+// The status vocabulary the two mappers can mint (omega.ts renderTranscriptItems. The
+// predicate must answer NARROWLY for an unknown value instead of inheriting a stale
+// default.
 const STATUSES = ["running", "pending", "done", "error", "waiting"];
 
 test("the live set is exactly running | pending, for every status value", () => {
@@ -379,12 +341,10 @@ test("isStreaming is the named running-only half, and streaming implies live", (
 
 test("every consumer agrees with the predicate for every status value", () => {
   for (const s of STATUSES) {
-    // the row's auto-open law (toolDisplay.ts): a live row opens ...
+    // the row's auto-open law (toolDisplay.ts): a live row opens.
     assert.equal(toolRowWantOpen(s, "auto"), isLive(s), `row auto-open ${s}`);
     assert.equal(toolRowWantOpen(s, "expanded"), true, `expanded ${s}`);
     assert.equal(toolRowWantOpen(s, "collapsed"), false, `collapsed ${s}`);
-    // ... and the group's open law reads the SAME set (ToolGroup passes its
-    // isLive aggregate), so one live child opens the container too
     assert.equal(toolGroupWantOpen(isLive(s), false, "auto"), isLive(s), `group open ${s}`);
     // the wake watcher arms on the yielded half, and the two named halves
     // partition the live set exactly (no status is both, none is neither)
@@ -408,10 +368,7 @@ test("all five consumers import the predicate instead of spelling the set", () =
   for (const [file, imp] of sites) {
     assert.match(src(file), imp, `${file} imports toolStatus`);
   }
-  // each consumer's CALL SITE names the answer it needs: two take the live
-  // set, two the streaming-only half (the named decision), one the yielded
-  // half. A consumer that starts spelling a status inline has no pin here
-  // and no pin below - the sweep is what catches it.
+  // each consumer's CALL SITE names the answer it needs.
   assert.match(
     src("components/chat/ToolCallLine.vue"),
     /useElapsed\(\s*\(\) => props\.finalMs,\s*\(\) => isLive\(props\.status\)/,
@@ -449,17 +406,13 @@ test("all five consumers import the predicate instead of spelling the set", () =
 });
 
 test("no file under app/ spells the live set inline any more", () => {
-  // The pair, in ANY order and any container: `=== "running" || === "pending"`,
-  // `["running","pending"].includes(x)`, `new Set(["pending","running"])`.
-  // Adjacency is the whole shape - a consumer classifies the set by naming
-  // both of its members next to each other.
+  // The pair, in ANY order and any container.
   const pair = new RegExp(
     `["'](?:running|pending)["'][\\s\\S]{0,60}["'](?:running|pending)["']`,
     "g",
   );
-  // The two MAPPERS mint the word as a ternary yield (`cond ? "running"`).
-  // A producer is not a classifier: a classification never yields the word
-  // straight out of a `?`.
+  // The two MAPPERS mint the word as a ternary yield (`cond ? A producer is not a
+  // classifier: a classification never yields the word straight out of a `?`.
   const yieldsWord = /\?\s*$/;
   const offenders: string[] = [];
   for (const f of walk(root)) {
@@ -467,7 +420,7 @@ test("no file under app/ spells the live set inline any more", () => {
     const text = readFileSync(f, "utf8");
     for (const m of text.matchAll(pair)) {
       const start = m.index ?? 0;
-      // the 8 chars before the first literal decide: `? ` is a producer
+      // the 8 chars before the first literal decide: `?
       const prefix = text.slice(Math.max(0, start - 8), start);
       if (yieldsWord.test(prefix)) continue;
       offenders.push(`${f.slice(root.length + 1)}:${text.slice(0, start).split("\n").length}`);
@@ -480,7 +433,7 @@ test("no file under app/ spells the live set inline any more", () => {
   );
 });
 
-// --- structural wiring: the render side carries the shapes ----------------
+// structural wiring: the render side carries the shapes -------------
 
 test("ToolCallLine renders the pending word and meters on the live predicate", () => {
   const vue = src("components/chat/ToolCallLine.vue");

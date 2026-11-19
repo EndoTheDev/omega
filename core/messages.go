@@ -1,33 +1,22 @@
 package core
 
-// ContextFoldPrefix and ContextFoldSuffix wrap the summary that heads a
-// folded conversation's context (card t_10ac04f0). The compactor writes
-// the message; the session row stores the bare text. One pair of markers,
-// so a fold's summary is recognizable wherever it is read.
+// ContextFoldPrefix and ContextFoldSuffix wrap the summary that heads a folded.
 const (
 	ContextFoldPrefix = "[compacted: "
 	ContextFoldSuffix = "]"
 )
 
-// Session is a persisted conversation with optional parent linking
-// for branching.
+// Session is a persisted conversation with optional parent linking for branching.
 type Session struct {
 	ID string `json:"id"`
-	// ParentID is the FORK lineage (t_17365247): a branch child renders
-	// and assembles its ancestor chain as a prefix. Empty on roots.
 	ParentID string `json:"parent_id,omitempty"`
-	// DelegateParent is the DELEGATE lineage (t_6c4ab302): the session
-	// that spawned this one through the delegate tool. It is metadata
-	// for lineage display only - a delegate child never inherits its
-	// parent's history (the ruling: children get a fresh context).
-	// Empty on sessions that were not delegate-spawned.
+	// DelegateParent is the DELEGATE lineage. It is metadata for lineage display only - a
+	// delegate child never inherits its parent's history.
 	DelegateParent string `json:"delegate_parent,omitempty"`
 	Label          string `json:"label,omitempty"`
 	CreatedAt      string `json:"created_at"`
 	UpdatedAt      string `json:"updated_at"`
 
-	// Real provider-reported usage accumulated per session. Sessions
-	// saved before this data was recorded keep 0 totals.
 	PromptTokens     int `json:"prompt_tokens"`
 	CompletionTokens int `json:"completion_tokens"`
 
@@ -39,94 +28,56 @@ type Session struct {
 	// to unarchived; baked data is never rewritten.
 	Archived bool `json:"archived"`
 
-	// MachineOwned marks a conversation the MACHINERY owns rather than
-	// the human: an agent's canonical chat is one (card t_10ac04f0).
-	// Such a row opens from its owner's surface and never appears in
-	// the human's own session list, and a /new on it folds the
-	// conversation in place instead of forking a new one - a bot keeps
-	// one conversation, its context is what restarts. The store column
-	// is `listed`, inverted: the human's list is the default state.
+	// MachineOwned marks a conversation the MACHINERY owns rather than the human. Such a
+	// row opens from its owner's surface and never appears in the human's own session
+	// list, and a /new on it folds the conversation in place instead of forking a new one
+	// - a bot keeps one conversation, its context is what restarts.
 	MachineOwned bool `json:"machine_owned,omitempty"`
 
-	// ContextStart is the message id the PROVIDER-FACING context begins
-	// at (card t_10ac04f0: /new in a machinery-owned conversation folds
-	// it). The transcript keeps every row - a human scrolls the whole
-	// record - while the next run's context starts here. Empty = the
-	// conversation's beginning, the normal case.
 	ContextStart string `json:"context_start,omitempty"`
 
-	// ContextSummary is what survives a fold: the summary the compactor
-	// produced when the pre-boundary history was folded. It heads the
-	// next run's context so a restart costs context size, not the
-	// lessons in it. Empty on a conversation that was never folded, or
-	// folded too small for a summary to be worth a model call.
+	// ContextSummary is what survives a fold. Empty on a conversation that was never
+	// folded, or folded too small for a summary to be worth a model call.
 	ContextSummary string `json:"context_summary,omitempty"`
-	// LastReadAt is the time the session's output was last seen by the
-	// user (empty on rows created before the column existed - the
-	// migration backfills it to updated_at so nothing old turns unread).
 	LastReadAt string `json:"last_read_at,omitempty"`
 
-	// TitleState tracks generated-title maturity: 0 untitled, 1
-	// provisional (user-message-only), 2 final (first exchange done).
-	// Sessions that already carried a label when the column was added
-	// were migrated straight to 2 - a manual label is never retitled.
+	// TitleState tracks generated-title maturity. Sessions that already carried a label
+	// when the column was added were migrated straight to 2 - a manual label is never
+	// retitled.
 	TitleState int `json:"title_state"`
 
-	// Agent is the profile this session is bound to ("default" for
-	// sessions created before/without the agent surface). Bound at
-	// creation - a session never switches agents mid-conversation.
+	// Agent is the profile this session is bound to ("default" for sessions created. Bound
+	// at creation - a session never switches agents mid-conversation.
 	Agent string `json:"agent,omitempty"`
 
-	// LastRun is the status bar's last-known run telemetry, computed at
-	// run end (real provider usage over the run's streaming wall clock)
-	// and persisted on the session row. Nil until a run with reported
-	// usage completes - a fresh session never carries phantom rates.
+	// LastRun is the status bar's last-known run telemetry, computed at run end (real. Nil
+	// until a run with reported usage completes - a fresh session never carries phantom
+	// rates.
 	LastRun *LastRunStats `json:"last_run,omitempty"`
 
-	// Model is the session's pinned model_name (empty = no pin - the
-	// channel's default model serves the session). Written when the
-	// user picks a model mid-session and read by every send: reopening
-	// the session restores the model it last used. Sessions saved
-	// before this data was recorded stay empty - today's behavior.
 	Model string `json:"model,omitempty"`
 
-	// ProviderName is the session's pinned provider INSTANCE id (card
-	// t_7dcd4280, empty = the default provider: section serves the
-	// session; json "provider" - a name datum, not a capsule noun).
-	// Resolution is config-driven per run: a name that is gone from
-	// config.yaml providers: fails the run loudly - a removed
-	// instance never strands a session into a silent fallback.
-	// Sessions saved before this column existed stay empty.
+	// ProviderName is the session's pinned provider INSTANCE id. Resolution is
+	// config-driven per run: a name that is gone from config.yaml providers: fails the run
+	// loudly - a removed instance never strands a session into a silent fallback.
 	ProviderName string `json:"provider,omitempty"`
 
-	// Workspace is the session's working folder (empty = no root -
-	// relative file operations resolve against the process working
-	// directory, exactly as before). Set operations root file tools
-	// here, and the folder's trust.yaml + AGENTS.md govern the
-	// session's prompt context. Absolute path; validated to be an
-	// existing directory when written.
+	// Workspace is the session's working folder (empty = no root - relative file
+	// operations resolve against the process working directory, exactly as before).
 	Workspace string `json:"workspace,omitempty"`
 
-	// Summary is the hygiene pass's LLM-written one-paragraph digest
-	// of the session. Empty until written (sessions saved before the
-	// summarizer existed keep empty - the pass fills them on its next
-	// run). A summary is generated prose, not activity: writing one
-	// never touches updated_at.
+	// Summary is the hygiene pass's LLM-written one-paragraph digest of the session. A
+	// summary is generated prose, not activity: writing one never touches updated_at.
 	Summary string `json:"summary,omitempty"`
 }
 
-// LastRunStats is one completed run's average rates, written with the
-// run's final token persist and shown by the webui status bar while no
-// stream is live. Rates round to whole units, matching the live meters.
+// LastRunStats is one completed run's average rates, written with the run's final.
 type LastRunStats struct {
 	TokensPerSecond int `json:"tokens_per_second"`
 	ChunksPerSecond int `json:"chunks_per_second"`
 }
 
-// SessionCounts is per-session activity computed at read time (SQL
-// COUNT over the messages table, no schema change or maintained
-// counters). message_count covers all stored messages; tool_count is
-// the tool-role subset (tool results).
+// SessionCounts is per-session activity computed at read time.
 type SessionCounts struct {
 	MessageCount int `json:"message_count"`
 	ToolCount    int `json:"tool_count"`
@@ -138,21 +89,15 @@ type SessionNode struct {
 	Children []*SessionNode
 }
 
-// StoredMessage pairs a message with the store-level time it was
-// written (created_at), for consumers that surface message times. ID is
-// the store row id - the message's identity on the conversation tree
-// (parent pointers reference it); the transcript wire exposes it as a
-// string so clients can address branch points.
+// StoredMessage pairs a message with the store-level time it was written.
 type StoredMessage struct {
 	ID        int64
 	Message   Message
 	CreatedAt string
 }
 
-// SearchMatch is one matched-term span inside a SearchResult.Snippet:
-// byte offsets into the verbatim snippet string. Matches ride
-// structured metadata, never in-band marker characters (t_1901ce48 -
-// the in-band [bracket] era corrupted the canary-verbatim checks).
+// SearchMatch is one matched-term span inside a SearchResult.Snippet: byte offsets.
+// Matches ride structured metadata, never in-band marker characters.
 type SearchMatch struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
@@ -162,23 +107,14 @@ type SearchMatch struct {
 type SearchResult struct {
 	SessionID string `json:"session_id"`
 
-	// Snippet is a verbatim excerpt of the stored content: a
-	// contiguous substring, byte-for-byte what the store holds - no
-	// highlight markers are inserted. Where the matched terms sit
-	// inside the excerpt is the Matches field.
+	// Snippet is a verbatim excerpt of the stored content: a contiguous substring,
+	// byte-for-byte what the store holds - no highlight markers are inserted.
 	Snippet string `json:"snippet"`
-	// Matches carries the matched-term spans (byte offsets into
-	// Snippet) when any matched term lands in the window; nil when it
-	// does not (label hits) or when the excerpt window itself holds a
-	// marker-sentinel byte and the span parse would be ambiguous.
+	// Matches carries the matched-term spans (byte offsets into Snippet) when any matched
+	// term lands in the window; nil when it does not (label hits) or when the excerpt
+	// window itself holds a marker-sentinel byte and the span parse would be ambiguous.
 	Matches []SearchMatch `json:"matches,omitempty"`
 
-	// Title marks a hit that matched the session's label rather than
-	// message content (SearchSessions). When set, Snippet holds the
-	// label itself.
 	Title bool `json:"title"`
-	// Summary marks a hit that matched the hygiene pass's session
-	// summary rather than message content or label (SearchSessions).
-	// When set, Snippet holds a verbatim summary excerpt.
 	Summary bool `json:"summary"`
 }

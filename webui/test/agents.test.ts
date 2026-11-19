@@ -1,10 +1,10 @@
-// omega webui: unit tests for the agents surface (cards t_7e2b7002 +
-// t_c7222095 + t_2d8deb8c). Two layers, matching the house patterns:
-// - agentsRows.ts (PURE): the display contracts - model voice, honest
+// omega webui: unit tests for the agents surface (cards +
+// + ). Two layers, matching the house patterns:
+// agentsRows.ts (PURE): the display contracts - model voice, honest
 //   memory (0 = "-", never "0b"), empty-state rules, the status
 //   vocabulary (dot + word);
-// - AgentsPanel.vue: the wire contract - the panel fetches /agents
-//   and PUT/POST /agents ({name}?), and (t_2d8deb8c) RENDERS NO
+// AgentsPanel.vue: the wire contract - the panel fetches /agents
+// and PUT/POST /agents ({name}?), and RENDERS NO
 //   SESSION SURFACE: the expansion is details + edit.
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -28,7 +28,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// --- agentsRows.ts: display contracts ---
+// agentsRows.ts: display contracts
 
 test("agent model voice: model_name wins, default falls back to home-config voice", () => {
   const scout: any = { name: "scout", skill_count: 0, memory_size: 0, model_name: "qwen3" };
@@ -62,44 +62,35 @@ test("agents list is never empty by construction: default exists", () => {
   assert.equal(agentsListIsEmpty([]), true);
 });
 
-// --- AgentsPanel.vue: the wire contract ---
+// AgentsPanel.vue: the wire contract
 
 test("AgentsPanel fetches the real endpoints (the wiring pass folded omega.ts in)", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /["'`]\/agents["'`]/, "GET inventory");
-  // card t_2d8deb8c: the edit affordance replaces the session surface -
-  // the tab's agent-scoped write is PUT /agents/{name}; the sessions
-  // route stays in the API but the TAB no longer fetches it.
   assert.match(vue, /\/agents\/\$\{[^}]+\}["'`]/, "the agent-scoped PUT route");
   assert.match(vue, /method: ["'`]PUT["'`]/, "the edit is a PUT");
   assert.match(vue, /method: ["'`]POST["'`]/, "scaffold POST");
-  // t_372b9e9a: the wiring pass landed - the panel binds the registry
-  // fold helpers through composables/omega (RegistryRow type at least)
+  // the wiring pass landed - the panel binds the registry fold helpers through.
   assert.match(vue, /composables\/omega/, "the shared registry helpers are the wire");
   assert.match(vue, /\/disabled\/agents/, "and the fold wire is the agents namespace");
 });
 
-// --- card t_2d8deb8c, ruling 3: the expansion is details + edit ---
+// --, the expansion is details + edit --
 
 test("AgentsPanel expansion carries the edit affordance, not sessions", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /class="agents-edit"/, "the edit form renders");
   assert.match(vue, /saveAgentEdit/, "the save affordance exists");
-  // 0.17.3 make-over (card t_df015e66): the field set is the definition
-  // layer's - description, system prompt, a REFERENCED provider
-  // instance, model, max turns, toggles, skills, the inherit flags.
+  // 0.17.3 make-over: the field set is the definition.
   for (const field of ["agent description", "system prompt", "provider instance", "model name", "max turns"]) {
     assert.match(vue, new RegExp(`aria-label="${field.replace(/ /g, "\\s")}"`), `the ${field} field is reachable`);
   }
-  // SECRET-FREE (agent/configedit.go law 2): the old host / api key /
-  // provider type inputs died with the make-over - an agent file holds
-  // no secret, and a panel that offered one would write it.
+  // SECRET-FREE (agent/configedit.go law 2).
   for (const dead of ["aria-label=\"api key\"", "aria-label=\"provider host\"", "aria-label=\"provider type\""]) {
     assert.ok(!vue.includes(dead), `the ${dead} field died with the secret-free law`);
   }
-  // DEAD surfaces: the tab renders no session rows, no session
-  // button, no session fetch - the API keeps /agents/{name}/sessions,
-  // the surfaces that still want it own it later.
+  // DEAD surfaces: the tab renders no session rows, no session button, no session
+  // fetch.
   assert.doesNotMatch(vue, /agents-sessions/, "the session list died");
   assert.doesNotMatch(vue, /new session as this agent/, "the new-session button died");
   assert.doesNotMatch(vue, /fetch\([^)]*\/sessions/, "no session fetch rides the tab");
@@ -112,15 +103,11 @@ test("the default agent is read-only in the expansion (its config is the home co
   assert.match(vue, /agents-readonly-note/, "the read-only note explains why");
 });
 
-// --- the list contract (card t_619832ee) ---
+// -- the list contract --
 
 test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
-  // Trust boundary: the backend used to answer a zero-session agent with
-  // the literal body `null`, detailSessions.length threw, and the whole
-  // sidebar went blank. Every LIST fetch carries its own ?? [] guard -
-  // pinned by shape per read (a bare count rots the moment an unrelated
-  // `?? []` default lands in the same file).
+  // Trust boundary: the backend used to answer a zero-session agent with the literal.
   for (const guard of [
     /\(\(await res\.json\(\)\) \?\? \[\]\) as OmegaAgent\[\]/,
     /\(\(await res\.json\(\)\) \?\? \[\]\) as OmegaContinuousRow\[\]/,
@@ -132,20 +119,17 @@ test("AgentsPanel coerces a 200/null body, never crashes the render", () => {
   }
 });
 
-// --- t_c7222095: the Agents/Continuous merge (one tab) ---
+// --: the Agents/Continuous merge (one tab) --
 
 test("AgentsPanel merges the continuous roster into the rows (status word + the canonical preview)", () => {
   const vue = read("webui", "..", "harness", "continuous", "ui", "AgentsPanel.vue");
   assert.match(vue, /fetch\("\/continuous\/roster"\)/, "the roster loads with the agents");
   assert.match(vue, /continuousIndex\(roster\.value\)/, "the roster joins by name");
   assert.match(vue, /mergedRowDetail\(a, c\)/, "the detail carries the wake line");
-  // t_2d8deb8c: the status vocabulary - the dot+word rides the row
-  // law's SUBTITLE line through RegistryRow.status; the old inline
-  // badge died with ruling 3.
+  // the status vocabulary - the dot+word rides the row law's SUBTITLE line through
+  // RegistryRow.status.
   assert.doesNotMatch(vue, /agents-badge/, "the inline badge died");
-  // card t_10ac04f0 ruling 5: exactly ONE under-row line came back - the
-  // agent's canonical-chat preview (never the old continuous report
-  // line, which is what previewLine was).
+  // exactly ONE under-row line came back - the agent's canonical-chat preview.
   assert.match(vue, /agentPreview\(a\)/, "the preview is the canonical-chat read");
   assert.match(vue, /preview: pv\.text/, "the row carries the preview line");
   assert.match(vue, /agentStatusFor\(/, "the status word is the roster voice");

@@ -30,16 +30,8 @@ type mockProvider struct {
 	scripts   [][]core.ProviderStreamEvent
 	mu        *sync.Mutex
 	calls     *int
-	// thinkingLevel is the ladder value a WithThinkingLevel copy
-	// carries; tests assert per-run threading from it.
 	thinkingLevel string
-	// seenLevels records the thinkingLevel of every Stream call,
-	// shared with WithModel/WithThinkingLevel copies behind mu.
 	seenLevels *[]string
-	// seenModels records the modelName of every Stream call, shared
-	// with WithModel copies behind mu (same pattern as seenLevels) so
-	// tests can assert which model a call - e.g. the title_model-routed
-	// title call - actually streamed through.
 	seenModels *[]string
 }
 
@@ -112,9 +104,8 @@ func (m *mockProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolS
 	return events
 }
 
-// nextIndex hands out the next script index under the lock. The
-// increment happens here, not after streaming, so concurrent callers
-// cannot claim the same script.
+// nextIndex hands out the next script index under the lock. The increment happens here,
+// not after streaming, so concurrent callers cannot claim the same script.
 func (m *mockProvider) nextIndex() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -144,12 +135,10 @@ func newTestServer() *Server {
 	return NewServer(a, nil, nil, nil, nil, nil)
 }
 
-// testLoop is a minimal loop for http_channel tests. It mirrors the
-// real loop's event sequence AND its turn-copy persistence (t_471f6d4a):
-// the caller's PersistInput writes first, then the streamed turn's
-// assistant record - built from the content the provider actually sent,
-// the same shape the real loop persists. The real loop lives in
-// agent/loop/ (the timing suites run it directly).
+// testLoop is a minimal loop for http_channel tests. It mirrors the real loop's event
+// sequence AND its turn-copy persistence: the caller's PersistInput writes first, then
+// the streamed turn's assistant record - built from the content the provider actually
+// sent, the same shape the real loop persists.
 type testLoop struct{}
 
 // testToolProvider is a stub ToolProvider for the /tools inventory test.
@@ -159,8 +148,6 @@ func (p testToolProvider) Tools() map[string]core.Tool { return p.tools }
 
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
-	// Persistence outlives the run ctx - same WithoutCancel law the
-	// real loop applies, so a cancelled run still lands its copy.
 	persistCtx := context.WithoutCancel(ctx)
 	persist := func(msg core.Message) {
 		if sink == nil {
@@ -189,8 +176,7 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		}
 		opts.Events <- core.StreamEvent{Event: event}
 		if end, ok := event.(core.StreamEnd); ok && end.FinishReason == "stop" {
-			// Persist BEFORE the event, like the real loop: a reload
-			// mid-run must find the record already in the store.
+			// Persist BEFORE the event, like the real loop: a reload mid-run must find.
 			assistant := core.NewAssistant(content.String())
 			persist(assistant)
 			persisted = true
@@ -199,18 +185,14 @@ func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			opts.Events <- core.AgentEnd{Type: "agent_end", Turns: 1, FinishReason: "stop", Message: assistant}
 		}
 	}
-	// The stream unwound without a stop StreamEnd - a cancelled run
-	// (stop mid-turn) or a script that closed early. What streamed
-	// persists as the turn's partial: the transcript keeps the copy
-	// the user already saw rendered.
+	// The stream unwound without a stop StreamEnd.
 	if !persisted && content.Len() > 0 {
 		persist(core.NewAssistant(content.String()))
 	}
 	return nil
 }
 
-// newTestServerWithStore returns a server with an in-memory store and a
-// handle to the store for assertions.
+// newTestServerWithStore returns a server with an in-memory store and a handle.
 func newTestServerWithStore(t *testing.T) (*Server, *store.Store) {
 	t.Helper()
 	s := newTestServer()
@@ -246,15 +228,12 @@ func TestModels(t *testing.T) {
 	if len(body.Models) != 2 || body.Models[0] != "test-model" || body.Models[1] != "other-model" {
 		t.Fatalf("models = %v, want [test-model, other-model]", body.Models)
 	}
-	// a name-only provider (the interface, un-upgraded) carries no
-	// capabilities map - the pickers' curated fallback owns it then
 	if len(body.Capabilities) != 0 {
 		t.Fatalf("capabilities = %v, want absent for a name-only provider", body.Capabilities)
 	}
 }
 
-// capsProvider is mockProvider with the ListModelEntries upgrade
-// (card t_70c28128): the /models payload carries the capability map.
+// capsProvider is mockProvider with the ListModelEntries upgrade.
 type capsProvider struct {
 	*mockProvider
 }
@@ -267,9 +246,7 @@ func (p *capsProvider) ListModelEntries() ([]core.ModelEntry, error) {
 	}, nil
 }
 
-// TestModelsCapabilities: the upgraded provider's capability flags
-// ride the /models payload alongside the plain name list, and entries
-// without flags are omitted from the map (not sent as empty lists).
+// TestModelsCapabilities: the upgraded provider's capability flags ride the /models.
 func TestModelsCapabilities(t *testing.T) {
 	provider := &capsProvider{newMockProvider("mock",
 		scripted(
@@ -341,8 +318,7 @@ func TestChatSSE(t *testing.T) {
 	}
 }
 
-// chatThinking is a /chat POST body with one user message and the
-// given thinking_level (-1 = omitted: unset on the wire).
+// chatThinking is a /chat POST body with one user message and the given.
 func chatThinking(t *testing.T, level int) []byte {
 	t.Helper()
 	msg := map[string]any{
@@ -363,9 +339,7 @@ func postChatBody(s *Server, body []byte) *httptest.ResponseRecorder {
 	return rec
 }
 
-// TestChatThinkingLevel threads the ladder index into a per-run
-// provider copy: the Stream the loop runs sees the mapped ladder
-// level while the mounted base provider stays untouched.
+// TestChatThinkingLevel threads the ladder index into a per-run provider copy.
 func TestChatThinkingLevel(t *testing.T) {
 	s := newTestServer()
 	base := s.agent.Provider().(*mockProvider)
@@ -382,8 +356,7 @@ func TestChatThinkingLevel(t *testing.T) {
 	}
 }
 
-// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field
-// both leave the provider untouched - no thinking parameter sent.
+// TestChatThinkingLevelDefault: index 0 ("none") and an omitted field both leave.
 func TestChatThinkingLevelDefault(t *testing.T) {
 	s := newTestServer()
 	base := s.agent.Provider().(*mockProvider)
@@ -414,10 +387,7 @@ func TestChatThinkingLevelInvalid(t *testing.T) {
 	}
 }
 
-// TestChatThinkingLevelConcurrent is the concurrency law for the
-// thinking level: two /chat runs with different levels at the same
-// time each stream on their own copy, in order-indeed - and the base
-// provider keeps no level.
+// TestChatThinkingLevelConcurrent is the concurrency law for the thinking level.
 func TestChatThinkingLevelConcurrent(t *testing.T) {
 	s := newTestServer()
 	base := s.agent.Provider().(*mockProvider)
@@ -489,9 +459,7 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("created id = %q, want s1", created.ID)
 	}
 
-	// GET /sessions lists it (the sessions list rode the store capsule
-	// out with the shell-ring shrink wave 2 - the list law lives in
-	// harness/store/routes_test.go now).
+	// GET /sessions lists it.
 
 	// GET /sessions/s1 returns session + empty messages.
 	req = httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
@@ -511,9 +479,6 @@ func TestSessionsCRUD(t *testing.T) {
 		t.Fatalf("detail = %+v, want s1 with no messages", detail)
 	}
 
-	// Delegate lineage rides the detail wire (t_6c4ab302): the webui
-	// reads delegate_parent there, and parent_id stays empty so the
-	// child's transcript is its own.
 	if err := st.CreateDelegateSession(context.Background(), "kid", "s1", "delegate:task-1"); err != nil {
 		t.Fatalf("create delegate child: %v", err)
 	}
@@ -597,7 +562,6 @@ func TestSessionMessagesCarryCreatedAt(t *testing.T) {
 
 func TestSessionsNoStore(t *testing.T) {
 	s := newTestServer()
-	// The create floor keeps its no-store gate: POST answers 501.
 	req := httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader(`{"id":"x1"}`))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -637,7 +601,6 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	// Turn 1: real usage lands on the session row.
 	if code := postChat(s, "s1"); code != http.StatusOK {
 		t.Fatalf("turn 1 status = %d, want 200", code)
 	}
@@ -649,7 +612,6 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 		t.Fatalf("turn 1 totals = %d/%d, want 100/20", sess.PromptTokens, sess.CompletionTokens)
 	}
 
-	// Turn 2: accumulate on top of turn 1.
 	if code := postChat(s, "s1"); code != http.StatusOK {
 		t.Fatalf("turn 2 status = %d, want 200", code)
 	}
@@ -661,8 +623,7 @@ func TestSessionTokensPersistAndAccumulate(t *testing.T) {
 		t.Fatalf("turn 2 totals = %d/%d, want 140/25 (accumulated)", sess.PromptTokens, sess.CompletionTokens)
 	}
 
-	// The totals land on the row the session store serves (the list
-	// payload rides the store capsule now - the row truth is here).
+	// The totals land on the row the session store serves.
 	sess, err = st.GetSession(ctx, "s1")
 	if err != nil {
 		t.Fatalf("reget totals: %v", err)
@@ -736,11 +697,7 @@ func TestChatWithSessionMissing(t *testing.T) {
 	}
 }
 
-// TestChatWithoutSessionAutoCreates pins the Endo 2026-10-18 contract:
-// a /chat with no session_id on a store-backed server creates a session,
-// persists normally, and tells the client the id via a leading `session`
-// SSE frame. Without a store the run stays ephemeral (TestChatSSE pins
-// that shape).
+// TestChatWithoutSessionAutoCreates pins the Endo contract.
 func TestChatWithoutSessionAutoCreates(t *testing.T) {
 	s, store := newTestServerWithStore(t)
 	body, _ := json.Marshal(map[string]any{
@@ -753,7 +710,6 @@ func TestChatWithoutSessionAutoCreates(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 
-	// the leading frame names the created session
 	events := parseSSE(t, rec.Body.String())
 	if len(events) < 2 || events[0].event != "session" {
 		t.Fatalf("first frames = %v, want a leading session frame", events)
@@ -768,7 +724,6 @@ func TestChatWithoutSessionAutoCreates(t *testing.T) {
 		t.Fatalf("session frame id empty")
 	}
 
-	// the session exists and carries the whole persisted exchange
 	ctx := context.Background()
 	messages, err := store.GetMessages(ctx, sessFrame.ID)
 	if err != nil {
@@ -781,7 +736,6 @@ func TestChatWithoutSessionAutoCreates(t *testing.T) {
 		t.Fatalf("messages[1] = %T, want core.Assistant", messages[1])
 	}
 
-	// and it shows up in the list like any other session
 	sessions, err := store.ListSessions(ctx)
 	if err != nil {
 		t.Fatalf("list sessions: %v", err)
@@ -791,9 +745,7 @@ func TestChatWithoutSessionAutoCreates(t *testing.T) {
 	}
 }
 
-// TestChatNoSessionConcurrent pins the no-collision property: N parallel
-// session-less /chat calls each land in their OWN session - no shared
-// id, no CreateSession clash, every exchange persisted intact.
+// TestChatNoSessionConcurrent pins the no-collision property.
 func TestChatNoSessionConcurrent(t *testing.T) {
 	s, store := newTestServerWithStore(t)
 	body, _ := json.Marshal(map[string]any{
@@ -936,9 +888,7 @@ func TestSessionByIDMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// TestSessionPatchPinned covers the pin round-trip through the API: PATCH
-// {"pinned": true} persists the flag across a fresh GET /sessions read,
-// {"pinned": false} clears it, and an invalid body is rejected.
+// TestSessionPatchPinned covers the pin round-trip through the API.
 func TestSessionPatchPinned(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -967,8 +917,6 @@ func TestSessionPatchPinned(t *testing.T) {
 		t.Fatalf("patch response pinned = false, want true")
 	}
 
-	// the flag survives the row read (the list payload rides the store
-	// capsule now; the row truth is the store)
 	if pinned, _ := st.GetSession(ctx, "s1"); !pinned.Pinned {
 		t.Fatalf("row pinned = false after the pin PATCH, want true")
 	}
@@ -991,10 +939,9 @@ func TestSessionPatchPinned(t *testing.T) {
 	}
 }
 
-// TestSessionPatchArchived covers the archive round-trip through the
-// API: PATCH {"archived": true} persists the flag, the default GET
-// /sessions excludes the row, archived=include returns it, unarchive
-// brings it back, and updated_at never moves.
+// TestSessionPatchArchived covers the archive round-trip through the API: PATCH
+// {"archived": true} persists the flag, the default GET /sessions excludes the row,
+// archived=include returns it, unarchive brings it back, and updated_at never moves.
 func TestSessionPatchArchived(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -1024,9 +971,6 @@ func TestSessionPatchArchived(t *testing.T) {
 	}
 	updatedAt := sess.UpdatedAt
 
-	// the exclude/restore law rides the store capsule's list (ported to
-	// harness/store/routes_test.go); here the row truth: the flag is on
-	// and the PATCH is not activity - updated_at untouched
 	if archived, _ := st.GetSession(ctx, "s1"); !archived.Archived {
 		t.Fatalf("row archived = false after the archive PATCH, want true")
 	}
@@ -1052,19 +996,13 @@ func TestSessionPatchArchived(t *testing.T) {
 	}
 }
 
-// TestSessionPatchRead covers the mark-read round-trip through the API:
-// output landing after the session's last read turns unread on in the
-// list, PATCH {"read": true} stamps it off without touching updated_at,
-// and the invalid-body cases are rejected.
+// TestSessionPatchRead covers the mark-read round-trip through the API.
 func TestSessionPatchRead(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	if err := st.CreateSession(ctx, "s1", "", "label"); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// Output lands after birth - the row is unread before the mark-read,
-	// and the detail endpoint exposes the same read-time state the
-	// capsule's list carries.
 	if err := st.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append message: %v", err)
 	}
@@ -1095,7 +1033,6 @@ func TestSessionPatchRead(t *testing.T) {
 		t.Fatalf("mark-read left last_read_at empty")
 	}
 
-	// The detail endpoint exposes the same read-time state.
 	req := httptest.NewRequest(http.MethodGet, "/sessions/s1", nil)
 	rec = httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)
@@ -1152,12 +1089,9 @@ func TestSessionByIDPutLabel(t *testing.T) {
 	}
 }
 
-// TestMaybeTitleSessionTitleModelRouting pins the title_model knob:
-// with the knob set, the title call streams through the title model;
-// without it, it streams through the call's pinned provider (main).
+// TestMaybeTitleSessionTitleModelRouting pins the title_model knob.
 func TestMaybeTitleSessionTitleModelRouting(t *testing.T) {
 	ctx := context.Background()
-	// With the knob.
 	s, st, prov := newTitleTestServerWithStore(t)
 	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -1171,7 +1105,6 @@ func TestMaybeTitleSessionTitleModelRouting(t *testing.T) {
 		t.Fatalf("title state = %d, want provisional (1)", sess.TitleState)
 	}
 
-	// Without the knob: the pinned provider (main) serves directly.
 	s, st, prov = newTitleTestServerWithStore(t)
 	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -1182,14 +1115,8 @@ func TestMaybeTitleSessionTitleModelRouting(t *testing.T) {
 	}
 }
 
-// TestMaybeTitleSessionToolless pins the live defect t_381ae0d2: the title
-// turn is metadata, not a conversation. Its first user message can invite
-// tool use ("Use the delegate.task tool..."), and before agent.WithToolless
-// the title turn ran the FULL merged tool table - the title model spawned
-// REAL subagents (delegate:task-3/6, one parentless). The run reaching the
-// provider must be marked toolless: no schema, no dispatch entry, present
-// or future. The real conversation turn is untouched - it carries no
-// WithToolless (the loop drops the registry only when the mark is present).
+// TestMaybeTitleSessionToolless pins the live defect. The run reaching the provider
+// must be marked toolless: no schema, no dispatch entry, present or future.
 func TestMaybeTitleSessionToolless(t *testing.T) {
 	ctx := context.Background()
 	s, st, prov := newTitleTestServerWithStore(t)
@@ -1222,8 +1149,7 @@ func TestSessionByIDNotFound(t *testing.T) {
 	}
 }
 
-// captureProvider wraps mockProvider and records the user prompt sent
-// to every Stream call, so the title prompt shape is directly checked.
+// captureProvider wraps mockProvider and records the user prompt sent to every Stream.
 type captureProvider struct {
 	mockProvider
 	mu          sync.Mutex
@@ -1261,8 +1187,7 @@ func (c *captureProvider) streamPrompt(i int) string {
 	return c.prompts[i]
 }
 
-// newTitleTestServerWithStore builds a server whose title calls stream
-// "prov title" first, "final title" after.
+// newTitleTestServerWithStore builds a server whose title calls stream "prov title".
 func newTitleTestServerWithStore(t *testing.T) (*Server, *store.Store, *captureProvider) {
 	t.Helper()
 	prov := newCaptureProvider(
@@ -1305,7 +1230,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 	}
 	req := titleChatRequest("s1")
 
-	// Provisional from 0 -> 1: prompt is user-message-only.
 	s.maybeTitleSession(ctx, s.agent.Provider(), req, "", false)
 	sess, err := st.GetSession(ctx, "s1")
 	if err != nil {
@@ -1321,7 +1245,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 		t.Fatalf("provisional prompt shape: %q", p)
 	}
 
-	// Provisional again at 1: blocked, no second title call.
 	s.maybeTitleSession(ctx, s.agent.Provider(), req, "", false)
 	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != "prov title" || sess.TitleState != 1 {
 		t.Fatalf("second provisional overwrote: %+v", sess)
@@ -1330,7 +1253,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 		t.Fatalf("title calls = %d, want 1 (blocked at provisional)", prov.streamPromptCount())
 	}
 
-	// Final from 1 -> 2: prompt carries the reply context.
 	s.maybeTitleSession(ctx, s.agent.Provider(), req, "assistant reply text", true)
 	if sess, _ := st.GetSession(ctx, "s1"); sess.Label != "final title" || sess.TitleState != 2 {
 		t.Fatalf("after final: %+v", sess)
@@ -1349,8 +1271,6 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 		t.Fatalf("title calls = %d, want 2 (blocked at final)", prov.streamPromptCount())
 	}
 
-	// A manually set label blocks generated titles even at state 0 -
-	// the pre-title-state protection keeps working after migration.
 	if err := st.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
@@ -1364,8 +1284,7 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 		t.Fatalf("manual label overwritten: %+v", sess)
 	}
 
-	// A provisionally-titled session is never re-provisioned at state 1,
-	// but the final call still upgrades it from 1.
+	// A provisionally-titled session is never re-provisioned at state 1, but the final.
 	if err := st.CreateSession(ctx, "s3", "", ""); err != nil {
 		t.Fatalf("create s3: %v", err)
 	}
@@ -1377,20 +1296,15 @@ func TestMaybeTitleSessionStateGates(t *testing.T) {
 	if sess, _ := st.GetSession(ctx, "s3"); sess.Label != "early prov" || sess.TitleState != 1 {
 		t.Fatalf("state-1 reprovisioned: %+v", sess)
 	}
-	// Final still lands from 1.
 	s.maybeTitleSession(ctx, s.agent.Provider(), req3, "reply", true)
 	if sess, _ := st.GetSession(ctx, "s3"); sess.Label != "final title" || sess.TitleState != 2 {
 		t.Fatalf("final from 1 failed: %+v", sess)
 	}
 }
 
-// TestChatFiresProvisionalThenFinalOnce exercises the full /chat flow:
-// a state-0 session gets a provisional title at request start and a
-// final one at persist end, then a second exchange fires no title call.
+// TestChatFiresProvisionalThenFinalOnce exercises the full /chat flow.
 func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 	ctx := context.Background()
-	// Every stream returns the same content, so both title calls
-	// produce "hello" regardless of call order.
 	s, st := newTestServerWithStore(t)
 	if err := st.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
@@ -1430,9 +1344,8 @@ func TestChatFiresProvisionalThenFinalOnce(t *testing.T) {
 	}
 }
 
-// TestTools: GET /tools lists the registry as {name, description}, sorted
-// by name; a bare server (nil registry) answers []; any other method is
-// 405. The webui's module-owned tools panel renders this inventory.
+// TestTools: GET /tools lists the registry as {name, description}, sorted by name; a
+// bare server (nil registry) answers []; any other method is 405.
 func TestTools(t *testing.T) {
 	a := agent.NewAgent(newMockProvider("mock"), nil, 0)
 	a.SetLoopProvider(testLoop{})
@@ -1480,8 +1393,6 @@ func TestTools(t *testing.T) {
 		t.Fatalf("tools = %+v, want provider tools in the sorted union", got4)
 	}
 
-	// domain tool with actions + alias: the folded row carries the
-	// actions metadata; the alias shim is hidden from the inventory.
 	a.SetToolProviders([]core.ToolProvider{testToolProvider{tools: map[string]core.Tool{
 		"memory": {
 			Description: "domain tool",
@@ -1522,7 +1433,6 @@ func TestTools(t *testing.T) {
 		t.Fatalf("bare body = %q, want []", body)
 	}
 
-	// method gate
 	rec3 := httptest.NewRecorder()
 	bare.Handler().ServeHTTP(rec3, httptest.NewRequest(http.MethodPost, "/tools", nil))
 	if rec3.Code != http.StatusMethodNotAllowed {
@@ -1530,12 +1440,9 @@ func TestTools(t *testing.T) {
 	}
 }
 
-// --- named provider instances (card t_7dcd4280) ---
+// named provider instances
 
-// instancesProvider wraps an agent.Provider with the named-instance
-// resolver the shell probes (agent.ProviderInstances): each configured
-// name serves through its own provider, copies included. Backed by a
-// live map, so tests can DELETE an instance to model removal.
+// instancesProvider wraps an agent.Provider with the named-instance resolver.
 type instancesProvider struct {
 	agent.Provider
 	instances map[string]agent.Provider
@@ -1546,8 +1453,7 @@ func (p *instancesProvider) Instance(name string) (agent.Provider, bool) {
 	return inst, ok
 }
 
-// InstanceNames implements agent.ProviderInstanceNames: the serving
-// shell's grouped model catalog reads the id list (card t_1914a8c9).
+// InstanceNames implements agent.ProviderInstanceNames.
 func (p *instancesProvider) InstanceNames() []string {
 	names := make([]string, 0, len(p.instances))
 	for n := range p.instances {
@@ -1557,8 +1463,7 @@ func (p *instancesProvider) InstanceNames() []string {
 	return names
 }
 
-// scriptOne is the one-script stream every provider in the tests below
-// replays.
+// scriptOne is the one-script stream every provider in the tests below replays.
 func scriptOne() []core.ProviderStreamEvent {
 	return scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -1566,14 +1471,10 @@ func scriptOne() []core.ProviderStreamEvent {
 	)
 }
 
-// newInstanceTestServer builds a server whose base provider resolves
-// "backup" (model "backup-model") through a live map, plus its store.
+// newInstanceTestServer builds a server whose base provider resolves "backup".
 func newInstanceTestServer(t *testing.T) (*Server, *store.Store, *mockProvider, map[string]agent.Provider) {
 	t.Helper()
 	base := newMockProvider("mock", scriptOne())
-	// A distinct provider, not a WithModel copy: the copy would share
-	// the recorder, making "the instance served" indistinguishable
-	// from "the default served" in the assertions below.
 	backup := newMockProvider("backup-model", scriptOne())
 	byName := map[string]agent.Provider{"backup": backup}
 	a := agent.NewAgent(&instancesProvider{Provider: base, instances: byName}, nil, 0)
@@ -1588,8 +1489,7 @@ func newInstanceTestServer(t *testing.T) (*Server, *store.Store, *mockProvider, 
 	return s, st, backup, byName
 }
 
-// chatBody builds one /chat POST body: one user message, optional
-// session id and provider instance name (empty = omitted).
+// chatBody builds one /chat POST body.
 func chatBody(sessionID, provider string) []byte {
 	msg := map[string]any{
 		"messages": []map[string]any{{"role": "user", "content": "hi"}},
@@ -1616,11 +1516,10 @@ func quiesce(s *Server, sessionID string) {
 	}
 }
 
-// TestChatProviderInstanceResolution: the wire provider name resolves
-// the named instance (the run streams through its model), an unknown
-// name is a loud 400 (never the default silently), and an
-// upgrade-less provider refuses any name - the default is never picked
-// up as a fallback for a named run.
+// TestChatProviderInstanceResolution: the wire provider name resolves the named
+// instance (the run streams through its model), an unknown name is a loud 400 (never
+// the default silently), and an upgrade-less provider refuses any name - the default is
+// never picked up as a fallback for a named run.
 func TestChatProviderInstanceResolution(t *testing.T) {
 	s, _, backup, _ := newInstanceTestServer(t)
 
@@ -1656,7 +1555,6 @@ func TestChatProviderInstanceResolution(t *testing.T) {
 		t.Fatalf("body = %q, want the loud not-configured message", body)
 	}
 
-	// An un-upgraded provider is a full member: no name, no problem.
 	bare := newTestServer()
 	rec = postChatBody(bare, chatBody("", "x"))
 	if rec.Code != http.StatusBadRequest {
@@ -1667,12 +1565,10 @@ func TestChatProviderInstanceResolution(t *testing.T) {
 	}
 }
 
-// TestChatProviderSessionPin: a wire provider name WINS and sticks on
-// the session (the model pin's shape); the next send resolves the
-// pinned name with no wire field - and when the instance is removed
-// from the resolver, the stranded session's next send fails LOUDLY
-// (400) - never a silent fallback to the default instance. Clearing
-// the pin serves the default again.
+// TestChatProviderSessionPin: a wire provider name WINS and sticks on the session (the
+// model pin's shape); the next send resolves the pinned name with no wire field - and
+// when the instance is removed from the resolver, the stranded session's next send
+// fails LOUDLY (400) - never a silent fallback to the default instance.
 func TestChatProviderSessionPin(t *testing.T) {
 	ctx := context.Background()
 	s, st, _, byName := newInstanceTestServer(t)
@@ -1694,7 +1590,6 @@ func TestChatProviderSessionPin(t *testing.T) {
 		t.Fatalf("pinned provider = %q, want backup (the wire wins and sticks)", sess.ProviderName)
 	}
 
-	// The stick: no wire field, the pinned name resolves again.
 	rec = postChatBody(s, chatBody("s1", ""))
 	quiesce(s, "s1")
 	if rec.Code != http.StatusOK {
@@ -1712,7 +1607,6 @@ func TestChatProviderSessionPin(t *testing.T) {
 		t.Fatalf("body = %q, want the loud not-configured message", body)
 	}
 
-	// Clearing the pin: the default serves again.
 	if err := scx.SetSessionProvider(ctx, "s1", ""); err != nil {
 		t.Fatalf("clear pin: %v", err)
 	}
@@ -1723,14 +1617,13 @@ func TestChatProviderSessionPin(t *testing.T) {
 	}
 }
 
-// --- the grouped model catalog (card t_1914a8c9) ---
+// the grouped model catalog
 
-// TestModelsGroupedSections: the /models payload carries one section
-// per provider - the default first with its own listing, then the
-// named instances (sorted, the config map iterates unordered). An
-// instance whose provider carries no listing still renders the
-// section with the error named, never a silent drop; the flat fields
-// stay for the settings pickers.
+// TestModelsGroupedSections: the /models payload carries one section per provider - the
+// default first with its own listing, then the named instances (sorted, the config map
+// iterates unordered). An instance whose provider carries no listing still renders the
+// section with the error named, never a silent drop; the flat fields stay for the
+// settings pickers.
 func TestModelsGroupedSections(t *testing.T) {
 	s, _, _, _ := newInstanceTestServer(t)
 	req := httptest.NewRequest(http.MethodGet, "/models", nil)
@@ -1769,13 +1662,7 @@ func TestModelsGroupedSections(t *testing.T) {
 	}
 }
 
-// TestChatModelSlotPickerGrammar: the picker's slot grammar rides the
-// MODEL field (card t_1914a8c9) - "backup:slot-model" routes the run
-// through the named instance and serves the SUFFIX as the model;
-// "default:plain" cancels the session's provider pin (the picker
-// explicitly left the instance) and serves the base provider; an
-// instance-shaped prefix that names NO configured instance stays a
-// bare model on the request provider (the ollama family:tag law).
+// TestChatModelSlotPickerGrammar: the picker's slot grammar rides the MODEL field.
 func TestChatModelSlotPickerGrammar(t *testing.T) {
 	s, st, backup, _ := newInstanceTestServer(t)
 	ctx := context.Background()
@@ -1801,7 +1688,6 @@ func TestChatModelSlotPickerGrammar(t *testing.T) {
 		return sess.ProviderName
 	}
 
-	// slot -> the named instance served the suffix as the model
 	if pin := send("backup:slot-model"); pin != "backup" {
 		t.Fatalf("provider pin = %q, want backup (the slot prefix wins and sticks)", pin)
 	}
@@ -1809,8 +1695,6 @@ func TestChatModelSlotPickerGrammar(t *testing.T) {
 		t.Fatalf("instance served %v, want slot-model among the served names", names)
 	}
 
-	// "default:" cancels the pin: the picker explicitly left the
-	// instance - the base provider serves the suffix
 	if pin := send("default:plain"); pin != "" {
 		t.Fatalf("provider pin after default pick = %q, want empty (the sticky pin must not survive)", pin)
 	}
@@ -1819,8 +1703,7 @@ func TestChatModelSlotPickerGrammar(t *testing.T) {
 		t.Fatalf("base served %v, want plain among the served names", names)
 	}
 
-	// a bare model with a colon that names no configured instance
-	// stays a bare model on the default provider (no pin, no route)
+	// a bare model with a colon that names no configured instance stays a bare model.
 	if pin := send("qwen2.5:7b"); pin != "" {
 		t.Fatalf("provider pin = %q, want empty (family:tag names stay bare)", pin)
 	}

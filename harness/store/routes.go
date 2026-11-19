@@ -1,38 +1,8 @@
 package store
 
-// routes.go: the session-MANAGEMENT REST face (the shell-ring shrink
-// wave 2, the three-layer sessions law - ADR Workshop/omega-shell-ring-shrink.md).
-//
-//	GET  /sessions               the sessions list (browse)
-//	GET  /sessions/search?q=     the unified FTS search (the search seat)
-//	POST /sessions/{id}/branch   fork a session (the /branch parity)
-//	GET  /sessions/{id}/export   the JSONL export (the /export parity)
-//	GET  /insights               the cross-session analytics view
-//
-// The chat floor stays in the base set (agent/api/server.go): POST
-// /sessions (session id creation), /sessions/{id} (detail, the
-// remembered send context, the ephemeral close) and the live-run reads
-// (events/stop/transcript/variants). The split point (the ADR): an
-// endpoint the chat page calls live = base; an endpoint the sessions
-// list/inspector calls = management = this capsule. The list/search/
-// branch/export/insights endpoints exist only to serve the sessions
-// surface and the insights panel - they mount and die with this
-// capsule, and the capsule's own Open'd store answers them.
-//
-// INSIGHTS DISCLOSURE (the ADR's open call): insights rides THIS
-// capsule, not an own harness/insights module. It is a pure view over
-// store data (ComputeInsights on the same *Store the list reads) -
-// an insights capsule would carry no seam of its own, mirror the same
-// store requirement, and split one deletion proof (sessions+insights
-// leave together, "removing store removes sessions+insights") into two
-// coupled strands. One capsule, one strand, one deletability proof.
-//
-// The list's running flag resolves the "chat-runs" service per request
-// through this capsule's OWN local ChatRunsReader face (the
-// consumer-owned-face law, the seam constitution; the live run hub
-// is offered by the serving channel). Missing offer = never-running:
-// the honest empty state on a boot with no serving channel, never a
-// fault.
+// routes.go: the session-MANAGEMENT REST face.
+// Missing offer = never-running: the honest empty state on a boot with no serving
+// channel, never a fault.
 
 import (
 	"encoding/json"
@@ -47,17 +17,13 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Routes is the capsule's management REST face, built on the store
-// instance the plugin opened at mount. One Routes per mount; every
-// handler reads the same handle.
+// Routes is the capsule's management REST face, built on the store instance.
 type Routes struct {
 	store *Store
 	ctx   *core.Context
 }
 
-// newRoutes builds the face. ctx is the mount context - the handlers
-// resolve the chat-runs service through it per request (the live
-// re-wire law: the read follows whatever the serving channel offered).
+// newRoutes builds the face.
 func newRoutes(ctx *core.Context, s *Store) *Routes {
 	return &Routes{store: s, ctx: ctx}
 }
@@ -69,8 +35,7 @@ func (rt *Routes) writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// httpError renders one failure; detail is operator-facing truth, the
-// webui renders what it gets.
+// httpError renders one failure.
 func (rt *Routes) httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
@@ -96,16 +61,10 @@ func (rt *Routes) registrationRows() []struct {
 	}
 }
 
-// sessionRow is one GET /sessions list row: the session row (which
-// carries the pinned flag, the persisted token totals, and the
-// last-read stamp) plus the read-time counts, the last recorded model,
-// the read-time unread state, and whether the session has a live run
-// right now (the sidebar's streaming pulse after a page refresh - the
-// in-memory busy map no longer survives the reload). The running flag
-// is the backend's single truth for "is this session streaming" (it
-// derives from the chat-runs service, never from a client's memory of
-// its own stream), so it is ALWAYS present on the row - true and false
-// alike - and every tab reconciles its pulse against it.
+// sessionRow is one GET /sessions list row. The running flag is the backend's single
+// truth for "is this session streaming" (it derives from the chat-runs service, never
+// from a client's memory of its own stream), so it is ALWAYS present on the row - true
+// and false alike - and every tab reconciles its pulse against it.
 type sessionRow struct {
 	core.Session
 	MessageCount int    `json:"message_count"`
@@ -115,14 +74,10 @@ type sessionRow struct {
 	Running      bool   `json:"running"`
 }
 
-// ChatRunsReader is the consumer-owned local face of the "chat-runs"
-// service (the first shell-offered capsule-service key, Endo ruling
-// 2026-11-04: owner = the serving shell; consumers = any capsule
-// reading live-run state through their own interface; missing offer =
-// honest never-running). The serving channel offers the
-// implementation; the run hub itself never leaves the chat surface -
-// only this read crosses the seam. The owner never knows this face
-// exists (no core-named seam type anywhere).
+// ChatRunsReader is the consumer-owned local face of the "chat-runs" service. The
+// serving channel offers the implementation; the run hub itself never leaves the chat
+// surface - only this read crosses the seam. The owner never knows this face exists (no
+// core-named seam type anywhere).
 type ChatRunsReader interface {
 	Active(id string) bool
 }
@@ -141,21 +96,15 @@ func (rt *Routes) running(id string) bool {
 	return false
 }
 
-// handleSessionsList serves GET /sessions (the sessions browse list) -
-// formerly the base GET /sessions. It is the chat floor's complement:
-// the id creation lives in the base set, the browsing is this capsule.
+// handleSessionsList serves GET /sessions (the sessions browse list).
 func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 	sessions, err := rt.store.ListSessions(r.Context())
 	if err != nil {
 		rt.httpError(w, http.StatusInternalServerError, "list sessions: %v", err)
 		return
 	}
-	// Archived filter: default excludes archived sessions from the
-	// list; archived=include returns them (with the rest). The flag
-	// is a user-list concern, so the filter lives at the read.
 	includeArchived := r.URL.Query().Get("archived") == "include"
-	// ponytail: counts are computed at read time from SQL COUNT, so
-	// the list stays accurate with no maintained counters.
+	// ponytail: counts are computed at read time from SQL COUNT, so the list stays.
 	counts, err := rt.store.SessionCounts(r.Context())
 	if err != nil {
 		rt.httpError(w, http.StatusInternalServerError, "session counts: %v", err)
@@ -176,14 +125,12 @@ func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 			payload.MessageCount = c.MessageCount
 			payload.ToolCount = c.ToolCount
 		}
-		// The pinned model wins; the model_change trail is the
-		// fallback for sessions that never carried a pin (card t_9de5b009).
+		// The pinned model wins; the model_change trail is the fallback for sessions that
+		// never carried a pin.
 		payload.Model = models[sess.ID]
 		if sess.Model != "" {
 			payload.Model = sess.Model
 		}
-		// computed at read time from the row itself - no counters,
-		// no schema writes (same pattern as the counts)
 		payload.Unread = agent.SessionUnread(sess)
 		payload.Running = rt.running(sess.ID)
 		out = append(out, payload)
@@ -191,11 +138,7 @@ func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, out)
 }
 
-// searchHit is one /sessions/search row: the matching session id plus
-// the hit (a title hit carries the label with titleMatch set). Snippet
-// is a verbatim stored-content excerpt; matches carries the
-// matched-term spans (byte offsets, t_1901ce48) when the matched term
-// landed in the window.
+// searchHit is one /sessions/search row.
 type searchHit struct {
 	ID         string              `json:"id"`
 	Snippet    string              `json:"snippet,omitempty"`
@@ -203,12 +146,7 @@ type searchHit struct {
 	TitleMatch bool                `json:"titleMatch,omitempty"`
 }
 
-// handleSessionSearch serves GET /sessions/search?q=<term>: the store's
-// unified FTS5 search (SearchSessions) - one endpoint, one result
-// shape, session labels AND message content in the same index pass,
-// deduped to one hit per session with title hits ranked first. It
-// answers 200 [] on a missing/empty q (nothing to search), and 400
-// when FTS5 rejects the query syntax.
+// handleSessionSearch serves GET /sessions/search?q=<term>.
 func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if q == "" {
@@ -217,19 +155,9 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	}
 	results, err := rt.store.SearchSessions(r.Context(), q)
 	if err != nil {
-		// The only input-dependent failure mode of this read-only
-		// query is the query itself; the sqlite driver surfaces FTS5
-		// syntax errors as plain "SQL logic error" strings, so the
-		// bad call gets 400 (a real store fault trips on the /sessions
-		// list too, not just here).
 		rt.httpError(w, http.StatusBadRequest, "search: %v", err)
 		return
 	}
-	// Archived filter: default excludes hits whose session is archived
-	// (the sidebar's toggle drives the same archived=include param the
-	// list takes); archived=include keeps them. One read of the session
-	// list builds the exclusion set - the search stays a pure FTS
-	// query, the flag is a user-list concern applied at read time.
 	if r.URL.Query().Get("archived") != "include" {
 		sessions, err := rt.store.ListSessions(r.Context())
 		if err != nil {
@@ -251,8 +179,7 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, out)
 }
 
-// slicesCut drops the elements the keep-predicate rejects (the base
-// set's name was slices.DeleteFunc).
+// slicesCut drops the elements the keep-predicate rejects.
 func slicesCut[T any](s []T, drop func(T) bool) []T {
 	out := make([]T, 0, len(s))
 	for _, v := range s {
@@ -263,18 +190,7 @@ func slicesCut[T any](s []T, drop func(T) bool) []T {
 	return out
 }
 
-// handleSessionBranch serves POST /sessions/{id}/branch (/branch
-// parity): creates a child session of id through the same machinery
-// the command drives (CreateSession with the parent link - the store
-// rejects a missing parent), then appends ONE summary system row into
-// the child so the lineage marker lives in the store (the webui paints
-// the equivalent "[branched from ...]" affordance client-side; the
-// webui row badge reads parent_id). Read-time semantics ride the
-// store's merged view: the child's active path is the whole ancestor
-// chain, so the transcript restore and the context assembly both
-// inherit the parent's history as a prefix. 404 on an unknown parent,
-// 201 with the child session (the shape POST /sessions already
-// returns).
+// handleSessionBranch serves POST /sessions/{id}/branch (/branch parity).
 func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if id == "" {
@@ -286,9 +202,7 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 		rt.httpError(w, http.StatusNotFound, "session not found: %v", err)
 		return
 	}
-	// New child id - the same fallback the POST /sessions flow uses
-	// (crypto/rand never fails on supported platforms; a timestamp
-	// keeps the branch alive if it ever does).
+	// New child id - the same fallback the POST /sessions flow uses.
 	childID, err := agent.NewSessionID()
 	if err != nil {
 		childID = fmt.Sprintf("sess-%d", time.Now().UnixNano())
@@ -297,8 +211,6 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 		rt.httpError(w, http.StatusInternalServerError, "branch session: %v", err)
 		return
 	}
-	// Summary system row: excluded from counts and the message tree, so
-	// only the transcript-side lineage marker and this record exist.
 	summary := "branched from " + id
 	if parent.Label != "" {
 		summary = "branched from " + parent.Label + " (" + id + ")"
@@ -315,22 +227,13 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusCreated, sess)
 }
 
-// exportLine is one JSONL line of GET /sessions/{id}/export - the exact
-// shape the /export command writes{"role": "<role>", "content":
-// "<text>"} per message.
+// exportLine is one JSONL line of GET /sessions/{id}/export.
 type exportLine struct {
 	Role    string `json:"role"`
 	Content string `json:"content"`
 }
 
-// handleSessionExport serves GET /sessions/{id}/export (/export
-// parity): the session's ACTIVE PATH as JSONL - one {"role","content"}
-// line per conversation message, the same shape HandleExportCommand
-// writes to disk for the channel. For a branched session the active
-// path is the whole lineage (store-side ancestors), so the exported
-// file matches what the webui renders. Served as an attachment
-// (Content-Disposition download named <session id>.jsonl); 404 for an
-// unknown session, 500 on store faults.
+// handleSessionExport serves GET /sessions/{id}/export (/export parity).
 func (rt *Routes) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		rt.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -355,9 +258,6 @@ func (rt *Routes) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.jsonl"`, sess.ID))
 	w.WriteHeader(http.StatusOK)
 	if r.Method == http.MethodHead {
-		// headers only - the download probe (the webui anchor, curl -I)
-		// reads Content-Disposition without the body; net/http would
-		// discard a written body for HEAD anyway
 		return
 	}
 	for _, msg := range messages {
@@ -368,8 +268,7 @@ func (rt *Routes) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// insightsRow shapes one tools-count row / day row / notable row of
-// the insights payload (the webui renders bar width from Count itself).
+// insightsRow shapes one tools-count row / day row / notable row of the insights.
 type insightsRow struct {
 	Name  string `json:"name,omitempty"`
 	Count int    `json:"count"`
@@ -385,9 +284,7 @@ type insightsNotableRow struct {
 	Detail string `json:"detail"`
 }
 
-// insightsPayload is the wire shape of one GET /insights response. It
-// mirrors core.Insights field-for-field (the same shape the base set
-// served pre-move).
+// insightsPayload is the wire shape of one GET /insights response.
 type insightsPayload struct {
 	Period         string             `json:"period"`
 	PeriodStart    string             `json:"period_start"`
@@ -408,9 +305,8 @@ type insightsPayload struct {
 	WALSizeBytes   int64              `json:"wal_size_bytes"`
 }
 
-// insightsPayloadOf copies the computed Insights into the wire shape.
-// One place to map, so a future store-field addition has exactly one
-// place to surface.
+// insightsPayloadOf copies the computed Insights into the wire shape. One place to map,
+// so a future store-field addition has exactly one place to surface.
 func insightsPayloadOf(in *core.Insights) insightsPayload {
 	p := insightsPayload{
 		Period:         in.Period,
@@ -423,15 +319,9 @@ func insightsPayloadOf(in *core.Insights) insightsPayload {
 		ToolCalls:      in.ToolCalls,
 		TotalTokens:    in.TotalTokens,
 		AvgSessionMsgs: in.AvgSessionMsgs,
-		// arrays stay arrays on the wire: a nil Go slice marshals as
-		// null, and the webui's insights template (data.tools.length)
-		// dereferences the field on every boot - the null crashed the
-		// SPA boot on any lane whose window holds no tool calls.
+		// arrays stay arrays on the wire: a nil Go slice marshals as null,.
 		Tools:       []insightsRow{},
 		NotableMsgs: insightsNotableRow{Value: in.NotableMsgs.Value, Detail: in.NotableMsgs.Detail},
-		// Store file sizes ride every response (the webui's insights
-		// pane renders them when non-zero - a ":memory:" test store
-		// sends 0/0 and that is honest).
 		DBSizeBytes:  in.DBSizeBytes,
 		WALSizeBytes: in.WALSizeBytes,
 	}
@@ -446,10 +336,9 @@ func insightsPayloadOf(in *core.Insights) insightsPayload {
 	return p
 }
 
-// handleInsights serves GET /insights?days=N (the insights panel's
-// read; disclosure in the file header). days semantics mirror
-// HandleInsightsCommand exactly: default 30, an explicit value >= 0 is
-// honored (0 = all time), anything else falls back to the default.
+// handleInsights serves GET /insights?days=N (the insights panel's read. days semantics
+// mirror HandleInsightsCommand exactly: default 30, an explicit value >= 0 is honored
+// (0 = all time), anything else falls back to the default.
 func (rt *Routes) handleInsights(w http.ResponseWriter, r *http.Request) {
 	days := 30
 	if d, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("days"))); err == nil && d >= 0 {
@@ -463,12 +352,7 @@ func (rt *Routes) handleInsights(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, insightsPayloadOf(in))
 }
 
-// DefaultSupplyPath is the substrate-class default supply's database
-// path for this home: <home>/data/omega.db, or the bare omega.db
-// fallback when no data home resolves. It is the exact resolution the
-// store plugin's mount runs (datadir.AgentHome / DBPath) - the host's
-// no-capsule boot opens the same file the capsule would have, so the
-// supply survives the capsule's removal (the wave-2 acceptance proof).
+// DefaultSupplyPath is the substrate-class default supply's database path.
 func DefaultSupplyPath() string {
 	home, err := datadir.AgentHome()
 	if err != nil || home == "" {

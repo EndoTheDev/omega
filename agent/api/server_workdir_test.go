@@ -1,23 +1,6 @@
 package api
 
-// The server hand-off pin (card t_74428a10): the live lane saw
-// shell.run answer the service cwd (C:\Windows\System32) while the
-// workspace chip showed the configured default_workspace. The knob
-// wiring exists (SetDefaultWorkspace -> prepareRun fallback ->
-// WithRunWorkspace); these tests pin the whole chain with the REAL
-// loop and the REAL shell tool, so a broken hand-off between the
-// server's resolved req.workspace and the tool's ctx is red here
-// instead of silent live:
-//
-//   - no-store run: the default_workspace knob roots the tools
-//     (prepareRun's sibling fallback, card t_ccf74d88)
-//   - stored session with no pinned workspace: same fallback
-//   - stored session with a pinned workspace: the pin wins
-//     (card t_9de5b009)
-//
-// The probe is `pwd` on unix and bare `cd` on windows (pwd.exe on the
-// inherited PATH answers with a translated path, not the workspace -
-// the same shape TestShellRoot documents in harness/terminal).
+// The server hand-off pin: the live lane saw shell.run answer the service cwd.
 
 import (
 	"bytes"
@@ -37,10 +20,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
-// newShellServer builds a server with the real loop and the real shell
-// tool over a provider scripted to call shell.run once (turn 1 calls
-// the cwd probe, turn 2 stops). Returns the server, the provider and
-// the OS-shaped cwd probe.
+// newShellServer builds a server with the real loop and the real shell tool.
 func newShellServer(t *testing.T) (*Server, *agent.FakeProvider, string) {
 	t.Helper()
 	probe := "pwd"
@@ -50,18 +30,13 @@ func newShellServer(t *testing.T) (*Server, *agent.FakeProvider, string) {
 	prov := agent.NewFakeProviderScripts("mock", shellTurn(probe)...)
 	a := agent.NewAgent(prov, nil, 0)
 	a.SetLoopProvider(loop.Loop{})
-	// The shell registry is explicit and private: a zero provider has no
-	// default, and a default would resolve the installed instance's home
-	// (~/.omega) and write process.json plus per-shell logs there on
-	// every gate run (review round 1 on card t_5a49790b).
 	reg := terminal.NewRegistry(terminal.RegistryConfig{Home: t.TempDir(), KillGraceSeconds: 1})
 	t.Cleanup(reg.Close)
 	s := NewServer(a, terminal.NewShellProvider(nil, reg).Tools(), nil, nil, nil, nil)
 	return s, prov, probe
 }
 
-// shellTurn returns the two-script shape: turn 1 calls the probe, turn 2
-// stops. One tool call per probe (the provider script counter walks).
+// shellTurn returns the two-script shape: turn 1 calls the probe, turn 2 stops.
 func shellTurn(probe string) [][]core.ProviderStreamEvent {
 	return [][]core.ProviderStreamEvent{
 		{
@@ -75,8 +50,7 @@ func shellTurn(probe string) [][]core.ProviderStreamEvent {
 	}
 }
 
-// chatToolResults posts /chat with the given body and returns every
-// tool_result frame the run streamed (content + error flag).
+// chatToolResults posts /chat with the given body and returns every tool_result frame.
 func chatToolResults(t *testing.T, s *Server, body []byte) []core.ToolResult {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
@@ -112,9 +86,9 @@ func assertRanIn(t *testing.T, res core.ToolResult, dir string, label string) {
 	}
 }
 
-// TestChatNoStoreRootsToolsAtDefaultWorkspace: the legacy no-store path
-// applies the default_workspace fallback (card t_ccf74d88) - the tools
-// cannot fall back to the service/process cwd when the knob is defined.
+// TestChatNoStoreRootsToolsAtDefaultWorkspace: the legacy no-store path applies the
+// default_workspace fallback - the tools cannot fall back to the service/process cwd
+// when the knob is defined.
 func TestChatNoStoreRootsToolsAtDefaultWorkspace(t *testing.T) {
 	s, _, _ := newShellServer(t)
 	ws := t.TempDir()
@@ -127,13 +101,7 @@ func TestChatNoStoreRootsToolsAtDefaultWorkspace(t *testing.T) {
 	assertRanIn(t, res, ws, "no-store")
 }
 
-// chatStoredToolResult posts /chat with the given body and waits for
-// the shell.run call's result to land in the session store. Card
-// t_1501cb04 made shell.run escalation-eligible (no static yield
-// class): a fast probe completes INLINE and persists as the run's own
-// tool_result row; a slow one escalates and re-enters as a
-// YieldResult. Either row proves the probe ran rooted where the test
-// wants - both classes accepted, the content is the pin.
+// chatStoredToolResult posts /chat with the given body and waits for the shell.run.
 func chatStoredToolResult(t *testing.T, s *Server, st *store.Store, body []byte, dir string) (content string, isErr bool) {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/chat", bytes.NewReader(body))
@@ -165,8 +133,7 @@ func chatStoredToolResult(t *testing.T, s *Server, st *store.Store, body []byte,
 	return "", false
 }
 
-// assertRanInStored checks a stored shell.run row's content and error
-// flag, either row class.
+// assertRanInStored checks a stored shell.run row's content and error flag, either.
 func assertRanInStored(t *testing.T, content string, isErr bool, dir string, label string) {
 	t.Helper()
 	if isErr {
@@ -177,8 +144,7 @@ func assertRanInStored(t *testing.T, content string, isErr bool, dir string, lab
 	}
 }
 
-// sessionIDFromBody extracts the request's session_id (the tests own
-// the body shape).
+// sessionIDFromBody extracts the request's session_id (the tests own the body shape).
 func sessionIDFromBody(body []byte) string {
 	var wire map[string]any
 	if err := json.Unmarshal(body, &wire); err != nil {
@@ -188,12 +154,7 @@ func sessionIDFromBody(body []byte) string {
 	return sid
 }
 
-// TestChatStoredSessionRootsToolsAtDefaultWorkspace: a session row with
-// no pinned workspace takes the knob fallback through prepareRun
-// (server.go's sess.Workspace -> defaultWorkspace chain). The shell
-// probe lands in the session store on its own row (card t_1501cb04:
-// inline tool_result for a fast probe, YieldResult for an escalated
-// one - the stored content is the pin either way).
+// TestChatStoredSessionRootsToolsAtDefaultWorkspace: a session row with no pinned.
 func TestChatStoredSessionRootsToolsAtDefaultWorkspace(t *testing.T) {
 	s, _, _ := newShellServer(t)
 	memStore, err := store.Open(":memory:")
@@ -207,9 +168,7 @@ func TestChatStoredSessionRootsToolsAtDefaultWorkspace(t *testing.T) {
 	if err := memStore.CreateSession(context.Background(), "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
-	// Pre-title the row (final=true bumps TitleState past 0): the
-	// detached title kick streams through the SAME scripted provider
-	// and would eat the tool-call script before the main run claims it.
+	// Pre-title the row (final=true bumps TitleState past 0).
 	if err := memStore.SetSessionTitle(context.Background(), "s1", "probe", true); err != nil {
 		t.Fatalf("pre-title session: %v", err)
 	}
@@ -222,8 +181,7 @@ func TestChatStoredSessionRootsToolsAtDefaultWorkspace(t *testing.T) {
 	assertRanInStored(t, content, isErr, ws, "stored session")
 }
 
-// TestChatPinnedWorkspaceWinsOverDefault: a session pinned to a folder
-// roots THIS run there (card t_9de5b009) even with a different knob.
+// TestChatPinnedWorkspaceWinsOverDefault: a session pinned to a folder roots THIS run.
 func TestChatPinnedWorkspaceWinsOverDefault(t *testing.T) {
 	s, _, _ := newShellServer(t)
 	memStore, err := store.Open(":memory:")
@@ -241,8 +199,7 @@ func TestChatPinnedWorkspaceWinsOverDefault(t *testing.T) {
 	if err := memStore.SetSessionWorkspace(context.Background(), "s2", pin); err != nil {
 		t.Fatalf("pin workspace: %v", err)
 	}
-	// Pre-title the row (see TestChatStoredSessionRootsToolsAtDefaultWorkspace):
-	// the detached title kick would eat the tool-call script.
+	// Pre-title the row (see TestChatStoredSessionRootsToolsAtDefaultWorkspace).
 	if err := memStore.SetSessionTitle(context.Background(), "s2", "probe", true); err != nil {
 		t.Fatalf("pre-title session: %v", err)
 	}

@@ -9,16 +9,12 @@ import (
 	"testing"
 )
 
-// The turn-copy persistence law (card t_471f6d4a): the agent run loop
-// is the ONLY writer of turn copies. `AppendMessage` calls outside the
-// storage packages (agent/ owns the TurnSink seam, harness/store/ is
-// the store implementation itself) must be tree operations, session
-// metadata entries, or extension-owned audit records - never user /
-// assistant / tool-result copies of a run. Channels fetch and render;
-// they do not append turn content.
-//
-// The named allowlist carries the site's class so a new call can land
-// only by declaring what kind of record it writes.
+// The turn-copy persistence law: the agent run loop is the ONLY writer of turn copies.
+// `AppendMessage` calls outside the storage packages (agent/ owns the TurnSink seam,
+// harness/store/ is the store implementation itself) must be tree operations, session
+// metadata entries, or extension-owned audit records - never user / assistant /
+// tool-result copies of a run. Channels fetch and render; they do not append turn
+// content.
 
 var turnCopyAppendAllowlist = map[string]string{
 	"agent/api/server_branch.go":   "tree operation - branch summary System marker on the child session",
@@ -28,9 +24,7 @@ var turnCopyAppendAllowlist = map[string]string{
 
 var appendMessageCall = regexp.MustCompile(`\.AppendMessage\(`)
 
-// TestTurnCopyPersistenceLaw walks the repository source and fails on
-// any AppendMessage call site outside agent/ and harness/store/ that
-// the allowlist has not classified.
+// TestTurnCopyPersistenceLaw walks the repository source and fails on any.
 func TestTurnCopyPersistenceLaw(t *testing.T) {
 	root := repoRootForLaws(t)
 	var violations []string
@@ -42,14 +36,9 @@ func TestTurnCopyPersistenceLaw(t *testing.T) {
 		if d.IsDir() {
 			switch name {
 			case ".git", ".worktrees", "static", "node_modules", "ui":
-				// Webui build trees, VCS internals, and co-worker
-				// worktree copies: not this repo's Go source.
-				// A worktree is a full repo copy - its allowlisted
-				// files appear at un-allowlisted rel paths and the
-				// walk would count them as violations.
-				// SkipDir prunes only this subtree (SkipAll would end
-				// the whole walk - a nested <module>/ui would silently
-				// hide every later path).
+				// Webui build trees, VCS internals, and co-worker worktree copies. SkipDir prunes
+				// only this subtree (SkipAll would end the whole walk - a nested <module>/ui would
+				// silently hide every later path).
 				return filepath.SkipDir
 			}
 			return nil
@@ -62,7 +51,6 @@ func TestTurnCopyPersistenceLaw(t *testing.T) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
-		// The seam's home and the store implementation are exempt.
 		if rel == "agent" || strings.HasPrefix(rel, "agent/") ||
 			rel == "harness/store" || strings.HasPrefix(rel, "harness/store/") {
 			return nil

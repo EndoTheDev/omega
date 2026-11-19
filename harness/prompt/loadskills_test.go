@@ -13,8 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/skills"
 )
 
-// TestBuildPromptNoSectioners verifies the prompt builder produces a
-// valid prompt when no module contributes prompt sections.
+// TestBuildPromptNoSectioners verifies the prompt builder produces a valid prompt.
 func TestBuildPromptNoSectioners(t *testing.T) {
 	b := NewPromptBuilder(&core.Context{})
 	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{})
@@ -29,18 +28,15 @@ func TestBuildPromptNoSectioners(t *testing.T) {
 	}
 }
 
-// TestBuildPromptWithSkillsSection verifies skills mounted through the
-// skills plugin appear in the Available Skills section, contributed by
-// the skills module itself.
+// TestBuildPromptWithSkillsSection verifies skills mounted through the skills plugin.
 func TestBuildPromptWithSkillsSection(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "my-skill")
 	if err := os.MkdirAll(skillDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// The file is always SKILL.md and the folder name is the skill
-	// name (card t_5baad951) - the frontmatter name is retired, so the
-	// prompt must show "my-skill", never "Custom Name".
+	// The file is always SKILL.md and the folder name is the skill name - the frontmatter
+	// name is retired, so the prompt must show "my-skill", never "Custom Name".
 	content := "---\nname: Custom Name\ndescription: A custom description\n---\n\nBody.\n"
 	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)

@@ -14,19 +14,10 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// maxChatImageBytes caps one user message image accepted via /chat
-// (10MB decoded). The llm.MaxImageBytes config cap (20MB) still
-// holds for local files; the browser lane sits behind the HTTP
-// channel, so it picks a tighter cap - a 400 with a clear message
-// beats a multi-second stream the model then chokes on.
+// maxChatImageBytes caps one user message image accepted via /chat (10MB decoded).
 const maxChatImageBytes = 10 * 1024 * 1024 // 10 MB
 
 // checkImageSizes validates the images on every incoming user message.
-// Base64 payloads decode to len(raw)*3/4-ish bytes; an exact ceiling
-// is computed from the string length (padded base64 rounds up to a
-// multiple of 4 bytes, so 3*len/4 slightly overestimates, which is the
-// safe direction for a cap). Returns the offending image info on
-// oversize - handleChat answers 400 with it.
 func checkImageSizes(messages []core.Message) error {
 	for i, m := range messages {
 		user, ok := m.(core.User)
@@ -46,8 +37,7 @@ type attachImageRequest struct {
 	URL string `json:"url"`
 }
 
-// urlHost extracts the host (IP or hostname) from an absolute http(s)
-// URL, or "" when parsing fails.
+// urlHost extracts the host (IP or hostname) from an absolute http(s) URL, or "" when.
 func urlHost(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {
@@ -56,12 +46,7 @@ func urlHost(raw string) string {
 	return u.Hostname()
 }
 
-// internalRings is the deny list of IP rings that point back into the
-// box or its private networks: the loopback and unspecified-address
-// rings (0.0.0.0/8, ::/128 - dialing the unspecified address lands on
-// the box), RFC1918, link-local (incl. cloud metadata), the Tailscale
-// CGNAT 100.64/10 range, and the IPv6 local rings (ULA fc00::/7,
-// link-local fe80::/10).
+// internalRings is the deny list of IP rings that point back into the box.
 var internalRings = func() []netip.Prefix {
 	rings := []string{
 		"127.0.0.0/8", "10.0.0.0/8", "192.168.0.0/16", "172.16.0.0/12",
@@ -76,9 +61,6 @@ var internalRings = func() []netip.Prefix {
 }()
 
 func addrInInternalRing(addr netip.Addr) bool {
-	// A zone ("fe80::1%eth0") would fail every prefix membership check:
-	// Contains compares zones too. Drop it, then unmap to plain v4 so
-	// the v4 rings catch 4-in-6 spellings ("::ffff:127.0.0.1").
 	addr = addr.WithZone("").Unmap()
 	for _, ring := range internalRings {
 		if ring.Contains(addr) {
@@ -88,15 +70,11 @@ func addrInInternalRing(addr netip.Addr) bool {
 	return false
 }
 
-// looksLikeNumericIPv4 reports whether host is a numeric IPv4 spelling
-// the OS dialer accepts but netip (and so any ring check on the parsed
-// result) cannot express: a combined decimal form ("2130706433",
-// "127.1" - single- or two-label all-decimal hosts dial the 32-bit
-// value), hex-marked labels ("0x7f.0.0.1"), or zero-padded octal-ish
-// labels ("0177.0.0.1"). These are refused, not treated as hostnames.
-// Real hostnames keep working: they carry a non-numeric label
-// somewhere, and zero-padded labels stopped resolving as hostnames
-// years ago.
+// looksLikeNumericIPv4 reports whether host is a numeric IPv4 spelling the OS dialer
+// accepts but netip (and so any ring check on the parsed result) cannot express: a
+// combined decimal form ("2130706433", "127.1" - single- or two-label all-decimal hosts
+// dial the 32-bit value), hex-marked labels ("0x7f.0.0.1"), or zero-padded octal-ish
+// labels ("0177.0.0.1").
 func looksLikeNumericIPv4(host string) bool {
 	// A trailing root dot is legal DNS for a real hostname; drop it so
 	// the trailing "." cannot smuggle a numeric spelling through.
@@ -107,7 +85,6 @@ func looksLikeNumericIPv4(host string) bool {
 	allDigits := true
 	for _, label := range strings.Split(host, ".") {
 		if label == "" || (len(label) > 1 && label[0] == '0') {
-			// empty label (malformed) or a zero-padded label
 			return true
 		}
 		for _, c := range label {
@@ -120,11 +97,7 @@ func looksLikeNumericIPv4(host string) bool {
 	return allDigits
 }
 
-// isInternalHost reports whether host is an IP literal pointing back
-// into the box itself or the private rings (internalRings), or a
-// non-canonical numeric IPv4 spelling (looksLikeNumericIPv4). Canonical
-// literals parse through netip; a zoned v6 literal ("fe80::1%eth0")
-// parses where net.ParseIP refuses it.
+// isInternalHost reports whether host is an IP literal pointing back into the box.
 func isInternalHost(host string) bool {
 	if addr, err := netip.ParseAddr(host); err == nil {
 		return addrInInternalRing(addr)
@@ -137,11 +110,7 @@ func isInternalHost(host string) bool {
 // every internal address via isInternalHost below.
 var internalHostGuard = isInternalHost
 
-// attachClient guards EVERY redirect hop. The first-hop check in
-// handleAttachImage is not enough: a public 302 can point back into
-// loopback, the LAN, or the Tailscale ring, and a plain http.Client
-// follows up to 10 hops without looking. Each hop re-runs the same
-// internalHostGuard; an internal target aborts the fetch.
+// attachClient guards EVERY redirect hop.
 var attachClient = &http.Client{
 	Transport: llm.HTTPClient().Transport,
 	Timeout:   60 * time.Second,
@@ -153,13 +122,12 @@ var attachClient = &http.Client{
 	},
 }
 
-// handleAttachImage serves POST /attach-image: the SERVER fetches the
-// URL's bytes (the webui never fetches cross-origin itself), sniffs
-// the magic bytes, and answers {media_type, base64} in the llm.Image-
-// Content shape - the client then rides the normal /chat image field.
-// Fetches ride attachClient (per-hop internal-address guard, no
-// retry); the web module's mirror fetch is text-only so binary image
-// bytes can't ride it.
+// handleAttachImage serves POST /attach-image: the SERVER fetches the URL's bytes (the
+// webui never fetches cross-origin itself), sniffs the magic bytes, and answers
+// {media_type, base64} in the llm.Image- Content shape - the client then rides the
+// normal /chat image field. Fetches ride attachClient (per-hop internal-address guard,
+// no retry); the web module's mirror fetch is text-only so binary image bytes can't
+// ride it.
 func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -179,11 +147,7 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid request: url must be http(s)", http.StatusBadRequest)
 		return
 	}
-	// internal-address guard: the server fetches this URL, so it must not
-	// become a probe of the box itself or the LAN/Tailscale ring. IP
-	// literals only - hostnames that resolve internally are the ponytail:
-	// ceiling (no DNS games); upgrade path is resolving + range-checking
-	// if omega ever serves beyond a single user.
+	// internal-address guard: the server fetches this URL, so it must not become a probe.
 	if host := urlHost(trimmed); internalHostGuard(host) {
 		http.Error(w, "refusing to fetch internal address "+host, http.StatusBadRequest)
 		return
@@ -194,8 +158,6 @@ func (s *Server) handleAttachImage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "build request: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	// One content-length cap: anything answering with a larger body is
-	// dropped before buffering.
 	resp, err := attachClient.Do(httpReq)
 	if err != nil {
 		http.Error(w, "fetch: "+err.Error(), http.StatusBadRequest)

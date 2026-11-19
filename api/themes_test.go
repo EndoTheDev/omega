@@ -33,7 +33,7 @@ tokens:
 // seedFile is the file name the registry seeds on construction.
 const seedFile = defaultThemeFileName
 
-// --- the default.yaml seed (fresh boot fills an absence, never clobbers) ---
+// the default.yaml seed (fresh boot fills an absence, never clobbers)
 
 func TestSeedDefaultThemeCopiesWhenMissing(t *testing.T) {
 	dir := t.TempDir()
@@ -165,7 +165,6 @@ func TestLoadThemesIgnoresStraysAndSorts(t *testing.T) {
 
 func TestLoadThemesDashPrefixToken(t *testing.T) {
 	dir := t.TempDir()
-	// someone pastes the css name as-is: the -- prefix is tolerated
 	writeTheme(t, dir, "t.yaml", "name: T\ntokens:\n  --accent: red\n")
 	got := loadThemes(dir)
 	if got[0].Error != "" {
@@ -185,16 +184,12 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 	defer cancel()
 	go reg.watch(ctx)
 
-	// construction seeds the example theme first: every later count
-	// rides one seeded entry ahead of the raw folder writes
 	if n := len(reg.snapshot()); n != 1 {
 		t.Fatalf("fresh dir has %d themes, want 1 (the seed)", n)
 	}
-	// (a) drop a file -> appears without restart
 	writeTheme(t, dir, "palm.yaml", validThemeYaml)
 	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 2 })
 
-	// (c) edit -> content refreshes without restart
 	writeTheme(t, dir, "palm.yaml", "name: Edited\ntokens:\n  accent: \"#123456\"\n")
 	themeWaitFor(t, func() bool {
 		s := reg.snapshot()
@@ -206,8 +201,6 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 		return false
 	})
 
-	// (d) a file that now fails validation: previous GOOD set stays in
-	// effect AND the broken file is flagged, not dropped or crashy
 	writeTheme(t, dir, "junk.yaml", "tokens:\n  nonsense: value\n")
 	themeWaitFor(t, func() bool { return len(reg.snapshot()) == 3 })
 	s := reg.snapshot()
@@ -230,7 +223,6 @@ func TestThemeRegistryWatchPicksUpChanges(t *testing.T) {
 		t.Fatalf("good=%d broken=%d, want 2/1", good, broken)
 	}
 
-	// delete -> gone without restart
 	if err := os.Remove(filepath.Join(dir, "junk.yaml")); err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +243,6 @@ func TestThemeRegistryUnparseableKeepsPrevious(t *testing.T) {
 		t.Fatalf("startup load has %d themes, want 2 (palm + the seed)", n)
 	}
 	writeTheme(t, dir, "palm.yaml", "name: [not: closed\n  yaml: {{{")
-	// the broken edit keeps the previous good set in effect
 	themeWaitFor(t, func() bool {
 		s := reg.snapshot()
 		for _, th := range s {
@@ -294,7 +285,6 @@ func TestHandleThemes(t *testing.T) {
 	srv := NewServer(nil, nil, nil, nil, nil, nil)
 	srv.themes = newThemeRegistry(dir)
 
-	// GET: list + content, including the flagged broken theme
 	rec := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/themes", nil))
 	if rec.Code != 200 {

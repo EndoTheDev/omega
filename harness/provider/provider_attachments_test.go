@@ -6,11 +6,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestAttachmentsStayOffTheProviderWire pins the card t_1ffd07de rule:
-// a non-image attachment is a local disk reference. Strict wire
-// validators reject unknown fields and a path means nothing to a remote
-// model, so the serialization drops it - both argument encodings, so no
-// provider lane can leak it.
+// TestAttachmentsStayOffTheProviderWire pins the rule. Strict wire validators reject
+// unknown fields and a path means nothing to a remote model, so the serialization drops
+// it - both argument encodings, so no provider lane can leak it.
 func TestAttachmentsStayOffTheProviderWire(t *testing.T) {
 	msgs := []core.Message{core.User{
 		Content: "look at this",

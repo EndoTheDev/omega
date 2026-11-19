@@ -7,8 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// recordingNotifier captures the finished-things emissions (card
-// t_5d9032d3).
+// recordingNotifier captures the finished-things emissions.
 type recordingNotifier struct {
 	got []core.Notice
 }
@@ -29,10 +28,8 @@ func (r *recordingNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// card t_5d9032d3: a dispatched run's finish emits one chat record -
-// ok on a clean exit, failed on error, metadata-only title. The
-// emission rides the blocking wait now (card t_0805d438): the tool run
-// itself completes the task, then emits.
+// a dispatched run's finish emits one chat record. The emission rides the blocking wait
+// now: the tool run itself completes the task, then emits.
 func TestRunEmitsNotification(t *testing.T) {
 	bin := writeStub(t, "stub-notify-omega", "done output", 0)
 	t.Setenv("OMEGA_BIN", bin)

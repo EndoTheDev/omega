@@ -9,14 +9,9 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// The per-subsystem model slots (card t_fc0b2f2d): host-side routing
-// tests - the compaction section carries the slot, and the approval
-// decision slot resolves into the reviewer's host/key/model wiring.
+// The per-subsystem model slots.
 
-// slotConfig builds a config carrying the primary provider (the row
-// named "default", the agent's main endpoint) and one named instance
-// "big". Every provider is a row (card t_bf21ee07): there is no second
-// shape for the primary.
+// slotConfig builds a config carrying the primary provider.
 func slotConfig(slot string) Config {
 	cfg := DefaultConfig()
 	cfg.Provider.ModelName = "main-model"
@@ -30,8 +25,7 @@ func slotConfig(slot string) Config {
 	return cfg
 }
 
-// primaryHost is the primary row's endpoint - the wiring a bare slot
-// rides.
+// primaryHost is the primary row's endpoint - the wiring a bare slot rides.
 func primaryHost(c Config) string {
 	inst, _ := c.defaultInstance()
 	return inst.Host
@@ -51,9 +45,7 @@ func TestApprovalSlotRoutesInstance(t *testing.T) {
 	}
 }
 
-// An instance prefix with no model part names an endpoint and no model:
-// the consult fails closed (the gate escalates) rather than guessing a
-// model the instance no longer carries.
+// An instance prefix with no model part names an endpoint and no model.
 func TestApprovalSlotInstanceWithoutModelFailsClosed(t *testing.T) {
 	cfg := slotConfig("big:")
 	host, key, model := approvalSlot(cfg)
@@ -65,8 +57,7 @@ func TestApprovalSlotInstanceWithoutModelFailsClosed(t *testing.T) {
 	}
 }
 
-// A bare slot (and an unconfigured prefix over it) keeps the primary
-// provider wiring and carries the whole slot as the model.
+// A bare slot (and an unconfigured prefix over it) keeps the primary provider wiring.
 func TestApprovalSlotBareStays(t *testing.T) {
 	cfg := slotConfig("gemma3:27b")
 	host, key, model := approvalSlot(cfg)
@@ -81,8 +72,7 @@ func TestApprovalSlotBareStays(t *testing.T) {
 	}
 }
 
-// The prefix naming the primary row resolves that row's wiring and the
-// model part - there is no special "reserved" word, only the row name.
+// The prefix naming the primary row resolves that row's wiring and the model part.
 func TestApprovalSlotPrimaryPrefix(t *testing.T) {
 	cfg := slotConfig("default:main-model")
 	host, key, model := approvalSlot(cfg)
@@ -111,9 +101,7 @@ func TestCompactionSectionCarrier(t *testing.T) {
 	}
 }
 
-// The ConfigSection routes carry the slots: compaction rides the
-// carrier field, approvals gets the resolved wiring, sessions and
-// skills keep their capsule fields.
+// The ConfigSection routes carry the slots.
 func TestConfigSectionSlots(t *testing.T) {
 	cfg := slotConfig("big:big-model")
 	cfg.CompactionModel = "big:big-model"
@@ -142,9 +130,7 @@ func TestConfigSectionSlots(t *testing.T) {
 	}
 }
 
-// TestModelSlotResolvesFromConfigFile (card t_bf21ee07): a config.yaml
-// carrying only the instances list serves the slot grammar unchanged -
-// "work:big-model" rides the row named work, read through the file.
+// TestModelSlotResolvesFromConfigFile: a config.yaml carrying only the instances list.
 func TestModelSlotResolvesFromConfigFile(t *testing.T) {
 	path := writeTempConfig(t, `
 provider:

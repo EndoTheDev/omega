@@ -1,9 +1,7 @@
-// omega webui: the Terminal tab (card t_55a3fc4b). Registry membership
-// + the source-wiring greps (the composition-test convention): the tab
-// is the terminal module's face - claim/stream/input/resize/kill ride
-// the module's own routes, the pane never gates (the owner's ruling:
-// no restrictions), and the outlet unmount drops the SSE, never the
-// shell.
+// omega webui: the Terminal tab. Registry membership + the source-wiring greps (the
+// composition-test convention): the tab is the terminal module's face -
+// claim/stream/input/resize/kill ride the module's own routes, the pane never gates,
+// and the outlet unmount drops the SSE, never the shell.
 import { describe, it, test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,7 +22,7 @@ import { ICONS } from "../app/composables/icons.ts";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
-// --- the registry entry (the dock contract) -----------------------------
+// the registry entry (the dock contract) --------------------------
 
 test("terminal is a registered component: singleton, bottom home, unclosable", () => {
   assert.ok(
@@ -61,7 +59,7 @@ test("the registry's every entry keeps its floor law (terminal = tool family)", 
   assert.equal(d.minPx, 128, "the tool family floor");
 });
 
-// --- the source wiring (the composition-test convention) ----------------
+// the source wiring (the composition-test convention) -------------
 
 const appVue = read(root, "webui/app/app.vue");
 const tabVue = read(
@@ -87,10 +85,9 @@ test("the pane claims (reattach-else-spawn) and never gates", () => {
   );
 });
 
-// card t_62d72028: the shell spawns in the RESOLVED workspace - the
-// focused session's pinned root rides the claim as an ID (never a
-// root), the server resolves the chain (session row, default knob,
-// cwd).
+// the shell spawns in the RESOLVED workspace - the focused session's pinned root rides
+// the claim as an ID (never a root), the server resolves the chain (session row,
+// default knob, cwd).
 test("the claim carries the focused session id (the spawn workspace law)", () => {
   assert.match(
     tabVue,
@@ -167,16 +164,7 @@ test("the outlet unmount drops the SSE, never the shell", () => {
   );
 });
 
-// --- the flex shrink guard (card t_5b269761) ----------------------------
-// The pane root renders as `.terminal-pane pane` inside `.dock-content`, so
-// the shell's `.dock-content > .pane { flex: 1 }` makes it a flex item with
-// flex-shrink 1 - but a flex item's AUTOMATIC MINIMUM is its min-content
-// width, and the xterm's min-content is the column grid the FitAddon last
-// confirmed. Without an explicit min-width: 0 the pane floors at ~640px
-// inside a 220px pane, the xterm paints over the terminal->files divider,
-// and the divider is dead for the whole band it covers (journey 84).
-// The node suite has no DOM, so this is the settings-nav pin shape: a source
-// assertion on the rule. The geometry witness is journey 84.
+// the flex shrink guard ---------------------------- The pane root renders.
 describe("the terminal pane can shrink under its xterm (t_5b269761)", () => {
   const rule = (name: string) => {
     const m = tabVue.match(new RegExp(`\\.${name}\\s*\\{([^}]*)\\}`));
@@ -187,8 +175,6 @@ describe("the terminal pane can shrink under its xterm (t_5b269761)", () => {
   it("the tab root carries min-width: 0 - no min-content floor", () => {
     const pane = rule("terminal-pane");
     assert.match(pane, /min-width:\s*0/, "the flex shrink guard");
-    // a px floor here re-creates the defect: the pane would refuse to shrink
-    // below it no matter what the divider says
     assert.doesNotMatch(pane, /min-width:\s*[0-9]+px/, "no px floor on the pane");
   });
 

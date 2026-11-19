@@ -1,11 +1,5 @@
-// Package cron schedules omega prompts on cron expressions. Jobs live
-// in crons.yaml in OMEGA_HOME; each fire is one full agent turn in a
-// session labeled cron:<name>.
-//
-// Trust gate: omega may only ever PROPOSE jobs - it never writes
-// crons.yaml. The only automatic write to the home directory is the
-// bootstrap seed of crons.yaml.example (cmd/omega/home.go); a live
-// crons.yaml is always human-authored.
+// Package cron schedules omega prompts on cron expressions. Trust gate: omega may only
+// ever PROPOSE jobs - it never writes crons.yaml.
 package cron
 
 import (
@@ -21,27 +15,25 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// scheduleParser is the ONLY accepted schedule grammar: standard
-// 5-field cron (minute hour dom month dow), local time. No seconds,
-// no descriptors - those are rejected at parse time.
+// scheduleParser is the ONLY accepted schedule grammar.
 var scheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
 // namePattern restricts job names to [a-z0-9-].
 var namePattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Deliver targets (Endo ruling 2026-11-01, ONE enum - the curator,
+// Deliver targets (ONE enum - the curator,
 // hygiene and delegation job definitions author through this list):
 //
-//	new-session      fresh in-process session, the fire runs cron:<name>
+// new-session fresh in-process session, the fire runs cron:<name>
 //	continuous-agent a WAKE into the agent's existing continuous session
-//	append-to-file   the run's final message appends to job.File
+// append-to-file the run's final message appends to job.File
 //
 // Legacy values (deprecated, still accepted - existing installs keep
 // working byte-identically):
 //
-//	none    -> new-session
+// none -> new-session
 //	journal -> append-to-file, journal/YYYY-MM-DD.md naming when File empty
-//	memory  -> the memory extension, unchanged
+// memory -> the memory extension, unchanged
 const (
 	deliverNewSession   = "new-session"
 	deliverContinuous   = "continuous-agent"
@@ -51,9 +43,7 @@ const (
 	deliverMemory       = "memory"
 )
 
-// Job kinds. kind: interval fires every N minutes; kind: cron (the
-// default when absent) keeps the 5-field grammar. No seconds, no
-// descriptors - the existing law, both kinds.
+// Job kinds.
 const (
 	kindCron     = "cron"
 	kindInterval = "interval"
@@ -62,19 +52,19 @@ const (
 // Job is one scheduled prompt from crons.yaml.
 //
 //	yaml:
-//	  - name: daily-journal      # required, unique, [a-z0-9-]
-//	    kind: cron               # cron | interval, default cron
-//	    schedule: "0 8 * * *"    # required iff kind cron, robfig 5-field
-//	    minutes: 5               # required iff kind interval, >= 1
-//	    agent: scout             # optional; empty = default agent
-//	    model: glm-5.3           # optional; empty = session provider model
-//	    prompt: "..."            # required, the user message the run sends
-//	    skills: omega-dev        # optional; skill names pinned into the fire
-//	    deliver: new-session     # see the deliver enum above, default new-session
-//	    file: notes/report.md    # required iff append-to-file, home-relative
-//	    enabled: true            # default true
+// name: daily-journal # required, unique, [a-z0-9-]
+// kind: cron # cron | interval, default cron
+// schedule: "0 8 * * *" # required iff kind cron, robfig 5-field
+// minutes: 5 # required iff kind interval, >= 1
+// agent: scout # optional; empty = default agent
+// model: glm-5.3 # optional; empty = session provider model
+// prompt: "." # required, the user message the run sends
+// skills: omega-dev # optional; skill names pinned into the fire
+// deliver: new-session # see the deliver enum above, default new-session
+// file: notes/report.md # required iff append-to-file, home-relative
+// enabled: true # default true
 //
-// The defaulting law (Endo, 2026-11-01, omega-wide): a field naming an
+// The defaulting law: a field naming an
 // AGENT defaults to the default agent when empty; a field naming a
 // MODEL defaults to the session provider model when empty. Empty =
 // inherit, never error. Resolution happens at fire time
@@ -82,7 +72,7 @@ const (
 // and vanish), model names belong to the provider - so a bad name is a
 // clear error in the job log, never a crash and never a load failure.
 //
-// Multi-home (card t_72ecca67, ruling 12): this one module reads the
+// Multi-home: this one module reads the
 // main crons.yaml AND every agent home's config/crons.yaml. Agent jobs
 // carry the owning agent in Agent (set by the loader, never authored in
 // yaml - that file belongs to a different home).
@@ -96,40 +86,17 @@ type Job struct {
 	File     string `yaml:"file,omitempty"`
 	Model    string `yaml:"model,omitempty"`
 	Enabled  *bool  `yaml:"enabled"`
-	// Skills pins the skill names whose bodies ride the fire prompt
-	// (the capsule round t_3885c975): a scheduled job always runs the
-	// same procedure, so the editor authors the skills by name and the
-	// fire injects their SKILL.md content ahead of the prompt - no
-	// skill-hunting in a turn nobody watches. Names obey the folder
-	// grammar [a-z0-9-], trimmed and unique (validateJob); an unknown
-	// name is a fire-time error in the job log, the scheduler keeps
-	// standing. A wake has no fire prompt of its own - skills are
-	// rejected in agent homes at load (the deliver-target law's shape).
 	Skills []string `yaml:"skills,omitempty"`
-	// Agent is the job's agent reference. Authored in the yaml as
-	// `agent: <name>`, the DEFAULTING LAW resolves empty to the default
-	// agent (agent.DefaultAgentName). For jobs loaded from an agent
-	// home's own config/crons.yaml the loader OVERWRITES this with the
-	// owning agent's name (an authored name there is a load error - the
-	// file belongs to that one home) and sets AgentOwned. Empty =
-	// main's own job, an in-process turn under the default agent
-	// today's behavior. Non-empty with an in-process deliver target is
-	// a fire-time error (in-process fires run as the default agent); a
-	// continuous-agent deliver turns the fire into a WAKE: one tick
-	// through the event spine, the continuous capsule owns what the
-	// tick means (cron owns WHEN).
+	// Agent is the job's agent reference. For jobs loaded from an agent home's own
+	// config/crons.yaml the loader OVERWRITES this with the owning agent's name (an
+	// authored name there is a load error - the file belongs to that one home) and sets
+	// AgentOwned.
 	Agent string `yaml:"agent,omitempty"`
-	// AgentOwned is the FILE ownership mark: set by LoadAllConfigs when
-	// the job's yaml lives in an agent home's config/crons.yaml. A file
-	// - owned job wakes by construction (the loader IS the ownership
-	// proof, no validation needed); a main-home job reaching a wake
-	// goes through the fire-time agent resolution instead. yaml:"-":
-	// never authored.
+	// AgentOwned is the FILE ownership mark. yaml:"-": never authored.
 	AgentOwned bool `yaml:"-"`
 }
 
-// KindResolved returns the job kind with its default: absent kind is a
-// 5-field cron schedule (existing installs keep parsing unchanged).
+// KindResolved returns the job kind with its default.
 func (j Job) KindResolved() string {
 	if j.Kind == "" {
 		return kindCron
@@ -137,10 +104,9 @@ func (j Job) KindResolved() string {
 	return j.Kind
 }
 
-// IsAgent reports whether the job's FILE belongs to an agent home - a
-// wake by construction (card t_72ecca67: the loader tags the owner).
-// Authored `agent:` references on main-home jobs do NOT count: their
-// fire path resolves and validates the target at fire time.
+// IsAgent reports whether the job's FILE belongs to an agent home. Authored `agent:`
+// references on main-home jobs do NOT count: their fire path resolves and validates the
+// target at fire time.
 func (j Job) IsAgent() bool { return j.AgentOwned }
 
 // ResolveAgent applies the defaulting law to the agent field: empty =
@@ -152,10 +118,7 @@ func (j Job) ResolveAgent() string {
 	return j.Agent
 }
 
-// StateKey names the job persistently: agent jobs share the name space
-// with main's jobs and with each other (two agents can both carry a job
-// literally named wake), so the state, the fire guard and the
-// schedule map key on <agent>/<name> while the yaml name stays local.
+// StateKey names the job persistently.
 func (j Job) StateKey() string {
 	if j.IsAgent() {
 		return j.Agent + "/" + j.Name
@@ -163,17 +126,12 @@ func (j Job) StateKey() string {
 	return j.Name
 }
 
-// IsEnabled reports whether the job should run. The enabled field
-// defaults to true when absent.
+// IsEnabled reports whether the job should run.
 func (j Job) IsEnabled() bool {
 	return j.Enabled == nil || *j.Enabled
 }
 
-// DeliverTarget returns the deliver mode with its default and the
-// legacy aliases resolved (the ONE enum above): empty or `none` is
-// new-session, `journal` is append-to-file (the journal naming is the
-// File-empty case). The raw yaml value stays on job.Deliver for
-// validation round-tripping.
+// DeliverTarget returns the deliver mode with its default and the legacy aliases.
 func (j Job) DeliverTarget() string {
 	switch j.Deliver {
 	case "", deliverNone:
@@ -190,10 +148,7 @@ type Config struct {
 	Jobs []Job `yaml:"jobs"`
 }
 
-// readCronFile reads one crons.yaml. A missing file is NO content, NO
-// error and "did not exist": deleting the file is a legitimate
-// "no jobs left" statement, and a truncated file is not - so the
-// reload law below needs the distinction.
+// readCronFile reads one crons.yaml.
 func readCronFile(path string) (data []byte, existed bool, err error) {
 	data, err = os.ReadFile(path)
 	if err != nil {
@@ -225,36 +180,22 @@ func loadConfig(path string, strict bool) (*Config, error) {
 	return cfg, nil
 }
 
-// LoadAllConfigs reads the main crons.yaml AND every agent home's
-// config/crons.yaml (card t_72ecca67, ruling 12: ONE cron module for
-// all). Agent jobs are tagged with their owner; names stay local to
-// their file (two agents may both carry wake). A malformed agent file
-// is a load error like a malformed main file - the operator sees the
-// offending home, not a silent skip. A malformed home directory skips
-// silently (agent.LoadProfiles' scan law).
-//
-// This is the lenient read (boot and the write paths): an empty file is
-// a config with no jobs. The hot-reload watcher uses
-// loadAllConfigsForReload, where an empty file is a read error.
+// LoadAllConfigs reads the main crons.yaml AND every agent home's config/crons.yaml. A
+// malformed home directory skips silently (agent.LoadProfiles' scan law).
 func LoadAllConfigs(home string) (*Config, error) {
 	return loadAllConfigs(home, false)
 }
 
-// loadAllConfigsForReload is LoadAllConfigs for the hot-reload watcher,
-// with the truncated-write law (card t_8be45d55): a zero-byte or
-// whitespace-only crons.yaml is a READ ERROR, never an empty job set.
-// The watcher cannot tell a file mid-rewrite from a file the operator
-// emptied, and applying the empty set would drop every live job - a
-// non-atomic save (os.WriteFile shortens first, most editors write in
-// place) opens exactly that window. Removing every job stays
-// expressible and is applied normally: `jobs: []`, `jobs:`, a
-// comment-only file, or deleting the file.
+// loadAllConfigsForReload is LoadAllConfigs for the hot-reload watcher, with the
+// truncated-write law: a zero-byte or whitespace-only crons.yaml is a READ ERROR, never
+// an empty job set. The watcher cannot tell a file mid-rewrite from a file the operator
+// emptied, and applying the empty set would drop every live job - a non-atomic save
+// (os.WriteFile shortens first, most editors write in place) opens exactly that window.
 func loadAllConfigsForReload(home string) (*Config, error) {
 	return loadAllConfigs(home, true)
 }
 
-// loadAllConfigs is the one home walk; strictEmpty carries the reload
-// law into every file it reads.
+// loadAllConfigs is the one home walk.
 func loadAllConfigs(home string, strictEmpty bool) (*Config, error) {
 	cfg, err := loadConfig(homeFile(home), strictEmpty)
 	if err != nil {
@@ -270,30 +211,20 @@ func loadAllConfigs(home string, strictEmpty bool) (*Config, error) {
 			return nil, fmt.Errorf("agent %s crons: %w", p.Name, err)
 		}
 		for _, j := range agentCfg.Jobs {
-			// The owner wins (ruling 12: the file belongs to that one
-			// home): an authored `agent:` in an agent home's jobs is a
-			// load error, same posture as an authored deliver — the
-			// operator wrote a cross-home reference where only the
-			// owner's identity may stand.
+			// The owner wins: an authored `agent:` in an agent home's jobs is a load error.
 			if j.Agent != "" {
 				return nil, fmt.Errorf("agent %s job %q: jobs in an agent home may not author agent (the owning agent is the loader's)", p.Name, j.Name)
 			}
 			j.Agent = p.Name
 			j.AgentOwned = true
-			// A wake's delivery IS its report message in the agent's
-			// own canonical chat (card t_72ecca67, ruling 10): the
-			// main-home deliver targets have no meaning here, and a
-			// journal write would cross the home boundary. Empty and
-			// the legacy `none` mean the wake itself.
+			// A wake's delivery IS its report message in the agent's own canonical chat.
 			switch j.Deliver {
 			case "", deliverNone:
 			default:
 				return nil, fmt.Errorf("agent %s job %q: deliver targets are a main-home feature (wakes deliver into the agent's canonical chat)", p.Name, j.Name)
 			}
-			// Skills ride the fire prompt - and a wake's fire prompt is the
-			// continuous capsule's property (the wake tick payload law).
-			// An authored list would parse fine and never take effect: the
-			// same silent-persist hole the deliver law closes, so reject.
+			// Skills ride the fire prompt. An authored list would parse fine and never take
+			// effect: the same silent-persist hole the deliver law closes, so reject.
 			if len(j.Skills) > 0 {
 				return nil, fmt.Errorf("agent %s job %q: skills pinning is a main-home feature (wakes follow the agent's own skills)", p.Name, j.Name)
 			}
@@ -303,8 +234,7 @@ func loadAllConfigs(home string, strictEmpty bool) (*Config, error) {
 	return cfg, nil
 }
 
-// ParseConfig parses crons.yaml content. Every rejection names the
-// offending job and its line number.
+// ParseConfig parses crons.yaml content.
 func ParseConfig(data []byte) (*Config, error) {
 	var root yaml.Node
 	if err := yaml.Unmarshal(data, &root); err != nil {
@@ -325,11 +255,10 @@ func ParseConfig(data []byte) (*Config, error) {
 	}
 
 	cfg := &Config{}
-	// the line numbers travel WITH the accumulated job list: a file
-	// that repeats the `jobs` key keeps every entry's line aligned, so
-	// a duplicate carrying across the two keys errors with both its
-	// line numbers - never an index panic (the checkDuplicates law:
-	// one rejection, both lines, serve keeps standing).
+	// the line numbers travel WITH the accumulated job list: a file that repeats the
+	// `jobs` key keeps every entry's line aligned, so a duplicate carrying across the two
+	// keys errors with both its line numbers - never an index panic (the checkDuplicates
+	// law: one rejection, both lines, serve keeps standing).
 	lines := make([]int, 0, len(body.Content)/2)
 	for i := 0; i+1 < len(body.Content); i += 2 {
 		key := body.Content[i]
@@ -359,9 +288,7 @@ func ParseConfig(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
-// jobFields are the only allowed keys in a job entry. Unknown fields
-// are rejected (KnownFields semantics, with a job name + line in the
-// error message).
+// jobFields are the only allowed keys in a job entry.
 var jobFields = map[string]bool{
 	"name": true, "kind": true, "schedule": true, "minutes": true,
 	"prompt": true, "deliver": true, "file": true, "model": true,
@@ -383,10 +310,9 @@ func parseJob(node *yaml.Node) (*Job, error) {
 	if err := node.Decode(job); err != nil {
 		return nil, fmt.Errorf("line %d: bad job: %w", node.Line, err)
 	}
-	// The skills list normalizes here, the one place a yaml-authored
-	// value takes its final shape: entries trim, empties drop. The
-	// name grammar and the duplicates reject in validateJob with the
-	// line in the error (the schema keeps its one rejection voice).
+	// The skills list normalizes here, the one place a yaml-authored value takes its. The
+	// name grammar and the duplicates reject in validateJob with the line in the error
+	// (the schema keeps its one rejection voice).
 	job.Skills = normalizeSkills(job.Skills)
 
 	if err := validateJob(*job, node.Line); err != nil {
@@ -409,10 +335,7 @@ func normalizeSkills(in []string) []string {
 	return out
 }
 
-// validateJob enforces the schema: name and prompt always required;
-// kind cron (default) requires the 5-field schedule, kind interval
-// requires minutes >= 1 and no schedule; deliver enum (the ONE enum
-// with its legacy aliases); agent/model/file presence rules.
+// validateJob enforces the schema.
 func validateJob(job Job, line int) error {
 	if job.Name == "" {
 		return fmt.Errorf("line %d: job at line %d is missing a name", line, line)
@@ -447,10 +370,9 @@ func validateJob(job Job, line int) error {
 	if job.Prompt == "" {
 		return fmt.Errorf("job %q (line %d): missing prompt", job.Name, line)
 	}
-	// The skills law: entries exist (the parser normalized them),
-	// names obey the folder grammar, duplicates are the same honesty
-	// the duplicate job names get - a rejection naming the line, never
-	// a silent dedupe of what the operator wrote.
+	// The skills law: entries exist (the parser normalized them), names obey the folder
+	// grammar, duplicates are the same honesty the duplicate job names get - a rejection
+	// naming the line, never a silent dedupe of what the operator wrote.
 	seenSkills := make(map[string]bool, len(job.Skills))
 	for _, s := range job.Skills {
 		if !namePattern.MatchString(s) {
@@ -475,11 +397,6 @@ func validateJob(job Job, line int) error {
 		if job.DeliverTarget() != deliverAppendToFile {
 			return fmt.Errorf("job %q (line %d): file only applies to deliver append-to-file", job.Name, line)
 		}
-		// The jail is relative-or-nothing: IsAbs misses the windows
-		// rooted-but-driveless shapes (/absolute, \rooted - no volume
-		// prefix), so the separator check has to go through ToSlash,
-		// where every rooted shape keeps its leading "/" and posix
-		// acceptance is untouched (posix rooted paths are all IsAbs).
 		clean := filepath.ToSlash(filepath.Clean(job.File))
 		if filepath.IsAbs(job.File) || strings.HasPrefix(clean, "..") || strings.HasPrefix(clean, "/") {
 			return fmt.Errorf("job %q (line %d): file must be a path inside the omega home (relative, no ..)", job.Name, line)
@@ -500,8 +417,7 @@ func checkDuplicates(jobs []Job, lines []int) error {
 	return nil
 }
 
-// cronHome resolves OMEGA_HOME for crons.yaml, cronstate.json and the
-// journal, mirroring the mcp.yaml load logic.
+// cronHome resolves OMEGA_HOME for crons.yaml, cronstate.json and the journal.
 func cronHome() string {
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {

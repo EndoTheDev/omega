@@ -1,8 +1,6 @@
-// omega webui: unit tests for the draft workspace intent (card
-// t_ea7e6a58). The wire half: streamChat carries {workspace} only on
-// the bare create. The host half: the unbound state's workspaceIntent
-// rides the FIRST send (consumed there), never an ephemeral one.
-// Run: node --test test/workspace-intent.test.ts
+// omega webui: unit tests for the draft workspace intent. The host half: the unbound
+// state's workspaceIntent rides the FIRST send (consumed there), never an ephemeral
+// one.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -13,7 +11,7 @@ import {
   type StreamHandlers,
 } from "../app/composables/omega.ts";
 
-// card t_30137f67: the shared default-workspace signal
+// the shared default-workspace signal
 import {
   defaultWorkspaceNow,
   normalizeDefaultWorkspace,
@@ -107,8 +105,6 @@ describe("the chat host: draft intent state", () => {
     assert.equal(body.workspace, "/tmp/proj", "the intent rode the create");
     assert.equal(st.workspaceIntent, "", "the send consumed the intent");
 
-    // a follow-up send is bound today: the row is what the chip reads,
-    // no workspace field anywhere on the wire
     calls.length = 0;
     await host.submit("w1", "again");
     const body2 = calls[0]?.[2] as Record<string, unknown>;
@@ -128,11 +124,7 @@ describe("the chat host: draft intent state", () => {
   });
 });
 
-// the seed half (card t_30137f67): a fresh UNBOUND, non-ephemeral
-// state initializes its intent from the loaded server.default_workspace
-// (the deps.defaultWorkspace getter fed by the app's /settings read).
-// The chip renders the value identically to a user-picked one - the
-// intent IS the picked value, no new state anywhere.
+// the seed half: a fresh UNBOUND, non-ephemeral state initializes its intent.
 describe("the default workspace seed", () => {
   it("a fresh unbound draft is born with the configured default", () => {
     const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
@@ -154,8 +146,6 @@ describe("the default workspace seed", () => {
     const calls = recordFetch(run);
     const host = createChatHost(deps({ defaultWorkspace: () => "/home/endo" }));
     const st = host.ensureState("w1");
-    // the composer's clear affordance: onWorkspaceChange("") on an
-    // unbound tab (ChatTab) - the intent is only the current draft value
     st.workspaceIntent = "";
     await host.submit("w1", "hello");
     const body = calls[0]?.[2] as Record<string, unknown>;
@@ -203,18 +193,14 @@ describe("the default workspace seed", () => {
     assert.equal(bound.workspaceIntent, "", "");
     assert.equal(eph.workspaceIntent, "", "");
     assert.equal(picked.workspaceIntent, "/tmp/picked", "a picked value stands");
-    // idempotent: a second boot-shaped call cannot reseed a consumed
-    // value (a send cleared it) into anything
+    // idempotent: a second boot-shaped call cannot reseed a consumed value.
     draft.workspaceIntent = "";
     host.seedDefaultWorkspace("/home/endo");
     assert.equal(draft.workspaceIntent, "/home/endo", "still seeds blanks");
   });
 });
 
-// the shared-signal half (card t_30137f67): defaultWorkspace.ts is the
-// ONE module-scoped value the /settings reads keep fresh and the app
-// feeds the host (live getter). The knob extraction rides
-// settingValueOf (the SettingsTab payload path).
+// the shared-signal half: defaultWorkspace.ts is the ONE module-scoped value.
 describe("the default-workspace signal", () => {
   it("normalize trims strings and refuses everything else", () => {
     assert.equal(normalizeDefaultWorkspace("/home/endo"), "/home/endo");

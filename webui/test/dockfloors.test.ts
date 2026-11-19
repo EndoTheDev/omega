@@ -1,11 +1,7 @@
-// omega webui: card t_ae9ac5cf Defect 1 - the honest floors. minDockPx
-// used to floor EVERY flexible pane at the 320px chat wall, so five tool
-// panes counted 1616px and refused sidebar reveals that would have fit
-// (the "no room" toast on phantom room). The registry now carries a
-// per-component minPx; a pane floors at the WORST tab it hosts, and
-// contractFloorOf (the drag clamps) reads the same law as minDockPx (the
-// reveal check) - "no room" fires exactly when the space is truly gone.
-// Render-free; node --test.
+// omega webui: Defect 1 - the honest floors. The registry now carries a per-component
+// minPx; a pane floors at the WORST tab it hosts, and contractFloorOf (the drag clamps)
+// reads the same law as minDockPx (the reveal check) - "no room" fires exactly when the
+// space is truly gone.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { type DockComponentName } from "../app/composables/dockables.ts";
@@ -43,7 +39,6 @@ describe("per-component floors (card t_ae9ac5cf Defect 1)", () => {
     assert.equal(dockableMinPx("chat"), CHAT_FLOOR_PX);
     assert.equal(dockableMinPx("files"), MIN_PANE_PX);
     assert.equal(dockableMinPx("mcp"), MIN_PANE_PX);
-    // the lenient reader: a pre-reset legacy id counts as a tool tab
     assert.equal(dockableMinPx("inspector"), MIN_PANE_PX);
     assert.equal(dockableMinPx("<unknown>"), MIN_PANE_PX);
   });
@@ -55,7 +50,6 @@ describe("per-component floors (card t_ae9ac5cf Defect 1)", () => {
     const mixed = makePane("files");
     mixed.tabs = [{ component: "files" }, { component: "chat" }];
     assert.equal(paneFloorOf(mixed), CHAT_FLOOR_PX, "a pane that might show chat keeps chat room");
-    // empty stays conservative: the next tenant may be the chat
     assert.equal(paneFloorOf(makePane(null)), CHAT_FLOOR_PX);
   });
 
@@ -98,11 +92,13 @@ describe("per-component floors (card t_ae9ac5cf Defect 1)", () => {
   });
 });
 
-// the END-TO-END reveal: the tool-heavy layout reveal now OPENS --------------
+// the END-TO-END reveal: the tool-heavy layout reveal now OPENS -----------
 
-/** Endo's round-2 layout, test twin: both shells built + hidden, the main
-    row grown to 5 flexible panes each hosting ONE TOOL tab (Endo's
-    screenshot showed exactly this shape rendering at 128-250px). */
+/**
+ * Endo's round-2 layout, test twin: both shells built + hidden, the main row grown to 5
+ * flexible panes each hosting ONE TOOL tab (Endo's screenshot showed exactly this shape
+ * rendering at 128-250px).
+ */
 function fiveToolTree(): { tree: DockNode; mainPanes: DockPane[] } {
   let t: DockNode = ensurePinnedEdges(
     makeSplit("row", [
@@ -145,7 +141,6 @@ describe("the reveal with per-component floors (card t_ae9ac5cf Defect 1)", () =
     assert.equal(res.revealed, true, "the wall is the honest sum, the reveal proceeds");
     const pane = findEdgePane(res.tree, "sidebar");
     assert.ok(pane, "the sidebar seat exists");
-    // sanity: the same reveal at room-minus-one refuses (the wall is honest)
     const tight = tryRevealEdgePane(tree, "sidebar", "before", 320, null, need - 1);
     assert.equal(tight.revealed, false, "one px short still refuses - the toast fires only when TRUE");
   });
@@ -153,8 +148,6 @@ describe("the reveal with per-component floors (card t_ae9ac5cf Defect 1)", () =
   it("adding a chat tab to a tool pane floors THAT pane at 320 - the same reveal refuses", () => {
     const { tree, mainPanes } = fiveToolTree();
     mainPanes[0]!.tabs = [{ component: "files" }, { component: "chat" }];
-    // one bumped pane: 4x128 + 320 + 16; the reveal (320 + divider) no
-    // longer clears the wall
     const after = minDockPx(tree) + 320 + 4;
     assert.equal(after, 4 * MIN_PANE_PX + CHAT_FLOOR_PX + 4 * 4 + 320 + 4, "the chat tab cost exactly its wall");
     const res = tryRevealEdgePane(tree, "sidebar", "before", 320, null, after - 192);

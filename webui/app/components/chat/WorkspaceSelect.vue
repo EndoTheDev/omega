@@ -1,20 +1,11 @@
 <template>
-  <!-- Session workspace picker (card t_9de5b009, draft intent
-       t_ea7e6a58). Card t_8fd38f88 moved its HOME: the status bar's left
-       zone hosts it now (the composer chip died with that card); the
-       Settings pane's browse mode rides the same component. A chip showing
-       the current folder: a BOUND session's pinned row folder, or - while
-       the tab is unbound - the draft's workspace intent, consumed by the
-       first send. The popover browses real directories
-       (/workspaces/browse, dirs only) or takes a typed absolute path.
-       v0.14.3 (user screenshot findings): the chip rides the same
-       interactive treatment as its row neighbors (.model-chip: full
-       contrast, chevron, shared narrow squeeze) and shows the CURRENT
-       workspace value - "no workspace" is the empty state, never the
-       static word. The popover keeps its distance from the composer
-       (10px), the close affordance sits in the head (top-right), and
-       the confirm row is one clean footer; rows no longer clip at the
-       popup edge and the muted text carries real contrast. -->
+  <!--
+    Session workspace picker.
+    v0.14.3 (user screenshot findings): the chip rides the same interactive treatment
+    as its row neighbors (.model-chip: full contrast, chevron, shared narrow squeeze)
+    and shows the CURRENT workspace value - "no workspace" is the empty state, never
+    the static word.
+  -->
   <div class="ws-select">
     <button
       class="ws-btn"
@@ -24,9 +15,9 @@
       :aria-expanded="open"
       :disabled="disabled"
       @click="toggle">
-      <!-- t_a5f9d185: browseLabel mode - the settings pane rides the SAME
-           picker with a plain "browse" chip instead of the value chip
-           (the value lives in the field beside it). -->
+      <!--
+        browseLabel mode - the settings pane rides the SAME picker with a plain.
+      -->
       <span
         v-if="browseLabel"
         class="chip-name">{{ browseLabel }}</span>
@@ -95,19 +86,9 @@
   import { browseWorkspaces, type WorkspaceListing } from "../../composables/omega";
 
   const props = defineProps<{
-    // the CURRENT workspace value ("": none - the chip renders the
-    // unset label). A bound session's pinned row folder, or the draft
-    // tab's workspace intent (t_ea7e6a58) until the first send pins it.
     workspace?: string;
-    // t_a5f9d185: browse mode - a fixed chip label ("browse"); the chip
-    // stops echoing the value (other surfaces show it beside the chip).
     browseLabel?: string;
-    // t_8fd38f88: the status bar hosts this picker now - "bar" drops the
-    // composer's .model-chip treatment for a quiet bar segment (the .ws-btn
-    // / .ws-pop class law and every journey selector stay untouched).
     variant?: "composer" | "bar";
-    // t_8fd38f88: no chat tab is focused - the chip still shows the
-    // configured default, but there is no session intent to write.
     disabled?: boolean;
   }>();
 
@@ -124,8 +105,6 @@
     return p.split("/").filter(Boolean).pop() ?? p;
   });
 
-  // the chip's tooltip (script keeps the literal strings - apostrophes
-  // in template expressions break the vue template parser)
   const btnTitle = computed(() =>
     props.disabled
       ? props.workspace
@@ -142,8 +121,6 @@
     if (props.disabled) return;
     open.value = !open.value;
     if (open.value) {
-      // the picker opens where the folder is rooted now - or at "/",
-      // the only honest start for a document-unrooted chooser
       go(props.workspace || "/");
     }
   }
@@ -175,8 +152,6 @@
     open.value = false;
   }
 
-  // outside click closes the popover (same behavior family as the
-  // model select's dropdown affordances)
   function onDocClick(e: MouseEvent) {
     if (!open.value) return;
     if (!(e.target instanceof Element) || !e.target.closest(".ws-select")) {
@@ -191,9 +166,9 @@
   .ws-select {
     position: relative;
   }
-  /* the chip borrows the global .model-chip treatment (full contrast,
-     chevron, hover, the narrow squeeze); the scoped layer adds only
-     this row's own deltas. */
+  /*
+   * the chip borrows the global.model-chip treatment.
+   */
   .ws-unset {
     opacity: 0.55;
     font-style: italic;
@@ -240,8 +215,6 @@
     display: flex;
     flex-direction: column;
     gap: 1px;
-    /* the breathing room at both ends keeps the first and last row
-       clear of the scroll clipping edge (screenshot finding) */
     padding: 2px 2px;
   }
   .ws-dir {

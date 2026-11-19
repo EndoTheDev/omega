@@ -1,9 +1,8 @@
-// omega webui: card t_ae9ac5cf Defect 2 - same-pane split drops. A pane's
-// own half-zone drop now SPLITS that pane (the dragged tab seats in the
-// fresh half, the remaining tabs stay - VS Code's editor-group edge drop);
-// the center zone stays the self-refused fold, the shells keep their
-// identity (grow, never split, row-zon refusal for sidebars), the depth
-// caps hold. Render-free; node --test.
+// omega webui: Defect 2 - same-pane split drops. A pane's own half-zone drop now SPLITS
+// that pane (the dragged tab seats in the fresh half, the remaining tabs stay - VS
+// Code's editor-group edge drop); the center zone stays the self-refused fold, the
+// shells keep their identity (grow, never split, row-zon refusal for sidebars), the
+// depth caps hold.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -65,10 +64,8 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
     // the commit mints its own fresh id (insertPane mints) - find it by diff
     const fresh = panes(out).find((p) => !before.has(p.id))!;
     assert.ok(fresh, "the commit minted the fresh half");
-    // the fresh half carries the dragged chat; A keeps the remaining files
     assert.deepEqual(tabsOf(out, fresh.id), ["chat"], "the dragged tab seats in the new half");
     assert.deepEqual(tabsOf(out, a.id), ["files"], "the remaining tabs stay in the original pane");
-    // the split nested in the root row, fresh to the left of the survivor
     const pair = out.children[0] as DockSplit;
     assert.ok(isSplit(pair) && (pair as DockSplit).direction === "row");
     assert.equal((pair as DockSplit).children[0].id, fresh.id, "left zone: the fresh half sits BEFORE");
@@ -92,8 +89,7 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
   });
 
   it("the source pane never lingers empty: a single-tab same-pane split prunes the emptied launcher", () => {
-    // A with ONLY the chat tab: the move empties A - the last-tab law
-    // closes it (B exists, it is not the last main pane)
+    // A with ONLY the chat tab.
     const a = makePane("chat");
     const b = makePane("files");
     const root = makeSplit("row", [a, b]);
@@ -103,18 +99,15 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
     assert.deepEqual(tabsOf(out, b.id), ["files"]);
   });
 
-  // --- the laws this card must NOT break ------------------------------------
+  // the laws this card must NOT break ---------------------------------
 
   it("EDGE SHELLS: a same-pane row zone refuses (a sidebar stacks - it never splits into columns); bottom GROWS and seats from shellLeaf", () => {
     const a = makePane("chat");
     const b = makePane("files", 240, "right");
     b.tabs = [{ component: "files" }, { component: "agents" }];
     const root = makeSplit("row", [a, b]);
-    // row zones refuse on a sidebar root - same-pane or not
     assert.strictEqual(dockDropToZone(root, b.id, 0, b.id, "left"), root);
     assert.equal(expectRefusal(predictDockDrop(root, b.id, 0, b.id, "left")), "a sidebar stacks - it never splits into columns");
-    // the column zone grows the root: the shell's content lands in
-    // shellLeaf, the DRAGGED tab (index 0, files) seats in the fresh leaf
     const grown = dockDropToZone(root, b.id, 0, b.id, "bottom");
     assert.notEqual(grown, root);
     const B = paneOf(grown, b.id);
@@ -140,12 +133,10 @@ describe("same-pane split drops (card t_ae9ac5cf Defect 2)", () => {
       makePane("agents"),
       makeSplit("column", [deepLeaf, makePane("files")]),
     ]);
-    // the DRAGGED TAB for the same-pane attempt must come from the depth-2
-    // leaf itself: one tab (agents), drop on its own bottom half
+    // the DRAGGED TAB for the same-pane attempt must come from the depth-2 leaf itself.
     assert.equal(splitDepthInRoot(L.grown, deepLeaf.id), 2);
     assert.equal(expectRefusal(predictDockDrop(g1.tree, deepLeaf.id, 0, deepLeaf.id, "bottom")), "this root caps at two split levels");
     assert.strictEqual(dockDropToZone(g1.tree, deepLeaf.id, 0, deepLeaf.id, "bottom"), g1.tree, "a refused split commits nothing");
-    // the depth-1 sibling still splits (same-pane, legal direction)
     assert.equal(splitDepthInRoot(L.grown, (L.grown!.children[0] as DockPane).id), 1);
     assert.notEqual(dockDropToZone(g1.tree, (L.grown!.children[0] as DockPane).id, 0, (L.grown!.children[0] as DockPane).id, "bottom"), g1.tree, "depth 1 splits");
   });

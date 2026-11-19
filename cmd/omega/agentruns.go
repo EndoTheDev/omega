@@ -1,22 +1,8 @@
 package main
 
-// agentruns.go: the host's per-agent run factory (card t_a7fab745,
-// Endo's ruling A 2026-11-10). The chat floor serves a session the
-// agents roster lists; that row lives in the owning agent home's own
-// store, and the home's config layer carries its provider, model, system
-// prompt, skills and max_turns. Answering on the daemon's config would
-// be the WRONG AGENT, so the api server asks this factory for the agent
-// that owns the session.
-//
-// The build is the same one `omega run` performs for an OMEGA_AGENT
-// child, minus the process boundary: re-read config.yaml, overlay
-// agents/<name>/config/config.yaml (ApplyAgentLayer), mount the plugin
-// set for that config. Mounting is startup work, never per turn - the
-// result is cached per agent name for the process lifetime, and its
-// handles (store, logger) stay with it. Nothing re-reads a home's
-// config.yaml while the daemon runs, so a HAND edit of that file leaves
-// the running agent on its old values until a restart (docs/architecture.md,
-// the agent-homes section).
+// agentruns.go: the host's per-agent run factory. Mounting is startup work, never per
+// turn - the result is cached per agent name for the process lifetime, and its handles
+// (store, logger) stay with it.
 
 import (
 	"context"
@@ -27,8 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// agentHomeRun is one agent home's built run config plus the mount it
-// owns. The mount lives as long as the daemon serves that home.
+// agentHomeRun is one agent home's built run config plus the mount it owns.
 type agentHomeRun struct {
 	agent  *agent.Agent
 	logger agent.LoggerProvider
@@ -47,8 +32,7 @@ type agentRuns struct {
 	trust         trustFlags
 }
 
-// agentRunFactory returns the AgentRunFactory closure the api server
-// holds: one build per agent home, cached.
+// agentRunFactory returns the AgentRunFactory closure the api server holds.
 func agentRunFactory(configPath string, appendPrompts []string, trust trustFlags) func(context.Context, string) (*agent.Agent, error) {
 	runs := &agentRuns{configPath: configPath, appendPrompts: appendPrompts, trust: trust}
 	return runs.agent
@@ -96,19 +80,12 @@ func (c *agentRuns) close() error {
 		if err := agent.DismountAll(run.reg, run.ctx); err != nil && first == nil {
 			first = fmt.Errorf("dismount agent %s: %w", name, err)
 		}
-		// The log handle is host-owned too (the module teardown never
-		// closes data): the capsule's logger keeps the file open.
+		// The log handle is host-owned too (the module teardown never closes data).
 		if run.logger != nil {
 			if err := run.logger.Close(); err != nil && first == nil {
 				first = fmt.Errorf("close agent %s log: %w", name, err)
 			}
 		}
-		// The store fallback is host-owned as well. Since the 0.17.3 tier
-		// re-law (card t_ee3a968b) a fresh agent home mounts the always-on
-		// trio only, so the store capsule is off unless the agent's
-		// toggles name it - the host then opens its own supply under the
-		// "store"/"host" offer. That handle is beyond the module journal;
-		// close it here or the home's db file stays locked.
 		if run.ctx != nil && run.ctx.Services().Owner("store") == "host" {
 			if c, ok := run.ctx.Services().Resolve("store").(interface{ Close() error }); ok {
 				if err := c.Close(); err != nil && first == nil {

@@ -1,9 +1,6 @@
 package kanban
 
-// The drag-order tests (card t_09b44af1): the position column carries
-// the card order inside a column, reorders persist across reopen, a
-// column change rides UpdateTask's stamp rules and lands on top, and
-// the migration backfill freezes the pre-position display order.
+// The drag-order tests: the position column carries the card order inside a column.
 
 import (
 	"context"
@@ -74,9 +71,7 @@ func seedThree(t *testing.T) (*Store, string, string, string) {
 	return s, a, b, c
 }
 
-// TestCreateLandsOnTop: each fresh card takes the top slot of its
-// column, so list order is reverse creation order - deterministic even
-// when every card shares one created_at second.
+// TestCreateLandsOnTop: each fresh card takes the top slot of its column, so list.
 func TestCreateLandsOnTop(t *testing.T) {
 	s, a, b, c := seedThree(t)
 	got := idsOf(t, s, "", "")
@@ -89,29 +84,25 @@ func TestCreateLandsOnTop(t *testing.T) {
 func TestReorderWithinColumn(t *testing.T) {
 	s, a, b, c := seedThree(t)
 	ctx := context.Background()
-	// b lands after c (its own place): no-op
 	if _, err := s.ReorderTask(ctx, "", b, "", c); err != nil {
 		t.Fatalf("reorder same place: %v", err)
 	}
 	titlesEqual(t, titlesOf(t, s, "", "triage"), []string{"c-card", "b-card", "a-card"}, "top")
-	// a lands after c: [c, a, b]
 	if _, err := s.ReorderTask(ctx, "", a, "", c); err != nil {
 		t.Fatalf("reorder: %v", err)
 	}
 	titlesEqual(t, titlesOf(t, s, "", "triage"), []string{"c-card", "a-card", "b-card"}, "after c")
-	// b back to the top: [b, c, a]
 	if _, err := s.ReorderTask(ctx, "", b, "", ""); err != nil {
 		t.Fatalf("reorder top: %v", err)
 	}
 	titlesEqual(t, titlesOf(t, s, "", "triage"), []string{"b-card", "c-card", "a-card"}, "top again")
-	// the column resequenced dense: exactly 0..n-1 over the board
+	// the column resequenced dense: exactly 0.n-1 over the board
 	positionsDense(t, readPositions(t, s))
 }
 
 func TestReorderAcrossColumns(t *testing.T) {
 	s, a, _, c := seedThree(t)
 	ctx := context.Background()
-	// move c to running, then slot it after the card already there
 	if _, err := s.UpdateTask(ctx, "", a, KanbanPatch{Status: StatusRunning}); err != nil {
 		t.Fatalf("move a: %v", err)
 	}
@@ -120,7 +111,6 @@ func TestReorderAcrossColumns(t *testing.T) {
 	}
 	titlesEqual(t, titlesOf(t, s, "", StatusRunning), []string{"a-card", "c-card"}, "running")
 	titlesEqual(t, titlesOf(t, s, "", StatusTriage), []string{"b-card"}, "triage keeps b")
-	// an empty-column drop lands at the top
 	if _, err := s.ReorderTask(ctx, "", "t_ffffffff", "", ""); err == nil {
 		t.Fatal("unknown task accepted")
 	}
@@ -132,7 +122,6 @@ func TestReorderBadInputs(t *testing.T) {
 	if _, err := s.ReorderTask(ctx, "", a, "bogus", ""); err == nil {
 		t.Fatal("illegal status accepted")
 	}
-	// after a card living in another column is refused
 	if _, err := s.ReorderTask(ctx, "", a, StatusTodo, ""); err != nil {
 		t.Fatalf("move a to todo: %v", err)
 	}
@@ -147,8 +136,7 @@ func TestReorderBadInputs(t *testing.T) {
 	}
 }
 
-// TestReorderNoEventWhenSamePlace: a drop that changes nothing is not
-// audit noise - the reordered event appears only when the slot moved.
+// TestReorderNoEventWhenSamePlace: a drop that changes nothing is not audit noise.
 func TestReorderNoEventWhenSamePlace(t *testing.T) {
 	s, _, b, c := seedThree(t)
 	ctx := context.Background()
@@ -185,8 +173,7 @@ func TestReorderWritesEvent(t *testing.T) {
 	}
 }
 
-// TestReorderPersistsAcrossReopen: the order is a column of the board
-// database, not session state.
+// TestReorderPersistsAcrossReopen: the order is a column of the board database, not.
 func TestReorderPersistsAcrossReopen(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "kanban.db")
 	s0, err := Open(dsn)
@@ -219,15 +206,10 @@ func TestReorderPersistsAcrossReopen(t *testing.T) {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer s1.Close()
-	// a went behind c: [p3, p1, p2]
 	titlesEqual(t, titlesOf(t, s1, "", "triage"), []string{"p3", "p1", "p2"}, "reopened order")
 }
 
-// TestMigrationBackfillOrdersAsRendered: a pre-position database (the
-// column is dropped here to simulate one) backfills positions from the
-// display rule it rendered before positions existed - created_at DESC,
-// id DESC per column - so opening it changes nothing a board client
-// could see.
+// TestMigrationBackfillOrdersAsRendered: a pre-position database.
 func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "kanban.db")
 	s0, err := Open(dsn)
@@ -243,9 +225,7 @@ func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	if err := s0.Close(); err != nil {
 		t.Fatalf("close: %v", err)
 	}
-	// the pre-position display rule is what the backfill must freeze:
-	// created_at DESC, id DESC per column - read it straight from the
-	// table before dropping the column
+	// the pre-position display rule is what the backfill must freeze.
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("raw open: %v", err)
@@ -284,8 +264,7 @@ func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	positionsDense(t, readPositions(t, s1))
 }
 
-// readPositions dumps (title, position) pairs straight from the table
-// (id order - a stable dump whose positions set is asserted).
+// readPositions dumps (title, position) pairs straight from the table.
 func readPositions(t *testing.T, s *Store) map[string]int {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT title, position FROM tasks`)
@@ -308,7 +287,7 @@ func readPositions(t *testing.T, s *Store) map[string]int {
 	return out
 }
 
-// positionsDense checks the pair dump is exactly 0..n-1.
+// positionsDense checks the pair dump is exactly 0.n-1.
 func positionsDense(t *testing.T, positions map[string]int) {
 	t.Helper()
 	seen := map[int]bool{}

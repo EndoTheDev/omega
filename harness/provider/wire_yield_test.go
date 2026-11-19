@@ -1,18 +1,6 @@
 package provider
 
-// The wire pin for the async re-entry contract (card t_954a67a6): the
-// wake path's front half (ledger, wake, launch, input persist) was
-// healthy and every wake test exercised the CORE message list against a
-// fake provider - none serialized the re-entered result onto the
-// provider wire. There, core.YieldResult fell through messagesToJSON's
-// role switch with NO role key, so the wake turn's context ended at the
-// model's own last message: a lenient server accepted the role-less row
-// and answered nothing (~1s), the conversation read as dead.
-//
-// This test is the seam those tests missed, in the shape a wake run
-// actually produces: the assistant that issued the yield-class call,
-// an inline tool result, the caveat assistant, then the settled result
-// re-entering as the run's last message.
+// The wire pin for the async re-entry contract.
 
 import (
 	"encoding/json"
@@ -21,10 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// wakeWireMessages is the message list a wake run's provider call sees
-// for the live receipt (assistant id 1130 -> 1134): a call, an inline
-// result answering another call, the caveat turn, then the settled
-// result.
 func wakeWireMessages() []core.Message {
 	call := core.ToolCall{
 		ID:        "call_5b16qor0",
@@ -44,11 +28,7 @@ func wakeWireMessages() []core.Message {
 	}
 }
 
-// TestYieldResultSerializesAsToolRow pins the one thing the wake tests
-// never asserted: the settled result reaches the model. Every wire row
-// carries a role, and the yield row rides as a "tool" row keeping its
-// tool_call_id so it pairs with the answered call in the earlier
-// assistant's tool_calls - the same shape a normal ToolResult produces.
+// TestYieldResultSerializesAsToolRow pins the one thing the wake tests never asserted.
 func TestYieldResultSerializesAsToolRow(t *testing.T) {
 	for _, stringArgs := range []bool{false, true} {
 		name := "objectArgs"
@@ -68,8 +48,7 @@ func TestYieldResultSerializesAsToolRow(t *testing.T) {
 					t.Errorf("row %d role = %q, want %q (%s)", i, role, want, body)
 				}
 			}
-			// The re-entered result must keep the pairing id: a strict
-			// wire rejects a tool row whose id no assistant called.
+			// The re-entered result must keep the pairing id.
 			gotID, _ := wire[3]["tool_call_id"].(string)
 			if gotID != "call_5b16qor0" {
 				t.Errorf("yield row tool_call_id = %q, want call_5b16qor0", gotID)
@@ -77,17 +56,14 @@ func TestYieldResultSerializesAsToolRow(t *testing.T) {
 			if got, _ := wire[3]["content"].(string); got != "a.txt\nb.txt" {
 				t.Errorf("yield row content = %q, want the listing", got)
 			}
-			// No row may reach the wire role-less: a role-less row is
-			// exactly how the result went invisible.
+			// No row may reach the wire role-less: a role-less row is exactly how the result.
 			for i, m := range wire {
 				if role, _ := m["role"].(string); role == "" {
 					body, _ := json.Marshal(m)
 					t.Errorf("row %d serialized without a role: %s", i, body)
 				}
 			}
-			// The Anthropic path folds every "tool" row into a
-			// tool_result block keyed by that id - the strictest
-			// consumer of the pairing.
+			// The Anthropic path folds every "tool" row into a tool_result block keyed.
 			_, conv := anthropicConvertMessages(wire)
 			last := conv[len(conv)-1]
 			if role, _ := last["role"].(string); role != "user" {

@@ -1,10 +1,8 @@
-// omega webui: unit tests for the LOCAL split trees in the pinned roots
-// (v0.14.4 milestone 4, rulings 1-4 + 8). Canvas C2's shape law: a sidebar
-// STACKS (column splits) and never splits into side-by-side columns, main +
-// bottom take both directions (drop position decides), the tight roots cap at
-// two split levels, tabs stay free across roots, and the auto-merge unwinds a
-// root whose leaves merge away - roots never die. Render-free; node's built-in
-// test runner.
+// omega webui: unit tests for the LOCAL split trees in the pinned roots.
+// Canvas C2's shape law: a sidebar STACKS (column splits) and never splits into
+// side-by-side columns, main + bottom take both directions (drop position decides), the
+// tight roots cap at two split levels, tabs stay free across roots, and the auto-merge
+// unwinds a root whose leaves merge away - roots never die.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -79,10 +77,7 @@ function expectRefusal(p: ReturnType<typeof predictDockDrop>): string {
   if (!("refused" in p)) throw new Error("predicted a drop, expected a refusal");
   return p.reason;
 }
-/** canonical structural signature: ids -> #n by DFS first appearance,
-    grown local trees included. Two calls each mint their own ids
-    (growRoot/insertPane are the only id sources), so prediction-vs-commit
-    equality is structural by the canon. */
+/** canonical structural signature. */
 function canon(t: DockNode): unknown {
   const ids = new Map<string, string>();
   const nid = (id: string) => {
@@ -153,23 +148,18 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     const { root, left, right } = rowRoot();
     const grown = growRoot(root, left.id, "column", "before")!;
     const L = findPane(grown.tree, left.id)!;
-    // canvas C1: the dragged view must be one the class law ALLOWS in a
-    // sidebar (a secondary-sidebar view visits the primary freely) - a chat
-    // tab is refused by the seat gate before the shape law ever speaks
+    // canvas C1: the dragged view must be one the class law ALLOWS in a sidebar.
     const src = findPane(grown.tree, right.id)!.id;
     const filesIdx = findPane(grown.tree, right.id)!.tabs.findIndex((t) => t.component === "files");
     const freshId = (L.grown!.children[0] as DockPane).id;
     // row zones refuse on a sidebar leaf (stacked rows ONLY)
     assert.equal(expectRefusal(predictDockDrop(grown.tree, src, filesIdx, freshId, "left")), "a sidebar stacks - it never splits into columns");
     assert.equal(dockDropToZone(grown.tree, src, filesIdx, freshId, "right"), grown.tree);
-    // the column zone splits the leaf: prediction == commit, depth 2
     const pred = expectDrop(predictDockDrop(grown.tree, src, filesIdx, freshId, "bottom"), "column split of the leaf");
     const commit = dockDropToZone(structuredClone(grown.tree), src, filesIdx, freshId, "bottom");
     sameShape(pred.tree, commit);
     const grownSplit = findPane(pred.tree, left.id)!.grown!;
     assert.equal(splitDepthInRoot(grownSplit, freshId), 2, "depth 2 reached");
-    // the fresh leaf's split sibling also sits at depth 2: splitting it refuses
-    // (the dragged files tab now lives inside the root - the source re-reads)
     const inner = asSplit(grownSplit.children[0]);
     const siblingId = (inner.children[0] as DockPane).id === freshId
       ? (inner.children[1] as DockPane).id
@@ -193,25 +183,21 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
     const freshId = (L.grown!.children[0] as DockPane).id;
     assert.equal(splitLawRefusal(grown.tree, freshId, "column"), null, "a sidebar leaf may stack further");
     assert.match(splitLawRefusal(grown.tree, freshId, "row") ?? "", /a sidebar stacks - it never splits into columns/);
-    // a hand-built depth-2 leaf refuses outright
     const deepLeaf = makePane("agents");
     L.grown = makeSplit("column", [
       makePane("agents"),
       makeSplit("column", [deepLeaf, makePane("files")]),
     ]);
     assert.match(splitLawRefusal(grown.tree, deepLeaf.id, "column") ?? "", /caps at two split levels/);
-    // the bottom takes both directions and caps identically
     const { root: broot, bottom } = bottomRoot();
     bottom.grown = makeSplit("column", [deepLeaf, makePane("agents")]);
     assert.equal(splitLawRefusal(broot, deepLeaf.id, "column"), null, "bottom: a depth-1 leaf splits fine");
     assert.equal(splitLawRefusal(broot, deepLeaf.id, "row"), null, "bottom: rows too");
-    // depth 2 refuses there as well
     bottom.grown = makeSplit("column", [
       makePane("agents"),
       makeSplit("row", [deepLeaf, makePane("files")]),
     ]);
     assert.match(splitLawRefusal(broot, deepLeaf.id, "row") ?? "", /caps at two split levels/);
-    // main: five levels deep, no law refuses
     const { root: r2, a } = rowRoot();
     let tree: DockNode = r2;
     for (let i = 0; i < 5; i++) {
@@ -222,9 +208,7 @@ describe("predictDockDrop over the roots (prediction == commit, ruling 5)", () =
 });
 
 describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
-  /** a bottom root with two leaves: shellLeaf(chat) | fresh(chat). Chat is
-      the registry's ONLY closable component - close Tab-driven merges
-      need closable tabs, so the fixtures chat it up. */
+  /** a bottom root with two leaves: shellLeaf(chat) | fresh(chat). */
   function grownBottom(): { root: DockSplit; bottom: DockPane; shellLeaf: DockPane; fresh: DockPane } {
     const left = makePane("sidebar", 240, "left");
     const right = makePane("files", 240, "right");
@@ -241,12 +225,10 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
 
   it("closing the LAST tab of an inner leaf is LOCKED; the leaf leaves by its remove X", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // card t_9855a20e (THE LOCKED LAST TAB): the leaf's only tab refuses the
-    // close - the leaf renders no tab X, the same as every lone tab
+    // (THE LOCKED LAST TAB): the leaf's only tab refuses the close.
     assert.equal(closeTab(root, fresh.id, 0), root, "the last tab of a leaf never closes");
     assert.ok(rootPaneOf(root, fresh.id), "the leaf still lives in the root");
-    // the leaf's own remove X is the route (canRemovePane is true for root
-    // leaves) - the root unwinds to its survivor's classic cell
+    // the leaf's own remove X is the route (canRemovePane is true for root leaves).
     const out = removePane(root, fresh.id);
     const B = findPane(out, bottom.id)!;
     assert.equal(B.grown, undefined, "the last leaf went: the root un-grew");
@@ -256,8 +238,6 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
 
   it("a leaf's tab WITH company still closes; the split keeps its survivors", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // three leaves, the middle one carrying two tabs: closing one tab is
-    // allowed (it is not the pane's last), the leaf stays
     const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
     const withTwo = openTab(root, fresh.id, { component: "chat" });
@@ -290,7 +270,6 @@ describe("auto-merge (ruling 8: leaves merge away, roots never die)", () => {
 
   it("removing a MIDDLE leaf keeps the root grown with normalized sizes", () => {
     const { root, bottom, shellLeaf, fresh } = grownBottom();
-    // three leaves: l1(agents) | l2(chat) | l3(agents2)
     const l3 = makePane("agents");
     bottom.grown = makeSplit("row", [shellLeaf, fresh, l3]);
     const out = removePane(root, fresh.id);
@@ -321,8 +300,6 @@ describe("the sessions seat with a grown left root (ruling 4: tabs free, bar = t
       null,
       "the right shell refuses",
     );
-    // canvas C1: the zone read behind that refusal - a grown leaf inherits
-    // the root's seat, a main pane is main, only the marked shell is "left"
     assert.equal(paneZone(grown.tree, freshId), "left", "the grown leaf is the root's zone");
     assert.equal(paneZone(grown.tree, a.id), "main", "an unmarked pane is main");
     assert.equal(paneZone(grown.tree, left.id), "left", "the shell's own marker");
@@ -335,8 +312,7 @@ describe("the sessions seat with a grown left root (ruling 4: tabs free, bar = t
 
   it("forceSessionsLeft: sessions anywhere inside the root is met; absent = seeded at the first leaf", () => {
     const { root, left } = rowRoot();
-    // growth moves the shell's classic content into the ZONE-SIDE leaf:
-    // 'before' puts the fresh leaf first, the session leaf trails
+    // growth moves the shell's classic content into the ZONE-SIDE leaf.
     const grown = growRoot(root, left.id, "column", "before")!;
     const L = findPane(grown.tree, left.id)!;
     assert.deepEqual((L.grown!.children[1] as DockPane).tabs.map((t) => t.component), ["sidebar"]);
@@ -368,7 +344,6 @@ describe("persistence of the local trees (ruling 6: grown rides the v:3 record)"
     assert.ok(treeShapesMatch(back!.tree, grown.tree), "shape == the live tree");
     const L = findPane(back!.tree, left.id)!;
     assert.ok(L.grown, "the local tree survived the record");
-    // growth ran with side 'before': the fresh leaf leads, sessions trails
     assert.deepEqual((L.grown!.children[1] as DockPane).tabs.map((t) => t.component), ["sidebar"]);
   });
 

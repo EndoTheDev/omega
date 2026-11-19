@@ -1,10 +1,8 @@
-// omega webui: the Files tab toolbar (card t_a4504a25). The node suite
-// has no DOM, so the behavior half runs at the composable level - the
-// POST wire (postFilesWrite / postFilesMkdir), the create-target picking
-// (createTargetDir), the reveal chain (revealAncestors), the bus seam -
-// and the toolbar/tree contract is structurally pinned on the source
-// (the icon.test.ts recipe).
-// Run: node --test test/filestoolbar.test.ts
+// omega webui: the Files tab toolbar. The node suite has no DOM, so the behavior half
+// runs at the composable level - the POST wire (postFilesWrite / postFilesMkdir), the
+// create-target picking (createTargetDir), the reveal chain (revealAncestors), the bus
+// seam - and the toolbar/tree contract is structurally pinned on the source (the
+// icon.test.ts recipe).
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -151,9 +149,8 @@ describe("fileTreeBus seam", () => {
 });
 
 describe("the band contract (structural pins, no DOM)", () => {
-  // card t_a5f9d185: the toolbar strip became the VS Code-style header
-  // row. Card t_308e6d9b: that row is the SHARED TabBand now (the
-  // universal band) and it is STRUCTURALLY pinned - it renders BEFORE
+  // the toolbar strip became the VS Code-style header row.: that row is the SHARED
+  // TabBand now (the universal band) and it is STRUCTURALLY pinned - it renders BEFORE
   // the scroll body (.files-scroll), so a long tree never scrolls it.
   const tab = read("../harness/files/ui/FilesTab.vue");
   const band = read("app/components/ui/TabBand.vue");
@@ -183,7 +180,6 @@ describe("the band contract (structural pins, no DOM)", () => {
     const bandAt = tab.indexOf("<TabBand");
     const listAt = tab.indexOf('class="files-list"');
     assert.ok(bandAt >= 0 && listAt >= 0 && bandAt < listAt, "band above the tree");
-    // no resolvable workspace -> no header at all (the Endo ruling)
     assert.match(tab, /v-if="headerName"/, "the band renders only when rooted");
     const scrollAt = tab.indexOf('class="files-scroll"');
     assert.ok(scrollAt >= 0 && bandAt < scrollAt, "the band is OUTSIDE the scroll body");
@@ -214,7 +210,6 @@ describe("the band contract (structural pins, no DOM)", () => {
     assert.match(tab, /toolsLocked/);
     assert.match(tab, /:disabled="toolsLocked"/);
     assert.match(tab, /rootError\.value \|\| loadingRoot\.value/);
-    // refresh and collapse stay live while the tree is fine
     assert.match(tab, /:disabled="loadingRoot"[\s\S]*?@click="refreshFiles"/);
   });
 
@@ -239,26 +234,19 @@ describe("the band contract (structural pins, no DOM)", () => {
 
   it("collapse goes through the ONE seam - the filetree store owns expansion state", () => {
     assert.match(tab, /fileTreeBus\.collapse\+\+/);
-    // the bus watches + cache drops live in the store composable now
-    // (card t_ccd4a000 extracted it for DOM-free unit coverage)
     const treeStore = read("app/composables/filetree.ts");
     assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.collapse/, "collapse watch");
     assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.refresh/, "refresh watch");
     assert.match(treeStore, /watch\(\s*\(\) => fileTreeBus\.reveal/, "reveal watch");
     assert.match(treeStore, /expanded\.clear\(\)/, "collapse folds every branch");
-    // the refresh branch drops the loaded caches so creates turn up
     assert.match(treeStore, /for \(const p of Object\.keys\(kids\)\) delete kids\[p\]/);
     assert.match(treeStore, /for \(const p of Object\.keys\(failed\)\) delete failed\[p\]/);
   });
 
   it("a failed expansion renders NO error row in the tree (t_ccd4a000)", () => {
-    // the backend error string must never become a child row - the
-    // leak Endo caught under .git/.github/.worktrees
+    // the backend error string must never become a child row - the leak Endo caught.
     assert.doesNotMatch(tree, /errorOf/, "no error-of accessor reaches the template");
     assert.ok(!/\{\{\s*error/.test(tree), "no error text interpolates in the tree");
-    // the refusal is a no-op + one fixed-phrase hint via the local
-    // toast funnel (the established pattern, t_8bcbe72e) - the row
-    // body only ever shows entries or the transient loading hint
     const treeStore = read("app/composables/filetree.ts");
     assert.match(treeStore, /folder failed to load/, "the fixed-phrase hint");
     assert.match(treeStore, /emitLocalToast\(FAILURE_TOAST\)/, "the hint rides the local funnel");

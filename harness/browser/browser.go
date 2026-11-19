@@ -1,18 +1,6 @@
-// Package browser is the capsule behind the webui's general web
-// browser pane (card t_95c91f9c, Endo ruling 2026-11-01: "the browser
-// should be like a normal browser which also allows me to visit other
-// websites"). The pane itself is pure client side - a URL bar and an
-// iframe embed, any origin, no allowlist, no origin gate; sites that
-// refuse embedding (X-Frame-Options) get the SPA's fallback panel.
-// Never a proxy: the module owns exactly one honest server surface -
-// the last-browsed URL, persisted so the tab restores where the user
-// left off across page reloads.
-//
-// No seam, no tools, no commands: the browser is frontend vocabulary
-// (the dock tab) plus this one persistence route. Removal proof is
-// plain deletion - remove harness/browser/ and the SPA's
-// components/browser/, drop the registry + mount lines (the card body
-// carries the recipe) and the feature is gone from source and binary.
+// Package browser is the capsule behind the webui's general web browser pane. Never a
+// proxy: the module owns exactly one honest server surface - the last-browsed URL,
+// persisted so the tab restores where the user left off across page reloads.
 package browser
 
 import (
@@ -28,16 +16,12 @@ import (
 	"time"
 )
 
-// State is the on-disk shape: <home>/data/browser.json. One field on
-// purpose - v1 stores nothing but the resume point; no history, no
-// bookmarks (later only if asked).
+// State is the on-disk shape: <home>/data/browser.json.
 type State struct {
 	Last string `json:"last"`
 }
 
-// Store is the last-URL persistence. In-memory when built without a
-// path (exotic embeds with no resolvable home): every route still
-// answers, persistence is a no-op - the route surface stays stable.
+// Store is the last-URL persistence.
 type Store struct {
 	mu   sync.Mutex
 	path string
@@ -47,10 +31,9 @@ type Store struct {
 // StoreName is the fixed file name inside the home's data directory.
 const StoreName = "browser.json"
 
-// OpenStore loads (or resets) the store at path. A path of "" builds
-// the memory-only shape. A missing file is a zero state, never an
-// error; a corrupt file is a zero state too (a browser memory file is
-// the cheapest loss in the home).
+// OpenStore loads (or resets) the store at path. A missing file is a zero state, never
+// an error; a corrupt file is a zero state too (a browser memory file is the cheapest
+// loss in the home).
 func OpenStore(path string) (*Store, error) {
 	s := &Store{path: path}
 	if path == "" {
@@ -81,8 +64,7 @@ func (s *Store) Last() string {
 	return s.last
 }
 
-// SetLast records the URL and persists it. Unreachable only when the
-// path is empty (memory-only) or the home vanished mid-run.
+// SetLast records the URL and persists it.
 func (s *Store) SetLast(u string) error {
 	if !ValidURL(u) {
 		return fmt.Errorf("browser: not a browsable URL: %q", u)
@@ -101,9 +83,7 @@ func (s *Store) SetLast(u string) error {
 	return writeFileAtomic(path, append(b, '\n'), 0o644)
 }
 
-// Clear zeroes the resume memory and deletes the backing file. The
-// REST face's reset ({"url": ""}) and the hygiene paths use it; the
-// resume memory is the cheapest loss in the home.
+// Clear zeroes the resume memory and deletes the backing file.
 func (s *Store) Clear() {
 	s.mu.Lock()
 	s.last = ""
@@ -115,11 +95,10 @@ func (s *Store) Clear() {
 	_ = os.Remove(path) // a failed removal is next boot's problem at most
 }
 
-// probeClient is the frameability probe's only dialer. Bounded: a 6s
-// total timeout and the body DISCARDED after 8KiB - the probe reads
-// headers, never content; it is not a proxy. A probed URL is exactly
-// what the user asked the pane to visit, so the probe's reach is the
-// pane's own.
+// probeClient is the frameability probe's only dialer. Bounded: a 6s total timeout and
+// the body DISCARDED after 8KiB - the probe reads headers, never content; it is not a
+// proxy. A probed URL is exactly what the user asked the pane to visit, so the probe's
+// reach is the pane's own.
 var probeClient = &http.Client{
 	Timeout: 6 * time.Second,
 }
@@ -151,12 +130,7 @@ func Probe(u, spaOrigin string) FrameVerdict {
 	return FrameVerdict{Frameable: fv, Status: resp.StatusCode}
 }
 
-// ValidURL accepts exactly what an end user pastes into a browser's
-// address bar: an absolute http(s) URL with a host. ftp:, javascript:,
-// data:, bare hosts without a scheme - all refused (the SPA's URL
-// bar normalizes the https:// prefix before putting the address on
-// the wire; the route double-checks at the server, not as a gate -
-// there is no origin allowlist, only shape validation).
+// ValidURL accepts exactly what an end user pastes into a browser's address bar.
 func ValidURL(u string) bool {
 	if u == "" {
 		return false
@@ -168,8 +142,7 @@ func ValidURL(u string) bool {
 	if (p.Scheme != "http" && p.Scheme != "https") || p.Host == "" {
 		return false
 	}
-	// URL.Path with control characters is shell/terminal poison if it
-	// ever round-trips into a config write; refuse the exotic range.
+	// URL.Path with control characters is shell/terminal poison if it ever round-trips.
 	for _, r := range u {
 		if r < 0x20 || r == 0x7f {
 			return false
@@ -178,11 +151,9 @@ func ValidURL(u string) bool {
 	return true
 }
 
-// FrameVerdict is the frameability probe's answer for one URL. The
-// boolean is THREE-state on the wire: true/false/null. null (the probed
-// host is unreachable / the probe failed) means "the probe cannot say"
-// - the tab keeps the iframe path and its late-load window instead of
-// trusting a guess.
+// FrameVerdict is the frameability probe's answer for one URL. null (the probed host is
+// unreachable / the probe failed) means "the probe cannot say" - the tab keeps the
+// iframe path and its late-load window instead of trusting a guess.
 type FrameVerdict struct {
 	Frameable *bool  `json:"frameable"`
 	Reason    string `json:"reason,omitempty"`
@@ -228,8 +199,7 @@ func FrameableHeaders(status int, xfo, csp []string, spaOrigin string) (*bool, s
 					return boolPtr(true), ""
 				}
 			}
-			// a frame-ancestors list without * and without the SPA's
-			// origin: the embed refuses ('none', 'self', other hosts)
+			// a frame-ancestors list without * and without the SPA's origin.
 			return boolPtr(false), "csp-frame-ancestors"
 		}
 	}
@@ -239,11 +209,7 @@ func FrameableHeaders(status int, xfo, csp []string, spaOrigin string) (*bool, s
 	return boolPtr(true), ""
 }
 
-// AncestorHost reduces an origin to what frame-ancestors host tokens
-// compare against ("https://example.com:8098" -> "example.com:8098";
-// the default ports stay as written in the ancestors value - the
-// comparison is a plain string match, and a missing match refuses,
-// which is the safe direction).
+// AncestorHost reduces an origin to what frame-ancestors host tokens compare against.
 func AncestorHost(origin string) string {
 	o := strings.TrimPrefix(strings.TrimPrefix(origin, "https://"), "http://")
 	o = strings.ToLower(o)
@@ -255,9 +221,8 @@ func AncestorHost(origin string) string {
 
 func boolPtr(b bool) *bool { return &b }
 
-// writeFileAtomic writes via a temp file in the same directory +
-// rename (v0.14.1 atomic-write law). The capsule keeps its own copy:
-// module law keeps import surfaces minimal and the helper is small.
+// writeFileAtomic writes via a temp file in the same directory + rename (v0.14.1
+// atomic-write law).
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {

@@ -1,12 +1,6 @@
 package loop
 
-// The user-stop tests (card t_caa67135). Endo cancelled a streaming turn
-// in the webui and the loop came back to life: the yield calls the
-// cancelled run had left running settled afterwards, each settlement
-// launched a wake turn, and the shells behind them kept working - a
-// "stop" that stopped the stream and nothing else. These pin the two
-// halves of the fix at the loop: the stop latch CUTS the running call,
-// and its settled result is discarded instead of waking the home.
+// The user-stop tests.
 
 import (
 	"context"
@@ -19,8 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// waitForCond polls until cond holds - bounded to catch a HANG, never to
-// time correctness (the package's testWaitTimeout law).
+// waitForCond polls until cond holds - bounded to catch a HANG, never to time.
 func waitForCond(t *testing.T, what string, cond func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -33,15 +26,11 @@ func waitForCond(t *testing.T, what string, cond func() bool) {
 	t.Fatalf("timed out waiting for %s", what)
 }
 
-// TestUserStopKillsDispatchedCallAndDropsItsResult is the card's pinned
-// sequence at the loop: a yield-class call is dispatched and still
-// running when the user stops the turn. The stop must terminate the
-// call (the shell-process stand-in observes ctx.Done) and its settled
-// result must never reach the wake - zero wake launches, ledger dry.
+// TestUserStopKillsDispatchedCallAndDropsItsResult is the card's pinned sequence.
+// The stop must terminate the call (the shell-process stand-in observes ctx.Done) and
+// its settled result must never reach the wake - zero wake launches, ledger dry.
 func TestUserStopKillsDispatchedCallAndDropsItsResult(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
-		// Run 1: one yield-class call - the turn ends yielded and the
-		// call keeps running out of band.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "long", Name: "long", Arguments: map[string]any{}}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
@@ -79,24 +68,17 @@ func TestUserStopKillsDispatchedCallAndDropsItsResult(t *testing.T) {
 		t.Fatalf("pending calls = %d, want 1 while the call runs", len(left))
 	}
 
-	// The human presses stop.
 	stop.Stop()
 
 	waitForCond(t, "the dispatched call to terminate", terminated.Load)
 	waitForCond(t, "the ledger to drain", func() bool { return len(ledger.All()) == 0 })
-	// The settled result must not have re-entered: a wake launch here is
-	// the bug the card was filed for.
+	// The settled result must not have re-entered.
 	if n := rec.lenSync(); n != 0 {
 		t.Fatalf("wakes = %d, want 0 - a stopped turn's result re-entered the loop: %+v", n, rec.snapshot())
 	}
 }
 
-// TestUserStopKillsConvertedCallAndDropsItsResult is the same promise on
-// the ESCALATION lane: a call that ran past the inline budget converts
-// to a pending dispatch, the turn ends, and the run's own watcher is
-// gone - only the stop latch can still cut it. Before the latch rode the
-// per-call ctx, a converted shell survived the stop and its result woke
-// the home (the go-test shell at 1604/1606 in the reported session).
+// TestUserStopKillsConvertedCallAndDropsItsResult is the same promise.
 func TestUserStopKillsConvertedCallAndDropsItsResult(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",
@@ -141,10 +123,7 @@ func TestUserStopKillsConvertedCallAndDropsItsResult(t *testing.T) {
 	}
 }
 
-// TestUserStopCancelCauseIsTheSentinel: the cancellation the latch
-// forwards names itself (core.ErrUserStopped), so a tool can tell the
-// human's stop from the run cap - the shell kills its child on the
-// former and stays detached on the latter.
+// TestUserStopCancelCauseIsTheSentinel: the cancellation the latch forwards names.
 func TestUserStopCancelCauseIsTheSentinel(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{

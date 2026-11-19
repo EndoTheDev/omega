@@ -14,9 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// sseAnthropicServer serves a canned anthropic SSE stream shaped like
-// the live keypool /v1/messages surface: message_start, content blocks,
-// message_delta with usage, message_stop.
+// sseAnthropicServer serves a canned anthropic SSE stream shaped like the live.
 func sseAnthropicServer(t *testing.T, events ...string) *httptest.Server {
 	t.Helper()
 	var sb strings.Builder
@@ -29,9 +27,7 @@ func sseAnthropicServer(t *testing.T, events ...string) *httptest.Server {
 	}))
 }
 
-// TestStreamAnthropicThinking verifies thinking_delta deltas surface as
-// ThinkingChunk events alongside text deltas (gap found against the
-// live keypool surface, which streams thinking as thinking_delta).
+// TestStreamAnthropicThinking verifies thinking_delta deltas surface as ThinkingChunk.
 func TestStreamAnthropicThinking(t *testing.T) {
 	srv := sseAnthropicServer(t,
 		`{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}`,
@@ -142,7 +138,6 @@ func TestStreamAnthropicMaxTokensWithBudget(t *testing.T) {
 		t.Errorf("max_tokens = %v, want > budget_tokens %v", maxTokens, budget)
 	}
 
-	// No thinking level: plain 4096.
 	p2 := &Provider{typ: "anthropic", baseURL: srv.URL, modelName: "glm-5.3", apiKey: "k"}
 	collectEvents(t, p2.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
 	sent = nil
@@ -157,8 +152,7 @@ func TestStreamAnthropicMaxTokensWithBudget(t *testing.T) {
 	}
 }
 
-// TestAnthropicConvertMessagesIsError verifies errored tool results get
-// the is_error flag on the resulting tool_result block.
+// TestAnthropicConvertMessagesIsError verifies errored tool results get the is_error.
 func TestAnthropicConvertMessagesIsError(t *testing.T) {
 	messages := []map[string]any{
 		{"role": "tool", "tool_call_id": "call_ok", "content": "fine"},
@@ -194,9 +188,7 @@ func openaiSSEServer(t *testing.T, chunks ...string) *httptest.Server {
 	}))
 }
 
-// TestStreamOpenAIReasoningContent verifies the deepseek-style
-// reasoning_content field maps to ThinkingChunk when the `reasoning`
-// field is absent (parity with the ollama native thinking path).
+// TestStreamOpenAIReasoningContent verifies the deepseek-style reasoning_content.
 func TestStreamOpenAIReasoningContent(t *testing.T) {
 	srv := openaiSSEServer(t,
 		`{"choices":[{"index":0,"delta":{"reasoning_content":"Working it out"},"finish_reason":null}]}`,
@@ -225,17 +217,12 @@ func TestStreamOpenAIReasoningContent(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAISynthesizesToolCallIDs verifies tool-call fragments
-// without a wire id get stable synthetic ids (call_N), and a wire id
-// on a later fragment still wins.
+// TestStreamOpenAISynthesizesToolCallIDs verifies tool-call fragments without a wire.
 func TestStreamOpenAISynthesizesToolCallIDs(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "text/event-stream")
-		// index 0: no id ever; index 1: id arrives on the fragment.
-		// Chunks are built with json.Marshal so the embedded argument
-		// fragments stay valid JSON without hand-typed escapes.
 		chunk := func(calls []map[string]any) string {
 			b, _ := json.Marshal(map[string]any{
 				"choices": []map[string]any{{
@@ -313,8 +300,7 @@ func TestStreamOpenAIAbsentUsage(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAIUsageReported verifies the usage chunk (opt-in via
-// stream_options.include_usage) lands on the StreamEnd counters.
+// TestStreamOpenAIUsageReported verifies the usage chunk.
 func TestStreamOpenAIUsageReported(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -349,11 +335,9 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	}
 }
 
-// --- ollama done_reason "load" retry (t_854eef1b) ---
+// ollama done_reason "load" retry
 
 // ollamaNDJSONServer writes canned ollama /api/chat responses as NDJSON.
-// The handler fn gets the 1-based attempt count and returns the lines to
-// serve for that request.
 func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httptest.Server, *uint32) {
 	t.Helper()
 	var hits uint32
@@ -367,9 +351,7 @@ func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httpte
 	return srv, &hits
 }
 
-// TestStreamOllamaRetriesLoadUntilContent verifies a stream ending in
-// done_reason "load" with nothing streamed is retried (same budget knob
-// and backoff shape as RetryHTTP) and the good stream wins.
+// TestStreamOllamaRetriesLoadUntilContent verifies a stream ending in done_reason.
 func TestStreamOllamaRetriesLoadUntilContent(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "3")
 	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {
@@ -406,10 +388,9 @@ func TestStreamOllamaRetriesLoadUntilContent(t *testing.T) {
 	}
 }
 
-// TestStreamOllamaLoadExhaustedEndsAsError verifies the always-"load"
-// case: the retry budget burns, then the turn ends loud as
-// FinishReason "error" with the load failure named - never a silent
-// empty assistant message.
+// TestStreamOllamaLoadExhaustedEndsAsError verifies the always-"load" case: the retry
+// budget burns, then the turn ends loud as FinishReason "error" with the load failure
+// named - never a silent empty assistant message.
 func TestStreamOllamaLoadExhaustedEndsAsError(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "1")
 	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {

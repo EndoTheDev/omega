@@ -1,9 +1,8 @@
 package cron
 
-// cli_test.go: the crons subcommand (card t_aca45258). The CLI rides
-// Runner.SaveJob/DeleteJob - the very write law POST /cron/save uses -
-// so these tests pin the CLI's own contract (verbs, flag application,
-// refusals) and one end-to-end round trip against a real home.
+// cli_test.go: the crons subcommand. The CLI rides Runner.SaveJob/DeleteJob - the very
+// write law POST /cron/save uses - so these tests pin the CLI's own contract (verbs,
+// flag application, refusals) and one end-to-end round trip against a real home.
 
 import (
 	"bytes"
@@ -20,8 +19,7 @@ jobs:
     prompt: journal
 `
 
-// newCLIPlugin mounts the job set a CLI dispatch would get: a runner
-// created from a real crons.yaml in a temp home.
+// newCLIPlugin mounts the job set a CLI dispatch would get.
 func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -56,14 +54,11 @@ func jobByName(jobs []JobInfo, name string) *JobInfo {
 	return nil
 }
 
-// TestCronsCLIRoundTrip drives add -> list -> edit -> delete through the
-// handler the capsule registers, asserting the file each step (the
-// landed truth), not the printed text.
+// TestCronsCLIRoundTrip drives add -> list -> edit -> delete through the handler.
 func TestCronsCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliTestCrons)
 	cmd := cmdCrons(p)
 
-	// add: an interval job and a cron job with skills.
 	if err := cmd([]string{"add", "pulse", "--kind", "interval", "--minutes", "15", "--prompt", "tick"}); err != nil {
 		t.Fatalf("add interval: %v", err)
 	}
@@ -94,7 +89,6 @@ func TestCronsCLIRoundTrip(t *testing.T) {
 		t.Fatalf("nightly row = %+v", got)
 	}
 
-	// list renders the same table the /cron command does.
 	var buf bytes.Buffer
 	if err := cronsList(p, &buf); err != nil {
 		t.Fatal(err)
@@ -117,7 +111,6 @@ func TestCronsCLIRoundTrip(t *testing.T) {
 		t.Fatalf("minutes 15 survived the edit:\n%s", text)
 	}
 
-	// delete removes one job and leaves the rest.
 	if err := cmd([]string{"delete", "pulse"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -132,8 +125,7 @@ func TestCronsCLIRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCronsCLIEnabledFlip pins the one scalar an operator flips most:
-// --enabled=false writes the flag without touching the definition.
+// TestCronsCLIEnabledFlip pins the one scalar an operator flips most.
 func TestCronsCLIEnabledFlip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliTestCrons)
 	if err := cmdCrons(p)([]string{"edit", "daily-journal", "--enabled=false"}); err != nil {
@@ -149,8 +141,6 @@ func TestCronsCLIEnabledFlip(t *testing.T) {
 	if !strings.Contains(text, "# the human-authored file") {
 		t.Fatalf("edit lost the FILE-level comment:\n%s", text)
 	}
-	// The replaced entry re-marshals clean - its own inline comment dies
-	// with the mapping it annotated (save_test.go's documented cost).
 	if strings.Contains(text, "# the owner's note rides the entry") {
 		t.Fatalf("edit kept a stale inline comment on the replaced entry:\n%s", text)
 	}
@@ -174,15 +164,12 @@ func TestCronsCLIRefusals(t *testing.T) {
 	}{
 		{"add without prompt", []string{"add", "noprompt", "--schedule", "0 1 * * *"}, "--prompt is required"},
 		{"add without name", []string{"add"}, "usage: omega crons add"},
-		// the name is positional FIRST: a trailing name would be swallowed
-		// by flag parsing along with every flag after it
+		// the name is positional FIRST.
 		{"add name last", []string{"add", "--prompt", "x", "late"}, "the job name comes first"},
 		{"bad schedule", []string{"add", "badsched", "--schedule", "every tuesday", "--prompt", "p"}, "bad schedule"},
 		{"edit unknown", []string{"edit", "ghost", "--prompt", "p"}, "no job \"ghost\""},
 		{"edit with no flags", []string{"edit", "daily-journal"}, "nothing to change"},
 		{"delete unknown", []string{"delete", "ghost"}, "no job \"ghost\""},
-		// delete refuses a leading-dash name through the same jobName
-		// guard add/edit use (review round 1 nit fix)
 		{"delete leading dash", []string{"delete", "--help"}, "the job name comes first"},
 		{"delete trailing junk", []string{"delete", "daily-journal", "junk"}, "only the name is positional"},
 		{"list trailing junk", []string{"list", "junk"}, "list takes none"},
@@ -202,8 +189,7 @@ func TestCronsCLIRefusals(t *testing.T) {
 	}
 }
 
-// TestCronsCLIAgentJobRefused: a wake job's file belongs to its agent
-// home - the CLI names that file instead of crossing homes.
+// TestCronsCLIAgentJobRefused: a wake job's file belongs to its agent home.
 func TestCronsCLIAgentJobRefused(t *testing.T) {
 	home := t.TempDir()
 	owned := true
@@ -227,8 +213,7 @@ func TestCronsCLIAgentJobRefused(t *testing.T) {
 	}
 }
 
-// TestCronsCLIHelp: the module's own help answers, and `omega crons`
-// with no argv lists.
+// TestCronsCLIHelp: the module's own help answers, and `omega crons` with no argv.
 func TestCronsCLIHelp(t *testing.T) {
 	p, _ := newCLIPlugin(t, cliTestCrons)
 	if err := cmdCrons(p)([]string{"--help"}); err != nil {

@@ -1,15 +1,6 @@
-// omega webui: finished-things notifications client (card t_5d9032d3).
-// One small record per finished thing - kanban task done, cron fire
-// finished, dispatched chat run ended - served by GET /notifications and
-// POST /notifications/read. RECORDS ARE METADATA ONLY (kind, source id,
-// title line, verdict, read flag); the UI renders exactly what the
-// server sent and never invents content for the title line.
-//
-// Arc 4b (t_9339ad05): the toast moved to the canvas - the notifications
-// capsule ships a toast panel and the dock renders toasts from the
-// canvas feed (composables/canvas.ts onToastPanel), not from a private
-// SSE stream. What stays here is the REST client, the pure helpers the
-// dock and the toast path keep using, and the board-select seam.
+// omega webui: finished-things notifications client. RECORDS ARE METADATA ONLY (kind,
+// source id, title line, verdict, read flag); the UI renders exactly what the server
+// sent and never invents content for the title line.
 
 export interface OmegaNotification {
   id: number;
@@ -26,9 +17,7 @@ export interface NotificationsPage {
   unread: number;
 }
 
-// fetchNotifications lists records newest-first. unreadOnly=1 pins the
-// list to unread rows; the payload's unread count is computed over the
-// whole set either way (the badge survives pagination).
+// fetchNotifications lists records newest-first.
 export async function fetchNotifications(unreadOnly = false): Promise<NotificationsPage> {
   const url = unreadOnly ? "/notifications?unread=1" : "/notifications";
   const r = await fetch(url);
@@ -46,8 +35,7 @@ export async function markNotificationRead(id: number): Promise<void> {
   if (!r.ok) throw new Error(`read: ${r.status}`);
 }
 
-// markAllNotificationsRead flags every record read (POST {"all": true})
-// - the badge drops to zero on success.
+// markAllNotificationsRead flags every record read.
 export async function markAllNotificationsRead(): Promise<void> {
   const r = await fetch("/notifications/read", {
     method: "POST",
@@ -57,9 +45,7 @@ export async function markAllNotificationsRead(): Promise<void> {
   if (!r.ok) throw new Error(`read-all: ${r.status}`);
 }
 
-// clearAllNotifications deletes every record (DELETE /notifications) -
-// the tab's clear-all button: the feed GOES EMPTY, read flags or not.
-// Returns the server's cleared count (the receipt).
+// clearAllNotifications deletes every record (DELETE /notifications).
 export async function clearAllNotifications(): Promise<number> {
   const r = await fetch("/notifications", { method: "DELETE" });
   if (!r.ok) throw new Error(`clear-all: ${r.status}`);
@@ -67,11 +53,9 @@ export async function clearAllNotifications(): Promise<number> {
   return typeof body.cleared === "number" ? body.cleared : 0;
 }
 
-// --- pure helpers (node-tested: test/notifications.test.ts) ---
+// pure helpers (node-tested: test/notifications.test.ts)
 
-// notificationAge renders the age line: seconds under a minute,
-// minutes under an hour, hours under a day, days beyond. A garbage or
-// missing timestamp renders "" (an age that lies is worse than none).
+// notificationAge renders the age line.
 export function notificationAge(created_at: string, nowMs = Date.now()): string {
   const t = Date.parse(created_at);
   if (!created_at || Number.isNaN(t)) return "";
@@ -84,11 +68,9 @@ export function notificationAge(created_at: string, nowMs = Date.now()): string 
   return `${Math.floor(h / 24)}d`;
 }
 
-// upsertRecord folds one live frame into the feed's list: the record
-// lands on top, a duplicate (the same id seen twice - a reconnect
-// replay) replaces its row instead of stacking, and the list stays
-// capped at cap so a chatty lane cannot grow it unbounded. Pure so the
-// node test pins the dedupe + the cap.
+// upsertRecord folds one live frame into the feed's list: the record lands on top, a
+// duplicate (the same id seen twice - a reconnect replay) replaces its row instead of
+// stacking, and the list stays capped at cap so a chatty lane cannot grow it unbounded.
 export function upsertRecord(
   list: OmegaNotification[],
   n: OmegaNotification,
@@ -99,45 +81,36 @@ export function upsertRecord(
   return [n, ...list].slice(0, cap);
 }
 
-// toastsFromFrame picks the auto-dismiss lifetime: failed runs stay
-// longer (an operator needs time to read the red), everything else
-// 6s. Pure so the test pins the asymmetry.
+// toastsFromFrame picks the auto-dismiss lifetime.
 export function toastLifetime(verdict: "ok" | "failed"): number {
   return verdict === "failed" ? 12000 : 6000;
 }
 
-// notificationBadgeText renders the tab chip's unread badge (card
-// t_180db2cb): the count, "99+" beyond the cap, "" at zero (no badge
-// element renders at all - an empty chip is an empty chip). The same
-// voice the old bell button's chip spoke, rehomed onto the dockable's
-// icon. Pure so the node test pins the cap + the zero shape.
+// notificationBadgeText renders the tab chip's unread badge.
 export function notificationBadgeText(count: number): string {
   if (count <= 0) return "";
   return count > 99 ? "99+" : String(count);
 }
 
-// VERDICT_TOAST_MS is the approval toast's dwell (card t_a2ed8412):
-// longer than a finished thing's longest (toastLifetime's 12s failed
-// case), because the row is a QUESTION waiting on a click rather than a
-// report - and the badge behind a dock chip is easy to miss.
+// VERDICT_TOAST_MS is the approval toast's dwell.
 export const VERDICT_TOAST_MS = 15_000;
 
 // newlyPendingVerdicts diffs one pending-verdict read against the card
-// ids this page has already announced, and returns the ARRIVALS (card
-// t_a2ed8412). The shell pulls GET /verdicts on event hints, never on a
-// poll (card t_896cf5a8); a card that appears between two pulls is a
+// ids this page has already announced, and returns the ARRIVALS
+// ). The shell pulls GET /verdicts on event hints, never on a
+// poll; a card that appears between two pulls is a
 // question the user has not seen, and it earns one toast.
 //
 // Generic over `{ id }` so this composable keeps ZERO imports - the
 // verdict capsule's card shape lives in omega.ts, and the store hands its
-// own rows in.
+// own rows.
 //
-// - the FIRST successful read SEEDS: a reload must not replay a toast for
+// the FIRST successful read SEEDS: a reload must not replay a toast for
 //   an approval that was already pending - the badge carries that fact,
 //   and re-toasting it on every mount would make the stack noise;
-// - a card that leaves the list leaves the set, so an id re-issued after
+// a card that leaves the list leaves the set, so an id re-issued after
 //   an expiry or a retry toasts again;
-// - a malformed row (no non-empty string id) is never announced and
+// a malformed row (no non-empty string id) is never announced and
 //   never remembered.
 export function newlyPendingVerdicts<T extends { id: string }>(
   seen: Set<string>,
@@ -156,14 +129,11 @@ export function newlyPendingVerdicts<T extends { id: string }>(
   return opts.seed ? [] : arrivals;
 }
 
-// --- the board-select seam (card t_556ee727) -----------------------------
+// the board-select seam --------------------------
 
-// A task notification's click focuses the kanban tab; the BOARD the task
-// lives on crosses into the module-owned Board component through THIS
-// seam (module UI imports no shell code, so the selection is a window
-// CustomEvent, not a prop or an import). The stash covers the mount
-// race: the tab activation mounts the Board on the tick after the tree
-// swap, so the component re-reads the stash on mount and consumes it.
+// A task notification's click focuses the kanban tab. The stash covers the mount race:
+// the tab activation mounts the Board on the tick after the tree swap, so the component
+// re-reads the stash on mount and consumes it.
 export const BOARD_SELECT_EVENT = "omega-select-board";
 
 declare global {
@@ -172,14 +142,7 @@ declare global {
   }
 }
 
-// boardOfTask pins which registered board holds the task: the FIRST
-// board whose task list carries the id (boards are isolated, a card
-// lives on exactly one). null when the scan comes up empty (an
-// archived task, a missing record, a single-board install - the click
-// still focuses the pane, the board stays where it is). Selecting by
-// name instead of leaving "" is deliberate: an explicit pick re-renders
-// the same columns for the default board, so the switch is a no-op.
-// Pure so the node test pins the scan order.
+// boardOfTask pins which registered board holds the task.
 export function boardOfTask(
   taskId: string,
   lists: readonly { board: string; tasks: readonly { id: string }[] }[],
@@ -191,10 +154,7 @@ export function boardOfTask(
   return null;
 }
 
-// selectBoardFor publishes the select intent: the stash lands first
-// (the component may not be mounted yet - the mount reads it), the
-// event second. No-op on an empty board (the server default is already
-// what the board boots to).
+// selectBoardFor publishes the select intent.
 export function selectBoardFor(board: string): void {
   if (!board) return;
   if (typeof window === "undefined") return; // node tests
@@ -204,13 +164,9 @@ export function selectBoardFor(board: string): void {
   );
 }
 
-// resolveTaskBoard scans the registry for the board holding `taskId`:
-// GET /boards, then a GET /tasks per board looking for the id. The
-// scan requests ?status=all explicitly - the default /tasks list hides
-// archived (t_02a8beea), and a notification for an archived card must
-// still resolve its board. Any failure (the seam absent, a 501, a
-// broken registry) resolves null - the click still focuses the pane,
-// the board just stays where it is.
+// resolveTaskBoard scans the registry for the board holding `taskId`. The scan requests
+// ?status=all explicitly - the default /tasks list hides archived, and a notification
+// for an archived card must still resolve its board.
 export async function resolveTaskBoard(taskId: string): Promise<string | null> {
   let lists: { board: string; tasks: { id: string }[] }[];
   try {

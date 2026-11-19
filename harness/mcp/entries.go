@@ -1,29 +1,6 @@
 package mcp
 
-// entries.go: the MCP server entry CRUD write face (card t_2a649d87).
-// Entries live in mcp.yaml - the file the bridge loads (the migration
-// shape stated on the card: no store migration existed to make, the
-// file IS the persistent registry, and the store capsule carries no
-// generic KV to move them into). What this file adds is what was
-// missing: add, update and delete at runtime, no restart.
-//
-// ONE write law, shared by the HTTP routes (POST /mcp/save, POST
-// /mcp/delete) and the CLI verbs (`omega mcp add|edit|delete`): the
-// entry is schema-validated first (nothing invalid reaches the disk),
-// spliced into the document at the yaml.Node level (comments, key
-// order and the file's style survive everywhere except inside the
-// replaced entry itself - the cron save.go fold-write law), written
-// atomically (tmp+rename, the toggle route's crash law), and then the
-// LIVE bridge is swapped through the same reloadLocked path POST
-// /mcp/reload rides. The old bridge's shutdown() is the unmount: stdio
-// processes are killed and Wait()ed, in-flight calls to a removed
-// server answer a structured IsError tool result - no orphan
-// connections, no second lifecycle.
-//
-// Legacy sources stay read-only, with the toggle route's exact
-// refusal: MCP_SERVERS is an env var (nowhere to persist) and mcp.json
-// is hand-edited JSON (a fresh mcp.yaml would be shadowed by the
-// loader's lookup order, so writing it would be a lie).
+// entries.go: the MCP server entry CRUD write face.
 
 import (
 	"encoding/json"
@@ -37,9 +14,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// UnknownServerError marks a delete of a name no entry carries - the
-// 404 lane (the silent-persist law in reverse: a no-op delete must be
-// visible).
+// UnknownServerError marks a delete of a name no entry carries - the 404 lane (the
+// silent-persist law in reverse: a no-op delete must be visible).
 type UnknownServerError struct {
 	Name string
 }
@@ -48,11 +24,7 @@ func (e UnknownServerError) Error() string {
 	return fmt.Sprintf("no mcp server named %q", e.Name)
 }
 
-// writableConfigFile resolves the mcp.yaml a CRUD write lands in.
-// Refusals name the source when the entries are not writable through
-// this module; a home with no config file resolves to the bootstrap
-// path (config/mcp.yaml), created by the first add - the crons
-// jobsDocument bootstrap shape.
+// writableConfigFile resolves the mcp.yaml a CRUD write lands.
 func writableConfigFile() (string, error) {
 	if os.Getenv("MCP_SERVERS") != "" {
 		return "", fmt.Errorf("config came from MCP_SERVERS - it is not a file; edit the env var")
@@ -67,9 +39,8 @@ func writableConfigFile() (string, error) {
 	return filepath.Join(mcpHome(), "config", "mcp.yaml"), nil
 }
 
-// validateServerEntry is the one schema law every entry write obeys -
-// the same fields the loader parses, checked before any byte reaches
-// the disk. Rejections name the field (the crons ParseConfig voice).
+// validateServerEntry is the one schema law every entry write obeys - the same fields
+// the loader parses, checked before any byte reaches the disk.
 func validateServerEntry(sc serverConfig) error {
 	name := sc.Name
 	if strings.TrimSpace(name) == "" {
@@ -81,8 +52,6 @@ func validateServerEntry(sc serverConfig) error {
 	if strings.HasPrefix(name, "-") || strings.ContainsAny(name, " \t\r\n/\\") {
 		return fmt.Errorf("name %q: a server name is one bare word (no spaces, slashes, leading dash)", name)
 	}
-	// Discovered tools surface as <server>.<tool>; a dotted server name
-	// would mint a second dot and break the one-dot namespace law.
 	if strings.Contains(name, ".") {
 		return fmt.Errorf("name %q: a server name carries no dot - its tools already read <server>.<tool>", name)
 	}
@@ -112,10 +81,9 @@ func validateServerEntry(sc serverConfig) error {
 	return nil
 }
 
-// serverEntryWire is the on-disk shape of one entry - struct field
-// order is the key order a written entry carries. Separate from
-// serverConfig so the reader's zero values never marshal as empty
-// scalars (`command: ""` on an http entry, say).
+// serverEntryWire is the on-disk shape of one entry. Separate from serverConfig so the
+// reader's zero values never marshal as empty scalars (`command: ""` on an http entry,
+// say).
 type serverEntryWire struct {
 	Name    string            `yaml:"name"`
 	Command string            `yaml:"command,omitempty"`
@@ -130,10 +98,7 @@ type serverWriteDoc struct {
 	Servers []serverEntryWire `yaml:"servers"`
 }
 
-// serverEntryNode builds one entry's mapping node from the validated
-// entry. The bytes come from a marshal of the same shape the loader
-// parses back, so an editor-produced mcp.yaml is lawful by
-// construction.
+// serverEntryNode builds one entry's mapping node from the validated entry.
 func serverEntryNode(sc serverConfig) (*yaml.Node, error) {
 	data, err := yaml.Marshal(serverWriteDoc{Servers: []serverEntryWire{{
 		Name:    sc.Name,
@@ -168,11 +133,7 @@ func serverEntryNode(sc serverConfig) (*yaml.Node, error) {
 	return nil, fmt.Errorf("marshal server: no entry produced")
 }
 
-// serversDocument reads the mcp.yaml at path and returns its document
-// node plus the servers: sequence, creating a minimal `servers:` list
-// when the file does not exist yet (the first add is the bootstrap for
-// a fresh home) and appending the key when the file talks about
-// something else.
+// serversDocument reads the mcp.yaml at path and returns its document node plus.
 func serversDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -218,11 +179,9 @@ func serversDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	return &doc, seq, nil
 }
 
-// upsertServerEntry writes the entry into the mcp.yaml at path: the
-// mapping named sc.Name is replaced in place, or appended. The entry
-// node comes from the very bytes that validated. Duplicate names are
-// refused before any write touches the file (the toggle route's
-// ambiguity law: the bridge resolves one name, two rows would lie).
+// upsertServerEntry writes the entry into the mcp.yaml at path. Duplicate names are
+// refused before any write touches the file (the toggle route's ambiguity law: the
+// bridge resolves one name, two rows would lie).
 func upsertServerEntry(path string, sc serverConfig) error {
 	if err := validateServerEntry(sc); err != nil {
 		return err
@@ -258,13 +217,12 @@ func upsertServerEntry(path string, sc serverConfig) error {
 	return writeYAML(path, doc)
 }
 
-// removeServerEntry deletes the entry named name from the mcp.yaml at
-// path. A missing file or a missing entry is UnknownServerError - never
-// a silent no-op. Removing the last entry from a document that carries
-// nothing else (no comments, no other keys) removes the FILE too: an
-// add/delete round trip leaves the home exactly as it found it (the no-
-// residue law). A hand-owned file with comments or other keys is never
-// deleted - it just loses the entry.
+// removeServerEntry deletes the entry named name from the mcp.yaml at path. A missing
+// file or a missing entry is UnknownServerError - never a silent no-op. Removing the
+// last entry from a document that carries nothing else (no comments, no other keys)
+// removes the FILE too: an add/delete round trip leaves the home exactly as it found it
+// (the no- residue law). A hand-owned file with comments or other keys is never deleted
+// - it just loses the entry.
 func removeServerEntry(path, name string) error {
 	doc, seq, err := serversDocument(path)
 	if err != nil {
@@ -285,11 +243,9 @@ func removeServerEntry(path, name string) error {
 	return UnknownServerError{Name: name}
 }
 
-// bareEmptyServersDocument reports whether the document carries an
-// empty servers: list and nothing else worth keeping - no other keys,
-// no comments anywhere. That is exactly the shape the first add
-// bootstraps, so the last delete can remove it without touching
-// operator-owned content.
+// bareEmptyServersDocument reports whether the document carries an empty servers. That
+// is exactly the shape the first add bootstraps, so the last delete can remove it
+// without touching operator-owned content.
 func bareEmptyServersDocument(doc, seq *yaml.Node) bool {
 	if seq == nil || len(seq.Content) != 0 {
 		return false
@@ -314,9 +270,7 @@ func bareEmptyServersDocument(doc, seq *yaml.Node) bool {
 	return key.HeadComment == "" && key.LineComment == "" && key.FootComment == ""
 }
 
-// ServerEntry returns the configured entry named name as the LIVE
-// config carries it - the CLI's edit base (only flags the operator
-// passed are applied over it). ok=false is an unknown name.
+// ServerEntry returns the configured entry named name as the LIVE config carries it.
 func (p *Plugin) ServerEntry(name string) (serverConfig, bool) {
 	active := p.activeBridge()
 	if active == nil || active.cfg == nil {
@@ -330,13 +284,9 @@ func (p *Plugin) ServerEntry(name string) (serverConfig, bool) {
 	return serverConfig{}, false
 }
 
-// saveServerAndReload performs one save whole: the validated node write
-// and the bridge swap under ONE reloadMu hold (the toggle route's
-// v0.14.1 audit shape - two quick saves can no longer race the
-// read-parse-marshal-write). The write error and the reload error come
-// back separately: a failed write answers 400 (the request's fault,
-// file untouched), a failed reload 500 (the entry is written; the
-// previous bridge keeps serving).
+// saveServerAndReload performs one save whole: the validated node write and the bridge
+// swap under ONE reloadMu hold (the toggle route's v0.14.1 audit shape - two quick
+// saves can no longer race the read-parse-marshal-write).
 func (p *Plugin) saveServerAndReload(sc serverConfig) (rep StatusReport, writeErr, reloadErr error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -351,9 +301,7 @@ func (p *Plugin) saveServerAndReload(sc serverConfig) (rep StatusReport, writeEr
 	return rep, nil, reloadErr
 }
 
-// deleteServerAndReload is saveServerAndReload's delete sibling: the
-// node splice and the swap under one reloadMu hold. An unknown name is
-// UnknownServerError (the 404 lane) and writes nothing.
+// deleteServerAndReload is saveServerAndReload's delete sibling.
 func (p *Plugin) deleteServerAndReload(name string) (rep StatusReport, writeErr, reloadErr error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -368,9 +316,7 @@ func (p *Plugin) deleteServerAndReload(name string) (rep StatusReport, writeErr,
 	return rep, nil, reloadErr
 }
 
-// serverRequest is the POST /mcp/save body: one full entry, the
-// serverConfig fields as the editor knows them. Enabled is optional -
-// absent reads as on, the pre-flag default.
+// serverRequest is the POST /mcp/save body.
 type serverRequest struct {
 	Name    string            `json:"name"`
 	Command string            `json:"command,omitempty"`
@@ -393,17 +339,13 @@ func (r serverRequest) toServerConfig() serverConfig {
 	}
 }
 
-// serverDeleteRequest is the POST /mcp/delete body: the entry's name as
-// the editor knows it.
+// serverDeleteRequest is the POST /mcp/delete body.
 type serverDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-// handleSaveServer serves POST /mcp/save: upsert one entry into
-// mcp.yaml, swap the live bridge, answer the fresh StatusReport (one
-// response carries the landed truth - the crons save route's law). The
-// route mounts even on a nil bridge: the first add wakes an idle
-// module, exactly like the reload route.
+// handleSaveServer serves POST /mcp/save. The route mounts even on a nil bridge: the
+// first add wakes an idle module, exactly like the reload route.
 func (p *Plugin) handleSaveServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -429,14 +371,11 @@ func (p *Plugin) handleSaveServer(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(rep); err != nil {
-		// header already sent; the connection carries the failure
 		return
 	}
 }
 
-// handleDeleteServer serves POST /mcp/delete: remove one entry from
-// mcp.yaml, swap the live bridge (the removed entry's connections close
-// in the swap), answer the fresh StatusReport. Unknown name = 404.
+// handleDeleteServer serves POST /mcp/delete.
 func (p *Plugin) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

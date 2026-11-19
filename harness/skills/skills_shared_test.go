@@ -1,10 +1,9 @@
 package skills
 
-// skills_shared_test.go: the shared-skills resolution (card
-// t_7e2b7002) - root skills/shared first (every agent sees it), then
-// the agent's own dir, name collisions resolving to the agent's copy
-// (first-wins after the merge order: shared is scanned first, so the
-// agent's own dir must WIN - see the scan order note in LoadSkills).
+// skills_shared_test.go: the shared-skills resolution - root skills/shared first (every
+// agent sees it), then the agent's own dir, name collisions resolving to the agent's
+// copy (first-wins after the merge order: shared is scanned first, so the agent's own
+// dir must WIN - see the scan order note in LoadSkills).
 
 import (
 	"os"
@@ -39,12 +38,9 @@ func TestSharedDirLoadsFirstThenOwn(t *testing.T) {
 	if len(skills) != 2 {
 		t.Fatalf("loaded = %v, want deploy+probe", names(skills))
 	}
-	// scan order: shared first - the prompt renders shared entries
-	// before the agent's own.
 	if skills[0].Name != "deploy" || skills[1].Name != "probe" {
 		t.Errorf("order = %v, want [deploy probe]", names(skills))
 	}
-	// the surviving Dir field says where the skill actually lives.
 	if !strings.Contains(skills[0].Dir, "shared") {
 		t.Errorf("shared skill dir = %q", skills[0].Dir)
 	}
@@ -54,10 +50,6 @@ func TestSharedDirLoadsFirstThenOwn(t *testing.T) {
 }
 
 func TestSharedNameCollisionSharedWins(t *testing.T) {
-	// The card's resolution order is literal: shared first. A name
-	// present in both resolves to the SHARED copy - an agent that
-	// needs a variant gives that copy its own name rather than
-	// shadowing (this keeps "every agent sees shared" always true).
 	home := t.TempDir()
 	shared := filepath.Join(home, "skills", "shared")
 	own := filepath.Join(home, "agents", "default", "skills")
@@ -87,7 +79,6 @@ func TestMissingDirectoriesAreEmptyNotFatal(t *testing.T) {
 }
 
 func TestPerAgentSkillOnlyToItsOwner(t *testing.T) {
-	// no SharedDir configured: the other agent's dir is invisible.
 	home := t.TempDir()
 	own := filepath.Join(home, "agents", "scout", "skills")
 	writeSkill(t, own, "secret-scout-thing", "scout only")
@@ -110,11 +101,7 @@ func names(skills []Skill) []string {
 	return out
 }
 
-// TestAllowlistFiltersTheRegistry pins the skills allowlist (0.17.3
-// make-over): a SET allowlist is the whole registry - an unnamed skill
-// does not load at all - and an unset allowlist keeps the host's
-// every-skill behavior. Empty + set means NO skills, which is the
-// always-off default a secondary agent starts on.
+// TestAllowlistFiltersTheRegistry pins the skills allowlist (0.17.3 make-over).
 func TestAllowlistFiltersTheRegistry(t *testing.T) {
 	home := t.TempDir()
 	shared := filepath.Join(home, "skills", "shared")
@@ -123,7 +110,6 @@ func TestAllowlistFiltersTheRegistry(t *testing.T) {
 	writeSkill(t, own, "probe", "scout's own probe skill")
 	writeSkill(t, own, "ghost", "not allowlisted")
 
-	// Unset: every skill loads (main's own mount).
 	sp := &SkillsProvider{Dir: own, SharedDir: shared}
 	all, err := sp.LoadSkills("")
 	if err != nil {
@@ -133,7 +119,6 @@ func TestAllowlistFiltersTheRegistry(t *testing.T) {
 		t.Fatalf("unset allowlist loaded %v, want all three", names(all))
 	}
 
-	// Set: only the named skill exists for this agent.
 	sp = &SkillsProvider{Dir: own, SharedDir: shared, Allow: []string{"deploy"}, AllowSet: true}
 	got, err := sp.LoadSkills("")
 	if err != nil {
@@ -142,13 +127,10 @@ func TestAllowlistFiltersTheRegistry(t *testing.T) {
 	if strings.Join(names(got), ",") != "deploy" {
 		t.Fatalf("allowlist loaded %v, want only deploy", names(got))
 	}
-	// The reader tool answers the same registry, so an unnamed skill is
-	// not readable either.
 	if _, err := sp.ReadSkill("ghost"); err == nil {
 		t.Errorf("an allowlisted-out skill was still readable")
 	}
 
-	// Set + empty: no skills at all.
 	sp = &SkillsProvider{Dir: own, SharedDir: shared, AllowSet: true}
 	none, err := sp.LoadSkills("")
 	if err != nil {

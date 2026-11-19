@@ -1,20 +1,4 @@
-// The finished-things REST face, riding the notifications capsule
-// (shell-ring shrink wave 3, card t_b75df168 — moved whole from
-// agent/api/server_notify.go, package unchanged, URLs unchanged).
-//
-// GET /notifications (list newest-first, ?unread=1 filter,
-// ?limit/?offset pagination, the payload also carries the live unread
-// count), POST /notifications/read (mark one by id or everything via
-// {"all":true}), DELETE /notifications (the webui tab's clear-all:
-// every record drops) and GET /notifications/events (SSE: every
-// subsequent emission becomes one "notification" frame - the webui
-// toast source).
-//
-// The routes hold the SAME emittingStore the mount offers under the
-// "notifications" key: mark-read goes through the capsule's wrapper
-// (the canvas panels' snapshot rides the same push), and a disabled
-// capsule answers 404 at the module mux - the routes mount and die
-// with their capsule, like every module REST face.
+// The finished-things REST face, riding the notifications capsule.
 package notifications
 
 import (
@@ -29,8 +13,7 @@ import (
 // notificationsListDefault is the page size when no limit is given.
 const notificationsListDefault = 50
 
-// notificationsListMax caps a client-provided limit (the retention cap
-// is 200 - fetching more than that exists is waste).
+// notificationsListMax caps a client-provided limit.
 const notificationsListMax = 200
 
 // notifySSEPing keeps the stream honest through silent stretches.
@@ -44,8 +27,7 @@ type Routes struct {
 // newRoutes builds the REST face over the mount's service handle.
 func newRoutes(e *emittingStore) *Routes { return &Routes{svc: e} }
 
-// setupSSE sets SSE response headers and returns the flusher. On failure
-// an HTTP error is written to w and ok is false.
+// setupSSE sets SSE response headers and returns the flusher.
 func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -58,8 +40,7 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-// writeSSE writes one SSE frame in the format
-// "event: <type>\ndata: <json>\n\n".
+// writeSSE writes one SSE frame in the format "event: <type>\ndata: <json>\n\n".
 func writeSSE(w io.Writer, eventType string, data []byte) {
 	fmt.Fprintf(w, "event: %s\n", eventType)
 	fmt.Fprintf(w, "data: %s\n\n", data)
@@ -72,8 +53,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// handleNotifications serves GET /notifications (the list) and
-// DELETE /notifications (the webui tab's clear-all button).
+// handleNotifications serves GET /notifications (the list) and DELETE /notifications.
 func (rt *Routes) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead:
@@ -121,9 +101,8 @@ func (rt *Routes) listNotifications(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// clearNotifications serves DELETE /notifications: every record drops
-// (the feed empties, not just its read flags). The response carries
-// the deleted count so the caller can say what it removed.
+// clearNotifications serves DELETE /notifications. The response carries the deleted
+// count so the caller can say what it removed.
 func (rt *Routes) clearNotifications(w http.ResponseWriter, r *http.Request) {
 	n, err := rt.svc.Clear(r.Context())
 	if err != nil {
@@ -133,8 +112,7 @@ func (rt *Routes) clearNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": n})
 }
 
-// handleNotificationsRead serves POST /notifications/read: {"id": N}
-// marks one record, {"all": true} marks everything read.
+// handleNotificationsRead serves POST /notifications/read.
 func (rt *Routes) handleNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -166,11 +144,9 @@ func (rt *Routes) handleNotificationsRead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-// handleNotificationEvents streams every subsequently emitted
-// record as an SSE "notification" frame. The client closes (the
-// browser tab, the fetch's cancel); the context cancellation path
-// releases the store subscription - the store itself never holds the
-// response writer.
+// handleNotificationEvents streams every subsequently emitted record as an SSE. The
+// client closes (the browser tab, the fetch's cancel); the context cancellation path
+// releases the store subscription - the store itself never holds the response writer.
 func (rt *Routes) handleNotificationEvents(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := setupSSE(w)
 	if !ok {
@@ -179,9 +155,6 @@ func (rt *Routes) handleNotificationEvents(w http.ResponseWriter, r *http.Reques
 	frames, cancel := rt.svc.Subscribe()
 	defer cancel()
 
-	// Keepalive ticks guard against idle-stream proxies closing the
-	// connection under the client (the same concern a comment line
-	// answers in any SSE surface).
 	ticker := time.NewTicker(notifySSEPing)
 	defer ticker.Stop()
 
@@ -191,7 +164,6 @@ func (rt *Routes) handleNotificationEvents(w http.ResponseWriter, r *http.Reques
 			return
 		case n, ok := <-frames:
 			if !ok {
-				// the store shut down: end the stream cleanly
 				return
 			}
 			data, err := json.Marshal(n)

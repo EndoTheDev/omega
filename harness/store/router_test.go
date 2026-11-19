@@ -1,10 +1,9 @@
 package store
 
-// router_test.go: session-addressed routing across agent homes (card
-// t_a7fab745, Endo's ruling A). Law: the chat floor holds ONE store
-// handle and every conversation the agents roster lists lives in the
-// owning agent home's own file - reads answer from it, writes land in
-// it, and a main-store session behaves exactly as it did before.
+// router_test.go: session-addressed routing across agent homes. Law: the chat floor
+// holds ONE store handle and every conversation the agents roster lists lives in the
+// owning agent home's own file - reads answer from it, writes land in it, and a
+// main-store session behaves exactly as it did.
 
 import (
 	"context"
@@ -18,8 +17,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// agentHomeFixture builds <home>/data/omega.db with one main session and
-// <home>/agents/scout/data/omega.db with one agent session.
+// agentHomeFixture builds <home>/data/omega.db with one main session.
 func agentHomeFixture(t *testing.T) (home, mainDSN, scoutDSN string) {
 	t.Helper()
 	home = t.TempDir()
@@ -68,8 +66,6 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 	router.SetHome(home)
 	t.Cleanup(func() { router.Close() })
 
-	// READ routing: the three chat-floor receipts (session row,
-	// transcript view, message history) answer from the agent file.
 	sess, err := router.GetSession(ctx, "sess-scout-2")
 	if err != nil {
 		t.Fatalf("GetSession(scout) = %v, want the agent-owned row", err)
@@ -89,7 +85,6 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 		t.Fatalf("GetMessages(scout) = %d msgs, %v; want 2", len(msgs), err)
 	}
 
-	// The owner face the chat floor reads before a run.
 	if got := router.SessionOwner("sess-scout-2"); got != "scout" {
 		t.Fatalf("SessionOwner(scout) = %q, want %q", got, "scout")
 	}
@@ -100,9 +95,7 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 		t.Fatalf("SessionOwner(unknown) = %q, want empty", got)
 	}
 
-	// WRITE routing: a turn's writes land in the owning file, never the
-	// daemon's - a session forked across two databases is worse than the
-	// 404 this replaces.
+	// WRITE routing: a turn's writes land in the owning file, never.
 	if err := router.AppendMessage(ctx, "sess-scout-2", core.NewUser("from the chat floor")); err != nil {
 		t.Fatalf("AppendMessage(scout) = %v", err)
 	}
@@ -116,7 +109,6 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 		t.Fatalf("owner after write = %q, want %q", got, "scout")
 	}
 
-	// Cold reopen: the writes are on disk in the agent's file.
 	cold, err := Open(scoutDSN)
 	if err != nil {
 		t.Fatalf("reopen scout store: %v", err)
@@ -133,7 +125,6 @@ func TestRouterServesAgentOwnedSession(t *testing.T) {
 	if n, err := cold.CountMessages(ctx, "sess-scout-2"); err != nil || n != 3 {
 		t.Fatalf("cold message count = %d, %v; want 3", n, err)
 	}
-	// The daemon's own file holds nothing for the agent's session.
 	if _, err := router.db.Exec(`SELECT 1`); err != nil {
 		t.Fatalf("router handle: %v", err)
 	}
@@ -157,8 +148,7 @@ func TestRouterKeepsMainSessionLocal(t *testing.T) {
 	router.SetHome(home)
 	defer router.Close()
 
-	// The cross-store negative: a daemon-owned session works exactly as
-	// today - reads, writes, and an unknown id still answering not-found.
+	// The cross-store negative: a daemon-owned session works exactly as today.
 	if sess, err := router.GetSession(ctx, "sess-main"); err != nil || sess.ID != "sess-main" {
 		t.Fatalf("GetSession(main) = %+v, %v", sess, err)
 	}
@@ -177,7 +167,6 @@ func TestRouterSeesAgentHomeCreatedAfterStart(t *testing.T) {
 	ctx := context.Background()
 	home, mainDSN, _ := agentHomeFixture(t)
 	// Start with NO agents directory: the roster has minted no home yet.
-	// The daemon opens its router here and caches what it sees.
 	if err := os.RemoveAll(filepath.Join(home, "agents")); err != nil {
 		t.Fatalf("clear agents dir: %v", err)
 	}
@@ -192,7 +181,6 @@ func TestRouterSeesAgentHomeCreatedAfterStart(t *testing.T) {
 		t.Fatalf("GetSession(late) before the home exists = %v, want ErrNotFound", err)
 	}
 
-	// The roster mints the home while the daemon runs.
 	lateDSN := datadir.DBPath(filepath.Join(home, "agents", "scout"), "omega.db")
 	late, err := Open(lateDSN)
 	if err != nil {
@@ -217,12 +205,8 @@ func TestRouterSeesAgentHomeCreatedAfterStart(t *testing.T) {
 	}
 }
 
-// TestRouterTwoHomesChatsAreTwoIDs pins the invariant the per-agent
-// canonical id exists for (card t_5df01d0f): routing answers by ID, so
-// two homes' permanent chats must be two ids. The negative half - one
-// id seeded in both files - is the pre-fix shape: the local row wins and
-// the second home's chat is unreachable through the daemon's handle,
-// which is why the roster row opened the wrong agent's conversation.
+// TestRouterTwoHomesChatsAreTwoIDs pins the invariant the per-agent canonical id exists
+// for: routing answers by ID, so two homes' permanent chats must be two ids.
 func TestRouterTwoHomesChatsAreTwoIDs(t *testing.T) {
 	ctx := context.Background()
 	home := t.TempDir()
@@ -263,8 +247,7 @@ func TestRouterTwoHomesChatsAreTwoIDs(t *testing.T) {
 	router.SetHome(home)
 	defer router.Close()
 
-	// Each id answers its OWN home: the chat, its messages and the agent
-	// a run would be served by.
+	// Each id answers its OWN home.
 	for _, name := range []string{"scout", "cora"} {
 		id := name + "-canonical"
 		if got := router.SessionOwner(id); got != name {
@@ -278,18 +261,12 @@ func TestRouterTwoHomesChatsAreTwoIDs(t *testing.T) {
 			t.Errorf("GetMessages(%s) answered %q - another home's chat", id, got)
 		}
 	}
-	// The daemon's own chat is still the local row.
 	if got := router.SessionOwner("canonical"); got != "" {
 		t.Errorf("SessionOwner(canonical) = %q, want empty (the daemon's own store)", got)
 	}
 }
 
-// TestForgetHomeReleasesTheHandle pins the DELETE verb's release face
-// (card t_5df01d0f): serving an agent session opens its home's store and
-// caches the handle, so removing the home requires closing it first. On
-// windows a live handle makes the file removal fail - that is the
-// assertion here, and it holds on every host because the row is gone
-// from the reopened store.
+// TestForgetHomeReleasesTheHandle pins the DELETE verb's release face.
 func TestForgetHomeReleasesTheHandle(t *testing.T) {
 	ctx := context.Background()
 	home, _, scoutDSN := agentHomeFixture(t)
@@ -300,14 +277,12 @@ func TestForgetHomeReleasesTheHandle(t *testing.T) {
 	router.SetHome(home)
 	defer router.Close()
 
-	// A read routes into the agent home and caches its handle.
 	if _, err := router.GetSession(ctx, "sess-scout-2"); err != nil {
 		t.Fatalf("GetSession(scout): %v", err)
 	}
 	if _, ok := router.agents["scout"]; !ok {
 		t.Fatal("the routed read left no cached handle - the fixture no longer exercises the lock")
 	}
-	// Refusals: nothing to release for the default agent or a stranger.
 	if router.ForgetHome("") || router.ForgetHome("cora") {
 		t.Error("ForgetHome answered true with no handle to drop")
 	}
@@ -317,8 +292,6 @@ func TestForgetHomeReleasesTheHandle(t *testing.T) {
 	if router.ForgetHome("scout") {
 		t.Error("the second ForgetHome still reported a handle")
 	}
-	// Released: the home's directory can be removed, and the router no
-	// longer answers its sessions (the cache entry and the routes went).
 	if err := os.RemoveAll(filepath.Join(home, "agents", "scout")); err != nil {
 		t.Fatalf("remove released home: %v", err)
 	}
@@ -347,8 +320,7 @@ func TestRouterOffWithoutHome(t *testing.T) {
 		t.Fatalf("plain store answered an agent session: %v, want ErrNotFound", err)
 	}
 
-	// An agent's OWN store routes nothing even when it knows the home:
-	// its one file is the whole truth for that agent's process.
+	// An agent's OWN store routes nothing even when it knows the home.
 	scout, err := Open(datadir.DBPath(filepath.Join(home, "agents", "scout"), "omega.db"))
 	if err != nil {
 		t.Fatalf("open scout store: %v", err)

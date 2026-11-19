@@ -1,8 +1,4 @@
-// ResolveWorkspaceDir: the workspace-path validator (card t_9de5b009,
-// born in agent/api's workspaces surface, homed here by the shell-ring
-// shrink wave 3 - card t_b75df168 - so the chat/session creation path
-// in agent/api and the files capsule's workspace REST face can share it
-// without an agent->harness import).
+// ResolveWorkspaceDir: the workspace-path validator.
 package core
 
 import (
@@ -12,12 +8,8 @@ import (
 	"strings"
 )
 
-// ResolveWorkspaceDir validates and normalizes a user-supplied workspace
-// path: it must be absolute, exist, be a directory, and survive symlink
-// resolution. Returns the cleaned absolute path. Hidden segments are NOT
-// rejected here - a project may legitimately live under a dot directory
-// (~/projects/.local); typing such a path is allowed even though the
-// browse listing filters hidden entries out of the picker's view.
+// ResolveWorkspaceDir validates and normalizes a user-supplied workspace path: it must
+// be absolute, exist, be a directory, and survive symlink resolution.
 func ResolveWorkspaceDir(raw string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "", errors.New("path must not be empty")

@@ -1,4 +1,4 @@
-// omega webui: the Agents panel MAKE-OVER (card t_df015e66, window
+// omega webui: the Agents panel MAKE-OVER
 // 0.17.3). Six rulings on one tab, pinned the house way - a pure layer
 // the node suite can probe, plus source assertions where only the SFC
 // can answer (the suite has no DOM).
@@ -67,7 +67,7 @@ const roster: OmegaAgent[] = [
   { name: "scout", dir: "/home/x/.omega/agents/scout", skill_count: 1, memory_size: 0, session_count: 0, continuous: true },
 ];
 
-// --- ruling 1: one door, the kind inside ------------------------------
+// one door, the kind inside ---------------------------
 
 test("the kinds are the three the ONE door offers, and only one needs the capsule", () => {
   assert.deepEqual([...AGENT_KINDS], ["scaffold", "continuous", "clone"]);
@@ -132,7 +132,7 @@ test("cloneSources offers every other home, main included, never the name being 
   assert.deepEqual(sources.map((p) => p.name), ["default"], "main is a legal source; the draft name is not");
 });
 
-// --- ruling 2: delete = delete the HOME -------------------------------
+// delete = delete the HOME ----------------------------
 
 test("the delete confirm names the session count the delete will take", () => {
   assert.equal(
@@ -151,7 +151,7 @@ test("the delete confirm names the session count the delete will take", () => {
   assert.equal(agentDeleteLabel("scout"), "delete scout's home - sessions included");
 });
 
-// --- ruling 7: the inheritance state machine --------------------------
+// the inheritance state machine -----------------------
 
 const scope = (overridden: Record<string, boolean>, values: Record<string, unknown> = {}): SettingsScope => ({
   name: "scout",
@@ -205,11 +205,9 @@ test("a knob the layer NAMES is AUTHORED - no chip, and it keeps its own value",
   // an explicitly EMPTY prompt is still an override, not an inherit
   const prompt = chipOf(chips, "system_prompt")!;
   assert.equal(prompt.inherited, false, "empty-and-authored is authored (the layer law)");
-  // and the untouched knobs still inherit
   assert.equal(chipOf(chips, "max_turns")!.inherited, true);
 });
 
-// --- rulings 4 + 5: always off, allowlist ----------------------------
 
 test("the toggles picker offers mounted, toggleable capsules and never the locked pair", () => {
   const options = toggleOptions([
@@ -225,9 +223,8 @@ test("the toggles picker offers mounted, toggleable capsules and never the locke
 });
 
 test("a capsule the agent enables but the host has since disabled stays VISIBLE", () => {
-  // hiding it would leave an invisible enabled entry: the next toggle
-  // save carries the name and the subset law answers 400 with a refusal
-  // the operator cannot act on
+  // hiding it would leave an invisible enabled entry: the next toggle save carries the
+  // name and the subset law answers 400 with a refusal the operator cannot act on
   assert.deepEqual(toggleChoices(["cron", "skills"], ["kanban"]), ["cron", "kanban", "skills"]);
   assert.deepEqual(toggleChoices(["cron"], []), ["cron"]);
   assert.deepEqual(toggleChoices([], ["kanban", "kanban"]), ["kanban"], "a set, not a list");
@@ -249,7 +246,7 @@ test("the skills allowlist is explicit - empty means none", () => {
   assert.deepEqual(skillOptions({}), []);
 });
 
-// --- the SFC's own half (source pins - the node suite has no DOM) -----
+// the SFC's own half (source pins - the node suite has no DOM) --
 
 test("the band carries exactly ONE create door and no @ duplicate", () => {
   const newButtons = (panelSrc.match(/class="agents-new band-tool"/g) ?? []).length;
@@ -262,31 +259,22 @@ test("the band carries exactly ONE create door and no @ duplicate", () => {
   assert.match(panelSrc, /aria-label="agent kind"/, "the kind choice lives inside the one form");
 });
 
-// card t_961e81da: Endo's eyeball pass asked for the CRON tab's editor
-// (the one form he ruled "looks good") - title, captioned fields, the
-// error and the actions row, above the scrolling rows. Only the form's
-// STRUCTURE moved: the door, the kind logic and the wire are pinned above.
 test("the create form is the cron editor pattern - a title and a captioned grid", () => {
   assert.match(panelSrc, /class="agents-create"/, "still the ONE form (count pinned above)");
   assert.match(panelSrc, /class="agents-editor-title">add agent</, "a title, like cron's 'add cron job'");
   assert.match(panelSrc, /class="agents-editor-grid"/);
-  // every field carries a CAPTION above its input: the field still says
-  // what it is once the placeholder is typed away
+  // every field carries a CAPTION above its input.
   const captions = panelSrc.match(/<span>(name|kind|description|directive|wake schedule|copy from)<\/span>/g) ?? [];
   assert.equal(captions.length, 6, "name / kind / description plus the kind-conditional fields");
   // the editor sits ABOVE the scroll body, the way cron's does
   const formAt = panelSrc.indexOf('class="agents-create"');
   const bodyAt = panelSrc.indexOf('class="agents-body"');
   assert.ok(formAt > 0 && bodyAt > formAt, "band -> editor -> scrolling rows");
-  // the error line and the actions row live inside the panel
   assert.match(panelSrc, /class="agents-editor-error"/);
   assert.match(panelSrc, /class="agents-editor-actions"/);
-  // the spacing mirrors the cron editor's (module UI keeps its own copy,
-  // so the VALUES are the pin - .cron-editor / .cron-editor-grid)
+  // the spacing mirrors the cron editor's.
   assert.match(panelSrc, /padding: 8px 12px;/, "the editor's seat, cron's");
   assert.match(panelSrc, /gap: 6px 10px;/, "the field grid's gutters, cron's");
-  // two columns while there is room, one below it (cron's narrow flip,
-  // reached by auto-fit here because this panel owns no narrow measure)
   assert.match(panelSrc, /grid-template-columns: repeat\(auto-fit, minmax\(170px, 1fr\)\)/);
   assert.match(panelSrc, /\.agents-editor-wide \{\s*grid-column: 1 \/ -1;/);
 });
@@ -305,8 +293,6 @@ test("the provider renders as a referenced instance picker from settings", () =>
   assert.match(panelSrc, /fetch\("\/settings"\)/, "read from the settings payload");
   assert.match(panelSrc, /k\.key === "provider\.instances"/, "the named instances knob");
   assert.match(panelSrc, /providerInstances\.value = rows/);
-  // the secret surface is gone, not hidden: no key input, no password
-  // field, no host box anywhere in the panel.
   assert.ok(!panelSrc.includes('aria-label="api key"'), "no api key input in the panel");
   assert.ok(!panelSrc.includes('type="password"'), "no secret input at all");
   assert.ok(!panelSrc.includes('aria-label="provider host"'), "no host field");

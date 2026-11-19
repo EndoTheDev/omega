@@ -1,11 +1,6 @@
 package kanban
 
-// The board REST tests (from the pre-dissolve http_channel tests (and
-// server_boards_test.go, t_d7a7beaa): the capsule serves its own
-// routes since the phase-F move - ?board= picks the board on every
-// task route, GET /boards lists the registry, unknown boards fail
-// loudly (a card on board A never answers on board B), and the wire
-// shapes are the ones the webui consumes.
+// The board REST tests.
 
 import (
 	"encoding/json"
@@ -133,10 +128,7 @@ func TestTasksEndpointsLifecycle(t *testing.T) {
 	_ = p
 }
 
-// TestTasksListArchivedByDefaultHidden (t_02a8beea A2): the REST list
-// carries the store's new default - archived rows hide from the empty
-// filter, an explicit ?status=archived lists the archive, ?status=all
-// lists everything.
+// TestTasksListArchivedByDefaultHidden: the REST list carries the store's new default.
 func TestTasksListArchivedByDefaultHidden(t *testing.T) {
 	_, ctx, _ := mountPlugin(t)
 	ts := serveRoutes(t, ctx)
@@ -190,8 +182,7 @@ func TestTasksIllegalStatusFiltered400(t *testing.T) {
 	}
 }
 
-// multiBoardCtx mounts on a temp home registry with alpha and beta
-// created before the mount, current board = main.
+// multiBoardCtx mounts on a temp home registry with alpha and beta created.
 func multiBoardCtx(t *testing.T) (*core.Context, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -216,8 +207,7 @@ func multiBoardCtx(t *testing.T) (*core.Context, string) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	// close on cleanup: the plugin's store opened kanban.db - a handle
-	// left open keeps windows from removing the TempDir's data dir
+	// close on cleanup: the plugin's store opened kanban.db.
 	t.Cleanup(func() { _ = p.store.Close() })
 	return ctx, home
 }
@@ -256,7 +246,6 @@ func TestBoardParamIsolation(t *testing.T) {
 	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// create on alpha (board param)
 	res, err := http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"alpha card"}`))
 	if err != nil {
 		t.Fatal(err)
@@ -292,7 +281,6 @@ func TestBoardParamIsolation(t *testing.T) {
 		t.Fatalf("alpha list = %+v", tasks)
 	}
 
-	// cross-board reads/mutations 404
 	res, _ = http.Get(ts.URL + "/tasks/" + url.PathEscape(created.ID))
 	if res.StatusCode != http.StatusNotFound {
 		t.Fatalf("default get = %d", res.StatusCode)
@@ -306,7 +294,6 @@ func TestBoardParamIsolation(t *testing.T) {
 		t.Fatalf("beta comment = %d, want 404", res.StatusCode)
 	}
 
-	// comments land on the right board
 	res, _ = http.Post(ts.URL+"/tasks/"+created.ID+"/comments?board=alpha", "application/json", strings.NewReader(`{"body":"board-scoped"}`))
 	if res.StatusCode != http.StatusCreated {
 		t.Fatalf("comment = %d", res.StatusCode)
@@ -336,7 +323,6 @@ func TestBoardParamIsolation(t *testing.T) {
 		t.Fatalf("unknown board patch = %d, want 400", res.StatusCode)
 	}
 
-	// create on an unknown board -> 400
 	res, _ = http.Post(ts.URL+"/tasks?board=gamma", "application/json", strings.NewReader(`{"title":"x"}`))
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unknown board create = %d, want 400", res.StatusCode)
@@ -348,10 +334,7 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// 0.17.3 make-over: every board leaves, main included, and a home may
-	// end on ZERO boards.
-	//
-	// a board holding a LIVE card refuses, naming the count
+	// 0.17.3 make-over: every board leaves, main included, and a home may end on ZERO.
 	res, _ := http.Post(ts.URL+"/tasks?board=beta", "application/json", strings.NewReader(`{"title":"live"}`))
 	var created KanbanTask
 	json.NewDecoder(res.Body).Decode(&created)
@@ -363,8 +346,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete of a board holding a live card = %d %q", res.StatusCode, string(body))
 	}
 
-	// the archive lane is the last stop: archive the card and the board goes,
-	// taking the card's rows with it
 	res, _ = do("PATCH", ts.URL+"/tasks/"+created.ID+"?board=beta", `{"status":"archived"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -376,8 +357,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete of an all-archived board = %d", res.StatusCode)
 	}
 
-	// the default board is deletable now (it is the current one here): the
-	// pointer hands over to the earliest survivor
 	res, _ = do("DELETE", ts.URL+"/boards/main", "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -393,7 +372,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("boards after deleting main = %+v, want [alpha current]", got.Boards)
 	}
 
-	// unknown boards still refuse -> 400
 	res, _ = do("DELETE", ts.URL+"/boards/ghost", "")
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
@@ -401,8 +379,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("delete ghost = %d %q", res.StatusCode, string(body))
 	}
 
-	// the last board leaves too: ZERO boards, an empty registry answer, and
-	// the board-less tasks read is an empty list (not an error)
 	res, _ = do("DELETE", ts.URL+"/boards/alpha", "")
 	res.Body.Close()
 	if res.StatusCode != http.StatusOK {
@@ -421,7 +397,6 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 		t.Fatalf("board-less tasks answer = %d %q", res.StatusCode, string(raw))
 	}
 
-	// and a create is the way back: the first board claims the pointer
 	res, _ = do("POST", ts.URL+"/boards", `{"name":"reborn"}`)
 	res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
@@ -439,7 +414,6 @@ func TestBoardsRenameEndpoint(t *testing.T) {
 	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// a rename renames the row in place: cards stay, the pointer follows
 	res, _ := http.Post(ts.URL+"/tasks?board=alpha", "application/json", strings.NewReader(`{"title":"kept"}`))
 	var created KanbanTask
 	json.NewDecoder(res.Body).Decode(&created)
@@ -464,7 +438,6 @@ func TestBoardsRenameEndpoint(t *testing.T) {
 		t.Fatalf("cards after the rename = %+v", listed.Tasks)
 	}
 
-	// refusals answer 400 with the store's text
 	res, _ = do("PATCH", ts.URL+"/boards/alpha-2", `{"name":"main"}`)
 	body, _ = io.ReadAll(res.Body)
 	res.Body.Close()
@@ -527,7 +500,6 @@ func TestBoardsCreateEndpoint(t *testing.T) {
 	ctx, home := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// create -> 201, listed afterwards
 	res, err := do("POST", ts.URL+"/boards", `{"name":"gamma"}`)
 	if err != nil {
 		t.Fatal(err)
@@ -571,23 +543,20 @@ func TestBoardsCreateEndpoint(t *testing.T) {
 		}
 	}
 
-	// the row is the one truth: the file tree stayed a single db
 	if _, serr := os.Stat(datadir.DBPath(home, "boards")); !os.IsNotExist(serr) {
 		t.Fatalf("boards dir exists: %v", serr)
 	}
 }
 
-// TestRESTMutationsPushPanels (card t_b5784de3): the board renders from
-// canvas deltas now instead of a 5s GET poll, so the HTTP surface must
-// speak them - a 2xx POST/PATCH refreshes the module's panels through the
-// installed sink, a GET read never pushes, and a refused mutation pushes
-// nothing (the error text is the answer).
+// TestRESTMutationsPushPanels: the board renders from canvas deltas now instead of a 5s
+// GET poll, so the HTTP surface must speak them - a 2xx POST/PATCH refreshes the
+// module's panels through the installed sink, a GET read never pushes, and a refused
+// mutation pushes nothing (the error text is the answer).
 func TestRESTMutationsPushPanels(t *testing.T) {
 	p, ctx, _ := mountPlugin(t)
 	pushed := capture(t, p.capsule)
 	ts := serveRoutes(t, ctx)
 
-	// the snapshot read is not a mutation
 	res, err := http.Get(ts.URL + "/tasks")
 	if err != nil {
 		t.Fatal(err)
@@ -597,13 +566,11 @@ func TestRESTMutationsPushPanels(t *testing.T) {
 		t.Fatalf("GET pushed %d panels, want 0", len(*pushed))
 	}
 
-	// create through the route: one tasks panel follows the 201
 	created := postTask(t, ts.URL, "rest push")
 	if len(*pushed) != 1 || (*pushed)[0].ID != listPanelID {
 		t.Fatalf("POST pushed %+v, want one %q panel", *pushed, listPanelID)
 	}
 
-	// patch through the route: the panel reflects the move
 	res2, body := patchBody(t, ts.URL, created, `{"status":"done"}`)
 	if res2.StatusCode != http.StatusOK {
 		t.Fatalf("patch = %d %s", res2.StatusCode, body)
@@ -625,7 +592,6 @@ func TestRESTMutationsPushPanels(t *testing.T) {
 		t.Fatalf("pushed panel does not carry %s as a settled done row: %+v", created, payload.Rows)
 	}
 
-	// a refused mutation (unknown id -> 404) pushes nothing
 	res3, _ := patchBody(t, ts.URL, "t_ffffffffffffffff", `{"status":"done"}`)
 	if res3.StatusCode != http.StatusNotFound {
 		t.Fatalf("unknown-id patch = %d, want 404", res3.StatusCode)

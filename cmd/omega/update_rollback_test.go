@@ -8,8 +8,7 @@ import (
 	"testing"
 )
 
-// TestReplaceBinaryWritesBak pins the one-file rollback rule: every
-// update overwrites omega.bak beside the replaced binary.
+// TestReplaceBinaryWritesBak pins the one-file rollback rule: every update overwrites.
 func TestReplaceBinaryWritesBak(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "omega")
@@ -33,7 +32,6 @@ func TestReplaceBinaryWritesBak(t *testing.T) {
 	assertFile(dst, "NEW-BINARY")
 	assertFile(dst+".bak", "OLD-BINARY")
 
-	// No scratch files left behind.
 	entries, _ := os.ReadDir(dir)
 	var names []string
 	for _, e := range entries {
@@ -45,8 +43,8 @@ func TestReplaceBinaryWritesBak(t *testing.T) {
 	}
 }
 
-// TestReplaceBinaryBakOneGeneration: a second update overwrites the
-// .bak slot — it never grows, only ever holds the previous generation.
+// TestReplaceBinaryBakOneGeneration: a second update overwrites the.bak slot — it never
+// grows, only ever holds the previous generation.
 func TestReplaceBinaryBakOneGeneration(t *testing.T) {
 	dir := t.TempDir()
 	dst := filepath.Join(dir, "omega")
@@ -76,9 +74,7 @@ func TestReplaceBinaryBakOneGeneration(t *testing.T) {
 	}
 }
 
-// TestRollbackSwapRoundTrip: the swap must preserve BOTH versions —
-// the backup lands in the exe slot, the replaced binary lands in the
-// .bak slot, and no side files remain.
+// TestRollbackSwapRoundTrip: the swap must preserve BOTH versions — the backup lands.
 func TestRollbackSwapRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "omega")
@@ -117,9 +113,7 @@ func TestRollbackSwapRoundTrip(t *testing.T) {
 	}
 }
 
-// TestRollbackToRoundTrip: the full rollback path — swap, health check
-// against the restored exe, success message carrying the restored
-// version.
+// TestRollbackToRoundTrip: the full rollback path — swap, health check against.
 func TestRollbackToRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "omega")
@@ -148,15 +142,13 @@ func TestRollbackToNoBak(t *testing.T) {
 	if err := rollbackTo(exe); err == nil {
 		t.Fatal("no omega.bak present: rollbackTo must error, not wipe the running binary")
 	}
-	// Old behavior preserved: the untouched exe survived the failed rollback.
 	if b, _ := os.ReadFile(exe); string(b) != "RUNNING" {
 		t.Error("failed rollback must leave the running binary alone")
 	}
 }
 
-// TestRollbackToUnhealthy: a backup that fails its health check still
-// leaves the swap state intact and reports an error — never a silent
-// success on a broken restore.
+// TestRollbackToUnhealthy: a backup that fails its health check still leaves the swap
+// state intact and reports an error — never a silent success on a broken restore.
 func TestRollbackToUnhealthy(t *testing.T) {
 	dir := t.TempDir()
 	exe := filepath.Join(dir, "omega")
@@ -171,7 +163,7 @@ func TestRollbackToUnhealthy(t *testing.T) {
 	if err := rollbackTo(exe); err == nil {
 		t.Fatal("unhealthy restored binary: rollbackTo must error")
 	}
-	// The restored version is live and the .bak slot intact.
+	// The restored version is live and the.bak slot intact.
 	read := func(p string) string {
 		b, _ := os.ReadFile(p)
 		return string(b)

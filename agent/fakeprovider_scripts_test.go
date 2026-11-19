@@ -17,7 +17,6 @@ func TestNewFakeProviderScripts(t *testing.T) {
 	}
 	p := NewFakeProviderScripts("fake", script1, script2)
 
-	// Call 1 — should emit script1.
 	drain := func(ch <-chan core.ProviderStreamEvent) []core.ProviderStreamEvent {
 		var got []core.ProviderStreamEvent
 		for e := range ch {
@@ -34,7 +33,6 @@ func TestNewFakeProviderScripts(t *testing.T) {
 		t.Errorf("call 1 first event = %v, want content %q", got1[0], "first")
 	}
 
-	// Call 2 — should emit script2.
 	got2 := drain(p.Stream(context.Background(), nil, nil))
 	if len(got2) != len(script2) {
 		t.Fatalf("call 2: got %d events, want %d", len(got2), len(script2))
@@ -43,7 +41,6 @@ func TestNewFakeProviderScripts(t *testing.T) {
 		t.Errorf("call 2 first event = %v, want content %q", got2[0], "second")
 	}
 
-	// Call 3 — last script repeats.
 	got3 := drain(p.Stream(context.Background(), nil, nil))
 	if len(got3) != len(script2) {
 		t.Fatalf("call 3: got %d events, want %d (last script repeat)", len(got3), len(script2))

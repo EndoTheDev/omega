@@ -1,6 +1,5 @@
 package memory
 
-// Config configures the persistent memory extension.
 type Config struct {
 	Enabled              bool   `yaml:"enabled"`
 	UserProfileEnabled   bool   `yaml:"user_profile_enabled"`
@@ -10,7 +9,6 @@ type Config struct {
 	UserProfileFile      string `yaml:"user_file"`
 }
 
-// Default returns the default memory configuration.
 func Default() Config {
 	return Config{
 		Enabled:              true,

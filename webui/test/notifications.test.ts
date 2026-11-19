@@ -1,10 +1,10 @@
-// omega webui: unit tests for the notifications surface (card
-// t_5d9032d3). Three layers, matching the house patterns:
-// - composables/notifications.ts fetch wrappers: URL + body contract
+// omega webui: unit tests for the notifications surface
+// ). Three layers, matching the house patterns:
+// composables/notifications.ts fetch wrappers: URL + body contract
 //   under fetch interception;
-// - the pure helpers: age rendering (honest "" on garbage), the live
+// the pure helpers: age rendering (honest "" on garbage), the live
 //   upsert (dedupe + cap), and the toast lifetime asymmetry;
-// - NotificationToasts.vue source pins: the mount + the route wiring
+// NotificationToasts.vue source pins: the mount + the route wiring
 //   the dock shell depends on (source checks, the panel source is not
 //   importable in node).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
@@ -48,7 +48,7 @@ function rec(over: Partial<OmegaNotification> = {}): OmegaNotification {
   };
 }
 
-// --- fetch wrappers: URL + body contract ---
+// fetch wrappers: URL + body contract
 
 test("fetchNotifications requests the bare endpoint, no arg", async () => {
   const seen: string[] = [];
@@ -109,7 +109,7 @@ test("markNotificationRead POSTs {id} to /notifications/read", async () => {
   }
 });
 
-// --- notificationAge ---
+// notificationAge
 
 test("notificationAge renders seconds, minutes, hours, days", () => {
   const now = Date.parse("2026-10-22T12:00:00Z");
@@ -126,7 +126,7 @@ test("notificationAge is honest on garbage: empty string, no lie", () => {
   assert.equal(notificationAge("2026-10-22T12:00:01Z", Date.parse("2026-10-22T12:00:00Z")), "0s");
 });
 
-// --- upsertRecord: the live frame fold ---
+// upsertRecord: the live frame fold
 
 test("upsertRecord prepends a new record and caps the list", () => {
   const a = rec({ id: 1 });
@@ -145,7 +145,7 @@ test("upsertRecord dedupes a reconnect replay instead of stacking", () => {
   assert.equal(out[0].read, true);
 });
 
-// --- toastLifetime: the failed-stays-longer asymmetry ---
+// toastLifetime: the failed-stays-longer asymmetry
 
 test("failed verdicts hold the toast longer than ok ones", () => {
   assert.equal(toastLifetime("ok"), 6000);
@@ -153,7 +153,7 @@ test("failed verdicts hold the toast longer than ok ones", () => {
   assert.ok(toastLifetime("failed") > toastLifetime("ok"));
 });
 
-// --- notificationBadgeText: the tab chip's unread voice (t_180db2cb) ---
+// notificationBadgeText: the tab chip's unread voice
 
 test("notificationBadgeText: the count, 99+ beyond the cap, nothing at zero", () => {
   assert.equal(notificationBadgeText(0), "", "no badge at zero - the chip renders nothing");
@@ -164,19 +164,14 @@ test("notificationBadgeText: the count, 99+ beyond the cap, nothing at zero", ()
   assert.equal(notificationBadgeText(-3), "", "a nonsensical count renders no badge");
 });
 
-// --- component source pins (the shell wiring) ---
+// component source pins (the shell wiring)
 
 test("the bell is GONE: the menubar hosts only the toast stack (card t_180db2cb)", () => {
   const menubar = read("webui", "app", "components", "shell", "MenuBar.vue");
-  // the durable feed is the notifications dock tab, the bell button +
-  // its popover died with it (deletability law): no NotificationCenter
-  // mount, no bell vocabulary anywhere in the menubar
   assert.ok(!menubar.includes("NotificationCenter"), "the bell popover mount is deleted, not just unused");
   assert.ok(!menubar.includes("notif-bell"), "no bell button chrome");
   assert.ok(!menubar.includes('"bell"'), "no bell icon name in the menubar");
-  // the transient toasts STAY (Endo ruling 2): the toast stack mounts
-  // where the bell lived, and its open intents still re-emit to
-  // app.vue, which owns navigation
+  // the transient toasts STAY.
   assert.ok(
     /<NotificationToasts\s+@open="\$emit\('open-notification', \$event\)"\s*\/>/.test(menubar),
     "the toast stack joins the menubar, open intents re-emit verbatim",
@@ -189,10 +184,7 @@ test("app.vue routes every notified kind (task -> kanban pane, cron -> tab, chat
   assert.ok(app.includes('case "task"'), "task routes");
   assert.ok(app.includes('case "cron"'), "cron routes");
   assert.ok(app.includes('case "chat"'), "chat routes");
-  // card t_556ee727: the task route focuses the kanban PANE - the main
-  // pane (chat) is never touched, so no /board replaceState overlay on
-  // the bell's path. The /board URL boot (a bookmarked reload) lives in
-  // a separate block and is untouched.
+  // the task route focuses the kanban PANE - the main pane (chat) is never touched.
   const taskStart = app.indexOf('"task"');
   assert.ok(taskStart > 0, "task case exists");
   const taskBody = app.slice(taskStart, app.indexOf("case \"cron\""));
@@ -204,7 +196,7 @@ test("app.vue routes every notified kind (task -> kanban pane, cron -> tab, chat
   );
 });
 
-// --- the board-select seam (card t_556ee727) ---
+// the board-select seam
 
 test("boardOfTask scans the boards in registry order", () => {
   const lists = [
@@ -214,8 +206,7 @@ test("boardOfTask scans the boards in registry order", () => {
   assert.equal(boardOfTask("t_three", lists), "omega");
   assert.equal(boardOfTask("t_one", lists), "main");
   assert.equal(boardOfTask("t_archived", lists), null, "a miss resolves null");
-  // the server default is never a switch target: the empty board name
-  // is skipped, the scan keeps looking
+  // the server default is never a switch target.
   assert.equal(
     boardOfTask("t_two", [{ board: "", tasks: [{ id: "t_two" }] }, ...lists]),
     "main",
@@ -249,8 +240,7 @@ test("resolveTaskBoard rides /boards then a /tasks scan per board", async () => 
   try {
     assert.equal(await resolveTaskBoard("t_deep"), "omega");
     assert.equal(await resolveTaskBoard("t_nope"), null);
-    // every miss still walks the FULL registry (main then omega) - a
-    // stale scan would dead-end the second click
+    // every miss still walks the FULL registry (main then omega).
     assert.deepEqual(seen.filter((u) => u.startsWith("/tasks?status=all&board=")), [
       "/tasks?status=all&board=main",
       "/tasks?status=all&board=omega",
@@ -279,23 +269,20 @@ test("resolveTaskBoard degrades on a broken registry (501, garbage body)", async
 });
 
 test("selectBoardFor publishes the stash + the event, skips the empty pick", () => {
-  // jsdom-free: only the window guard matters in node
   if (typeof window === "undefined") return; // node: the guard is the pin
   assert.equal(selectBoardFor(""), undefined);
 });
-// --- arc 4b (t_9339ad05): the toast is a canvas event ---
+// arc 4b: the toast is a canvas event
 
 test("the toast stack renders from the canvas - no per-frontend SSE stream (t_180db2cb rehome)", () => {
   const store = read("webui", "app", "components", "shell", "notificationFeed.ts");
   // the store subscribes to the canvas feed, not its own EventSource
   assert.ok(store.includes("onToastPanel("), "the feed store consumes the canvas toast feed");
   assert.ok(store.includes("decodeToast("), "the store owns the record-shape read");
-  // the per-frontend toast code is gone from composable + store
   assert.ok(!store.includes("subscribeNotifications"),
     "the private SSE toast client is deleted, not just unused");
   assert.ok(!store.includes("/notifications/events"), "no SSE toast stream stays reachable from the shell");
-  // the toast stack component renders FROM THE STORE and stays fixed
-  // positioned (shell chrome, not pane content)
+  // the toast stack component renders FROM THE STORE and stays fixed positioned.
   const toasts = read("webui", "app", "components", "shell", "NotificationToasts.vue");
   assert.ok(toasts.includes("notificationToasts"), "the stack renders the store's toast rows");
   assert.ok(toasts.includes("transition-group"), "the merge behavior (12833fd) keeps its enter/leave group");

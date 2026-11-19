@@ -1,8 +1,8 @@
-// The ONE copy path (card t_a92450ea): navigator.clipboard exists only in
+// The ONE copy path: navigator.clipboard exists only in
 // secure contexts (https or localhost) - on the plain-http lane
 // (http://<LAN-IP>:8098) it is undefined, every direct call rejects, and
 // a voided rejection still flipped the affordance to "copied" - a silent
-// lie. Every copy affordance in the webui goes through copyText() here;
+// lie. Every copy affordance in the webui goes through copyText here;
 // no source outside this file calls navigator.clipboard directly.
 //
 // Order of attempts:
@@ -26,24 +26,20 @@ export async function copyText(text: string): Promise<boolean> {
       await navigator.clipboard.writeText(text ?? "");
       return true;
     } catch {
-      // Denied, undefined API rejection, or any other async failure -
-      // fall through to the execCommand path.
+      // Denied, undefined API rejection, or any other async failure.
     }
   }
   return execCommandCopy(text ?? "");
 }
 
-// The insecure-context fallback: a temporarily mounted off-screen
-// textarea whose selected value is copied synchronously. Focus is
-// preserved for the caller (the composer keeps its caret when a
-// keystroke-dispatched copy lands here).
+// The insecure-context fallback. Focus is preserved for the caller (the composer keeps
+// its caret when a keystroke-dispatched copy lands here).
 export function execCommandCopy(text: string): boolean {
   if (typeof document === "undefined" || !document.body) return false;
   const ta = document.createElement("textarea");
   ta.value = text;
-  // readonly keeps mobile keyboards from opening; the styling keeps the
-  // flash invisible without display:none (a hidden element cannot be
-  // selected).
+  // readonly keeps mobile keyboards from opening; the styling keeps the flash invisible
+  // without display:none (a hidden element cannot be selected).
   ta.setAttribute("readonly", "");
   ta.style.position = "fixed";
   ta.style.top = "-1000px";

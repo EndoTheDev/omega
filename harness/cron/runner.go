@@ -1,5 +1,4 @@
-// Package cron runner: scheduling, catch-up, concurrent-fire guard,
-// deliver targets, and hot-reload of crons.yaml.
+// Package cron runner: scheduling, catch-up, concurrent-fire guard, deliver targets.
 package cron
 
 import (
@@ -21,8 +20,6 @@ import (
 )
 
 // catchUpWindow bounds how far back a missed fire is allowed to be.
-// A missed scheduled time more recent than this fires once at startup;
-// older missed fires are skipped and logged.
 const catchUpWindow = 24 * time.Hour
 
 // cronStateFileName persists last-fire time per job under OMEGA_HOME.
@@ -31,9 +28,7 @@ const cronStateFileName = "cronstate.json"
 // stateFileName is the job source watched for hot reload.
 const stateFileName = "crons.yaml"
 
-// runOriginScheduled tags fires as background runs (the launch value
-// the verdict tool and the approval gate compare - the word stays
-// "cron" on the wire, the identifier stays free of the capsule noun).
+// runOriginScheduled tags fires as background runs.
 const runOriginScheduled = "cron"
 
 // cronState is the on-disk shape of cronstate.json. Jobs keys the
@@ -44,17 +39,14 @@ type cronState struct {
 	Last map[string]fireOutcome `json:"last,omitempty"`
 }
 
-// fireOutcome is one completed fire's record: when the turn (or wake)
-// finished, whether it ran clean, and the capped error message when it
-// did not. Keyed on the job's StateKey like everything else in here.
+// fireOutcome is one completed fire's record.
 type fireOutcome struct {
 	At    int64  `json:"at"` // completion wall clock (unix)
 	Ok    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
 }
 
-// statusNoteCap bounds the persisted error message: the state file is
-// an operator's diagnostic, not a log dump.
+// statusNoteCap bounds the persisted error message.
 const statusNoteCap = 512
 
 // Runner is the scheduler. Safe for concurrent use.
@@ -62,26 +54,20 @@ type Runner struct {
 	home   string
 	cfg    *Config // initial jobs, from Mount
 	logger agent.LoggerProvider
-	// memory is the consumer-side face of the memory capsule's store
-	// (part 3): only the methods the deliver target calls, resolved
-	// from the universal registry at Start. Nil-safe: no capsule, no
-	// delivery (the loop logs and continues).
+	// memory is the consumer-side face of the memory capsule's store (part 3). Nil-safe:
+	// no capsule, no delivery (the loop logs and continues).
 	memory memoryStore
 	ag     *agent.Agent
 	store  agent.StoreProvider
-	// notifier is the finished-things emitter face, resolved from the
-	// universal registry at Start (card t_5d9032d3). Nil-safe: no
-	// capsule, no emission.
+	// notifier is the finished-things emitter face, resolved from the universal registry.
+	// Nil-safe: no capsule, no emission.
 	notifier finishedThings
-	// skills is the consumer-side face of the skills capsule (part 3):
-	// just the read method the pinned-skills injection calls, resolved
-	// from the universal registry at Start. Nil-safe: no capsule, no
-	// pinning (a job with skills errors at fire, the scheduler keeps
-	// standing - the same posture a bad agent name gets).
+	// skills is the consumer-side face of the skills capsule (part 3). Nil-safe: no
+	// capsule, no pinning (a job with skills errors at fire, the scheduler keeps standing
+	// - the same posture a bad agent name gets).
 	skills skillReader
-	// tickEmit is the event-spine wake-tick emitter, wired from
-	// deps.Ctx at Start (card t_72ecca67). Nil = the spine has no
-	// emitter (never started, or no Context): agent wakes go inert.
+	// tickEmit is the event-spine wake-tick emitter, wired from deps.Ctx at Start. Nil =
+	// the spine has no emitter (never started, or no Context): agent wakes go inert.
 	tickEmit func(wakeTickPayload)
 
 	// panels is the capsule's canvas surface, set by the plugin at
@@ -89,13 +75,9 @@ type Runner struct {
 	// works, frontends catch up on their next snapshot.
 	panels *capsule
 
-	// runTimeout is the host-pushed server.run_timeout, in
-	// nanoseconds (card t_e635df3a): the cap the HOST resolved from
-	// the config file it actually booted on. Zero = nothing pushed
-	// (tests, embedders, a host without the knob), and turnCap falls
-	// back to reading this module's own home candidates. Atomic: the
-	// host pushes at boot and on every settings save while fires read
-	// it on their own goroutine.
+	// runTimeout is the host-pushed server.run_timeout, in nanoseconds. Atomic: the host
+	// pushes at boot and on every settings save while fires read it on their own
+	// goroutine.
 	runTimeout atomic.Int64
 
 	mu        sync.Mutex
@@ -114,8 +96,7 @@ type Runner struct {
 	pollInterval time.Duration
 }
 
-// NewRunner creates the cron Runner for a parsed config and an omega
-// home directory (crons.yaml, cronstate.json, journal/).
+// NewRunner creates the cron Runner for a parsed config and an omega home directory.
 func NewRunner(cfg *Config, home string) *Runner {
 	jobs := cfg.Jobs
 	if jobs == nil {
@@ -137,39 +118,29 @@ func NewRunner(cfg *Config, home string) *Runner {
 	return r
 }
 
-// runnerDeps carries what the Start arms the runner with: the host's
-// StartDeps values reshaped by the plugin (the capsule owns the shape;
-// the host knows StartDeps).
+// runnerDeps carries what the Start arms the runner.
 type runnerDeps struct {
 	Ctx   *core.Context
 	Agent *agent.Agent
 	Store agent.StoreProvider
 }
 
-// memoryStore is the consumer-side face of the memory capsule (part 3
-// seam constitution): just the method the deliver target calls. The
-// memory capsule satisfies it structurally; no shared type exists.
+// memoryStore is the consumer-side face of the memory capsule.
 type memoryStore interface {
 	Add(target, content string) (usage string, err error)
 }
 
-// finishedThings is the consumer-side face of the finished-things
-// store: just the emit method.
+// finishedThings is the consumer-side face of the finished-things store.
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// skillReader is the consumer-side face of the skills capsule (part 3,
-// the seam constitution): just the read the pinned-skills injection
-// calls. The skills capsule satisfies it structurally (SkillRead);
-// no shared type exists, absence is the floor.
+// skillReader is the consumer-side face of the skills capsule.
 type skillReader interface {
 	SkillRead(name string) (description, content string, err error)
 }
 
-// Start runs the scheduler until the context is cancelled or Stop is
-// called. deps carries the agent, store, memory, and finished-things
-// faces resolved at host wiring time.
+// Start runs the scheduler until the context is cancelled or Stop is called.
 func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	if deps.Ctx != nil {
 		r.memory, _ = deps.Ctx.Services().Resolve("memory").(memoryStore)
@@ -178,10 +149,8 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 				r.logger = lg
 			}
 		}
-		// The wake-tick emitter rides the Context's event spine (card
-		// t_72ecca67): cron owns WHEN, the continuous capsule owns
-		// WHAT happens to the tick. Nil observer set = empty spine,
-		// the wake goes inert by construction.
+		// The wake-tick emitter rides the Context's event spine. Nil observer set = empty
+		// spine, the wake goes inert by construction.
 		r.tickEmit = func(p wakeTickPayload) {
 			deps.Ctx.EmitTick("cron", "wake", p)
 		}
@@ -190,18 +159,16 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	r.store = deps.Store
 	if deps.Ctx != nil {
 		r.notifier, _ = deps.Ctx.Services().Resolve("notifications").(finishedThings)
-		// The pinned-skills face: resolved live at Start like every
-		// other registry consumer here. Wrong shape = nil (the shape
-		// panic lives behind the mount's own seam asserts; a resolved
-		//-but-non-conforming offer degrades to "no skills face" and
-		// jobs with a pinned list error at fire, loudly, in the log).
+		// The pinned-skills face: resolved live at Start like every other registry consumer.
+		// Wrong shape = nil (the shape panic lives behind the mount's own seam asserts; a
+		// resolved -but-non-conforming offer degrades to "no skills face" and jobs with a
+		// pinned list error at fire, loudly, in the log).
 		r.skills, _ = deps.Ctx.Services().Resolve("skills").(skillReader)
 	}
 
 	r.loadCronState()
-	// The state GC rule (card t_a99ffcd7): sweep stale entries BEFORE
-	// catch-up reads them - a phantom catch-up for a removed actor is
-	// exactly the drift the sweep exists to kill.
+	// The state GC rule: sweep stale entries BEFORE catch-up reads them - a phantom
+	// catch-up for a removed actor is exactly the drift the sweep exists to kill.
 	r.sweepStaleState()
 	r.catchUp(ctx, r.now())
 	r.scheduleEnabled(ctx)
@@ -209,9 +176,6 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 		r.sched.Start()
 	}
 
-	// Watcher exits on ctx cancellation or Stop - Start just waits for
-	// it after signaling shutdown. No ownership of its done channel
-	// (double-close on shutdown was a real crash).
 	var watcher sync.WaitGroup
 	watcher.Add(1)
 	go func() {
@@ -228,8 +192,7 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	return nil
 }
 
-// Stop shuts the scheduler down (the scheduler). Safe to call
-// multiple times.
+// Stop shuts the scheduler down (the scheduler).
 func (r *Runner) Stop() error {
 	select {
 	case <-r.stop:
@@ -255,11 +218,9 @@ func (r *Runner) errorf(format string, args ...any) {
 	}
 }
 
-// --- firing ---
+// firing
 
 // tryAcquire performs the single-instance-per-job check-and-set.
-// Returns false when the job's previous fire is still running. Keys on
-// the job's StateKey - agent jobs share the name space with main's.
 func (r *Runner) tryAcquire(key string) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -277,17 +238,10 @@ func (r *Runner) release(key string) {
 	r.running[key] = false
 }
 
-// fire runs one job occurrence at time `when` (the scheduled time for
-// catch-up fires, approximately now for regular fires). A fire
-// arriving while the same job is still running is skipped - logged,
-// never queued. Different jobs run in parallel.
-//
-// Agent jobs (card t_72ecca67) never turn in-process: they are WAKES,
-// one tick through the event spine (payload law: raw JSON); the
-// continuous capsule owns what the tick means. Cron owns WHEN only -
-// no session, no notification, no deliver on this side. With the
-// continuous capsule toggled off the tick lands on an empty spine and
-// the wake goes inert; the schedule survives (ruling 14).
+// fire runs one job occurrence at time `when` (the scheduled time for catch-up fires. A
+// fire arriving while the same job is still running is skipped - logged, never queued.
+// Agent jobs never turn in-process: they are WAKES, one tick through the event spine
+// (payload law: raw JSON); the continuous capsule owns what the tick means.
 func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	if !job.IsEnabled() {
 		return
@@ -302,10 +256,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	}
 	defer r.release(key)
 
-	// The last-status contract (t_3885c975): every fire return path
-	// lands an outcome - ok / error with the message - so the tab's
-	// status line always tells the truth about the last run. A wake
-	// with no tick emitter is an error, not an invisible success.
+	// The last-status contract.
 	if job.IsAgent() {
 		wakeErr := r.fireAgentWake(job, job.Agent, key)
 		r.recordFire(job, when)
@@ -313,13 +264,10 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		return
 	}
 	if job.DeliverTarget() == deliverContinuous {
-		// A main-home job naming deliver: continuous-agent is the same
-		// wake, aimed by the job's own agent field (the defaulting law
-		// resolves empty to the default agent). The wake validation is
-		// FIRE-TIME by law: agent homes are dynamic, so a bad or
-		// non-continuous name is a clear logged error - the scheduler
-		// keeps standing and the schedule survives (the acceptance
-		// law: bad agent name never crashes the runner).
+		// A main-home job naming deliver. The wake validation is FIRE-TIME by law: agent
+		// homes are dynamic, so a bad or non-continuous name is a clear logged error - the
+		// scheduler keeps standing and the schedule survives (the acceptance law: bad agent
+		// name never crashes the runner).
 		name := job.ResolveAgent()
 		prof, err := agent.LoadProfile(r.home, name)
 		if err != nil {
@@ -339,10 +287,9 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		r.recordOutcome(job, wakeErr)
 		return
 	}
-	// In-process targets run under the default agent. A job naming a
-	// non-default agent with an in-process deliver is a wrong-target
-	// reference, not a crash: clear error in the job log, the run never
-	// starts under the wrong persona, the schedule survives.
+	// In-process targets run under the default agent. A job naming a non-default agent
+	// with an in-process deliver is a wrong-target reference, not a crash: clear error in
+	// the job log, the run never starts under the wrong persona, the schedule survives.
 	if name := job.ResolveAgent(); name != agent.DefaultAgentName {
 		r.errorf("job %s: agent %q: deliver %q runs in-process as the default agent; use deliver: continuous-agent to fire agent %s", key, name, job.DeliverTarget(), name)
 		r.recordFire(job, when)
@@ -358,10 +305,9 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		return
 	}
 
-	// The pinned skills resolve BEFORE the session exists (the bad-agent
-	// posture, now for skills): a half-set table never opens a session,
-	// the error lands in the log and in the last-status record, the
-	// scheduler keeps standing.
+	// The pinned skills resolve BEFORE the session exists (the bad-agent posture, now for
+	// skills): a half-set table never opens a session, the error lands in the log and in
+	// the last-status record, the scheduler keeps standing.
 	promptText, pinErr := r.pinnedPrompt(job)
 	if pinErr != nil {
 		r.errorf("%v", pinErr)
@@ -369,26 +315,17 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		return
 	}
 
-	// Session labeled cron:<name>; prompt + run outputs persist even
-	// if the turn itself fails. Session creation stays here; the
-	// turn-copy persistence (prompt, assistant, tool results) rides
-	// the loop's sink (t_471f6d4a).
 	if r.store != nil {
 		if err := r.store.CreateSession(ctx, sessionID, "", "cron:"+job.Name); err != nil {
 			r.errorf("job %s: create session: %v", job.Name, err)
 		}
 	}
 
-	// Wall-clock cap on the turn itself: without it, one hung tool
-	// call (shell sleep, wedged provider) never returns, every later
-	// fire logs "skipped, previous fire still running", and the job's
-	// journal/memory delivery stops until a process restart. The cap
-	// is the configured server.run_timeout - the same knob the /chat
-	// runs carry - 30 minutes when it is unset (card t_ef885fd4).
+	// Wall-clock cap on the turn itself: without it, one hung tool call (shell sleep,
+	// wedged provider) never returns, every later fire logs "skipped, previous fire still
+	// running", and the job's journal/memory delivery stops until a process restart.
 	turnCtx, cancel := context.WithTimeout(ctx, r.turnCap())
 	defer cancel()
-	// Verdict cards v1 (card t_2ecf9c51): a cron fire is a background
-	// turn - the verdict tool refuses to hard-pause from this origin.
 	turnCtx = core.WithRunOrigin(turnCtx, runOriginScheduled)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job, promptText)
@@ -404,30 +341,20 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	r.emitFinished(job.Name, runErr == nil)
 }
 
-// turnCapDefault is the unset server.run_timeout fallback: 30 minutes,
-// the same 1800s the detached /chat run cap falls back to.
+// turnCapDefault is the unset server.run_timeout fallback.
 const turnCapDefault = 30 * time.Minute
 
-// serverRunTimeout is the ONE host knob a fire reads out of config.yaml
-// - the server section's run_timeout, in seconds. One parse shape per
-// concern (the agent/profiles.go law): every other server key is the
-// host's business and stays unparsed here.
+// serverRunTimeout is the ONE host knob a fire reads out of config.yaml.
 type serverRunTimeout struct {
 	Server struct {
 		RunTimeout int `yaml:"run_timeout"`
 	} `yaml:"server"`
 }
 
-// SetRunTimeout is the host's push for the fire's wall-clock cap (card
-// t_e635df3a): the cap the HOST resolved server.run_timeout to. The
-// host is the only component that knows which config file it booted on
-// - an explicit `--config <elsewhere>` path, or the exe-dir home an
-// install without OMEGA_HOME resolves - and a module cannot re-derive
-// that (its own home candidates point at $HOME/.omega). A push of zero
-// or less clears the push: the fire then falls back to the
-// home-candidate file read, then to turnCapDefault. Called at boot and
-// again on every settings save/reload, so a saved knob reaches the next
-// fire without a restart.
+// SetRunTimeout is the host's push for the fire's wall-clock cap. The host is the only
+// component that knows which config file it booted on - an explicit `--config
+// <elsewhere>` path, or the exe-dir home an install without OMEGA_HOME resolves - and a
+// module cannot re-derive that (its own home candidates point at $HOME/.omega).
 func (r *Runner) SetRunTimeout(d time.Duration) {
 	if d < 0 {
 		d = 0
@@ -435,19 +362,9 @@ func (r *Runner) SetRunTimeout(d time.Duration) {
 	r.runTimeout.Store(int64(d))
 }
 
-// turnCap resolves one fire's wall-clock cap: the value the host
-// pushed when it has one, the configured server.run_timeout read out of
-// this module's home candidates when it has not, turnCapDefault when
-// neither exists. The knob is the shell's - server.run_timeout caps
-// every detached /chat run - and the scheduler runs in-process beside
-// that shell, so the fire follows the operator's knob rather than
-// inventing a cron-side section. The file read below is the fallback,
-// not the truth: it cannot see a `--config` path or an exe-dir home,
-// which is why the host hands its resolution over through
-// SetRunTimeout (card t_e635df3a). The two candidate paths mirror
-// cmd/omega's resolveConfigPath (the legacy home root first, the
-// config/ layout second). Re-read per fire: the cap bounds a hung
-// turn, it is not a boot-time identity, and fires are minutes apart.
+// turnCap resolves one fire's wall-clock cap. The file read below is the fallback, not
+// the truth: it cannot see a `--config` path or an exe-dir home, which is why the host
+// hands its resolution over through SetRunTimeout.
 func (r *Runner) turnCap() time.Duration {
 	if pushed := time.Duration(r.runTimeout.Load()); pushed > 0 {
 		return pushed
@@ -465,9 +382,7 @@ func (r *Runner) turnCap() time.Duration {
 		}
 		var cfg serverRunTimeout
 		if err := yaml.Unmarshal(data, &cfg); err != nil {
-			// A malformed config.yaml already failed the host's own boot
-			// parse; a fire degrades to the default instead of inventing
-			// a second opinion on the operator's file.
+			// A malformed config.yaml already failed the host's own boot parse.
 			return turnCapDefault
 		}
 		if cfg.Server.RunTimeout > 0 {
@@ -478,13 +393,10 @@ func (r *Runner) turnCap() time.Duration {
 	return turnCapDefault
 }
 
-// emitFinished records one finished-things record for the fire (card
-// t_5d9032d3). Metadata only - the job name goes in the title, never
-// prompt or run content. Catch-up fires travel through fire too, so
-// one occurrence = one record regardless of how it fired. Agent wakes
-// never ride this: ruling 10 bans cross-home notification writes and
-// unasked messaging - the wake report lands in the agent's own chat,
-// the roster's unread flag is the human's signal.
+// emitFinished records one finished-things record for the fire. Metadata only - the job
+// name goes in the title, never prompt or run content. Agent wakes never ride this:
+// bans cross-home notification writes and unasked messaging - the wake report lands in
+// the agent's own chat, the roster's unread flag is the human's signal.
 func (r *Runner) emitFinished(jobName string, ok bool) {
 	if r.notifier == nil {
 		return
@@ -501,27 +413,17 @@ func (r *Runner) emitFinished(jobName string, ok bool) {
 	})
 }
 
-// wakeTickPayload is the raw-JSON shape of cron's wake ticks (card
-// t_72ecca67). Defined here, parsed over there (harness/continuous):
-// the payload law keeps the two capsules decoupled - raw JSON, no
-// shared Go types across the module boundary.
+// wakeTickPayload is the raw-JSON shape of cron's wake ticks.
 type wakeTickPayload struct {
 	Agent  string `json:"agent"`
 	Job    string `json:"job"`
 	Prompt string `json:"prompt"`
-	// Model rides the defaulting law: empty = inherit (the payload
-	// law keeps the capsule decoupled - the field is optional JSON,
-	// the continuous capsule decides what a model override means,
-	// today OMEGA_MODEL on the wake child's env).
 	Model string `json:"model,omitempty"`
 }
 
-// fireAgentWake is the agent-wake fire body: one tick through the
-// event spine, then done. agent is the resolved target (the owning
-// agent home's name, or the job's agent field via the defaulting law).
-// The error return feeds the fire's last-status record: nil tickEmit =
-// the continuous capsule is toggled off - the tick lands on an empty
-// spine, the wake goes inert (the log names it), the schedule stays.
+// fireAgentWake is the agent-wake fire body. The error return feeds the fire's
+// last-status record: nil tickEmit = the continuous capsule is toggled off - the tick
+// lands on an empty spine, the wake goes inert (the log names it), the schedule stays.
 func (r *Runner) fireAgentWake(job Job, target string, key string) error {
 	if r.tickEmit == nil {
 		r.logf("wake %s: continuous not mounted, wake inert", key)
@@ -532,13 +434,9 @@ func (r *Runner) fireAgentWake(job Job, target string, key string) error {
 	return nil
 }
 
-// pinnedPrompt builds the fire's user message: the pinned skills'
-// bodies ahead of the job prompt (t_3885c975). A scheduled job runs
-// one fixed procedure unwatched - making it hunt the skill index is
-// noise, the editor pins the names and the fire ships the content.
-// A pinned name the skills capsule cannot read (unknown, unmounted,
-// unreadable) is an error the fire records - no run on a half-set
-// table, the scheduler keeps standing (the bad-agent posture).
+// pinnedPrompt builds the fire's user message. A pinned name the skills capsule cannot
+// read (unknown, unmounted, unreadable) is an error the fire records - no run on a
+// half-set table, the scheduler keeps standing (the bad-agent posture).
 func (r *Runner) pinnedPrompt(job Job) (string, error) {
 	if len(job.Skills) == 0 {
 		return job.Prompt, nil
@@ -561,25 +459,15 @@ func (r *Runner) pinnedPrompt(job Job) (string, error) {
 	return sb.String() + job.Prompt, nil
 }
 
-// agentTurn is the default runTurn: one full agent turn in the cron
-// session. The prompt arrives pre-resolved - fire() pinned the skills
-// in before the session existed (the sessionless half-set-table law);
-// agentTurn sends it through the loop. The loop's sink persists
-// prompt, assistant, and tool results (t_471f6d4a) - the runner only
-// adds the session's token totals.
+// agentTurn is the default runTurn: one full agent turn in the cron session.
 func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 	if r.ag == nil {
 		return "", fmt.Errorf("no agent wired (cron runner started without deps.Agent)")
 	}
-	// The defaulting law, model field: empty = the session provider
-	// model (this exact wire), non-empty = a per-run provider derived
-	// with WithModel - the copy discipline keeps parallel fires of
-	// different jobs from racing shared provider state; the turn's
+	// The defaulting law, model field: empty = the session provider model (this exact
+	// wire), non-empty = a per-run provider derived with WithModel - the copy discipline
+	// keeps parallel fires of different jobs from racing shared provider state; the turn's
 	// model dies with the run, the serve session's model never moves.
-	//
-	// The turn-copy sink wraps ctx BEFORE the run starts: Run captures
-	// the context it is given, a sink applied after the call would
-	// miss the whole turn's persistence.
 	ctx = agent.WithTurnSink(ctx, agent.NewStoreTurnSink(r.store, sessionID, ""))
 	ctx = agent.WithPersistInput(ctx, []core.Message{core.NewUser(prompt)})
 	promptMsgs := []core.Message{core.NewUser(prompt)}
@@ -625,9 +513,6 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job, promp
 }
 
 // recordFire stores the covered fire time and writes cronstate.json.
-// Catch-up fires record the missed scheduled time so a restart before
-// the next scheduled fire does not fire again. Keys on StateKey -
-// agent jobs name-space under <agent>/.
 func (r *Runner) recordFire(job Job, when time.Time) {
 	r.mu.Lock()
 	r.lastFire[job.StateKey()] = when.Unix()
@@ -637,12 +522,9 @@ func (r *Runner) recordFire(job Job, when time.Time) {
 	}
 }
 
-// recordOutcome lands the fire's last-status record (t_3885c975): ok,
-// or error with the message. Every fire return path calls it, so the
-// tab's status line never lies about the last run. The record is the
-// COMPLETION wall clock (when the turn or wake finished), not the
-// scheduled slot the catch-up keys on - the two live as separate
-// entries in cronstate.json.
+// recordOutcome lands the fire's last-status record: ok, or error with the message.
+// Every fire return path calls it, so the tab's status line never lies about the last
+// run.
 func (r *Runner) recordOutcome(job Job, err error) {
 	r.mu.Lock()
 	if r.last == nil {
@@ -671,9 +553,7 @@ func truncateNote(err error) string {
 	return msg
 }
 
-// applyDeliver applies the run's deliver target to the final assistant
-// message. An empty final message (failed or tool-only run) delivers
-// nothing and is logged.
+// applyDeliver applies the run's deliver target to the final assistant message.
 func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 	if strings.TrimSpace(final) == "" {
 		if job.DeliverTarget() != deliverNone {
@@ -699,15 +579,10 @@ func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 			r.logf("job %s: memory updated", job.Name)
 		}
 	default:
-		// new-session: session only.
 	}
 }
 
-// appendDeliverFile appends the run summary to the job's `file`
-// (home-relative), creating directories on demand. An empty file keeps
-// the legacy journal naming (<home>/journal/YYYY-MM-DD.md) - that is
-// the journal alias's exact shape, and the append-to-file default so a
-// job without a file still lands somewhere sane.
+// appendDeliverFile appends the run summary to the job's `file` (home-relative).
 func appendDeliverFile(home string, job Job, when time.Time, final string) error {
 	name := job.File
 	if name == "" {
@@ -727,17 +602,10 @@ func appendDeliverFile(home string, job Job, when time.Time, final string) error
 	return err
 }
 
-// --- catch-up ---
+// catch-up
 
-// catchUp fires missed jobs at startup. For each enabled job: the most
-// recent scheduled time before now is checked against lastFire; a
-// missed fire within the last 24h fires once (state records the missed
-// scheduled time, so a restart before the next scheduled fire does not
-// double-fire). Older missed fires are skipped and logged. A job with
-// no recorded last fire (new or never fired) gets no catch-up. Interval
-// jobs ride the same walk: schedulePrev steps everySchedule.Next
-// minute-by-minute over the window, an interval miss aligns onto the
-// same epoch-minute grid a live fire would have hit.
+// catchUp fires missed jobs at startup. A job with no recorded last fire (new or never
+// fired) gets no catch-up.
 func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 	for _, job := range r.jobsSnapshot() {
 		if !job.IsEnabled() {
@@ -765,11 +633,7 @@ func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 	}
 }
 
-// schedulePrev returns the most recent scheduled occurrence at or
-// before `now` by walking Schedule.Next forward over the last 7 days.
-// robfig Schedule exposes Next only. Seven days is ample: catch-up
-// only fires misses inside 24h, so anything older is skipped anyway.
-// Returns the zero time when no occurrence falls inside the window.
+// schedulePrev returns the most recent scheduled occurrence at or before `now`.
 func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	start := now.Add(-7 * 24 * time.Hour).Truncate(time.Minute)
 	prev := time.Time{}
@@ -785,10 +649,7 @@ func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	return prev
 }
 
-// scheduleFor returns the cron.Schedule a job fires on: the parsed
-// 5-field grammar for kind cron, the epoch-minute interval for kind
-// interval. Both satisfy cron.Schedule, so the live scheduler, the
-// catch-up walk and the next-fire inspector share one mechanism.
+// scheduleFor returns the cron.Schedule a job fires.
 func scheduleFor(job Job) (cron.Schedule, error) {
 	if job.KindResolved() == kindInterval {
 		return everySchedule{minutes: job.Minutes}, nil
@@ -796,13 +657,8 @@ func scheduleFor(job Job) (cron.Schedule, error) {
 	return scheduleParser.Parse(job.Schedule)
 }
 
-// everySchedule fires on minute multiples of N aligned to the epoch:
-// time.Truncate is absolute, so the grid is timezone-independent and
-// restart-stable (a job with minutes: 5 fires at :00, :05, :10 ... on
-// every wall clock whose offset is whole minutes). Implements
-// cron.Schedule - interval jobs are ordinary robfig schedules, nothing
-// in the scheduler knows the kind exists. Next always returns a time
-// STRICTLY after t (the robfig contract).
+// everySchedule fires on minute multiples of N aligned to the epoch. Next always
+// returns a time STRICTLY after t (the robfig contract).
 type everySchedule struct{ minutes int }
 
 func (s everySchedule) Next(t time.Time) time.Time {
@@ -813,10 +669,9 @@ func (s everySchedule) Next(t time.Time) time.Time {
 	return t.Truncate(dur).Add(dur)
 }
 
-// --- scheduling ---
+// scheduling
 
-// scheduleEnabled rebuilds the scheduler from the current job set,
-// scheduling enabled jobs only. Used at startup and on hot reload.
+// scheduleEnabled rebuilds the scheduler from the current job set, scheduling enabled.
 func (r *Runner) scheduleEnabled(ctx context.Context) {
 	c := cron.New(cron.WithParser(scheduleParser))
 	r.mu.Lock()
@@ -827,8 +682,7 @@ func (r *Runner) scheduleEnabled(ctx context.Context) {
 		}
 		run := cron.FuncJob(func() { r.fire(ctx, job, time.Now()) })
 		if job.KindResolved() == kindInterval {
-			// Interval jobs are their own cron.Schedule: the live
-			// scheduler cannot tell the two kinds apart.
+			// Interval jobs are their own cron.Schedule: the live scheduler cannot tell.
 			c.Schedule(everySchedule{minutes: job.Minutes}, run)
 		} else {
 			if _, err := c.AddJob(job.Schedule, run); err != nil {
@@ -854,8 +708,7 @@ func (r *Runner) stopScheduler() {
 	}
 }
 
-// scheduledNames returns the currently scheduled job names (tests and
-// diagnostics).
+// scheduledNames returns the currently scheduled job names (tests and diagnostics).
 func (r *Runner) scheduledNames() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -874,13 +727,8 @@ func (r *Runner) jobsSnapshot() []Job {
 	return append([]Job(nil), r.jobs...)
 }
 
-// Jobs is the read-only inspector snapshot (, card
-// t_db430fea): every job in the current config with its enablement and
-// next fire time in RFC3339 local time, sorted by name. A disabled job
-// and a job whose schedule does not parse (validated at load, so
-// unexpected) report an empty Next. Works before Start - the job set
-// exists the moment the plugin mounts, whether or not the scheduler
-// has been started by the host.
+// Jobs is the read-only inspector snapshot: every job in the current config with its
+// enablement and next fire time in RFC3339 local time, sorted by name.
 func (r *Runner) Jobs() []JobInfo {
 	jobs := r.jobsSnapshot()
 	now := r.now()
@@ -893,9 +741,7 @@ func (r *Runner) Jobs() []JobInfo {
 			Minutes:  j.Minutes,
 			Deliver:  j.DeliverTarget(),
 			Agent:    j.Agent,
-			// the ownership mark, never Agent alone: a main-home job's
-			// authored agent and a wake's owning home both put a name
-			// here (card t_21824d98).
+			// the ownership mark, never Agent alone.
 			AgentOwned: j.IsAgent(),
 			Model:      j.Model,
 			File:       j.File,
@@ -903,9 +749,6 @@ func (r *Runner) Jobs() []JobInfo {
 			Skills:     j.Skills,
 			Enabled:    j.IsEnabled(),
 		}
-		// The last-status fields ride the same snapshot: the record
-		// survives restarts, so a fresh serve still shows the truth
-		// about the previous process's fires.
 		if last, ok := r.outcomeOf(j.StateKey()); ok {
 			row.Last = time.Unix(last.At, 0).Local().Format(time.RFC3339)
 			if last.Ok {
@@ -933,21 +776,16 @@ func (r *Runner) Jobs() []JobInfo {
 	return out
 }
 
-// --- state (cronstate.json) ---
+// state (cronstate.json)
 
-// sweepStaleState is the cronstate.json GC rule (card t_a99ffcd7): a
-// state entry whose key matches no job in the CURRENT declared set -
-// main's crons.yaml plus every agent home's - is a leftover pointing
-// at a removed runtime actor (a deleted roster agent's wake, a job
-// edited out of the file) and gets dropped, logged by name. The sweep
-// is conservative by construction: a job that still declares itself
-// keeps its state whatever its enablement ("never drop a job that
-// still declares itself"), and it only ever runs against a job set
-// that loaded clean (Start's config and applyReload's reload both
-// arrive post-validation; a failed reload keeps the previous jobs and
-// never reaches here). Runs at Start (before catch-up - a stale entry
-// must not drive a phantom catch-up) and on every hot reload (the
-// watcher's poll reaches this the moment an agent home disappears).
+// sweepStaleState is the cronstate.json GC rule. The sweep is conservative by
+// construction: a job that still declares itself keeps its state whatever its
+// enablement ("never drop a job that still declares itself"), and it only ever runs
+// against a job set that loaded clean (Start's config and applyReload's reload both
+// arrive post-validation; a failed reload keeps the previous jobs and never reaches
+// here). Runs at Start (before catch-up - a stale entry must not drive a phantom
+// catch-up) and on every hot reload (the watcher's poll reaches this the moment an
+// agent home disappears).
 func (r *Runner) sweepStaleState() {
 	r.mu.Lock()
 	declared := make(map[string]bool, len(r.jobs))
@@ -987,10 +825,9 @@ func (r *Runner) sweepStaleState() {
 	}
 }
 
-// loadCronState reads cronstate.json. A missing or corrupt file is a
-// fresh state - no catch-up, regular schedule unaffected. The Last map
-// is optional (older state files carry jobs only): absent outcomes
-// read as the job never fired.
+// loadCronState reads cronstate.json. A missing or corrupt file is a fresh state - no
+// catch-up, regular schedule unaffected. The Last map is optional (older state files
+// carry jobs only): absent outcomes read as the job never fired.
 func (r *Runner) loadCronState() {
 	r.mu.Lock()
 	r.lastFire = map[string]int64{}
@@ -1059,11 +896,9 @@ func (r *Runner) outcomeOf(key string) (fireOutcome, bool) {
 	return o, ok
 }
 
-// --- hot reload ---
+// hot reload
 
-// cronFiles returns every crons.yaml this runner owns (card
-// t_72ecca67, ruling 12): the main home's file AND every agent home's
-// config/crons.yaml. The watcher and the reload both walk this list.
+// cronFiles returns every crons.yaml this runner owns.
 func (r *Runner) cronFiles() map[string]string {
 	paths := map[string]string{}
 	if p := homeFile(r.home); p != "" {
@@ -1078,17 +913,8 @@ func (r *Runner) cronFiles() map[string]string {
 	return paths
 }
 
-// watchJobsFile polls every crons.yaml (main + agent homes, ruling 12)
-// for mtime changes and reloads the full job set without restart,
-// logging the diff. Mirrors cmd/omega's WatchConfig pattern (poll, not
-// fsnotify). Two laws keep the previous job set in effect: a reload
-// that fails to parse, and a reload that reads an empty file
-// (loadAllConfigsForReload - a truncated write must never apply as an
-// empty job set, card t_8be45d55). Returns when the context is cancelled
-// or Stop is called.
+// watchJobsFile polls every crons.yaml for mtime changes and reloads the full job set.
 func (r *Runner) watchJobsFile(ctx context.Context) {
-	// The signature is path -> mtime; a new agent home or a new agent
-	// file changes the set, the mtime change changes the value.
 	last := map[string]time.Time{}
 	snapshot := func() map[string]time.Time {
 		now := map[string]time.Time{}
@@ -1137,9 +963,7 @@ func sameMtimes(a, b map[string]time.Time) bool {
 	return true
 }
 
-// applyReload diffs the old job set against the new one, logs it, and
-// reschedules. Removed/disabled jobs stop scheduling immediately; an
-// already-running fire of a removed job finishes naturally.
+// applyReload diffs the old job set against the new one, logs it, and reschedules.
 func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	old := r.jobsSnapshot()
 	r.mu.Lock()
@@ -1160,8 +984,7 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	}
 	for _, j := range newJobs {
 		prev, existed := oldSet[j.StateKey()]
-		// Diff keys are the StateKey: two agents (and main) may carry
-		// the same job name; only a change in the same home logs here.
+		// Diff keys are the StateKey.
 		switch {
 		case !existed:
 			r.logf("reload: job added: %s (%s)", j.StateKey(), j.Schedule)
@@ -1177,24 +1000,20 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 		}
 	}
 
-	// The state GC rule (card t_a99ffcd7): a reload means the declared
-	// set changed - the moment a removed actor's state becomes sweepable.
-	// The watcher's 5s poll makes an agent-home removal reach this path
-	// live (the journey recipe that rm -rf's the home never writes
-	// cronstate.json - the runner owns the file, the runner reaps it).
+	// The state GC rule: a reload means the declared set changed. The watcher's 5s poll
+	// makes an agent-home removal reach this path live (the journey recipe that rm -rf's
+	// the home never writes cronstate.json - the runner owns the file, the runner reaps
+	// it).
 	r.sweepStaleState()
 
 	r.stopScheduler()
 	r.scheduleEnabled(ctx)
-	// The panel refresh rides the same reload: the watcher is the
-	// module's one internal mutation face, so its change pushes the
-	// refreshed jobs panel through the canvas sink (arc 6 push law).
-	// Nil-safe; a failed push never fails the reload - the job set is
-	// already rescheduled, the snapshot is the catch-up.
+	// The panel refresh rides the same reload. Nil-safe; a failed push never fails the
+	// reload - the job set is already rescheduled, the snapshot is the catch-up.
 	r.panels.push()
 }
 
-// --- helpers ---
+// helpers
 
 // sinceStart formats a duration for fire logs.
 func sinceStart(start, end time.Time) string {

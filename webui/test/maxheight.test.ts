@@ -1,10 +1,7 @@
-// omega webui: unit tests for the 60vh max-height sweep - thinking blocks
-// and tool RESULT blocks get the exact codeblock treatment (60vh cap +
-// internal scroll + collapse affordance), tool-call command INPUTS keep
-// their short one-liner voice, and the final assistant answer bubble is
-// never capped. The caps live in main.css and the class split in
-// ToolCallLine.vue, so the tests parse both and pin the rules that make
-// the sweep true. Run: node --test webui/test/ (node >= 23)
+// omega webui: unit tests for the 60vh max-height sweep - thinking blocks and tool
+// RESULT blocks get the exact codeblock treatment (60vh cap + internal scroll +
+// collapse affordance), tool-call command INPUTS keep their short one-liner voice, and
+// the final assistant answer bubble is never capped.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,11 +15,9 @@ const toolcall = readFileSync(
   "utf8",
 );
 
-// Bulk rule extractor: every `selector { body }` block of the sheet as
-// { selectors: string[], body: string }. Depth-aware, so @media/@keyframes
-// wrappers and their inner blocks are paired correctly: at-rule wrappers
-// and their bodies never leak into later selector text. Inner keyframe
-// frames (to/from/%) show up as their own junk rules - harmless.
+// Bulk rule extractor: every `selector { body }` block of the sheet as { selectors.
+// Depth-aware, so @media/@keyframes wrappers and their inner blocks are paired
+// correctly: at-rule wrappers and their bodies never leak into later selector text.
 const RULES: { selectors: string[]; body: string }[] = [];
 {
   let selStart = 0;
@@ -99,9 +94,8 @@ describe("tool result cap", () => {
 });
 
 describe("answer never capped", () => {
-  // The elements the answer flows through. Fenced codeblocks inside .md
-  // cap themselves by design (60vh + internal scroll) - they are not the
-  // pane. Everything else in the chain must grow freely.
+  // The elements the answer flows through. Everything else in the chain must grow
+  // freely.
   const ANSWER_CHAIN = [".messages", ".msg", ".bubble", ".bubble .md"];
 
   it("no rule for the answer's chain declares a max-height", () => {

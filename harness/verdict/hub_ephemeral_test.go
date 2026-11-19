@@ -1,10 +1,6 @@
 package verdict
 
-// Ephemeral-session persistence leak (card t_860033e3, finding 3): a
-// card issued in an `eph-` session must keep BOTH its rows (the issued
-// card and the verdict) out of the store - the eph- lane lives in
-// memory only, and a row under an `eph-` id would be a durable
-// transcript no store read serves and no delete ever cleans.
+// Ephemeral-session persistence leak: a card issued in an `eph-` session must keep.
 
 import (
 	"testing"

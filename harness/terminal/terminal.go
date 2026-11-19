@@ -1,23 +1,5 @@
-// Package terminal implements the terminal module capsule (card
-// t_55a3fc4b, Endo's ruling 2026-11-01): one live shell (pty) per
-// dock pane, streamed to the webui's xterm.js Terminal tab over SSE.
-//
-// TRUST MODEL (the settled ruling - it supersedes the card body's
-// trust paragraphs): NO confirm-gate on open, NO disabled-by-default.
-// The webui terminal is a shell on this box with zero restrictions -
-// Endo's box behind the tailnet. Do not add opt-ins or gates to this
-// module; the owner explicitly rejected them.
-//
-// Lifecycle (VS Code parity, one terminal per pane): the pane's tab
-// claims a session on mount, types into it, streams its output; the
-// shell keeps running while another tab is active (the dock unmounts
-// the outlet, the session idles server-side and a remount reattaches
-// to it). Sessions die by: DELETE (the kill affordance), the cap law
-// (maxSessions - the oldest idle orphan is reaped first), the orphan
-// prune (noOrphanTTL with no subscriber and no activity), or the
-// module's lifecycle stop.
-//
-// Removal proof: TestTerminalRemovalProof (cmd/omega/removal_test.go).
+// Package terminal implements the terminal module capsule. Do not add opt-ins or gates
+// to this module; the owner explicitly rejected them.
 package terminal
 
 import (
@@ -29,43 +11,29 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The hard shapes. maxSessions is the cap law: one terminal per pane
-// was ruled, so more terminals = more panes - four covers the split
-// pane count a screen can plausibly host, and the cap is what stops a
-// reload loop from farming shells.
+// The hard shapes.
 const (
 	maxSessions = 4
-	// SCROLLBACK CAPS (the bounded terminal-runtime rules): the server
-	// owns at most 5,000 lines OR 8 MiB of a shell's output, whichever
-	// hits first, evicting the OLDEST. The bounded history is the
-	// server's truth - the client may show less.
+	// SCROLLBACK CAPS (the bounded terminal-runtime rules).
 	scrollbackMax   = 8 * 1024 * 1024
 	scrollbackLines = 5000
 	// replayTail: the restoration window - a reattach reads ONLY the
 	// bounded tail of the retained history (never the whole thing; the
 	// client may show less than the server keeps).
 	replayTail = 256 * 1024
-	// noOrphanTTL: a session no pane is attached to dies this long
-	// after its last activity - a shell nobody watches and nobody
-	// typed into is an orphan, not state to keep.
+	// noOrphanTTL: a session no pane is attached to dies this long after its last.
 	noOrphanTTL = 15 * time.Minute
 	// pruneEvery: the orphan prune's tick.
 	pruneEvery = time.Minute
-	// subBuffer: SSE frames buffered per attached pane before the
-	// pane counts as stalled (the session keeps running; the stalled
-	// pane reconnects and replays).
+	// subBuffer: SSE frames buffered per attached pane before the pane counts as stalled.
 	subBuffer = 512
-	// maxInput: the input route's body ceiling (a paste, not a file
-	// dump); larger pastes come in chunked frames.
+	// maxInput: the input route's body ceiling (a paste, not a file dump).
 	maxInput = 64 * 1024
 )
 
-// process is the live shell seam a session drives: the pty master on
-// real runs, a pipe pair under test. The handlers never know which
-// side they hold.
+// process is the live shell seam a session drives. The handlers never know which side
+// they hold.
 type process interface {
-	// Read/Write/Close: the master - the server reads shell output
-	// from it and writes keystrokes to it.
 	Read([]byte) (int, error)
 	Write([]byte) (int, error)
 	Close() error
@@ -73,18 +41,15 @@ type process interface {
 	Resize(rows, cols uint16) error
 	// Done closes when the child exited AND its pid is reaped.
 	Done() <-chan struct{}
-	// Kill takes the child down hard (its whole process group).
 	Kill() error
 	// ExitCode is valid only after Done closes.
 	ExitCode() int
 }
 
-// spawnFunc is the spawn seam (real pty on unix, pipe pair under
-// test).
+// spawnFunc is the spawn seam (real pty on unix, pipe pair under test).
 type spawnFunc func(workdir string) (process, error)
 
-// event is one SSE frame source. kind: 'o' shell output (base64 in
-// the frame), 'x' child exit (code in the frame).
+// event is one SSE frame source.
 type event struct {
 	kind byte
 	data []byte
@@ -94,9 +59,6 @@ type event struct {
 // subscription is one attached pane; the writer loop owns its channel.
 type subscription struct {
 	ch chan event
-	// missed: the session dropped this stalled pane - it reconnects
-	// and replays. Own mutex: the publisher sets it under the
-	// session's lock, the SSE handler reads it bare.
 	mu     sync.Mutex
 	missed bool
 }
@@ -117,10 +79,7 @@ func (sub *subscription) checkMissed() bool {
 	return m
 }
 
-// Session is one live shell: the child process, the scrollback buffer
-// (the bounded history), the attached panes. mu guards
-// buf/lines/subs/exited/lastUse and the process handoff; the read and
-// watch loops take it per publish.
+// Session is one live shell.
 type Session struct {
 	id   string
 	proc process
@@ -134,21 +93,13 @@ type Session struct {
 	exitCode  int
 	lastUse   time.Time
 	removed   bool
-	// claimed is the open's ownership mark: Claim sets it while the
-	// pane's stream has not subscribed yet, subscribe() clears it. It
-	// makes the claim/attach gap honest - reattach and the birth of a
-	// fresh spawn both mark under s.mu (the Store's scan reads them
-	// there too), so a second racing pane never takes an owned shell.
+	// claimed is the open's ownership mark. It makes the claim/attach gap honest -
+	// reattach and the birth of a fresh spawn both mark under s.mu (the Store's scan reads
+	// them there too), so a second racing pane never takes an owned shell.
 	claimed bool
 }
 
-// subscribe registers a pane atomically with the replay snapshot: the
-// snapshot and the registration happen under one lock, so no output
-// can appear twice (in the snapshot AND on the channel) and none can
-// fall in the gap. Returns the subscription, the replay tail, and the
-// session's exit state AT THE SNAPSHOT (a pane reattaching to an
-// already-exited shell gets the state directly - the exit broadcast
-// happened in the past, waiting for it would be a 20s silence).
+// subscribe registers a pane atomically with the replay snapshot.
 func (s *Session) subscribe() (*subscription, []byte, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -165,11 +116,10 @@ func (s *Session) subscribe() (*subscription, []byte, bool) {
 	return sub, snap, s.exited
 }
 
-// replayTailOf returns the restoration window: ONLY the bounded tail
-// of the retained history (never the whole scrollback), cut on a
-// codepoint boundary. The replay rides the SSE stream straight to the
-// pane's xterm - nothing here writes to the pty, so the restoration
-// cannot trigger fresh shell replies.
+// replayTailOf returns the restoration window: ONLY the bounded tail of the retained
+// history (never the whole scrollback), cut on a codepoint boundary. The replay rides
+// the SSE stream straight to the pane's xterm - nothing here writes to the pty, so the
+// restoration cannot trigger fresh shell replies.
 func replayTailOf(buf []byte) []byte {
 	if len(buf) > replayTail {
 		buf = buf[len(buf)-replayTail:]
@@ -187,9 +137,8 @@ func (s *Session) unsubscribe(sub *subscription) {
 	s.mu.Unlock()
 }
 
-// publish broadcasts one event to every attached pane. A stalled pane
-// (full buffer) is marked missed and detaches - never blocks the
-// shell, never drops another pane.
+// publish broadcasts one event to every attached pane. A stalled pane (full buffer) is
+// marked missed and detaches - never blocks the shell, never drops another pane.
 func (s *Session) publish(ev event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -206,8 +155,7 @@ func (s *Session) publish(ev event) {
 	}
 }
 
-// readLoop moves shell output into the replay buffer and to the
-// panes. Runs until the master closes (child hangup, Kill, removal).
+// readLoop moves shell output into the replay buffer and to the panes.
 func (s *Session) readLoop() {
 	buf := make([]byte, 32*1024)
 	for {
@@ -221,13 +169,10 @@ func (s *Session) readLoop() {
 	}
 }
 
-// record appends one output chunk. PTY output is INCREMENTAL - chunks
-// append, snapshots are the only materialization boundary (the
-// subscriber's tail copy under subscribe()). The retained history is
-// never echoed back into the pty (the replay path is SSE-only and
-// never touches the writer), so a running interactive program cannot
-// receive its own old output as new input. The session owns the copy -
-// the caller's buffer is scratch.
+// record appends one output chunk. The retained history is never echoed back into the
+// pty (the replay path is SSE-only and never touches the writer), so a running
+// interactive program cannot receive its own old output as new input. The session owns
+// the copy - the caller's buffer is scratch.
 func (s *Session) record(chunk []byte) {
 	chunkCopy := make([]byte, len(chunk))
 	copy(chunkCopy, chunk)
@@ -244,13 +189,11 @@ func (s *Session) record(chunk []byte) {
 	s.publish(event{kind: 'o', data: chunkCopy})
 }
 
-// trimLocked enforces the scrollback caps (5,000 lines OR 8 MiB,
-// whichever hits first). The OLDEST output evicts, and an eviction
-// never cuts a UTF-8 codepoint: byte evictions skip the continuation
-// bytes (\x80..\xBF land mid-codepoint by construction), line
-// evictions cut after a '\n' - 0x0A is one of the few bytes that never
-// appears inside a multi-byte sequence, so a line boundary is always a
-// codepoint boundary.
+// trimLocked enforces the scrollback caps (5,000 lines OR 8 MiB, whichever hits first).
+// The OLDEST output evicts, and an eviction never cuts a UTF-8 codepoint: byte
+// evictions skip the continuation bytes (\x80.\xBF land mid-codepoint by construction),
+// line evictions cut after a '\n' - 0x0A is one of the few bytes that never appears
+// inside a multi-byte sequence, so a line boundary is always a codepoint boundary.
 func (s *Session) trimLocked() {
 	if over := len(s.buf) - scrollbackMax; over > 0 {
 		s.lines -= bytes.Count(s.buf[:over], []byte{'\n'})
@@ -306,8 +249,7 @@ func (s *Session) remove() {
 	_ = s.proc.Close()
 }
 
-// write moves one input frame into the shell (an exited shell
-// refuses - the Gone at the wire). Touches lastUse: typing is life.
+// write moves one input frame into the shell.
 func (s *Session) write(b []byte) (int, error) {
 	s.mu.Lock()
 	if s.removed {
@@ -324,8 +266,7 @@ func (s *Session) write(b []byte) (int, error) {
 	return n, err
 }
 
-// resize sets the shell's window (the pane's ResizeObserver). Resizing
-// an exited shell is nothing to do - the refusal is the Gone.
+// resize sets the shell's window (the pane's ResizeObserver).
 func (s *Session) resize(rows, cols uint16) error {
 	s.mu.Lock()
 	if s.removed {
@@ -372,8 +313,7 @@ func NewStore(spawn spawnFunc, workdir string, now func() time.Time) *Store {
 	}
 }
 
-// Start arms the orphan prune (the lifecycle handle's start - Mount
-// starts nothing, the host StartAll does). Stop ends it.
+// Start arms the orphan prune.
 func (st *Store) Start() {
 	go func() {
 		t := time.NewTicker(pruneEvery)
@@ -389,12 +329,10 @@ func (st *Store) Start() {
 	}()
 }
 
-// Stop ends the prune and kills every session (the lifecycle fence:
-// the dismount kills its shells).
+// Stop ends the prune and kills every session.
 func (st *Store) Stop() error {
 	select {
 	case <-st.stop:
-		// already stopped
 	default:
 		close(st.stop)
 	}
@@ -412,28 +350,19 @@ func (st *Store) Stop() error {
 	return nil
 }
 
-// Claim hands out a session: the newest live one with no attached
-// pane (a pane remounting after a sibling-tab switch or a page
-// reload reattaches to its previous shell), else a fresh spawn. The
-// scan, the mark and the spawn ride one lock: reattach claims mark
-// the session taken (fresh spawns are born taken) and the pane's
-// stream subscribe clears the mark later - so two panes racing Open
-// never take the same shell, even though subscribe happens after the
-// lock comes off. The bool is the claim report: false = freshly
-// spawned, true = reattached.
-//
-// workdir is the SPAWN workspace (card t_62d72028): the claim's
-// caller resolves it (session workspace, else the default_workspace
-// knob, else "" - the construction fallback, omega's process cwd).
-// A reattach ignores it: the shell already lives, its cwd is the
-// user's state, never rewritten under them.
+// Claim hands out a session. The scan, the mark and the spawn ride one lock: reattach
+// claims mark the session taken (fresh spawns are born taken) and the pane's stream
+// subscribe clears the mark later - so two panes racing Open never take the same shell,
+// even though subscribe happens after the lock comes off. workdir is the SPAWN
+// workspace: the claim's caller resolves it (session workspace, else the
+// default_workspace knob, else "" - the construction fallback, omega's process cwd). A
+// reattach ignores it: the shell already lives, its cwd is the user's state, never
+// rewritten under them.
 func (st *Store) Claim(workdir string) (*Session, bool, error) {
 	if workdir == "" {
 		workdir = st.workdir
 	}
 	st.mu.Lock()
-	// reattach: newest live session with zero subscribers and no
-	// standing claim
 	for i := len(st.order) - 1; i >= 0; i-- {
 		s := st.sessions[st.order[i]]
 		if s == nil {
@@ -451,7 +380,6 @@ func (st *Store) Claim(workdir string) (*Session, bool, error) {
 		}
 	}
 
-	// cap law: kill the oldest idle orphan, else the oldest session
 	for len(st.sessions) >= maxSessions {
 		victim := st.reapCandidateLocked()
 		if victim == nil {
@@ -484,12 +412,8 @@ func (st *Store) Claim(workdir string) (*Session, bool, error) {
 	return s, false, nil
 }
 
-// reapCandidateLocked picks the cap law's victim: the oldest exited
-// session first (a dead shell holds only a replay buffer), then the
-// oldest with no subscribers (an idle shell nobody owns). Live
-// attached sessions are the panes' shells - NEVER reaped silently;
-// nothing reapable = the cap refusal. The want funcs read under
-// s.mu: watchLoop and remove write exited/removed there.
+// reapCandidateLocked picks the cap law's victim. Live attached sessions are the panes'
+// shells - NEVER reaped silently; nothing reapable = the cap refusal.
 func (st *Store) reapCandidateLocked() *Session {
 	for _, want := range []func(*Session) bool{
 		func(s *Session) bool {
@@ -533,7 +457,7 @@ func (st *Store) Get(id string) *Session {
 	return st.sessions[id]
 }
 
-// Drop removes one session (DELETE route). Missing = no-op report.
+// Drop removes one session (DELETE route).
 func (st *Store) Drop(id string) bool {
 	st.mu.Lock()
 	s := st.sessions[id]
@@ -577,11 +501,7 @@ func (st *Store) List() []listing {
 	return out
 }
 
-// prune reaps orphans: exited or unattached sessions idle past the
-// TTL. A live untouched session also goes - nobody subscribed and
-// nobody typed for noOrphanTTL is the orphan shape for a running
-// shell too (the pane that owned it vanished; when it comes back it
-// spawns fresh, which is honest).
+// prune reaps orphans: exited or unattached sessions idle past the TTL.
 func (st *Store) prune() {
 	cutoff := st.now().Add(-noOrphanTTL)
 	st.mu.Lock()
@@ -607,8 +527,7 @@ func (st *Store) prune() {
 	}
 }
 
-// capError is the spawn refusal past the cap with nothing reapable
-// (four live attached sessions - the panes own them). 409 at the wire.
+// capError is the spawn refusal past the cap with nothing reapable.
 type capError struct{ live int }
 
 func (e *capError) Error() string {

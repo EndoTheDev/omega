@@ -14,11 +14,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// testLoop is a minimal LoopProvider for agent tests. It mirrors the
-// real loop's behavior for the cases the agent package tests exercise:
-// stream provider responses, execute tool calls, feed results back.
-// The real loop lives in agent/loop/ — this is a test-only
-// copy that avoids an import cycle.
+// testLoop is a minimal LoopProvider for agent tests.
 type testLoop struct{}
 
 func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
@@ -97,7 +93,6 @@ func (testLoop) Run(ctx context.Context, opts LoopOptions) error {
 		}
 
 		if streamErr != "" {
-			// Overflow retry: one compaction + retry.
 			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < 1 && content.Len() == 0 {
 				overflowRetries++
 				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
@@ -270,17 +265,12 @@ type sessionRecordingAgent struct {
 	tools   map[string]core.Tool
 }
 
-// TestRunWithProviderAttributesTheSinkSession pins the session
-// attribution default (card t_e203c2f6): a run persisting through a
-// store turn sink carries that session id in its run context even when
-// the host never wrapped WithSessionID (cron fires, `omega run
-// --session`), so every run-attributed record - the approval gate's
-// evidence ledger first - names the session. A host that DID wrap one
-// wins over the sink.
+// TestRunWithProviderAttributesTheSinkSession pins the session attribution default: a
+// run persisting through a store turn sink carries that session id in its run context
+// even when the host never wrapped WithSessionID (cron fires, `omega run --session`),
+// so every run-attributed record - the approval gate's evidence ledger first - names
+// the session.
 func TestRunWithProviderAttributesTheSinkSession(t *testing.T) {
-	// A fresh provider per subcase: FakeProviderScripts advance their
-	// script per Stream call, so a shared instance would replay the
-	// tool-call script only for the first agent.
 	newProvider := func() *FakeProvider {
 		return NewFakeProviderScripts("fake",
 			[]core.ProviderStreamEvent{
@@ -316,7 +306,6 @@ func TestRunWithProviderAttributesTheSinkSession(t *testing.T) {
 		t.Fatalf("run context session = %q, want the sink's session id cron-sess-42", rec1.session)
 	}
 
-	// A host that wraps the session itself wins over the sink.
 	rec2 := rec()
 	ag2 := newTestAgent(newProvider(), rec2.tools, 0)
 	ctx2 := WithSessionID(WithTurnSink(context.Background(), NewStoreTurnSink(fakeStore{}, "sink-sess-43", "")), "host-sess-44")
@@ -325,8 +314,6 @@ func TestRunWithProviderAttributesTheSinkSession(t *testing.T) {
 		t.Fatalf("run context session = %q, want the host-wrapped host-sess-44", rec2.session)
 	}
 
-	// A run with no sink and no wrap stays unattributed - honest:
-	// a one-shot run has no session to name.
 	rec3 := rec()
 	ag3 := newTestAgent(newProvider(), rec3.tools, 0)
 	collect(t, ag3.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
@@ -356,9 +343,7 @@ func TestRunMaxTurnsCap(t *testing.T) {
 	}
 }
 
-// TestSetMaxTurnsGoesLive (card t_f78acfd6, the probe verdict): the
-// loop re-reads the cap per Run, so a live SetMaxTurns flip applies at
-// the next run - the same agent instance, no rebuild.
+// TestSetMaxTurnsGoesLive: the loop re-reads the cap per Run, so a live SetMaxTurns.
 func TestSetMaxTurnsGoesLive(t *testing.T) {
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
@@ -411,8 +396,6 @@ func TestRunNoSystemPromptWithoutExtensions(t *testing.T) {
 	agent := newTestAgent(provider, nil, 0)
 	collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil))
 
-	// With no extensions loaded, no system prompt is prepended.
-	// The agent sees only the user message.
 	if len(provider.LastMessages) != 1 {
 		t.Fatalf("messages = %d, want 1 (user only, no system prompt)", len(provider.LastMessages))
 	}
@@ -576,7 +559,6 @@ func TestRunToolExecutionLifecycle(t *testing.T) {
 	events := collect(t, agent.Run(context.Background(), []core.Message{core.NewUser("go")}, nil))
 
 	// The tool result must be appended to the history fed to the second turn.
-	// LastMessages holds the messages from the most recent (second) Stream call.
 	var found bool
 	for _, m := range provider.LastMessages {
 		if tr, ok := m.(core.ToolResult); ok && tr.ToolCallID == "c1" && tr.Content == "x" && !tr.IsError {
@@ -643,8 +625,8 @@ func TestRunConcurrentPromptRejection(t *testing.T) {
 		t.Fatal("first Run() returned nil, want a live channel")
 	}
 
-	// Second Run() while the first is active must spawn too - a nil
-	// here used to hang a server goroutine ranging over the channel.
+	// Second Run while the first is active must spawn too - a nil here used to hang a
+	// server goroutine ranging over the channel.
 	second := agent.Run(context.Background(), []core.Message{core.NewUser("again")}, nil)
 	if second == nil {
 		t.Fatal("second Run() returned nil, want a live channel")
@@ -667,8 +649,7 @@ func TestRunErrorBodyPassthrough(t *testing.T) {
 	}
 }
 
-// compactionConfig returns a config with a small budget so tests can
-// trigger compaction with short histories.
+// compactionConfig returns a config with a small budget so tests can trigger.
 func compactionConfig() *CompactionConfig {
 	return &CompactionConfig{
 		Enabled:       true,
@@ -679,8 +660,7 @@ func compactionConfig() *CompactionConfig {
 	}
 }
 
-// bigHistory returns 20 user messages of 20 chars each: 400 chars = 100
-// tokens, well over the 50-token budget.
+// bigHistory returns 20 user messages of 20 chars.
 func bigHistory() []core.Message {
 	history := make([]core.Message, 0, 20)
 	for i := 0; i < 20; i++ {
@@ -744,8 +724,6 @@ func TestRunCompactionDisabled(t *testing.T) {
 }
 
 func TestRunCompactionErrorPropagates(t *testing.T) {
-	// The first Stream call (the turn) succeeds; the second (the
-	// summarize call inside compact) fails.
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
@@ -766,8 +744,6 @@ func TestRunCompactionErrorPropagates(t *testing.T) {
 }
 
 func TestRunOverflowTriggersRetry(t *testing.T) {
-	// First call overflows; second call succeeds. Small history so the
-	// threshold compaction does not consume the first script.
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
@@ -830,8 +806,7 @@ func TestRunOverflowNonOverflowErrorNoRetry(t *testing.T) {
 }
 
 func TestRunOverflowRetryCap(t *testing.T) {
-	// Two overflow scripts then success; the retry cap (1) must surface
-	// the second overflow as an error.
+	// Two overflow scripts then success; the retry cap (1) must surface the second.
 	provider := NewFakeProviderScripts("fake",
 		[]core.ProviderStreamEvent{
 			core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "maximum context length exceeded"},
@@ -887,9 +862,7 @@ func TestRunOverflowNoRetryAfterContent(t *testing.T) {
 	}
 }
 
-// modelRecorder is an Provider stub whose WithModel copies share one
-// recording sink. Each Stream call records the receiving copy's model
-// name, so a test can assert which model served which run.
+// modelRecorder is an Provider stub whose WithModel copies share one recording sink.
 type modelRecorder struct {
 	sink      *modelRecord
 	modelName string
@@ -940,9 +913,7 @@ func (p *modelRecorder) WithModel(model string) Provider {
 	return &cp
 }
 
-// TestConcurrentRunsServeTheirOwnModel pins the concurrency contract:
-// two runs started at the same time with different WithModel copies each
-// stream their own model - a per-run copy, not shared mutable state.
+// TestConcurrentRunsServeTheirOwnModel pins the concurrency contract.
 func TestConcurrentRunsServeTheirOwnModel(t *testing.T) {
 	sink := &modelRecord{}
 	base := &modelRecorder{sink: sink, modelName: "base-model", delay: 20 * time.Millisecond}
@@ -971,9 +942,8 @@ func TestConcurrentRunsServeTheirOwnModel(t *testing.T) {
 	}
 }
 
-// TestRunNonNilWhileRunActive pins the regression: Run used to return
-// nil when a run was active, and a server goroutine ranging over the nil
-// channel hung forever.
+// TestRunNonNilWhileRunActive pins the regression: Run used to return nil when a run
+// was active, and a server goroutine ranging over the nil channel hung forever.
 func TestRunNonNilWhileRunActive(t *testing.T) {
 	sink := &modelRecord{}
 	p := &modelRecorder{sink: sink, modelName: "m", delay: 50 * time.Millisecond}

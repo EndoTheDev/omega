@@ -12,8 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// tinyPNG is a 1x1 red PNG payload (base64) - a stable, real image
-// body for caption-key tests.
+// tinyPNG is a 1x1 red PNG payload (base64).
 const tinyPNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 
 // captionScript is what the vision model streams for one image.
@@ -114,9 +113,8 @@ func (p *countingProvider) lastMessages() []core.Message {
 	return p.seen.messages[len(p.seen.messages)-1]
 }
 
-// Two turns carrying the SAME image caption it ONCE: turn 1 computes
-// and persists, turn 2 is a memo hit - the vision model is never called
-// again (the card's caption-once gate).
+// Two turns carrying the SAME image caption it ONCE: turn 1 computes and persists, turn
+// 2 is a memo hit - the vision model is never called again.
 func TestCaptionOnceAcrossTurns(t *testing.T) {
 	main := newCountingProvider("main", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
 	ag := agent.NewAgent(main, nil, 0)
@@ -143,9 +141,7 @@ func TestCaptionOnceAcrossTurns(t *testing.T) {
 	}
 }
 
-// The main model sees the caption as text: loop input carries
-// "[image: Red.]" with the binary stripped, and the caption prompt went
-// through the vision model, not the main one.
+// The main model sees the caption as text.
 func TestCaptionRouting(t *testing.T) {
 	main := newCountingProvider("main", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
 	vision := newCountingProvider("gemma4:31b", captionScript...)
@@ -178,10 +174,8 @@ func TestCaptionRouting(t *testing.T) {
 	}
 }
 
-// The persisted caption survives a restart: a fresh Captioner (no
-// process memo) with the same store is a store hit - the vision model
-// is never re-called. This is the card's "store shows the cached
-// caption" gate.
+// The persisted caption survives a restart: a fresh Captioner (no process memo) with
+// the same store is a store hit - the vision model is never re-called.
 func TestCaptionStoreHitSurvivesRestart(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -197,7 +191,6 @@ func TestCaptionStoreHitSurvivesRestart(t *testing.T) {
 	if vision.callCount() != 1 {
 		t.Fatalf("vision calls = %d, want 1", vision.callCount())
 	}
-	// "Restart": fresh captioner, same store. Zero new calls.
 	restarted := NewCaptioner(newCountingProvider("gemma4:31b", captionScript...), "gemma4:31b", st, nil)
 	got, err := restarted.Caption(context.Background(), testImage())
 	if err != nil || got != "Red." {
@@ -210,8 +203,7 @@ func TestCaptionStoreHitSurvivesRestart(t *testing.T) {
 	}
 }
 
-// The captioner memoizes within a process: repeat Caption calls hit the
-// memo, one vision call total.
+// The captioner memoizes within a process.
 func TestCaptionerMemoizes(t *testing.T) {
 	vision := newCountingProvider("vision-fake", captionScript...)
 	c := NewCaptioner(vision, "vision-fake", nil, nil)
@@ -239,8 +231,7 @@ func TestCaptionerVisionFailure(t *testing.T) {
 	}
 }
 
-// ImageID is content-addressed: same bytes share an id, any difference
-// (payload or media type) splits it.
+// ImageID is content-addressed.
 func TestImageIDIsContentAddressed(t *testing.T) {
 	a := ImageID(testImage())
 	b := ImageID(core.ImageContent{MediaType: "image/png", Base64: tinyPNG})
@@ -253,9 +244,7 @@ func TestImageIDIsContentAddressed(t *testing.T) {
 	}
 }
 
-// imageCallModels names the model behind every Stream call whose
-// messages carried an image - i.e. the caption calls, by shape (the
-// main-model turn sees the captioned copy with the binary stripped).
+// imageCallModels names the model behind every Stream call whose messages carried.
 func (p *countingProvider) imageCallModels() []string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -278,11 +267,8 @@ func secondImage() core.ImageContent {
 	return core.ImageContent{MediaType: "image/png", Base64: tinyPNG + "A"}
 }
 
-// The "default" aux lane (card t_df46c8cf) follows the model the RUN
-// serves: set vision_model to "default", run with model A, switch the
-// main model to B, and the next caption goes through B - no config write,
-// no resolved-and-frozen value. The composer's chip reaches the run as a
-// per-request provider copy, which is exactly RunWithProvider's seam.
+// The "default" aux lane follows the model the RUN serves. The composer's chip reaches
+// the run as a per-request provider copy, which is exactly RunWithProvider's seam.
 func TestCaptionDefaultFollowsMainModel(t *testing.T) {
 	main := newCountingProvider("model-a", captionScript...)
 	ag := agent.NewAgent(main, nil, 0)
@@ -292,7 +278,6 @@ func TestCaptionDefaultFollowsMainModel(t *testing.T) {
 	first := core.NewUserWithImages("a", []core.ImageContent{testImage()})
 	for range ag.Run(context.Background(), []core.Message{first}, nil) {
 	}
-	// The chip moves to model B: the channel derives the per-request copy.
 	second := core.NewUserWithImages("b", []core.ImageContent{secondImage()})
 	for range ag.RunWithProvider(context.Background(), main.WithModel("model-b"), []core.Message{second}, nil) {
 	}
@@ -302,8 +287,7 @@ func TestCaptionDefaultFollowsMainModel(t *testing.T) {
 	}
 }
 
-// Outside a run there is no main model to follow: the "default" lane
-// falls back to the base provider's own model rather than failing.
+// Outside a run there is no main model to follow.
 func TestCaptionDefaultOutsideRunUsesBaseModel(t *testing.T) {
 	base := newCountingProvider("host-default", captionScript...)
 	c := NewCaptioner(base, DefaultAuxModel, nil, nil)
@@ -316,8 +300,7 @@ func TestCaptionDefaultOutsideRunUsesBaseModel(t *testing.T) {
 	}
 }
 
-// A pinned vision_model keeps its pin: the run's own provider never leaks
-// into a lane the operator named explicitly.
+// A pinned vision_model keeps its pin: the run's own provider never leaks into a lane.
 func TestCaptionPinnedModelIgnoresRunModel(t *testing.T) {
 	main := newCountingProvider("model-a", captionScript...)
 	vision := newCountingProvider("vision-pinned", captionScript...)

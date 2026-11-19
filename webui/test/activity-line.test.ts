@@ -1,8 +1,4 @@
-// omega webui: unit tests for the activity line's phase derivation
-// (card t_e9baac4b) - the line above the composer narrates the run
-// from the transcript + the busy gate, purely: activityPhase() has no
-// state, no clock, no host. The component adds only the ticking meter.
-// Run: node --test webui/test/ (node >= 23 runs TS)
+// omega webui: unit tests for the activity line's phase derivation.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { activityPhase } from "../app/composables/chat.ts";
@@ -40,7 +36,6 @@ describe("activityPhase (card t_e9baac4b)", () => {
   it("idle: null - the line is hidden entirely", () => {
     const items = [user("hi"), thinking("..."), assistant("hello")];
     assert.equal(activityPhase(items, false), null);
-    // even a transcript with leftover running items
     const dead = [user("hi"), tool("web.search", "running")];
     assert.equal(activityPhase(dead, false), null);
   });
@@ -89,7 +84,6 @@ describe("activityPhase (card t_e9baac4b)", () => {
   });
 
   it("streaming thinking after a resolved tool outranks nothing stale", () => {
-    // post-tool thinking (the model re-deliberates before its next move)
     const items = [user("hi"), tool("web.search", "done"), thinking("so,", true)];
     assert.deepEqual(activityPhase(items, true), {
       key: "thinking",

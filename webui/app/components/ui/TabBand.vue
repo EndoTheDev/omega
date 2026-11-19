@@ -1,27 +1,17 @@
 <template>
-  <!-- omega webui: THE UNIVERSAL PANEL TOP BAR (card t_308e6d9b, Endo's
-       design directive 2026-10-30: the Files explorer's header band is the
-       contract for EVERY tab). One shared component (the Icon tier -
-       components/ui/), each tab composes it - no copy-paste band per tab.
-       Band = the tab's title left, the tab's actions right; tabs with no
-       actions still get the band. NON-SCROLLING BY STRUCTURE: the band
-       renders BEFORE the tab's scroll body (never inside the scrollport -
-       the t_c252b9c6 lesson; CSS sticky inside a scroll body is the flimsy
-       cousin) so scrolling never moves it. Geometry rides the Files-band
-       contract (t_5c660a42: the 14px lead-in clears the -8px r-pane tuck;
-       the tree rows' ~22px rhythm). Deletability: remove this file and
-       every band is gone - the per-tab usage IS the feature. -->
+  <!--
+    omega webui: THE UNIVERSAL PANEL TOP BAR.
+    NON-SCROLLING BY STRUCTURE: the band renders BEFORE the tab's scroll body so
+    scrolling never moves it.
+    Geometry rides the Files-band contract.
+  -->
   <header
     class="tab-band"
     :class="{ flush: lead === false }">
     <span
       class="tab-band-title"
       :title="titleAttr ?? undefined">{{ title }}</span>
-    <!-- the LEAD seat (0.17.3 make-over, the kanban board selector): a
-         tab whose title NAMES a thing the user picks from (the board the
-         panel is showing) puts that control beside the title, where the
-         identity lives, and keeps the destructive actions far right. No
-         tab that does not fill the slot renders anything for it. -->
+    <!-- the LEAD seat (0.17.3 make-over, the kanban board selector). -->
     <div
       v-if="$slots.lead"
       class="tab-band-lead">
@@ -32,19 +22,17 @@
       class="tab-band-actions"
       role="toolbar"
       :aria-label="title + ' actions'">
-      <!-- the parent's buttons carry their own aria-labels; the shared
-           .band-tool look is the files-tool contract (t_a5f9d185) -->
+      <!--
+        the parent's buttons carry their own aria-labels; the shared.band-tool look is
+        the files-tool contract
+      -->
       <slot />
     </div>
   </header>
 </template>
 
 <script setup lang="ts">
-  // `title` = what the tab is (the registry's display voice - title per
-  // tab body, not per tab chip). `titleAttr` = the Files band's tooltip
-  // (the resolved root) - omit elsewhere. `lead=false` for a host that
-  // supplies its own top padding (Settings' 16px pane card): the tuck
-  // clear-out is the host's there, not the band's.
+  // `title` = what the tab is.
   withDefaults(
     defineProps<{
       title: string;
@@ -61,9 +49,11 @@
     align-items: center;
     justify-content: space-between;
     gap: 4px;
-    /* min-height, not height: a band action taller than the row (the
-       settings filter, the insights window select) grows the row instead
-       of clipping; the Files geometry below is exactly what renders there */
+    /*
+     * min-height, not height: a band action taller than the row (the settings filter,
+     * the insights window select) grows the row instead of clipping; the Files geometry
+     * below is exactly what renders there / /
+     */
     min-height: 22px;
     margin-top: 14px;
     padding: 0 8px;
@@ -87,10 +77,7 @@
     gap: 2px;
     flex-shrink: 0;
   }
-  /* the lead seat sits BETWEEN the title and the actions, and it is what
-     eats the free space: title + lead stay left as a pair, the actions stay
-     right (justify-content: space-between would otherwise spread all three
-     apart). */
+  /* the lead seat sits BETWEEN the title and the actions, and it is what eats the. */
   .tab-band-lead {
     display: flex;
     align-items: center;
@@ -98,10 +85,9 @@
     min-width: 0;
     flex: 1 1 auto;
   }
-  /* the ONE action-button look: FilesTab's files-tool contract promoted
-     to the band vocabulary - dimmed at rest, hover raises, disabled 0.4.
-     The LEAD seat's controls carry the same look (the kanban rename
-     save/cancel pair lives there). */
+  /*
+   * the ONE action-button look: FilesTab's files-tool contract promoted to the band.
+   */
   .tab-band-actions :deep(.band-tool),
   .tab-band-lead :deep(.band-tool) {
     display: inline-flex;
@@ -117,13 +103,9 @@
     font-family: var(--mono);
     font-size: 12px;
   }
-  /* card t_529628d5: the compact SEARCH SEAT, the AppSidebar's
-     t_7ee0a673 pattern promoted here (one definition, the band-tool
-     vocabulary - the five registry tabs + the sidebar seat through it).
-     The seat keeps the shared SearchInput look but with the band-tool
-     vertical rhythm: the shared 5px padding would grow the band past
-     the 22px law. Empty query = the full list; the input itself seats
-     in-band (no icon-expander). */
+  /*
+   * the compact SEARCH SEAT, the AppSidebar's pattern promoted here.
+   */
   .tab-band-actions :deep(.band-search) {
     width: 128px;
     min-width: 96px;
@@ -132,11 +114,10 @@
   .tab-band-actions :deep(.band-search .search-input input) {
     padding: 2px 20px 2px 6px;
   }
-  /* the Narrow-pane adaptation, self-measuring: the band only WRAPS
-     when its single row cannot hold title + seat (flex-wrap is idle
-     while anything fits, so wide panes keep the exact one-row 22px
-     geometry - the sessions card's measured stack without JS, and the
-     128px-pane wall demands the stack before anything clips). */
+  /*
+   * the Narrow-pane adaptation, self-measuring: the band only WRAPS when its single row
+   * cannot hold title + seat.
+   */
   .tab-band:has(.band-search) {
     flex-wrap: wrap;
     row-gap: 4px;

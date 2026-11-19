@@ -30,42 +30,22 @@ import (
 	"time"
 )
 
-// Config holds the runtime configuration. It is loaded from
-// config.yaml, then overridden by environment variables, then defaults
-// are applied for anything still unset.
 type Config struct {
 	Provider ProviderConfig `yaml:"provider"`
-	// Providers is the PRE-MERGE top-level instances map (card
-	// t_7dcd4280). It is a DECODE-ONLY shape since the instances merge
-	// (card t_bf21ee07): Config.UnmarshalYAML folds every entry into
-	// provider.instances and nils the map, so a deployed config.yaml
-	// keeps loading while the next save writes the one list. Nothing
-	// outside the fold may read this field.
 	Providers    map[string]legacyProviderConfig `yaml:"providers,omitempty"`
 	Server       ServerConfig                    `yaml:"server"`
 	Store        StoreConfig                     `yaml:"store"`
 	Compaction   agent.CompactionConfig          `yaml:"compaction"`
 	SystemPrompt string                          `yaml:"system_prompt"`
-	// VisionModel is the auxiliary captioner (vision_model knob): when
-	// set, image-carrying user messages are described once with this
-	// model and the main model sees the caption as text. The special
-	// value "default" (provider.DefaultAuxModel) follows whichever
-	// model the current run serves - the composer's chip at caption
-	// time - and persists as the literal word, never a frozen model
-	// name. Empty keeps today's behavior - images ride to the main
-	// provider and a model that cannot see them fails loudly.
+	// VisionModel is the auxiliary captioner (vision_model knob). The special value
+	// "default" (provider.DefaultAuxModel) follows whichever model the current run serves
+	// - the composer's chip at caption time - and persists as the literal word, never a
+	// frozen model name. Empty keeps today's behavior - images ride to the main provider
+	// and a model that cannot see them fails loudly.
 	VisionModel string `yaml:"vision_model"`
-	// TitleModel is the auxiliary title generator (title_model knob):
-	// maybeTitleSession's cheap calls (provisional + final) route
-	// through it when set. Empty = the main model (today's behavior).
 	TitleModel string `yaml:"title_model"`
-	// The four per-subsystem model slots (card t_fc0b2f2d): provider
-	// settings assigns one named model per subsystem - compaction,
-	// summarizer, skills curator, approval gate - and the four call
-	// sites resolve it through agent.ParseModelSlot (the
-	// "instance:model" grammar; empty = the consumer's default). The
-	// schema keys ride the provider group (provider.*_model),
-	// mirroring vision_model / title_model: top-level knobs, one
+	// The four per-subsystem model slots. The schema keys ride the provider group
+	// (provider.*_model), mirroring vision_model / title_model: top-level knobs, one
 	// settings home, no per-section duplicates.
 	CompactionModel string            `yaml:"compaction_model"`
 	SummarizerModel string            `yaml:"summarizer_model"`
@@ -82,39 +62,18 @@ type Config struct {
 	Continuous      continuous.Config `yaml:"continuous"`
 	Approvals       ApprovalConfig    `yaml:"approvals"`
 	Process         ProcessConfig     `yaml:"process"`
-	// Disabled is the config.yaml `disabled:` toggle fold (v0.12 E1,
-	// grill Q1; home moved from the omega.json sidecar to this key in
-	// the v0.13 shell law 3 - the sidecar folds at boot). v0.14.1
-	// keyfolds it: one key, one namespace per registry (modules keeps
-	// the capsule toggle list the mount machinery owns; skills, tools,
-	// agents are the registry-browser lists). A pre-v0.14 flat list
-	// (the shape every earlier boot wrote) unmarshals into the modules
-	// namespace - older config.yaml keeps meaning the same thing.
 	Disabled DisabledNamespaces `yaml:"disabled"`
 
-	// agentName and agentToggles are the applied agent layer's runtime
-	// facts, never config file state (unexported: yaml.Marshal skips
-	// them, so a settings save can never persist them). ApplyAgentLayer
-	// sets both for a secondary agent home; newAgent then intersects the
-	// enabled set with the plugin catalog to mount the ALWAYS OFF set
-	// (0.17.3 make-over, card t_f47319d2). Empty agentName = no agent
-	// scope (main, the CLI, a module subcommand).
+	// agentName and agentToggles are the applied agent layer's runtime facts, never config
+	// file state (unexported: yaml.Marshal skips them, so a settings save can never
+	// persist them).
 	agentName    string
 	agentToggles []string
-	// agentSkillsAllow/agentSkillsAllowSet are the applied layer's
-	// explicit skills allowlist. The SET flag is what makes an empty
-	// list mean NO skills (a secondary agent's always-off default)
-	// rather than "every skill" (main's own mount).
 	agentSkillsAllow    []string
 	agentSkillsAllowSet bool
 }
 
-// UnmarshalYAML decodes the document over whatever value the caller
-// already holds (LoadConfig starts from DefaultConfig, so an absent key
-// keeps its default) and then folds the pre-merge provider shapes into
-// the one instances list (card t_bf21ee07). Every reader of a
-// config.yaml therefore sees the merged shape, and the first save
-// writes it.
+// UnmarshalYAML decodes the document over whatever value the caller already holds.
 func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	// The alias type carries no UnmarshalYAML, so this cannot recurse.
 	type plain Config
@@ -128,11 +87,6 @@ func (c *Config) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// foldLegacyProviders merges the pre-merge top-level `providers:` map
-// (card t_7dcd4280) into provider.instances and drops the map, so a
-// deployed config.yaml keeps loading while the merged list becomes the
-// only shape code reads. A same-named merged row wins: the list is the
-// newer shape.
 func (c *Config) foldLegacyProviders() {
 	if len(c.Providers) == 0 {
 		return
@@ -157,12 +111,9 @@ func (c *Config) foldLegacyProviders() {
 	c.Providers = nil
 }
 
-// DisabledNamespaces is the config.yaml `disabled:` fold shape: one
-// top-level key, one namespace per registry. The mount machinery owns
-// modules (the catalog list boot's filterDisabled reads); skills,
-// tools, and agents are file/folder registries the host filters at
-// their own seams. An all-off namespace is never written: an empty
-// list carries no state, and an all-empty key carries none at all.
+// DisabledNamespaces is the config.yaml `disabled:` fold shape. An all-off namespace is
+// never written: an empty list carries no state, and an all-empty key carries none at
+// all.
 type DisabledNamespaces struct {
 	Modules    []string `yaml:"modules"`
 	SkillNames []string `yaml:"skills"`
@@ -170,11 +121,9 @@ type DisabledNamespaces struct {
 	Agents     []string `yaml:"agents"`
 }
 
-// empty reports whether every namespace is nil. Slices make the struct
-// non-comparable, so the writer asks instead of comparing. The skills
-// namespace guards early-return so its scrub deletes a whole statement
-// block, never a boolean operand inside the return expression
-// (nm-purity scrub shape).
+// empty reports whether every namespace is nil. The skills namespace guards
+// early-return so its scrub deletes a whole statement block, never a boolean operand
+// inside the return expression (nm-purity scrub shape).
 func (d DisabledNamespaces) empty() bool {
 	if len(d.SkillNames) > 0 {
 		return false
@@ -182,11 +131,9 @@ func (d DisabledNamespaces) empty() bool {
 	return len(d.Modules) == 0 && len(d.Tools) == 0 && len(d.Agents) == 0
 }
 
-// UnmarshalYAML accepts both shapes the config.yaml `disabled:` key
-// has ever carried: the v0.12-v0.13 flat sequence (a legacy module
-// list - the only namespace earlier boots wrote) and the v0.14.1
-// mapping fold. Anything else fails loud: a shape the toggle writer
-// did not produce must not decode to silence.
+// UnmarshalYAML accepts both shapes the config.yaml `disabled:` key has ever carried.
+// Anything else fails loud: a shape the toggle writer did not produce must not decode
+// to silence.
 func (d *DisabledNamespaces) UnmarshalYAML(node *yaml.Node) error {
 	switch {
 	case node.Kind == yaml.DocumentNode && len(node.Content) == 1:
@@ -199,8 +146,7 @@ func (d *DisabledNamespaces) UnmarshalYAML(node *yaml.Node) error {
 		*d = DisabledNamespaces{Modules: flat}
 		return nil
 	case node.Kind == yaml.MappingNode:
-		// zero-value first: a re-used decode target must not inherit
-		// namespaces an earlier parse left in.
+		// zero-value first: a re-used decode target must not inherit namespaces an earlier.
 		type fold DisabledNamespaces
 		*d = DisabledNamespaces{}
 		var f fold
@@ -216,8 +162,6 @@ func (d *DisabledNamespaces) UnmarshalYAML(node *yaml.Node) error {
 	return fmt.Errorf("config: disabled: must be a list (legacy module fold) or a key fold - got a %s", yamlDocKind(node))
 }
 
-// yamlDocKind names a node for the disabled: decode failure only - the
-// error string a malformed config deserves.
 func yamlDocKind(node *yaml.Node) string {
 	switch node.Kind {
 	case yaml.DocumentNode:
@@ -233,8 +177,7 @@ func yamlDocKind(node *yaml.Node) string {
 	}
 }
 
-// sortedCopy returns a sorted copy of ns (stable yaml output); a nil
-// slice stays nil so the write fold can omit it.
+// sortedCopy returns a sorted copy of ns (stable yaml output); a nil slice stays nil.
 func sortedCopy(names []string) []string {
 	if len(names) == 0 {
 		return nil
@@ -244,9 +187,8 @@ func sortedCopy(names []string) []string {
 	return out
 }
 
-// cleanNamespaces returns the fold state an empty namespace never
-// keeps: empty lists become nil (the writer omits empty namespaces,
-// the all-empty key omits itself).
+// cleanNamespaces returns the fold state an empty namespace never keeps: empty lists
+// become nil (the writer omits empty namespaces, the all-empty key omits itself).
 func cleanNamespaces(d DisabledNamespaces) DisabledNamespaces {
 	return DisabledNamespaces{
 		Modules:    sortedCopy(d.Modules),
@@ -256,30 +198,16 @@ func cleanNamespaces(d DisabledNamespaces) DisabledNamespaces {
 	}
 }
 
-// WebConfig carries optional overrides for the web tools. BaseURL, when
-// set, overrides the web.search/web.fetch endpoint host; otherwise
-// ConfigSection derives both from provider.host (arc 2b: the host
-// exposes sections, the router pulls what each plugin declared).
 type WebConfig struct {
 	BaseURL string `yaml:"base_url"`
 }
 
-// SkillsConfig controls where skills are loaded from.
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
-	// SharedDir is the root skills/shared home, scanned first (card
-	// t_7e2b7002): every agent sees it; an agent's own dir shadows.
 	SharedDir string `yaml:"shared_dir"`
-	// NudgeInterval is the learning-loop reminder cadence (card
-	// t_9972dfd0): tool iterations between "persist a lesson"
-	// reminders in turn prep. 0 = nudging off. Default 15.
 	NudgeInterval int `yaml:"nudge_interval"`
-	// The curator's model moved to provider settings (card
-	// t_fc0b2f2d): it rides the top-level skills_model slot, routed
-	// into the capsule section by ConfigSection.
 }
 
-// MemoryConfig controls the persistent memory system.
 type MemoryConfig struct {
 	Enabled              bool   `yaml:"enabled"`
 	UserProfileEnabled   bool   `yaml:"user_profile_enabled"`
@@ -289,27 +217,16 @@ type MemoryConfig struct {
 	UserProfileFile      string `yaml:"user_file"`
 }
 
-// LoggingConfig controls the operational logging system.
 type LoggingConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	File    string `yaml:"file"`
 }
 
-// ProviderConfig configures the LLM provider the agent serves: the
-// default model, and the named provider INSTANCES (card t_bf21ee07).
-// Every provider is a named instance - the primary is the row named
-// "default" (PrimaryProviderInstance), looked up by name like any
-// other. There is no flag, no separate field, no structural special
-// case: adding a provider is adding a row.
 type ProviderConfig struct {
 	ModelName string             `yaml:"model_name"`
 	Instances []ProviderInstance `yaml:"instances,omitempty"`
 }
 
-// ProviderInstance is one named provider endpoint: the name IS the
-// instance id model slots and session pins speak ("instance:model"),
-// and the row carries no model of its own - models come from the
-// endpoint's catalog through the pickers (card t_1914a8c9).
 type ProviderInstance struct {
 	Name   string `yaml:"name"`
 	Type   string `yaml:"type"`
@@ -317,15 +234,8 @@ type ProviderInstance struct {
 	APIKey string `yaml:"api_key"`
 }
 
-// PrimaryProviderInstance names the primary provider (card
-// t_bf21ee07). It is an ordinary instance id - the row that carries it
-// is the provider the agent serves; the name is the whole mechanism.
 const PrimaryProviderInstance = "default"
 
-// legacyProviderConfig is the PRE-MERGE provider: section (the flat
-// trio plus the instances list the merge introduced). Decode-only: the
-// flat type/host/api_key fold into the "default" instance the moment
-// the document is read, so no other code ever sees them.
 type legacyProviderConfig struct {
 	ModelName string             `yaml:"model_name"`
 	Instances []ProviderInstance `yaml:"instances"`
@@ -334,12 +244,10 @@ type legacyProviderConfig struct {
 	APIKey    string             `yaml:"api_key"`
 }
 
-// UnmarshalYAML reads a provider: section of any shape config.yaml has
-// ever carried (card t_bf21ee07): the merged list, the flat trio, or a
-// half-migrated mix. A flat trio becomes the "default" row; an absent
-// instances key keeps whatever the value already held (the caller
-// decoded over DefaultConfig, so a config that sets only
-// provider.model_name keeps the default instance).
+// UnmarshalYAML reads a provider. A flat trio becomes the "default" row; an absent
+// instances key keeps whatever the value already held (the caller decoded over
+// DefaultConfig, so a config that sets only provider.model_name keeps the default
+// instance).
 func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
 	prev := *p
 	var raw legacyProviderConfig
@@ -347,10 +255,7 @@ func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
 		return err
 	}
 	out := ProviderConfig{ModelName: raw.ModelName, Instances: prev.Instances}
-	// An absent model_name keeps the value already held: the caller
-	// decodes over DefaultConfig (or over the host config, for an
-	// agent layer), and yaml's "leave absent fields alone" law is the
-	// one a custom unmarshaler has to re-implement.
+	// An absent model_name keeps the value already held: the caller decodes.
 	if out.ModelName == "" {
 		out.ModelName = prev.ModelName
 	}
@@ -369,7 +274,6 @@ func (p *ProviderConfig) UnmarshalYAML(node *yaml.Node) error {
 	return nil
 }
 
-// instanceIndex is the row position of name, -1 when the list has none.
 func (p ProviderConfig) instanceIndex(name string) int {
 	for i, inst := range p.Instances {
 		if inst.Name == name {
@@ -379,8 +283,6 @@ func (p ProviderConfig) instanceIndex(name string) int {
 	return -1
 }
 
-// instance returns the named row (the zero value for a name the list
-// does not carry - Validate is what makes a missing primary loud).
 func (p ProviderConfig) instance(name string) (ProviderInstance, bool) {
 	if i := p.instanceIndex(name); i >= 0 {
 		return p.Instances[i], true
@@ -388,8 +290,6 @@ func (p ProviderConfig) instance(name string) (ProviderInstance, bool) {
 	return ProviderInstance{}, false
 }
 
-// setInstance replaces the row named inst.Name, or appends it when the
-// list has none. The primary row always sits first.
 func (p *ProviderConfig) setInstance(inst ProviderInstance) {
 	if i := p.instanceIndex(inst.Name); i >= 0 {
 		p.Instances[i] = inst
@@ -399,8 +299,6 @@ func (p *ProviderConfig) setInstance(inst ProviderInstance) {
 	p.primaryFirst()
 }
 
-// primaryFirst orders the list the one way the pane and the writer
-// agree on: the primary row leads, the rest keep their order.
 func (p *ProviderConfig) primaryFirst() {
 	i := p.instanceIndex(PrimaryProviderInstance)
 	if i <= 0 {
@@ -411,25 +309,16 @@ func (p *ProviderConfig) primaryFirst() {
 	p.Instances[0] = primary
 }
 
-// defaultInstance returns the primary row. ok is false only for a
-// config that carries no primary at all - a state Validate refuses.
 func (c Config) defaultInstance() (ProviderInstance, bool) {
 	return c.Provider.instance(PrimaryProviderInstance)
 }
 
-// setDefaultInstance replaces the primary row's endpoint fields, the
-// one way a caller (the env layer, an agent layer) re-points the
-// provider the agent serves. ModelName is the provider section's, not
-// the row's, and survives.
+// setDefaultInstance replaces the primary row's endpoint fields, the one way a caller.
 func (c *Config) setDefaultInstance(inst ProviderInstance) {
 	inst.Name = PrimaryProviderInstance
 	c.Provider.setInstance(inst)
 }
 
-// validInstanceName is the instance-id syntax law (card t_7dcd4280):
-// conservative lower case so the id is safe in every consumer (config
-// keys, session pins, model-selection slots). Reserved name "default"
-// is checked by Validate separately.
 func validInstanceName(name string) bool {
 	if name == "" || len(name) > 64 {
 		return false
@@ -445,63 +334,37 @@ func validInstanceName(name string) bool {
 	return name[0] >= 'a' && name[0] <= 'z' || name[0] >= '0' && name[0] <= '9'
 }
 
-// ServerConfig configures the HTTP listener(s). Bind is the list of
-// addresses the channel listens on (default: loopback only). Additional
-// addresses - e.g. the Tailscale IP so Traefik can route to omega - are
-// an explicit opt-in, never a default. RunTimeout caps each detached
-// /chat run's wall-clock time, in seconds: a hung tool call must not
-// brick the session's run slot until restart.
+// ServerConfig configures the HTTP listener(s). Additional addresses - e.g. the
+// Tailscale IP so Traefik can route to omega - are an explicit opt-in, never a default.
+// RunTimeout caps each detached /chat run's wall-clock time, in seconds: a hung tool
+// call must not brick the session's run slot until restart.
 type ServerConfig struct {
 	Port       int      `yaml:"port"`
 	Bind       []string `yaml:"bind"`
 	RunTimeout int      `yaml:"run_timeout"`
-	// PublicHosts (config key public_hosts) declares the public
-	// identities this serve answers to - domains fronted by a reverse
-	// proxy or tunnel (the tunnel forwards the browser's Host, which
-	// never matches the bind, so the Host guard refuses them without
-	// this declaration). Exact names, no wildcards.
+	// PublicHosts (config key public_hosts) declares the public identities this serve
+	// answers to - domains fronted by a reverse proxy or tunnel (the tunnel forwards the
+	// browser's Host, which never matches the bind, so the Host guard refuses them without
+	// this declaration).
 	PublicHosts []string `yaml:"public_hosts"`
-	// DefaultWorkspace (config key default_workspace) is the tools'
-	// fallback working directory (card t_ccf74d88): a session without a
-	// pinned workspace roots its tool runs (shell, files, processes)
-	// here instead of the process working directory, and the Files tab
-	// roots here when the focused session has no pin - both consumers
-	// share the one knob. Empty = unset - the cwd fallback
-	// stands (the tool-rooting law lives in agent/api's prepareRun).
 	DefaultWorkspace string `yaml:"default_workspace"`
 }
 
-// StoreConfig configures the SQLite session store.
 type StoreConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
-// SessionsConfig configures the sessions hygiene pass (card t_329b9312):
-// the LLM session summarizer and the retention window. Mirrors
-// store.HygieneConfig without importing the module knob-for-knob - the
-// router below copies the fields.
 type SessionsConfig struct {
 	// RetentionDays prunes sessions older than this. 0 = never prune.
 	RetentionDays int `yaml:"retention_days"`
 
-	// SummarizeAfterHours is the minimum age before the summarizer
-	// writes a session's summary.
 	SummarizeAfterHours int `yaml:"summarize_after_hours"`
 }
 
-// KanbanConfig configures the board database. The relative default
-// (kanban.db) resolves against OMEGA_HOME in the plugin mount.
 type KanbanConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
-// ApprovalConfig configures the approval gate (card t_c2b52cb5):
-// mode off|manual|smart and the operator policy text. THE MODEL moved
-// to provider settings (card t_fc0b2f2d): the decision model rides the
-// top-level approvals_model slot; ConfigSection resolves it into the
-// approval capsule's wiring (the capsule keeps the field, the config
-// key is gone). Type name carries the host's config vocabulary for the
-// nm-purity scrubber (SharedTypes law).
 type ApprovalConfig struct {
 	Mode        string `yaml:"mode"`
 	SmartPolicy string `yaml:"smart_policy"`
@@ -516,17 +379,11 @@ type ApprovalConfig struct {
 	JudgeFailClosed bool `yaml:"judge_fail_closed"`
 }
 
-// ProcessConfig configures the background process registry (card
-// t_5782d11e). Zero values are valid: the module applies its own
-// defaults, so an absent `process:` section rides the constants
-// (DefaultLogMaxBytes, DefaultKillGraceSeconds).
 type ProcessConfig struct {
 	LogMaxBytes      int64 `yaml:"log_max_bytes"`
 	KillGraceSeconds int   `yaml:"kill_grace_seconds"`
 }
 
-// DefaultConfig returns the configuration used when neither YAML nor
-// environment variables provide a value.
 func DefaultConfig() Config {
 	return Config{
 		Provider: ProviderConfig{
@@ -572,21 +429,14 @@ func DefaultConfig() Config {
 		},
 		Logging: LoggingConfig{
 			Enabled: true,
-			// No default filename here: a bare relative name would
-			// make any early consumer open a log file in the process
-			// CWD. resolveHomePaths computes the home-rooted path
-			// before the logger is created (card t_0ccda501).
 			File: "",
 		},
 		HTTPTimeout: 300,
 		MaxTurns:    100,
-		// card t_c2b52cb5, the ship-dark default (Q5): manual IS the
-		// explicit default - the knob render reads the field directly,
-		// no helper (the pure-failure law: the approval vocabulary
-		// must die whole under scripts/nm-purity.sh --module approval,
-		// and a helper derived entirely from the config field leaves
-		// an illegal empty func behind). approval.NormalizedMode
-		// still treats empty as manual for yaml that wrote "".
+		// the ship-dark default (Q5): manual IS the explicit default - the knob render reads
+		// the field directly, no helper (the pure-failure law: the approval vocabulary must
+		// die whole under scripts/nm-purity.sh --module approval, and a helper derived
+		// entirely from the config field leaves an illegal empty func behind).
 		Approvals: ApprovalConfig{
 			Mode:    "manual",
 			Monitor: approval.MonitorLogOnly,
@@ -594,9 +444,6 @@ func DefaultConfig() Config {
 	}
 }
 
-// LoadConfig reads configuration from path (a config.yaml file), applies
-// environment variable overrides, fills defaults, and validates the result.
-// An empty path skips YAML loading entirely.
 func LoadConfig(path string) (Config, error) {
 	cfg := DefaultConfig()
 
@@ -615,19 +462,11 @@ func LoadConfig(path string) (Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
-	// The toggle list lives in the config.yaml `disabled:` key (v0.13
-	// shell law 3): fold any leftover omega.json sidecar in before the
-	// decode, so one boot both migrates and honors the operator's off
-	// list. A broken sidecar still fails the boot loud.
 	folded, foldTarget, err := foldOmegaJSON(path)
 	if err != nil {
 		return Config{}, err
 	}
 	if path == "" {
-		// No --config: skip YAML only when no config.yaml exists on
-		// disk anywhere. A fold (or any prior boot) may have created
-		// the default one - read it, like the omega.json sidecar
-		// search always did for legacy homes.
 		path = resolveConfigPath("")
 		if path == "" && len(folded) > 0 {
 			path = foldTarget
@@ -652,11 +491,10 @@ func LoadConfig(path string) (Config, error) {
 	return cfg, nil
 }
 
-// configReadError wraps a failed config read. When the read hit the
-// pre-v0.8 home-root location, the relocation hint rides along: a
-// first user pointing --config at <home>/config.yaml used to see only
-// the raw OS message ("The system cannot find the file specified") and
-// no sign the file had moved.
+// configReadError wraps a failed config read. When the read hit the pre-v0.8 home-root
+// location, the relocation hint rides along: a first user pointing --config at
+// <home>/config.yaml used to see only the raw OS message ("The system cannot find the
+// file specified") and no sign the file had moved.
 func configReadError(path string, err error) error {
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("read config: %w", err)
@@ -664,11 +502,6 @@ func configReadError(path string, err error) error {
 	return fmt.Errorf("read config: %w%s", err, legacyConfigHint(path))
 }
 
-// legacyConfigHint is the C1 relocation hint. It fires only for a
-// missing <home>/config.yaml - the config/ layout (Endo 2026-10-18)
-// moved the live file to <home>/config/config.yaml, and the error
-// should name it. Every other missing path keeps the plain read error:
-// an arbitrary bad --config value has no relocation to advertise.
 func legacyConfigHint(path string) string {
 	if filepath.Base(path) != "config.yaml" {
 		return ""
@@ -684,14 +517,9 @@ func legacyConfigHint(path string) string {
 	return fmt.Sprintf(" - config.yaml lives at %s now (v0.8 layout); run `omega setup` to write one", moved)
 }
 
-// foldOmegaJSON migrates the v0.12 omega.json module toggle list into
-// config.yaml's `disabled:` key (v0.13 shell law 3). Search order: the
-// explicit config's dir, then home/config, then home - the order the
-// sidecar was read in. Every omega.json found folds (union, first-wins
-// dedupe) and is deleted; no silent drops. Entries a config.yaml that
-// already carries the key would also name are reported in the boot
-// warning but never double-written. Returns the folded entries and the
-// config.yaml they landed in.
+// foldOmegaJSON migrates the v0.12 omega.json module toggle list into config..
+// Entries a config.yaml that already carries the key would also name are reported in
+// the boot warning but never double-written.
 func foldOmegaJSON(configPath string) ([]string, string, error) {
 	home := omegaHome()
 	dirs := []string{}
@@ -720,7 +548,6 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 			return nil, "", fmt.Errorf("parse omega.json: %w", err)
 		}
 		if len(doc.Disabled) == 0 {
-			// No toggle state: the sidecar is dead weight, bury it.
 			if err := os.Remove(path); err != nil {
 				return nil, "", fmt.Errorf("delete omega.json: %w", err)
 			}
@@ -738,8 +565,6 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 	if len(entries) == 0 {
 		return nil, "", nil
 	}
-	// The fold lands in the config the boot reads; with none on disk
-	// anywhere, the config/ layout default gets created.
 	target := configPath
 	if target == "" {
 		target = resolveConfigPath("")
@@ -750,26 +575,21 @@ func foldOmegaJSON(configPath string) ([]string, string, error) {
 	if err := writeDisabled(target, DisabledNamespaces{Modules: entries}); err != nil {
 		return nil, "", err
 	}
-	// Boot warning, loud, naming the folded entries - the list moved
-	// files and the operator should see it happen.
+	// Boot warning, loud, naming the folded entries.
 	fmt.Fprintf(os.Stderr, "omega: folded module disable list %v from omega.json into %s (disabled: key, v0.13 shell law 3)\n", entries, target)
 	return entries, target, nil
 }
 
-// writeDisabled writes the config.yaml `disabled:` toggle fold: parse,
-// modify, marshal at the yaml node level, so comments, key order, and
-// unknown keys survive (the struct-marshal settings-save path
-// normalizes; this one must not). The v0.14.1 fold shape is one
-// `disabled:` mapping with a namespace key per registry; a namespace
-// with no entries is never written, and when every namespace is empty
-// the whole key goes away - an all-on home carries no toggle state. A
-// legacy flat sequence under `disabled:` is REPLACED on the first
-// write: the caller's fold always carries the authoritative full
-// state (a partial write would re-shape history it did not read).
-// Editing a missing config.yaml creates a minimal one holding just
-// the disabled: key; an all-empty fold against a missing file writes
-// nothing. A malformed config.yaml fails loud - a write that destroys
-// the file boot must parse is worse than a failed toggle.
+// writeDisabled writes the config.yaml `disabled:` toggle fold: parse, modify, marshal
+// at the yaml node level, so comments, key order, and unknown keys survive (the
+// struct-marshal settings-save path normalizes; this one must not). The v0.14.1 fold
+// shape is one `disabled:` mapping with a namespace key per registry; a namespace with
+// no entries is never written, and when every namespace is empty the whole key goes
+// away - an all-on home carries no toggle state. A legacy flat sequence under
+// `disabled:` is REPLACED on the first write: the caller's fold always carries the
+// authoritative full state (a partial write would re-shape history it did not read). A
+// malformed config.yaml fails loud - a write that destroys the file boot must parse is
+// worse than a failed toggle.
 func writeDisabled(path string, fold DisabledNamespaces) error {
 	fold = cleanNamespaces(fold)
 	var mapping yaml.Node
@@ -801,10 +621,9 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 		return fmt.Errorf("config: top-level document is not a mapping - cannot write the disabled: key into %s", path)
 	}
 
-	// disabledSeq renders the `disabled:` value node from the fold: a
-	// mapping whose namespace keys are the NON-EMPTY lists (an empty
-	// list never persists). Every empty fold returns nil - the key
-	// goes away, an all-on home carries no toggle state.
+	// disabledSeq renders the `disabled:` value node from the fold: a mapping whose
+	// namespace keys are the NON-EMPTY lists (an empty list never persists). Every empty
+	// fold returns nil - the key goes away, an all-on home carries no toggle state.
 	disabledSeq := func() *yaml.Node {
 		if fold.empty() {
 			return nil
@@ -846,14 +665,12 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 	val := disabledSeq()
 	switch {
 	case val == nil && idx >= 0:
-		// All-on: the key goes away (an all-on home carries no state).
 		mapping.Content = append(mapping.Content[:idx], mapping.Content[idx+2:]...)
 	case val != nil && idx >= 0:
 		// The fold replaces whatever shape the key carried (a legacy
 		// flat sequence included): the caller's fold is the full state.
 		mapping.Content[idx+1] = val
 	case val != nil:
-		// New key appends last: existing key order is untouched.
 		mapping.Content = append(mapping.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "disabled"}, val)
 	}
@@ -879,11 +696,7 @@ func writeDisabled(path string, fold DisabledNamespaces) error {
 	return nil
 }
 
-// applyEnv overrides config fields from OMEGA_* environment variables.
 func applyEnv(cfg *Config) {
-	// Provider env overrides (card t_bf21ee07): the env table speaks
-	// about the PRIMARY provider, which is the instance named
-	// "default" - the same row a config.yaml flat trio folds into.
 	primary, _ := cfg.defaultInstance()
 	envProvider := primary
 	overridden := false
@@ -903,7 +716,6 @@ func applyEnv(cfg *Config) {
 		cfg.setDefaultInstance(envProvider)
 	}
 
-	// String assignments: env var -> *string field.
 	for _, s := range []struct {
 		env    string
 		target *string
@@ -922,7 +734,6 @@ func applyEnv(cfg *Config) {
 		}
 	}
 
-	// Bool assignments: env var -> *bool field, true when "1" or "true" (case-insensitive).
 	for _, b := range []struct {
 		env    string
 		target *bool
@@ -937,9 +748,6 @@ func applyEnv(cfg *Config) {
 		}
 	}
 
-	// Int assignments with min validation: env var -> *int field.
-	// min is the smallest accepted value (0 for keep_first/keep_last
-	// and context_window, 1 otherwise).
 	for _, n := range []struct {
 		env    string
 		target *int
@@ -963,7 +771,6 @@ func applyEnv(cfg *Config) {
 		}
 	}
 
-	// Float assignment with range validation (0, 1].
 	if v := os.Getenv("OMEGA_COMPACTION_THRESHOLD"); v != "" {
 		if threshold, err := strconv.ParseFloat(v, 64); err == nil && threshold > 0 && threshold <= 1 {
 			cfg.Compaction.Threshold = threshold
@@ -971,7 +778,6 @@ func applyEnv(cfg *Config) {
 	}
 }
 
-// Validate checks that required fields are present and values are sane.
 func (c Config) Validate() error {
 	if c.Provider.ModelName == "" {
 		return fmt.Errorf("config: provider.model_name is required")
@@ -979,11 +785,10 @@ func (c Config) Validate() error {
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("config: server.port must be > 0, got %d", c.Server.Port)
 	}
-	// The provider INSTANCES (card t_bf21ee07): every provider is a row,
-	// the primary is the row named "default". The names must survive
-	// every consumer that records one (session pins, model slots), and
-	// a config with no primary row has no provider the agent can serve
-	// - both are loud here, never a silent fallback mid-run.
+	// The provider INSTANCES: every provider is a row, the primary is the row named. The
+	// names must survive every consumer that records one (session pins, model slots), and
+	// a config with no primary row has no provider the agent can serve - both are loud
+	// here, never a silent fallback mid-run.
 	providerTypes := map[string]string{
 		"ollama": "ollama", "openai": "openai", "anthropic": "anthropic", "mock": "mock",
 	}
@@ -1029,11 +834,9 @@ func (c Config) Validate() error {
 	return nil
 }
 
-// WatchConfig polls the config file at path for modification time changes
-// and calls onChange when it changes. The callback receives the freshly
-// loaded config. If the reload fails (e.g. file is temporarily empty
-// during an atomic save), the error is logged and the old config stays
-// in effect. Runs until the caller's goroutine exits.
+// WatchConfig polls the config file at path for modification time changes and calls. If
+// the reload fails (e.g. file is temporarily empty during an atomic save), the error is
+// logged and the old config stays in effect. Runs until the caller's goroutine exits.
 func WatchConfig(path string, onChange func(Config)) {
 	go func() {
 		var lastMod time.Time
@@ -1056,10 +859,6 @@ func WatchConfig(path string, onChange func(Config)) {
 	}()
 }
 
-// ConfigSection implements agent.ConfigSource (arc 2b, t_889388cc):
-// the host exposes its raw sections by name; agent.RouteConfigs pulls
-// each plugin's declared section into ctx.Configs. Section names are
-// the keys the plugins read ("ctx.Configs[\"<name>\"].(<mod>.Config)").
 func (c Config) ConfigSection(name string) (any, bool) {
 	switch name {
 	case "store":
@@ -1092,11 +891,6 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	case "approvals":
 		return approvalSection(c), true
 	case "process":
-		// The shell registry's knobs (card t_5a49790b folded the
-		// process registry into the one shell domain under
-		// harness/terminal; the section name stays for the config.yaml
-		// contract). Zero knobs ride the registry's constants - the
-		// section only carries explicit user overrides.
 		return terminal.RegistryConfig{
 			Home:             omegaHome(),
 			LogMaxBytes:      c.Process.LogMaxBytes,
@@ -1106,13 +900,6 @@ func (c Config) ConfigSection(name string) (any, bool) {
 	return nil, false
 }
 
-// providerSection returns the provider capsule's section (card
-// t_bf21ee07): the config's instance list IS the provider. The primary
-// row (named "default") fills the capsule's base fields; every other
-// row rides the resolver map the shell pins runs and slots through.
-// One shape for BOTH the boot wiring (RouteConfigs) and the hot-apply
-// path - a settings save re-sends it through Provider.SetConfig, so the
-// instances and the primary's endpoint go live without a restart.
 func providerSection(c Config) provider.Config {
 	primary, _ := c.defaultInstance()
 	instances := make(map[string]provider.Config, len(c.Provider.Instances))
@@ -1135,15 +922,6 @@ func providerSection(c Config) provider.Config {
 	}
 }
 
-// approvalSection returns the approvals section (card t_c2b52cb5):
-// mode/policy are Endo's knobs; host and home are wiring - the
-// reviewer targets the provider host (the keypool mirror), the audit
-// lands in the home. The decision model rides the provider settings
-// slot (card t_fc0b2f2d): approvalSlot routes an "instance:model"
-// prefix through the named provider instance. One shape for BOTH
-// the boot wiring (RouteConfigs) and the hot-apply path (card
-// t_34cd1921: settings.go calls this on every save/reload so a flip
-// reaches the running gate without a restart).
 func approvalSection(c Config) approval.Config {
 	host, key, model := approvalSlot(c)
 	return approval.Config{
@@ -1158,14 +936,6 @@ func approvalSection(c Config) approval.Config {
 	}
 }
 
-// sessionsSection returns the store capsule's hygiene section (card
-// t_329b9312): the hygiene pass reads its knobs from the store capsule
-// (the config session rides cfg.Sessions). The summarizer's model slot
-// (card t_fc0b2f2d) moved to provider settings - the capsule keeps the
-// field, the slot is global. One shape for BOTH the boot wiring
-// (RouteConfigs) and the hot-apply path (card t_f78acfd6: settings.go
-// re-sends the section on every save/reload via store.SetHygieneConfig,
-// so a summarizer_model flip reaches the next sweep without a restart).
 func sessionsSection(c Config) store.HygieneConfig {
 	return store.HygieneConfig{
 		RetentionDays:       c.Sessions.RetentionDays,
@@ -1174,30 +944,11 @@ func sessionsSection(c Config) store.HygieneConfig {
 	}
 }
 
-// skillsSection returns the skills capsule's section. One shape for
-// BOTH the boot wiring (RouteConfigs) and the hot-apply path (card
-// t_f78acfd6: settings.go re-sends it on every save/reload, and the
-// curator consult slot flows through skillsSection(...).CuratorModel).
 func skillsSection(c Config) skills.Config {
 	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel,
-		// The definition layer's explicit allowlist (0.17.3 make-over):
-		// set only for a secondary agent home, where an empty list means
-		// NO skills. Main's own mount leaves it unset - every skill
-		// loads.
 		Allow: slices.Clone(c.agentSkillsAllow), AllowSet: c.agentSkillsAllowSet}
 }
 
-// webBaseURL returns the host the channel's web.search/web.fetch tools
-// target: the explicit web.base_url override when set, otherwise the
-// provider host (with a trailing /v1 stripped, mirroring provider.go's
-// probe), so the keypool mirror serves /api/web_search and
-// /api/web_fetch with the same auth swap + rotation as every other
-// call. The web config stanza stays a config.yaml top-level key even
-// though the capsule dissolved into the channel (v0.13 shell law 1 -
-// no config churn). The fields arrive as arguments, not as the Config
-// value: removing the provider capsule scrubs every cfg.Provider
-// access site, and a helper reading whole Config would strand this
-// branch with the module gone (missing return).
 func webBaseURL(baseURL, providerHost string) string {
 	if baseURL != "" {
 		return baseURL
@@ -1205,22 +956,12 @@ func webBaseURL(baseURL, providerHost string) string {
 	return strings.TrimSuffix(providerHost, "/v1")
 }
 
-// compactionSection returns the compactor section (card t_fc0b2f2d):
-// the compaction knobs plus the model slot copied in from the
-// top-level compaction_model knob. The Model field is carrier wiring
-// (yaml "-"), so ConfigSection and hotApply keep one shape.
 func compactionSection(c Config) agent.CompactionConfig {
 	comp := c.Compaction
 	comp.Model = c.CompactionModel
 	return comp
 }
 
-// approvalSlot resolves the approval gate's decision slot (card
-// t_fc0b2f2d) into the reviewer's wiring: the ONE slot rule (a colon
-// prefix naming a configured instance, or "default") routes the
-// consult through that instance's host and key; anything else is the
-// whole slot as a bare model on the default provider. An instance
-// prefix with no model part serves the instance's own model.
 func approvalSlot(c Config) (host, key, model string) {
 	primary, _ := c.defaultInstance()
 	host = primary.Host
@@ -1234,15 +975,12 @@ func approvalSlot(c Config) (host, key, model string) {
 		return host, key, m
 	}
 	if inst, ok := c.Provider.instance(name); ok {
-		// A prefix with no model part names an ENDPOINT only (an
-		// instance carries no model of its own): the consult has no
-		// model to ask, so the slot fails closed and the gate
+		// A prefix with no model part names an ENDPOINT only (an instance carries no model of
+		// its own): the consult has no model to ask, so the slot fails closed and the gate
 		// escalates, exactly like an empty one.
 		host = inst.Host
 		key = inst.APIKey
 		model = m
 	}
-	// An unconfigured prefix stays a bare model: the whole slot rides
-	// to the default host and a missing model fails loudly there.
 	return host, key, model
 }

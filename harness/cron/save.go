@@ -1,20 +1,8 @@
 package cron
 
-// save.go: the cron tab's job editor write face (card t_ecec864e, the
-// settings-exposure ruling: the tab shows and edits ALL job fields).
-// The write lands in ONE file - the MAIN home's crons.yaml. Agent-home
-// (wake) jobs are refused here by name: that file belongs to a
-// different home (the LoadAllConfigs ownership law, ruling 12); their
-// enable/disable keeps riding the toggle route, full editing keeps
-// belonging to the agent's own home.
-//
-// The write is the fold-write pattern (harness/cron/toggle.go): parse
-// at the yaml.Node level, splice the ONE job's mapping, marshal the
-// WHOLE document - comments, key order and the file's style survive
-// everywhere except inside the replaced entry itself. A new job's
-// schema goes through the same ParseConfig path the operator's file
-// goes through (one validation law), so an editor-produced crons.yaml
-// is byte-lawful by construction.
+// save.go: the cron tab's job editor write face. A new job's schema goes through the
+// same ParseConfig path the operator's file goes through (one validation law), so an
+// editor-produced crons.yaml is byte-lawful by construction.
 
 import (
 	"context"
@@ -31,17 +19,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cronSaver is the write face the job editor rides, separate from the
-// reader (the CronLister law) and the toggle (the flag law): a full
-// job upsert and a delete are bulkier scalars than `enabled:`.
+// cronSaver is the write face the job editor rides, separate from the reader.
 type cronSaver interface {
 	SaveJob(job Job) ([]JobInfo, error)
 	DeleteJob(name string) ([]JobInfo, error)
 }
 
-// jobWire is the POST /cron/save body: the full job definition, the
-// CronJobInfo listing's fields plus the prompt. Enabled is explicit -
-// the editor always sends the whole job.
+// jobWire is the POST /cron/save body.
 type jobWire struct {
 	Name     string   `json:"name"`
 	Kind     string   `json:"kind,omitempty"`
@@ -72,16 +56,13 @@ func (w jobWire) toJob() Job {
 	}
 }
 
-// SaveJob upserts one job into the MAIN crons.yaml and hot-reloads the
-// runner (the wire contract carries the landed truth back - the toggle
-// route's one-response law). The job goes through ParseConfig first:
-// the editor's output obeys the exact schema law a hand-written
-// crons.yaml obeys. An unknown or reload-failing write leaves the file
-// untouched - server truth never fakes a swap.
+// SaveJob upserts one job into the MAIN crons.yaml and hot-reloads the runner (the wire
+// contract carries the landed truth back - the toggle route's one-response law). An
+// unknown or reload-failing write leaves the file untouched - server truth never fakes
+// a swap.
 func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
-	// The inheritance chain (card t_7fb3b35a) is applied to the
-	// editor's job BEFORE it is marshalled, so the file the operator
-	// reads carries the chain's own shape: an absent field where the
+	// The inheritance chain is applied to the editor's job BEFORE it is marshalled, so the
+	// file the operator reads carries the chain's own shape: an absent field where the
 	// value is inherited, never a resolved copy pinned as authored.
 	job, err := chainJob(job)
 	if err != nil {
@@ -91,9 +72,9 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("marshal job: %w", err)
 	}
-	// The one validation law: the editor-authored yaml re-parses like
-	// any operator yaml, rejections name the field (a bad kind, a
-	// schedule on an interval job...) and never reach the disk.
+	// The one validation law: the editor-authored yaml re-parses like any operator yaml,
+	// rejections name the field (a bad kind, a schedule on an interval job.) and never
+	// reach the disk.
 	cfg, err := ParseConfig(data)
 	if err != nil {
 		return nil, err
@@ -114,19 +95,19 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 	return r.reloadAfterWrite()
 }
 
-// chainJob applies the inheritance chain (card t_7fb3b35a) to a job
+// chainJob applies the inheritance chain to a job
 // the editor is about to write.
 //
 // Two links, one law:
 //
-//	agent  empty -> inherits the main agent (agent.DefaultAgentName)
-//	model  empty -> inherits the model of the agent the fire runs under
+// agent empty -> inherits the main agent (agent.DefaultAgentName)
+// model empty -> inherits the model of the agent the fire runs under
 //
 // An empty field IS the inherit - the write never materializes a
 // resolved value, so the chain keeps inheriting when the main agent's
 // own model moves. Two consequences fall out of that:
 //
-//   - an AUTHORED reference to the main agent is the chain's absence
+// an AUTHORED reference to the main agent is the chain's absence
 //     written out ("the default IS the absence", jobinfo.go). The agent
 //     combobox lists the main row first, so picking it would otherwise
 //     pin a phantom override that means exactly what an absent field
@@ -134,7 +115,7 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 //     vocabulary carries (agent/configedit.go). It is normalized away
 //     instead of refused: it asks for the right thing.
 //
-//   - a WAKE may not lean on that absence. deliver: continuous-agent
+// a WAKE may not lean on that absence. deliver: continuous-agent
 //     into the main agent is a chain the fire can never satisfy - the
 //     main agent is the daemon and never wakes as a subprocess
 //     (runner.go logs "main never wakes", continuous/wake.go refuses the
@@ -153,8 +134,6 @@ func chainJob(job Job) (Job, error) {
 }
 
 // DeleteJob removes one job from the MAIN crons.yaml and hot-reloads.
-// Wake jobs are refused like SaveJob; an unknown name is an
-// UnknownJobError (the 404 lane).
 func (r *Runner) DeleteJob(name string) ([]JobInfo, error) {
 	for _, e := range r.jobsSnapshot() {
 		if e.Name == name && e.IsAgent() {
@@ -171,10 +150,7 @@ func (r *Runner) DeleteJob(name string) ([]JobInfo, error) {
 	return r.reloadAfterWrite()
 }
 
-// reloadAfterWrite lands the write: the mtime watcher would pick the
-// file up anyway, the immediate reload makes the response carry the
-// landed truth (the toggle route's reasoning, harness/cron/toggle.go).
-// A parse failure after the write keeps the previous job set serving.
+// reloadAfterWrite lands the write.
 func (r *Runner) reloadAfterWrite() ([]JobInfo, error) {
 	cfg, err := LoadAllConfigs(r.home)
 	if err != nil {
@@ -184,11 +160,9 @@ func (r *Runner) reloadAfterWrite() ([]JobInfo, error) {
 	return r.Jobs(), nil
 }
 
-// upsertJobNode writes the job into the crons.yaml at path at the node
-// level: replace an entry named job.Name in place, or append one.
-// data is the single-job yaml document already parsed+validated by the
-// caller - the entry node spliced here comes from the very bytes that
-// validated.
+// upsertJobNode writes the job into the crons.yaml at path at the node level. data is
+// the single-job yaml document already parsed+validated by the caller - the entry node
+// spliced here comes from the very bytes that validated.
 func upsertJobNode(path string, job Job, data []byte) error {
 	entry, err := jobEntryNode(data)
 	if err != nil {
@@ -228,11 +202,7 @@ func removeJobNode(path, name string) error {
 	return UnknownJobError{Key: name}
 }
 
-// jobsDocument reads the crons.yaml at path and returns its document
-// node plus the jobs: sequence, creating a minimal `jobs:` document
-// when the file does not exist yet (the editor is the bootstrap for a
-// fresh home). The path's config/ directory is created on demand the
-// same way the journal append creates its directory.
+// jobsDocument reads the crons.yaml at path and returns its document node plus.
 func jobsDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -242,8 +212,6 @@ func jobsDocument(path string) (*yaml.Node, *yaml.Node, error) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return nil, nil, fmt.Errorf("create %s: %w", filepath.Dir(path), err)
 		}
-		// a fresh document, marshalled once from the shape the
-		// loader itself would produce for an empty config
 		root := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		root.Content = append(root.Content,
 			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "jobs"},
@@ -272,8 +240,6 @@ func jobsDocument(path string) (*yaml.Node, *yaml.Node, error) {
 			return &doc, val, nil
 		}
 	}
-	// a file that talks about something else entirely: append the jobs
-	// key rather than error - the next write lands it
 	seq := &yaml.Node{Kind: yaml.SequenceNode, Tag: "!!seq"}
 	root.Content = append(root.Content,
 		&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: "jobs"},
@@ -328,11 +294,9 @@ func namedEntry(item *yaml.Node, name string) bool {
 	return false
 }
 
-// handleSaveJob serves POST /cron/save: decode the job, validate via
-// the loader's own schema law, upsert into the MAIN crons.yaml, answer
-// the fresh job set. A job name the editor may not touch (an agent
-// home's wake) is a loud 400, never a silent cross-home overwrite; a
-// missing saver is the mount posture's 501 (the toggle route's shape).
+// handleSaveJob serves POST /cron/save. A job name the editor may not touch (an agent
+// home's wake) is a loud 400, never a silent cross-home overwrite; a missing saver is
+// the mount posture's 501 (the toggle route's shape).
 func (p *Plugin) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -361,20 +325,17 @@ func (p *Plugin) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(jobs); err != nil {
-		// header already sent; the connection carries the failure
 		return
 	}
 }
 
-// jobDeleteRequest is the POST /cron/delete body: the job's name as
-// the editor knows it.
+// jobDeleteRequest is the POST /cron/delete body.
 type jobDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-// handleDeleteJob serves POST /cron/delete: remove the job from the
-// MAIN crons.yaml, answer the fresh job set. Unknown name = 404 (the
-// silent-persist law works in reverse: a no-op delete must be visible).
+// handleDeleteJob serves POST /cron/delete. Unknown name = 404 (the silent-persist law
+// works in reverse: a no-op delete must be visible).
 func (p *Plugin) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

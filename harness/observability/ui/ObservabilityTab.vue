@@ -1,27 +1,11 @@
 <template>
-  <!-- card t_e703180e: the observability TAB - the face of the
-       observability capsule (harness/observability). Two reads, ONE tab:
-       the STRUCTURED event stream is the primary view (turns, tool
-       calls, durations, derived levels - ruling 1) and the raw log tail
-       is the SECONDARY view behind the `tail` chip in the same band, not
-       a peer tab. Session scope defaults to the OPEN session, with an
-       all-sessions chip; the errors-only chip filters the page in-band
-       (no free-text search in v1 - ruling 4, and no OTel anything -
-       ruling 5).
-       The read-only face: nothing here writes - the ring and the log are
-       the process's own record (see the capsule's routes.go).
-       card t_01c53e78 (Endo ruling 2026-11-13): the TAB IS NAMED "Logs" -
-       the old raw-tail http_channel pane carried that name and retired,
-       so the band title and the dock registry title agree on one word. -->
+  <!-- the observability TAB - the face of the observability capsule. -->
   <section
     ref="rootEl"
     class="obs-pane"
     :class="{ narrow }">
     <TabBand title="Logs">
-      <!-- the SESSION scope (ruling 2): the open session by default; the
-           chip flips the whole ring into view. A shell with no focused
-           session can only read every session - the chip says so and
-           stops pretending it has a choice. -->
+      <!-- the SESSION scope: the open session by default. -->
       <button
         class="band-tool obs-chip obs-scope"
         type="button"
@@ -32,9 +16,9 @@
         @click="toggleScopeAll">
         {{ scopeLabel }}
       </button>
-      <!-- the errors-only chip (ruling 3): a view filter over the fetched
-           page, never a server parameter - the ring is 1024 records and
-           one page carries 1000, so the filter is instant. -->
+      <!--
+        the errors-only chip: a view filter over the fetched page, never a server.
+      -->
       <button
         class="band-tool obs-chip obs-errors"
         :class="{ off: !errorsOnly }"
@@ -45,7 +29,7 @@
         @click="errorsOnly = !errorsOnly">
         errors
       </button>
-      <!-- the raw tail (ruling 1): the SECONDARY view inside this tab -->
+      <!-- the raw tail: the SECONDARY view inside this tab -->
       <button
         class="band-tool obs-chip obs-tail"
         :class="{ off: !tailOpen }"
@@ -98,8 +82,6 @@
           <span class="obs-cell obs-tool">{{ e.tool || "" }}</span>
           <span class="obs-cell obs-dur">{{ formatDuration(e.duration_ms) }}</span>
           <span class="obs-cell obs-sum" :title="e.summary">{{ e.summary }}</span>
-          <!-- the failure text rides its own line under the row: a
-               tool result or a stream error is what the reader came for -->
           <span v-if="e.error" class="obs-cell obs-errline">{{ e.error }}</span>
         </div>
       </template>
@@ -150,10 +132,7 @@
     type ObservatoryEvent,
   } from "./rows";
 
-  // `session` is the OPEN session (app.vue's focusedSessionId) - the
-  // scope the tab defaults to (ruling 2). Null/absent (a fresh shell, a
-  // one-shot host) means there is nothing to scope to: the tab reads
-  // every session and says so.
+  // `session` is the OPEN session (app.vue's focusedSessionId).
   const props = defineProps<{ session?: string | null }>();
 
   const events = ref<ObservatoryEvent[]>([]);
@@ -185,8 +164,6 @@
     scopeAll.value = !scopeAll.value;
   }
 
-  // the painted rows: newest first, errors-only applied, the render cap
-  // bounding the DOM (see rows.ts).
   const shown = computed(() => visibleEvents(events.value, errorsOnly.value));
 
   const metaLine = computed(() => {
@@ -203,9 +180,9 @@
     return `${count} · ${errs} error${errs === 1 ? "" : "s"} · ${ring}`;
   });
 
-  // --- the two reads ---------------------------------------------------
-  // One in-flight read at a time: a scope flip while a fetch is airborne
-  // must not paint the OLD scope's answer over the new one.
+  // the two reads --------------------------------------------------- One in-flight
+  // read at a time: a scope flip while a fetch is airborne must not paint the OLD
+  // scope's answer over the new one.
   let ticket = 0;
 
   async function readStream(): Promise<void> {
@@ -223,8 +200,7 @@
       readError.value = "";
     } catch (e) {
       if (mine !== ticket) return;
-      // a transient failure never wipes the view: the message renders
-      // above the last good page
+      // a transient failure never wipes the view.
       readError.value = e instanceof Error ? e.message : String(e);
     }
     loaded.value = true;
@@ -249,8 +225,6 @@
     loaded.value = true;
   }
 
-  /** refresh reads whichever view is up - the tail only while it is open
-   * (the primary view is the one a mounted tab pays for). */
   function refresh(): Promise<void> {
     return tailOpen.value ? readTail() : readStream();
   }
@@ -267,20 +241,10 @@
   }
   watch(tailLines, followTail, { flush: "post" });
 
-  // a scope flip or a tail flip re-reads IMMEDIATELY - the chips are the
-  // tab's own controls, so waiting up to one refresh tick would read as
-  // broken.
+  // a scope flip or a tail flip re-reads IMMEDIATELY.
   watch(scopedSession, () => void readStream());
   watch(tailOpen, () => void refresh());
 
-  // --- the bounded refresh (ruling/card step 4) ------------------------
-  // The push channel (composables/socket.ts) carries a CLOSED topic set
-  // of six names (chat, chips, canvas, runs, health, logs - the last one
-  // subscription-gated) and no observability topic, so there is no topic
-  // to ride for ring records; a topic is an engine-side change
-  // (agent/api/sockets.go), not this tab's. The refresh is therefore
-  // bounded by mount: the dock unmounts a sibling-activated outlet, so
-  // an inactive tab costs nothing.
   let timer: ReturnType<typeof setInterval> | null = null;
 
   onMounted(() => {
@@ -293,9 +257,7 @@
     timer = null;
   });
 
-  // --- narrow adaptation, the module-UI recipe (t_a2fdc630): this root
-  // measures its OWN rendered container and flips the class; the
-  // threshold copy is ./narrow.ts (module UI imports no shell code).
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -306,8 +268,7 @@
         .map((e) => Math.round(e.contentRect.width))
         .filter((w) => w > 0);
       if (pending.length === 0) return;
-      // the flip changes the observed layout itself: mutate on the next
-      // frame, never inside the callback's own measurement pass
+      // the flip changes the observed layout itself: mutate on the next frame, never.
       requestAnimationFrame(() => {
         if (resizeObs === null) return;
         for (const w of pending) narrow.value = isNarrowWidth(w);
@@ -373,9 +334,7 @@
   .obs-row:hover {
     background: var(--z1-raised);
   }
-  /* errors are VISUALLY distinct (card step 2): a red rail + red level
-     cell; warnings get the accent rail. The two are the states a reader
-     scans for - "errors-only" is the chip that leaves nothing else. */
+  /* errors are VISUALLY distinct. */
   .obs-row.error {
     border-left-color: var(--err);
   }
@@ -449,17 +408,12 @@
     word-break: break-all;
     opacity: 0.75;
   }
-  /* the chips: the band-tool look plus the toggle state (the Logs strip's
-     severity-chip voice). aria-pressed carries the state for the a11y
-     tree; the eye needs the dimming. */
   .obs-pane .obs-chip[aria-pressed="true"] {
     color: var(--text);
   }
   .obs-pane .obs-chip.off {
     opacity: 0.45;
   }
-  /* narrow: the meta cells fold - the summary owns the second line, and
-     the column header would point at columns that no longer align. */
   .obs-pane.narrow .obs-head {
     display: none;
   }

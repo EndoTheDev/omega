@@ -1,15 +1,6 @@
 package api
 
-// GET /tools?disabled=1 - the fold-aware management read (card
-// t_5c9bb50a, Endo's report: "i disabled web, and now its so gone, i
-// cant even re-enable it"). The BARE read stays the executable
-// registry the chat loop consumes - disabled tools are absent and the
-// wire carries no new key. The fold-aware read serves the settings
-// tab: the same union BEFORE the fold filters it, every entry stamped
-// with the fold's verdict, so a disabled tool keeps its row and its
-// re-enable toggle. The one-way door (a disabled tool vanishing from
-// the only surface that could flip it back) is the red shape both
-// halves below pin dead.
+// GET /tools?disabled=1 - the fold-aware management read.
 
 import (
 	"encoding/json"
@@ -31,11 +22,9 @@ func TestToolsFoldAwareRead(t *testing.T) {
 	a := agent.NewAgent(nil, registry, 0)
 	s := NewServer(a, nil, nil, nil, nil, nil)
 
-	// the fold switches web.* off - the exact live-lane report shape
 	a.SetDisabledTools([]string{"web.search", "web.fetch"})
 
-	// bare read: the executable registry - web.* absent (the model
-	// must not see disabled tools), and the wire carries no new key
+	// bare read: the executable registry - web.* absent.
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tools", nil))
 	if rec.Code != http.StatusOK {
@@ -52,8 +41,6 @@ func TestToolsFoldAwareRead(t *testing.T) {
 		t.Fatalf("bare /tools wire gained a key: %s", rec.Body)
 	}
 
-	// fold-aware read: the SAME union pre-fold, web.* back with the
-	// stamp - the settings tab can render and re-enable them
 	rec2 := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec2, httptest.NewRequest(http.MethodGet, "/tools?disabled=1", nil))
 	if rec2.Code != http.StatusOK {
@@ -86,7 +73,6 @@ func TestToolsFoldAwareRead(t *testing.T) {
 		}
 	}
 
-	// partial fold: one member off stamps only that member
 	a.SetDisabledTools([]string{"web.search"})
 	rec3 := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec3, httptest.NewRequest(http.MethodGet, "/tools?disabled=1", nil))
@@ -102,10 +88,9 @@ func TestToolsFoldAwareRead(t *testing.T) {
 	}
 }
 
-// TestToolsFoldAwareReadHonorOtherValues pins the query contract: any
-// value other than the literal 1 is the bare read - a stray consumer
-// appending "?disabled=true" must not silently leak disabled tools to
-// the model.
+// TestToolsFoldAwareReadHonorOtherValues pins the query contract: any value other than
+// the literal 1 is the bare read - a stray consumer appending "?disabled=true" must not
+// silently leak disabled tools to the model.
 func TestToolsFoldAwareReadHonorOtherValues(t *testing.T) {
 	registry := map[string]core.Tool{
 		"web.search": {Description: "search the web"},

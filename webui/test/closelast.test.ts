@@ -1,24 +1,11 @@
-// omega webui: the last-main-pane law (Endo ruling 2026-10-25,
-// corrected t_b620f99d: the law protects the PANE, not the tabs) plus THE
-// LOCKED LAST TAB (card t_9855a20e, Endo ruling 2026-11-14).
-//
-// The LAST main pane never closes its PANE: `removePane` refuses it as a
-// no-op whatever carried the request in - button, shortcut, stale state
-// (the guards read the LIVE tree). The main area never reaches zero
-// panes; the empty launcher pane IS a main pane and stays.
-//
-// TAB close is a separate computation: a pane's LAST tab is LOCKED. It
-// keeps its X - disabled and dimmed (card t_b72a4ee3 superseded
-// t_9855a20e's no-X surface) and `closeTab` refuses the request, so no
-// close can empty a pane - which is exactly how the pane stays non-empty.
-// Nothing is seated in its place: the never-zero placeholder of commit
-// 8eabefc7 (card t_d04a1c80) is retired as the blank "empty bad looking
-// space" Endo closed his last chat into. The two dead states it can leave
-// on disk - a persisted placeholder seat, a zero-tab pane from an older
-// record - are repaired at boot onto a fresh new-chat tab
-// (`repairPaneSeats`).
-//
-// Render-free; node's built-in test runner.
+// omega webui: the last-main-pane law plus THE LOCKED LAST TAB. The LAST main pane
+// never closes its PANE: `removePane` refuses it as a no-op whatever carried the
+// request in - button, shortcut, stale state (the guards read the LIVE tree). The main
+// area never reaches zero panes; the empty launcher pane IS a main pane and stays. It
+// keeps its X - disabled and dimmed and `closeTab` refuses the request, so no close can
+// empty a pane - which is exactly how the pane stays non-empty. Nothing is seated in
+// its place: the never-zero placeholder of commit 8eabefc7 is retired as the blank
+// "empty bad looking space" Endo closed his last chat.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -97,15 +84,15 @@ function comps(p: DockPane): string[] {
   return p.tabs.map((t) => t.component);
 }
 
-/** a persisted never-zero placeholder tab (card t_d04a1c80) - "newtab" is a
-    LEGACY id now (dockables.ts), so records still carry it even though the
-    live component union no longer does */
+/** a persisted never-zero placeholder tab. */
 function legacySeat(): DockTab {
   return { component: "newtab" } as unknown as DockTab;
 }
 
-/** the fixed shell shape: left sessions + the single main pane + right
-    inspector (the census reads 1 - the shells never count) */
+/**
+ * the fixed shell shape: left sessions + the single main pane + right inspector (the
+ * census reads 1 - the shells never count) / /
+ */
 function shellTree(): { t: DockNode; main: DockPane } {
   const t: DockNode = makeSplit("row", [
     makePane("sidebar", 240, "left"),
@@ -115,8 +102,9 @@ function shellTree(): { t: DockNode; main: DockPane } {
   return { t, main: panes(t).find((p) => p.edge === undefined)! };
 }
 
-/** the same shell with the main pane hosting TWO chat tabs (the only shape
-    a close is allowed to touch) */
+/**
+ * the same shell with the main pane hosting TWO chat tabs.
+ */
 function shellTreeTwoTabs(): { t: DockNode; main: DockPane } {
   const { t, main } = shellTree();
   const twoTabs: DockPane = { ...main, tabs: [{ component: "chat" }, { component: "chat" }] };
@@ -128,8 +116,9 @@ function shellTreeTwoTabs(): { t: DockNode; main: DockPane } {
   return { t: out, main: twoTabs };
 }
 
-/** a fresh dock over the persisted shell shape (boot repair grafts the
-    missing bottom shell; ids survive, so `main.id` still resolves) */
+/**
+ * a fresh dock over the persisted shell shape.
+ */
 async function dockOver(t: DockNode): Promise<ReturnType<typeof createDock>> {
   const mem = new MemoryStorage() as unknown as Storage;
   mem.setItem(DOCK_LAYOUT_KEY, serialize(t));
@@ -183,9 +172,9 @@ describe("case 1: a single main pane - pane X hidden, its tabs locked", () => {
     assert.notEqual(after, t, "tab 0 closes");
     assert.deepEqual(comps(asPaneOf(after, main.id)), ["chat"], "one tab stays");
     assert.equal(asPaneOf(after, main.id).active, 0);
-    // card t_9855a20e (THE LOCKED LAST TAB): the survivor is the pane's
-    // LAST tab - the close that used to seat a placeholder is refused, so
-    // the pane is never empty and no "New Tab" sticker appears
+    // (THE LOCKED LAST TAB): the survivor is the pane's LAST tab - the close that used
+    // to seat a placeholder is refused, so the pane is never empty and no "New Tab"
+    // sticker appears
     const after2 = closeTab(after, main.id, 0);
     assert.equal(after2, after, "the last tab refuses - the tree is untouched");
     assert.deepEqual(comps(asPaneOf(after2, main.id)), ["chat"]);
@@ -235,8 +224,6 @@ describe("case 2: two main panes - close on both, then the survivor loses it", (
       assert.equal(dock.canRemovePane(p.id), true, "both carry the pane X");
       assert.equal(dock.isLastMainPane(p.id), false, "neither is the last main pane");
     }
-    // closing one pane: the survivor becomes the last main pane - its
-    // pane X goes with the same tree swap
     const gone = mains.find((p) => p.id !== main.id)!;
     dock.remove(gone.id);
     await flush();
@@ -395,15 +382,13 @@ describe("the chrome wiring (DockPane source pins)", () => {
   it("the tab X rides component closability ALONE - population no longer removes it", () => {
     const pane = src("app/components/DockPane.vue");
     // the tab close button still renders behind tabClosable - NO census term
-    // (t_b620f99d: the pane law must not feed the tab-close rendering)
     assert.match(pane, /v-if="tabClosable\(t\)"/);
     assert.doesNotMatch(
       pane,
       /tabClosable.*isLastMainPane/,
       "the census never feeds the tab X",
     );
-    // card t_b72a4ee3: THE LOCKED LAST TAB's surface flipped - the X exists
-    // on every closable-class tab (the COMPONENT half only)
+    // THE LOCKED LAST TAB's surface flipped.
     assert.match(
       pane,
       /function tabClosable\(t: DockTab\): boolean \{\s*return isClosableTab\(t\.component\);\s*\}/,
@@ -414,14 +399,12 @@ describe("the chrome wiring (DockPane source pins)", () => {
       /isClosableTab\(t\.component\) && props\.node\.tabs\.length/,
       "the pane population never decides whether the X exists",
     );
-    // the pane remove paths ride the store's census-guarded read
     assert.match(pane, /v-if="api\.canRemovePane\(node\.id\)"/);
   });
   it("the lone tab's X is disabled + dimmed over the guard's OWN predicate", () => {
     const pane = src("app/components/DockPane.vue");
     const dock = src("app/composables/dock.ts");
-    // ONE condition: dock.ts exports it, closeTab guards with it, the pane
-    // computes from it (no second copy of the population test in the SFC)
+    // ONE condition: dock.ts exports it, closeTab guards with it, the pane computes.
     assert.match(
       dock,
       /export function lastTabLocked\(pane: DockPane\): boolean \{\s*return pane\.tabs\.length <= 1;\s*\}/,
@@ -439,15 +422,12 @@ describe("the chrome wiring (DockPane source pins)", () => {
       /:title="lastTabLocked \? 'the last tab cannot close' : 'close tab'"/,
       "the lock explains itself on hover",
     );
-    // the click path refuses before it asks the store, and the live X keeps
-    // its old request
+    // the click path refuses before it asks the store, and the live X keeps its old.
     assert.match(
       pane,
       /function onTabClose\(index: number\) \{\s*if \(lastTabLocked\.value\) return;\s*api\.closeTab\(props\.node\.id, index\);\s*\}/,
     );
-    // the locked X is NOT the native disabled attribute: a natively
-    // disabled button fires no mouse events in Chrome, which would kill the
-    // title that explains the lock
+    // the locked X is NOT the native disabled attribute.
     assert.doesNotMatch(pane, /:disabled="lastTabLocked/, "aria-disabled keeps the tooltip alive");
   });
   it("the locked X is the one X that does not wait for hover (css)", () => {

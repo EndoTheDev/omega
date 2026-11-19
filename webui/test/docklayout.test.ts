@@ -1,11 +1,5 @@
-// omega webui: layout persistence v:3 (v0.14.4 milestone 3, ruling 6).
-// parseAnyLayout is the TOTAL deserializer: ANY JSON shape parses to a
-// valid tree, no throw path, with a repair receipt for everything it had
-// to ease. The malformed-case table runs RED-first: every case here was
-// either a crash, a silent default-tree fallback, or a rejected record
-// under the v:2 strict reader. serialize writes integer px split sizes;
-// fractions derive at load. The backup-law and round-trip gate tests pin
-// the writer contract the store persists through.
+// omega webui: layout persistence v:3. The backup-law and round-trip gate tests pin the
+// writer contract the store persists through.
 
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
@@ -159,7 +153,6 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
     const p = parseAnyLayout(raw, fallback);
     assert.equal(panes(p.tree)[0]!.fixed, MIN_PANE_PX);
     assert.ok(p.repairs.some((r) => /floor/i.test(r)));
-    // split px children too (a v:3 record): px [10, 490] -> [128, 372]
     const raw3 = JSON.stringify({
       v: 3,
       tree: { kind: "split", id: "n1", direction: "row", px: [10, 490], children: [
@@ -216,11 +209,6 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
   });
 
   it("card t_81d0901b: a stored layout naming the removed modules tab boots as a clean no-op", () => {
-    // Layouts persisted before the modules cockpit retired still name it.
-    // The reader DROPS the id with a receipt (it is not a legacy id - a
-    // legacy id would deserialize into a live phantom tab), the pane keeps
-    // its surviving tabs, and the boot completes. Probe both readers plus
-    // the real store load.
     const raw = JSON.stringify({
       v: 3,
       tree: { kind: "split", id: "n1", direction: "row", px: [760, 240], children: [
@@ -245,8 +233,6 @@ describe("parseAnyLayout: the repair table (ruling 6)", () => {
       p.repairs.some((r) => r.includes("extensions") && /dropped/i.test(r)),
       `the receipt names the dropped id: ${JSON.stringify(p.repairs)}`,
     );
-    // the store's own load is the same no-op: no throw, the layout persists,
-    // and no phantom tab is reachable through it
     const store = new MemoryStorage();
     store.setItem(DOCK_LAYOUT_KEY, raw);
     const dock = createDock(store as unknown as Storage);
@@ -263,11 +249,7 @@ describe("serialize v:4: integer px on disk (ruling 6)", () => {
     const rec = JSON.parse(serialize(root, [])) as { v: number; tree: DockSplit };
     assert.equal(rec.v, 4);
     assert.equal(rec.tree.sizes, undefined, "fraction sizes are gone from disk");
-    // chat flexes over the 760px remainder (1/3 vs files' fixed 240);
-    // files keeps its fixed px whole
     assert.deepEqual(rec.tree.px, [760, 240]);
-    // px -> fractions derive back; chat's flexible share stays 100% of the
-    // remainder (the only flexible child), files keeps its fixed 240
     const back = parseAnyLayout(JSON.stringify(rec), fallback);
     assert.deepEqual(
       asSplit(back.tree).sizes.map((s) => Math.round(s * 100) / 100),
@@ -288,7 +270,6 @@ describe("serialize v:4: integer px on disk (ruling 6)", () => {
     assert.deepEqual(asSplit(p.tree).sizes, [0.5, 0.5], "the migration preserves ratios");
     const rec = JSON.parse(serialize(p.tree, [])) as { v: number };
     assert.equal(rec.v, 4, "the next persist is v:4");
-    // the strict reader accepts the v:4 shape too (deserialize() keeps working)
     assert.ok(deserializeLayout(serialize(p.tree, [])), "the strict reader reads v:4");
   });
 });

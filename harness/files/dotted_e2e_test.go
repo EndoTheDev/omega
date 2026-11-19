@@ -1,10 +1,6 @@
 package files
 
-// dotted_e2e_test.go: the split's acceptance witness (t_d8fbad57,
-// phase 2). A scripted provider drives every dotted files tool
-// through the REAL agent loop - the same wire a model rides - and
-// the assertions read the disk. No server, no REST: the loop's tool
-// dispatch on the dotted names is the surface under test.
+// dotted_e2e_test.go: the split's acceptance witness.
 
 import (
 	"context"
@@ -27,10 +23,9 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 	p := &FileProvider{}
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises every dotted tool back to back -
-		// one call per new tool name. Each call targets its own file:
-		// the loop executes tool calls concurrently, so no call may
-		// depend on another call's landing first.
+		// Turn 1: the model exercises every dotted tool back to back. Each call targets its
+		// own file: the loop executes tool calls concurrently, so no call may depend on
+		// another call's landing first.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "files.read", Arguments: map[string]any{"path": seed},
@@ -55,7 +50,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -82,8 +76,7 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 4", results)
 	}
 
-	// the disk is the truth: the write landed, the edit patched the
-	// seed, the batch applied both files
+	// the disk is the truth: the write landed, the edit patched the seed, the batch.
 	born, err := os.ReadFile(filepath.Join(dir, "born.txt"))
 	if err != nil || !strings.Contains(string(born), "born on the wire") {
 		t.Fatalf("files.write never landed: %q %v", string(born), err)

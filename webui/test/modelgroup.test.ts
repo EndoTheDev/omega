@@ -1,17 +1,8 @@
-// omega webui: the composer's model + effort chips wrap as ONE unit
-// (t_641c2870). The regression: the toolbar is a wrapping flex row and
-// used to render WorkspaceSelect, ModelSelect, ThinkingSelect, send as
-// flat siblings - on a narrow composer the wrap boundary landed between
-// the model chip and the effort chip, stranding `default ▾` alone on
-// row two while `glm-5.3 ▾` stayed on row one with empty space beside
-// it (Endo, 2026-10-29: "make sure modelname and reasoning effort
-// stays grouped together"). The fix pairs the two chips inside one
-// .model-group flex item (nowrap, min-width: auto - the group holds at
-// its own min-content) - a wrap
-// moves the pair together or leaves both in place, it cannot split it.
-// These are structural source-contract tests (house pattern: read the
-// .vue/.css, assert the wiring).
-// Run: node --test test/
+// omega webui: the composer's model + effort chips wrap as ONE unit. The fix pairs the
+// two chips inside one.model-group flex item (nowrap, min-width: auto - the group holds
+// at its own min-content) - a wrap moves the pair together or leaves both in place, it
+// cannot split it. These are structural source-contract tests (house pattern: read
+// the.vue/.css, assert the wiring).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -31,13 +22,11 @@ const css = () =>
 describe("composer model+effort wrap group (t_641c2870)", () => {
   it("ModelSelect and the effort BandSelect render inside one .model-group", () => {
     const src = composer();
-    // the wrapper exists ...
     assert.match(
       src,
       /<div class="model-group">/,
       "AppComposer must wrap the model + effort chips in one .model-group",
     );
-    // ... and carries BOTH chips inside it, in the v0.14.3 row order
     const group = src.match(
       /<div class="model-group">[\s\S]*?<\/div>/,
     );
@@ -68,9 +57,7 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
       /class="send"/,
       ".model-group must not swallow the send button - it keeps its own row anchor",
     );
-    // card t_8fd38f88: the workdir selector LEFT the composer entirely -
-    // the composer keeps the model + reasoning chips, and the bar echoes
-    // neither. The status bar is the picker's only home now.
+    // the workdir selector LEFT the composer entirely.
     assert.doesNotMatch(
       src,
       /<WorkspaceSelect/,
@@ -84,7 +71,6 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
 
   it("main.css makes the group a nowrap flex unit the toolbar cannot split", () => {
     const src = css();
-    // the group: one unbreakable flex item
     const groupRule = src.match(/\.model-group\s*\{[^}]*\}/);
     assert.ok(groupRule, ".model-group rule missing from main.css");
     assert.match(groupRule[0], /display:\s*flex/, "the group is a flex row");
@@ -99,9 +85,7 @@ describe("composer model+effort wrap group (t_641c2870)", () => {
     assert.ok(toolbarRule, ".toolbar rule missing from main.css");
     assert.match(toolbarRule[0], /flex-wrap: wrap/,
       ".toolbar must keep flex-wrap: wrap - the group wraps as a unit, the row still wraps");
-    // the composer's override (card t_1750a9e3: ONE composer, the C5
-    // arrangement is THE shape): the BOTTOM row's chips never wrap while
-    // the composer is not expanded
+    // the composer's override: the BOTTOM row's chips never wrap while the composer.
     const composerRule = src.match(/\.composer:not\(\.expanded\) \.toolbar\s*\{[^}]*\}/);
     assert.ok(composerRule, "the composer toolbar rule missing from main.css");
     assert.match(composerRule[0], /flex-wrap: nowrap/,

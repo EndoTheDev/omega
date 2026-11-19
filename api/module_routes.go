@@ -7,11 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// handleModuleOrSPA is the catch-all the fixed shell handlers fall
-// through to (v0.12 phase F): a module-rest request rides the capsule
-// mux (404 when the pattern is not registered - the capsule mux has
-// no fallback); anything else serves the SPA shell. The shell holds
-// no module shape: the routes ride the live Context.
+// handleModuleOrSPA is the catch-all the fixed shell handlers fall through to.
 func (s *Server) handleModuleOrSPA(w http.ResponseWriter, r *http.Request) {
 	modmux, roots := s.ModuleMux()
 	if modmux != nil {
@@ -43,7 +39,6 @@ func moduleRouter(routes []core.ModuleRoute) (*http.ServeMux, map[string]bool) {
 		seen[rt.Pattern] = true
 		pattern, handler := rt.Pattern, rt.Handler
 		mux.HandleFunc(pattern, handler)
-		// the first path segment any method-scoped registration owns
 		p := pattern
 		if i := strings.IndexByte(p, ' '); i > 0 && !strings.ContainsAny(p[:i], "/{") {
 			p = p[i+1:] // strip the "GET " method prefix

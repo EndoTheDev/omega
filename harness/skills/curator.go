@@ -13,13 +13,13 @@ import (
 
 )
 
-// The weekly curator pass (card t_9972dfd0, ported from Hermes
+// The weekly curator pass
 // agent/curator.py). Division of labor is the card's law:
 //
-//   - Deterministic parts are CODE: staleness by last_used (stale at
+// Deterministic parts are CODE: staleness by last_used (stale at
 //     14d, archived at 30d), archive moves, whole-folder backups,
 //     ledger rows.
-//   - The LLM only READS and PROPOSES: one call proposes merge
+// The LLM only READS and PROPOSES: one call proposes merge
 //     candidates (a narrow skill absorbed into an umbrella) and a
 //     distill list (oversized bodies); per accepted candidate, one
 //     call drafts the distilled text. Code validates and applies
@@ -31,8 +31,7 @@ import (
 // everything else but are never rewritten by a proposal. Pinned
 // skills are untouchable.
 
-// DistillMinChars is the body size a skill must exceed before the
-// curator may distill it (~24k, the Hermes threshold).
+// DistillMinChars is the body size a skill must exceed before the curator may distill.
 const DistillMinChars = 24000
 
 // proposal caps keep one weekly pass bounded.
@@ -53,12 +52,9 @@ type CuratorReport struct {
 	ProposalsSeen string   `json:"proposals_seen,omitempty"`
 }
 
-// RunCurator executes one pass against the provider's own skills dir.
-// prov may be nil - the deterministic staleness pass still runs; the
-// LLM proposal steps are skipped and the report says so. curatorModel
-// is the per-subsystem slot (card t_fc0b2f2d): "instance:model" rides
-// the named provider instance (ResolveModelSlot), a bare name routes
-// through prov.WithModel (empty = the instance's own model).
+// RunCurator executes one pass against the provider's own skills dir. prov may be nil -
+// the deterministic staleness pass still runs; the LLM proposal steps are skipped and
+// the report says.
 func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, curatorModel string) (CuratorReport, error) {
 	if sp.Dir == "" {
 		return CuratorReport{}, fmt.Errorf("curator: skills directory not configured")
@@ -108,11 +104,9 @@ func (sp *SkillsProvider) RunCurator(ctx context.Context, prov agent.Provider, c
 	return rep, nil
 }
 
-// applyStaleness is the deterministic transition pass: every skill on
-// disk (usage-recorded or not) freshens or retires by its last real
-// activity. A skill with no record gets one on first sight (created
-// now), so never-used skills anchor on creation and cannot self-
-// archive by sitting unread for one archive window (the Hermes law).
+// applyStaleness is the deterministic transition pass. A skill with no record gets one
+// on first sight (created now), so never-used skills anchor on creation and cannot
+// self- archive by sitting unread for one archive window (the Hermes law).
 func (sp *SkillsProvider) applyStaleness(rep *CuratorReport) error {
 	usageMu.Lock()
 	defer usageMu.Unlock()
@@ -133,14 +127,10 @@ func (sp *SkillsProvider) applyStaleness(rep *CuratorReport) error {
 			rec = UsageRecord{CreatedAt: now.Format(time.RFC3339), State: StateActive}
 		}
 		if rec.State == "" {
-			// A seeded record without a phase rides as active - the
-			// staleness ladder's entry state (TouchUsage normalizes
-			// the same way).
 			rec.State = StateActive
 		}
 		anchor := anchorTime(rec, now)
-		// never-used: absence of evidence is not staleness (Hermes);
-		// only usage or an old-enough creation anchors the clock.
+		// never-used: absence of evidence is not staleness (Hermes).
 		if rec.UseCount+rec.PatchCount == 0 && anchor.After(staleCutoff) {
 			usage[name] = rec
 			touched = true
@@ -214,9 +204,8 @@ func (sp *SkillsProvider) onDiskSkillNames() ([]string, error) {
 	return names, nil
 }
 
-// archiveOne moves <dir>/<name> to .archive/<name> with backup +
-// ledger, inside the usage lock (the deterministic pass holds it).
-// The usage record the caller carries is already archived-state.
+// archiveOne moves <dir>/<name> to.archive/<name> with backup + ledger, inside the. The
+// usage record the caller carries is already archived-state.
 func (sp *SkillsProvider) archiveOne(name string, rec UsageRecord, usage map[string]UsageRecord) (string, error) {
 	skillFile := filepath.Join(sp.Dir, name, "SKILL.md")
 	before := ""
@@ -265,9 +254,7 @@ type proposalSet struct {
 	Distills []distillProposal `json:"distills"`
 }
 
-// proposeMutations runs the single proposal call: skill inventory in,
-// JSON proposals out. The candidates are NOT applied here - they are
-// validated and re-verified per skill in the apply steps.
+// proposeMutations runs the single proposal call.
 func (sp *SkillsProvider) proposeMutations(ctx context.Context, prov agent.Provider) ([]mergeProposal, []distillProposal, string, error) {
 	usage := readUsage(sp.Dir)
 	var sb strings.Builder
@@ -326,9 +313,7 @@ func oneLine(s string, max int) string {
 	return s
 }
 
-// applyMerge validates one merge candidate and applies it: distilled
-// section drafted by the LLM, appended to the umbrella body; the
-// source is backed up and archived. One ledger row covers both files.
+// applyMerge validates one merge candidate and applies it.
 func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m mergeProposal) (string, error) {
 	m.Source, m.Into = strings.TrimSpace(m.Source), strings.TrimSpace(m.Into)
 	if m.Source == "" || m.Into == "" || m.Source == m.Into {
@@ -372,9 +357,8 @@ func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m
 	if err != nil {
 		return "", err
 	}
-	// Apply in write-order: umbrella first (the source must still
-	// exist on disk for the archive ledger's before content, and the
-	// umbrella write is atomic), then the move.
+	// Apply in write-order: umbrella first (the source must still exist on disk for the
+	// archive ledger's before content, and the umbrella write is atomic), then the move.
 	if err := os.WriteFile(tgtFile, []byte(patched), 0o644); err != nil {
 		return "", fmt.Errorf("write umbrella: %w", err)
 	}
@@ -464,9 +448,6 @@ func (sp *SkillsProvider) applyDistill(ctx context.Context, prov agent.Provider,
 		map[string]any{"before_chars": len([]rune(body)), "after_chars": len([]rune(distilled))})
 }
 
-// agentAuthoredSkillFile resolves a SKILL.md and refuses any skill
-// outside the agent-created class (the provenance rule the LLM passes
-// enforce; the LLM could mislabel, so code re-checks on every apply).
 func (sp *SkillsProvider) agentAuthoredSkillFile(name string) (string, error) {
 	if !validSkillName(name) {
 		return "", fmt.Errorf("invalid skill name %q", name)
@@ -508,8 +489,7 @@ func mergeIntoBody(content, title, source, body string) string {
 	return content + sep + "\n## " + title + " (absorbed from " + source + ")\n\n" + strings.TrimRight(body, "\n") + "\n"
 }
 
-// splitFrontmatter divides a SKILL.md into (frontmatter-with-fences,
-// body). No frontmatter = ("", content).
+// splitFrontmatter divides a SKILL.md into (frontmatter-with-fences, body).
 func splitFrontmatter(content string) (front, body string) {
 	lines := strings.SplitAfterN(content, "\n", -1)
 	if len(lines) == 0 || strings.TrimRight(lines[0], "\n\r") != "---" {
@@ -523,8 +503,7 @@ func splitFrontmatter(content string) (front, body string) {
 	return "", content
 }
 
-// loadSkillFromContent parses a composed SKILL.md the way loadSkill
-// parses a file (the shape gate for curator-composed content).
+// loadSkillFromContent parses a composed SKILL.md the way loadSkill parses a file.
 func loadSkillFromContent(name, content string) (Skill, error) {
 	tmp, err := os.CreateTemp("", name+"-*.md")
 	if err != nil {
@@ -541,8 +520,7 @@ func loadSkillFromContent(name, content string) (Skill, error) {
 	return s, err
 }
 
-// moveDir renames a folder, falling back to copy+delete across
-// filesystems.
+// moveDir renames a folder, falling back to copy+delete across filesystems.
 func moveDir(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err

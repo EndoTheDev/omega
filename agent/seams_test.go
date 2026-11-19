@@ -12,14 +12,11 @@ import (
 	"testing"
 )
 
-// The bind-time assertion law (part 3 wave 2, the seam constitution):
-// NewFromContext resolves and shape-asserts every need at bind. A
-// wrong-shaped offer under a need key fails at boot naming the need -
-// never a silent nil discovered mid-turn, never a lazy resolve.
-// TestCensusEnforcement's complement: the negative case per need key.
+// The bind-time assertion law (part 3 wave 2, the seam constitution). A wrong-shaped
+// offer under a need key fails at boot naming the need - never a silent nil discovered
+// mid-turn, never a lazy resolve.
 func TestBindWrongShapeDiesLoud(t *testing.T) {
-	// The store key is bound by the serving surface, not NewFromContext
-	// (cmd/omega/main.go asserts the store offer's shape the same way).
+	// The store key is bound by the serving surface, not NewFromContext.
 	for _, key := range []string{"provider", "loop", "prompt", "logger", "compactor", "approvals", "nudger"} {
 		var ctx Context
 		ctx.ApplyOffer(key, "test", struct{}{}) // satisfies no need interface
@@ -57,11 +54,7 @@ func (e panicErr) Error() string {
 	return "panic: not a string panic"
 }
 
-// needKeys is the closed need-key namespace (agent/seams.go, the
-// census comment in extensionapi.go): the substrate's shopping list.
-// Proposing #9 is a design event, argued in a card - this test is the
-// mirror of core/census.go's slot list and the Offer call sites; a
-// capsule offering outside the closed list is a wave-3 noun finding.
+// needKeys is the closed need-key namespace.
 var needKeys = []string{
 	"provider",
 	"store",
@@ -73,15 +66,10 @@ var needKeys = []string{
 	"approvals",
 }
 
-// capsuleServiceKeys are the non-need class of the closed namespace
-// (part 3 wave 1): owner-offered capsule services, consumed through
-// consumer-owned local interfaces. kanban is a Provides claim only
-// (no service is offered under it - the census carries it no slot).
-// chat-runs is the first SHELL-offered key (Endo ruling 2026-11-04,
-// the shell-ring shrink wave 2): owner = the serving shell, offered
-// through the proper api.Offer surface at channel wire time;
-// consumers = any capsule reading live-run state through its own
-// interface; a missing offer = honest never-running.
+// capsuleServiceKeys are the non-need class of the closed namespace (part 3 wave 1).
+// chat-runs is the first SHELL-offered key: owner = the serving shell, offered through
+// the proper api.Offer surface at channel wire time; consumers = any capsule reading
+// live-run state through its own interface; a missing offer = honest never-running.
 var capsuleServiceKeys = []string{
 	"skills",
 	"memory",
@@ -92,19 +80,13 @@ var capsuleServiceKeys = []string{
 	"chat-runs",
 }
 
-// TestBindMissingStoreOffersFloor pins the missing-supply flip side
-// for the needs with documented floors: absence is a legal state - the
-// loop degrades (no prompt, no compaction, no nudger, no gate, no
-// logger) instead of booting the wrong shape. Supply-side absence of
-// "provider" refuses the boot upstream (the unconfigured host posture)
-// and is not re-tested here.
+// TestBindMissingStoreOffersFloor pins the missing-supply flip side for the needs.
 func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 	var ctx Context
 	ctx.ApplyOffer("provider", "test", FakeProvider{})
 
-	// The optional needs stay absent on purpose: zero offers for
-	// loop, logger, compactor, prompt, nudger, approvals. The bind
-	// resolution must not fabricate one.
+	// The optional needs stay absent on purpose. The bind resolution must not fabricate
+	// one.
 	for _, key := range []string{"loop", "logger", "compactor", "prompt", "nudger", "approvals"} {
 		if ctx.Services().Resolve(key) != nil {
 			t.Fatalf("need %q: nothing offered, the registry must resolve nil", key)
@@ -112,13 +94,9 @@ func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 	}
 }
 
-// TestClassANounsLeaveTheSubstrate is the wave-2 noun law (part 3, the
-// seam constitution): the need-interface names live with their
-// consumers (agent/, the loop machinery, the serving surface) - the
-// substrate ends as wire types, mount machinery, registry. The scan is
-// identifier-level (go/ast), so comments and the accepted residual
-// string keys ("store", "provider" as data in the census and resolve
-// calls) never trip it. agent/ is not scanned: it declares the faces.
+// TestClassANounsLeaveTheSubstrate is the wave-2 noun law (part 3, the seam. The scan
+// is identifier-level (go/ast), so comments and the accepted residual string keys
+// ("store", "provider" as data in the census and resolve calls) never trip it.
 func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 	forbidden := map[string]bool{
 		"Provider":           true,
@@ -129,9 +107,7 @@ func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 		"ApprovalProvider":   true,
 		"TurnNudger":         true,
 		"LoopProvider":       true,
-		// Class B owner faces (part 3 wave 1) plus the slot-era types
-		// that referenced them: deleted everywhere, the consumer keeps
-		// only its own local interface.
+		// Class B owner faces (part 3 wave 1) plus the slot-era types that referenced them.
 		"CronProvider":          true,
 		"SkillsProvider":        true,
 		"MemoryProvider":        true,
@@ -152,9 +128,6 @@ func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 		"RegisterTurnNudger":    true,
 		"RegisterLoop":          true,
 	}
-	// The scan covers core/ and llm/ - the substrate rings. agent/ and
-	// the shells (api/, agent/api/) declare or consume the faces: the
-	// same identifiers there are the legal consult sites, not residue.
 	for _, dir := range []struct {
 		path      string
 		skipTests bool
@@ -192,12 +165,9 @@ func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 	}
 }
 
-// TestClassANounsLiveAtTheirConsumers pins the flip side of the wave-2
-// noun law: the eight need interfaces exist, at their ONE consumer
-// home (agent/seams.go - the loop machinery's own need statements). A
-// face moving house re-lands the docs, agent/extensionapi.go's census
-// comment and the harness offers with it, so the drift cannot be
-// silent.
+// TestClassANounsLiveAtTheirConsumers pins the flip side of the wave-2 noun law. A face
+// moving house re-lands the docs, agent/extensionapi.go's census comment and the
+// harness offers with it, so the drift cannot be silent.
 func TestClassANounsLiveAtTheirConsumers(t *testing.T) {
 	fset := token.NewFileSet()
 	f, err := parser.ParseFile(fset, "seams.go", nil, 0)
@@ -217,7 +187,6 @@ func TestClassANounsLiveAtTheirConsumers(t *testing.T) {
 			}
 		}
 	}
-	// The need face per need key: key -> the consumer interface name.
 	faces := map[string]string{
 		"provider":  "Provider",
 		"store":     "StoreProvider",
@@ -235,14 +204,11 @@ func TestClassANounsLiveAtTheirConsumers(t *testing.T) {
 	}
 }
 
-// TestCapsuleOwnerFacesLeaveTheTree is the deletability proof-as-test
-// (part 3, the seam constitution): the Class B owner-face names and the
-// slot-era types they referenced must be dead in every ring outside
-// harness/ - core, llm, agent (loop + base endpoints included), api and
-// the host. No type, field or local identifier may resurrect them
-// there; a consumer declares its own local interface with its own
-// name, the owner noun is gone. Comments and string keys are data
-// (go/ast) and never trip.
+// TestCapsuleOwnerFacesLeaveTheTree is the deletability proof-as-test (part 3, the seam
+// constitution): the Class B owner-face names and the slot-era types they referenced
+// must be dead in every ring outside harness/ - core, llm, agent (loop + base endpoints
+// included), api and the host. Comments and string keys are data (go/ast) and never
+// trip.
 func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	forbidden := map[string]bool{
 		"CronProvider":          true,
@@ -261,9 +227,6 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("abs root: %v", err)
 	}
-	// The substrate rings the constitution names: core, llm, agent
-	// (incl. the loop + base endpoints), api (the shell ring) and the
-	// host (cmd). harness/ is excluded - capsules own their folders.
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, werr error) error {
 		if werr != nil {
 			return werr
@@ -307,15 +270,11 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 	}
 }
 
-// TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site
-// in the tree and holds the namespace shut: the only legal offer keys
-// are the 8 need keys (needKeys above) plus the 7 capsule-service keys
-// (capsuleServiceKeys). Offering a 16th key is a design event, argued
-// in a card - not a line a capsule may add silently. The ApplyOffer
-// walk closes the one-abstraction bypass (Endo ruling 2026-11-04,
-// wave-2 review): a census that only pins .Offer( call sites is
-// decoration - the raw core primitive is the mount machinery's own,
-// and every literal-key caller (the host's store offer, the shell's
+// TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site in the tree.
+// Offering a 16th key is a design event, argued in a card - not a line a capsule may
+// add silently. The ApplyOffer walk closes the one-abstraction bypass: a census that
+// only pins.Offer( call sites is decoration - the raw core primitive is the mount
+// machinery's own, and every literal-key caller (the host's store offer, the shell's
 // chat-runs) must sit in the same closed list.
 func TestOffersStayInClosedKeys(t *testing.T) {
 	closed := map[string]bool{}
@@ -326,8 +285,6 @@ func TestOffersStayInClosedKeys(t *testing.T) {
 		closed[k] = true
 	}
 	offered := map[string]int{}
-	// The key charset includes the hyphen (chat-runs); the alternation
-	// pins both the ExtensionAPI surface and the raw core primitive.
 	offerRE := regexp.MustCompile(`\.(?:Offer|ApplyOffer)\("([a-z_-]+)",`)
 	root, err := filepath.Abs("..")
 	if err != nil {

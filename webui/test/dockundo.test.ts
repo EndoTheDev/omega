@@ -1,9 +1,5 @@
-// omega webui: unit tests for the undo ring (v0.14.4 milestone 6,
-// ruling 10). Every committed LAYOUT op (split, merge, move, resize,
-// hide) snapshots the serialized tree into a 20-deep ring; Modifier-Z at
-// the dock root walks back. Refused ops and content ops ring nothing.
-// Render-free; the ring runs through the store (createDock) exactly as
-// the keybinding does.
+// omega webui: unit tests for the undo ring. Render-free; the ring runs through the
+// store (createDock) exactly as the keybinding does.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -69,10 +65,8 @@ describe("undo ring (ruling 10: mis-drops are one keystroke reversible)", () => 
     const store = new MemoryStorage();
     const dock = createDock(store as unknown as Storage);
     const shell = panes(dock.tree.value).find((x) => x.edge === "left")!.id;
-    // a sidebar refuses row splits (stacked rows only) - nothing rings
     dock.split(shell, "row", "after");
     assert.equal(dock.undoLayout(), false);
-    // self-dock refuses - nothing rings
     dock.dockDropToZone(shell, 0, shell, "left");
     assert.equal(dock.undoLayout(), false);
   });
@@ -86,9 +80,8 @@ describe("undo ring (ruling 10: mis-drops are one keystroke reversible)", () => 
     assert.ok(dock.undoLayout(), "the hide rang");
     const back = edgePane(dock.tree.value, "right");
     assert.ok(back, "undo restored the shell");
-    // the watcher persists on a flush: let the microtask land, then the
-    // persisted record must say the edge is OPEN again (the closed-edge
-    // set rides the undo)
+    // the watcher persists on a flush: let the microtask land, then the persisted
+    // record must say the edge is OPEN again (the closed-edge set rides the undo)
     await Promise.resolve();
     const rec = JSON.parse(store.getItem("omega.dock-layout")!) as { closedEdges?: string[] };
     assert.ok(!rec.closedEdges?.includes("right"), "the record says the edge is open again");
@@ -101,7 +94,6 @@ describe("undo ring (ruling 10: mis-drops are one keystroke reversible)", () => 
     const root = asSplit(dock.tree.value);
     const shellIdx = root.children[0]!.kind === "pane" ? 1 : -1;
     void shellIdx;
-    // resize the divider between the first two children of the root row
     dock.beginResize();
     const ids = asSplit(dock.tree.value).children.map((c) => c.id);
     const fixedP = panes(dock.tree.value).find((x) => x.fixed !== null && x.edge === "left");

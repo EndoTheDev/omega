@@ -9,37 +9,22 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin implements agent.Plugin for the HTTP channel. It reads the
-// port from config and appends an HTTPChannel to ctx.Channels.
+// Plugin implements agent.Plugin for the HTTP channel.
 type Plugin struct {
-	// hub is the process-wide run registry (t_c6f13a82): one hub, shared
-	// by every bind's channel start. Multi-bind mirrors serve one
-	// logical frontend - a run started on any mirror must be visible to
-	// the reads and reattach on all of them.
+	// hub is the process-wide run registry: one hub, shared by every bind's channel start.
+	// Multi-bind mirrors serve one logical frontend - a run started on any mirror must be
+	// visible to the reads and reattach on all of them.
 	hub *agentapi.RunHub
-	// sockets is the process-wide push hub (t_229edd92): one fan-out
-	// for every bind's /ws, for the same reason as hub - a multi-bind
-	// process serves one logical frontend, and a browser attached to
-	// one bind must see the frames another bind publishes.
+	// sockets is the process-wide push hub: one fan-out for every bind's /ws, for the same
+	// reason as hub - a multi-bind process serves one logical frontend, and a browser
+	// attached to one bind must see the frames another bind publishes.
 	sockets *agentapi.SocketHub
-	// chat is the conversation's canvas capsule (chat-last 1/3): one
-	// instance per plugin, registered with the canvas seam below and
-	// shared by every bind's channel start (multi-bind: the last
-	// started server serves it - one frontend is live per process).
 	chat *agentapi.ChatCapsule
-	// canvas is the per-process canvas builder (t_1c9793a8): one
-	// canvas behind every bind's server - the panel state the snapshot
-	// GET serves, the action pipe routes and the deltas carry must be
-	// the same on all mirrors.
+	// canvas is the per-process canvas builder: one canvas behind every bind's server -
+	// the panel state the snapshot GET serves, the action pipe routes and the deltas carry
+	// must be the same on all mirrors.
 	canvas *sharedCanvas
-	// api is the mount-time registration surface, stashed for the
-	// channels' wire (Endo ruling 2026-11-04): the chat-runs offer
-	// rides the proper api.Offer path at wire time - claimed on the
-	// journal, named in the census - instead of the raw core
-	// primitive.
 	api *agent.ExtensionAPI
-	// mounted carries the channels Mount appended - the value Dismount
-	// removes by identity (the E1 dismount proof).
 	mounted []core.Channel
 }
 
@@ -53,16 +38,13 @@ func (p *Plugin) Description() string {
 	return "HTTP channel: the web UI API server - chat streaming, sessions, inspector endpoints"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "http_channel" }
 
 func (p *Plugin) Provides() []string { return []string{"channel"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// MountWithAPI creates an HTTPChannel from config and registers it on
-// ctx.Channels. The host starts it (and any other mounted channels)
-// after the mount completes.
+// MountWithAPI creates an HTTPChannel from config and registers it on ctx.Channels.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["http_channel"].(Config); ok {
@@ -72,34 +54,21 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if port <= 0 {
 		port = 8099
 	}
-	// Chat panel (chat-last 1/3, chat-last 2b ruling): the conversation's
-	// canvas surface. The capsule is created here (one instance, carried
-	// on every bind) but NOT registered with the canvas seam at Mount -
-	// registration is gated on the frontend actually starting
-	// (HTTPChannel.Start, below). One chat panel per live frontend: a
-	// serve-less process never reaches Start, so its canvas stays free of
-	// the dead "chat channel not started" duplicate.
+	// Chat panel: the conversation's canvas surface. One chat panel per live frontend: a
+	// serve-less process never reaches Start, so its canvas stays free of the dead "chat
+	// channel not started" duplicate.
 	p.chat = agentapi.NewChatCapsule()
 
-	// Bind loopback only by default: the API is unauthenticated and /chat
-	// can execute shell commands via the tool registry — it must not be
-	// reachable from the LAN (a Content-Type-blind JSON decoder also makes
-	// cross-origin no-cors POSTs exploitable from any LAN browser).
-	// Additional addresses (e.g. the Tailscale IP for Traefik) are an
-	// explicit config opt-in. Upgrade path when omega.endothe.dev deploys:
-	// Pocket ID wall in front of every path.
+	// Bind loopback only by default: the API is unauthenticated and /chat can execute
+	// shell commands via the tool registry — it must not be reachable from the LAN (a
+	// Content-Type-blind JSON decoder also makes cross-origin no-cors POSTs exploitable
+	// from any LAN browser).
 	binds := cfg.Bind
 	if len(binds) == 0 {
 		binds = []string{"127.0.0.1"}
 	}
-	// One run registry per process (t_c6f13a82): every mirror joins it
-	// at channel start, so action-pipe launches, reattach reads and the
-	// SSE attach agree on what is live regardless of which bind speaks.
 	p.hub = &agentapi.RunHub{}
-	// ONE push hub per process (t_229edd92), the run registry's law one
-	// seam over: every bind's server binds it at wire, every /ws
-	// attaches to it, so a frame published on any bind reaches every
-	// connected browser.
+	// ONE push hub per process, the run registry's law one seam.
 	p.sockets = agentapi.NewSocketHub()
 	p.canvas = &sharedCanvas{}
 	p.api = api
@@ -121,13 +90,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 			return err
 		}
 	}
-	// Web tools (v0.13 shell law 1, card t_f76ecdbe): the former
-	// modules/web capsule dissolved into the channel - serving and
-	// these tools are the channel's job, one place, one word. The
-	// pair is shell vocabulary: always mounted with the channel at
-	// its natural names (web.search, web.fetch - the builtin tier
-	// registers natural names, no namespace pairing), never in the
-	// disable list.
+	// Web tools: the former modules/web capsule dissolved into the channel. The pair is
+	// shell vocabulary: always mounted with the channel at its natural names (web.search,
+	// web.fetch - the builtin tier registers natural names, no namespace pairing), never
+	// in the disable list.
 	wt := agentapi.NewWebTools(cfg.WebTools)
 	for name, tool := range wt.Tools() {
 		if err := api.RegisterTool(name, tool); err != nil {
@@ -140,10 +106,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // NewPlugin returns an HTTP channel Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-// SetDefaultWorkspace is the settings hot-apply hook (card t_ccf74d88):
-// a live server.default_workspace save re-roots the tools' fallback
-// workdir on every mounted bind. The field write also covers a bind
-// that wires later (wire applies the channel's field at start).
+// SetDefaultWorkspace is the settings hot-apply hook.
 func (p *Plugin) SetDefaultWorkspace(ws string) {
 	for _, ch := range p.mounted {
 		if h, ok := ch.(*HTTPChannel); ok {
@@ -152,11 +115,7 @@ func (p *Plugin) SetDefaultWorkspace(ws string) {
 	}
 }
 
-// SetAgentPromptConfig is the settings hot-apply hook for the serving
-// agent's live knobs (card t_f78acfd6): a system_prompt / max_turns
-// save re-seeds every mounted bind's agent (and covers a bind that
-// wires later through the channel's stored fields). Same walk as
-// SetDefaultWorkspace.
+// SetAgentPromptConfig is the settings hot-apply hook for the serving agent's live.
 func (p *Plugin) SetAgentPromptConfig(prompt string, maxTurns int) {
 	for _, ch := range p.mounted {
 		if h, ok := ch.(*HTTPChannel); ok {
@@ -165,10 +124,7 @@ func (p *Plugin) SetAgentPromptConfig(prompt string, maxTurns int) {
 	}
 }
 
-// SetAgentRunFactory hands the host's per-agent run factory to every
-// mounted bind (card t_a7fab745). A session owned by an agent home then
-// runs on that home's provider/model/system prompt instead of the
-// daemon's. Same walk as SetAgentPromptConfig.
+// SetAgentRunFactory hands the host's per-agent run factory to every mounted bind.
 func (p *Plugin) SetAgentRunFactory(f agentapi.AgentRunFactory) {
 	for _, ch := range p.mounted {
 		if h, ok := ch.(*HTTPChannel); ok {

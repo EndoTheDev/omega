@@ -1,9 +1,6 @@
 package main
 
-// The E2 host-side tests: the config.yaml `disabled:` write boot
-// shares with the UI toggle (Q7's one code path - the key LoadConfig
-// decodes is the key writeDisabled writes), and the disabled-list
-// derivation from the live registry.
+// The E2 host-side tests: the config.yaml `disabled:` write boot shares with the UI.
 
 import (
 	"context"
@@ -32,8 +29,7 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban", "delegate"}}); err != nil {
 		t.Fatal(err)
 	}
-	// LoadConfig decodes the same file boot reads: the write must be
-	// legible to it (one code path, Q7).
+	// LoadConfig decodes the same file boot reads: the write must be legible to it.
 	cfg, err := LoadConfig(path)
 	if err != nil {
 		t.Fatal(err)
@@ -43,8 +39,6 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 	if len(cfg.Disabled.Modules) != 2 || cfg.Disabled.Modules[0] != "delegate" || cfg.Disabled.Modules[1] != "kanban" {
 		t.Fatalf("LoadConfig read %v, want [delegate kanban]", cfg.Disabled.Modules)
 	}
-	// Missing config.yaml with an empty list: nothing to say, nowhere
-	// to say it - and no litter file either.
 	fresh := filepath.Join(t.TempDir(), "config.yaml")
 	if err := writeDisabled(fresh, DisabledNamespaces{}); err != nil {
 		t.Fatal(err)
@@ -55,9 +49,7 @@ func TestWriteDisabledRoundTrip(t *testing.T) {
 }
 
 func TestWriteDisabledMissingFileCreates(t *testing.T) {
-	// Fresh install with toggle state but no config.yaml: the write
-	// creates a minimal one holding just the disabled: key. The boot
-	// that precedes it carried the model by env (no file to read).
+	// Fresh install with toggle state but no config.yaml.
 	t.Setenv("OMEGA_MODEL", "test-model")
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := writeDisabled(path, DisabledNamespaces{Modules: []string{"kanban"}}); err != nil {
@@ -95,10 +87,9 @@ func TestWriteDisabledEmptyRemovesKey(t *testing.T) {
 	}
 }
 
-// The live re-wire wiring (v0.12 E2): the host's Toggle must push the
-// changed Context onto every LiveSeams-capable channel - the serving
-// surface cannot follow the live Context on its own, the channel only
-// read it once at mount.
+// The live re-wire wiring (v0.12 E2): the host's Toggle must push the changed Context
+// onto every LiveSeams-capable channel - the serving surface cannot follow the live
+// Context on its own, the channel only read it once at mount.
 type rewireProbe struct {
 	core.Channel
 	rewired []int
@@ -152,8 +143,7 @@ func TestToggleRewiresChannels(t *testing.T) {
 		t.Fatalf("enable rewired %d times, want 2", len(probe.rewired))
 	}
 
-	// a failing re-wire is loud: the toggle applied, the caller hears
-	// why the surfaces may still show it
+	// a failing re-wire is loud: the toggle applied, the caller hears why the surfaces.
 	probe.fail = 1
 	if err := m.Toggle(context.Background(), "mod", false); err == nil {
 		t.Fatal("failed re-wire answered nil - stale routes would render a dead module")
@@ -204,7 +194,6 @@ func TestToggleConcurrentSharedFoldLock(t *testing.T) {
 			t.Fatalf("lost/duplicated update: %q appears %d times in fold %v", n, seen[n], fold.Modules)
 		}
 	}
-	// the file agrees with the fold - no torn write, no resurrect-on-boot.
 	var file struct {
 		Disabled DisabledNamespaces `yaml:"disabled"`
 	}

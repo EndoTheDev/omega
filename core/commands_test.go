@@ -1,9 +1,6 @@
 package core
 
-// The command chain's two shared shapes (card t_d1fe01da): the miss
-// sentinel a handler returns for a name it does not own, and the
-// invoking surface's session, which rides the command context so a
-// session-scoped command acts on the tab that ran it.
+// The command chain's two shared shapes.
 
 import (
 	"context"
@@ -17,12 +14,9 @@ func TestCommandMissIsStructurallyRecognisable(t *testing.T) {
 	if !errors.Is(err, ErrCommandMiss) {
 		t.Fatalf("CommandMiss does not carry ErrCommandMiss: %v", err)
 	}
-	// the phrase is the one every surface has printed since the chain
-	// existed - the sentinel changes the semantics, not the wording
 	if err.Error() != "no handler for /export" {
 		t.Fatalf("text = %q, want the historical phrase", err.Error())
 	}
-	// still a miss when wrapped: a capsule may add its own context
 	wrapped := fmt.Errorf("dismount: %w", err)
 	if !errors.Is(wrapped, ErrCommandMiss) {
 		t.Fatalf("a wrapped miss lost the sentinel: %v", wrapped)
@@ -46,7 +40,6 @@ func TestCommandSessionRoundTrip(t *testing.T) {
 	if got := CommandSession(ctx); got != "sess-42" {
 		t.Fatalf("session = %q, want sess-42", got)
 	}
-	// an empty id is "no binding", not a binding to the empty string
 	if got := CommandSession(WithCommandSession(context.Background(), "")); got != "" {
 		t.Fatalf("binding an empty id produced %q", got)
 	}

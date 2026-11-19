@@ -1,12 +1,6 @@
 package files
 
-// Regression pins for card t_b9f74bea, carried onto the dotted wire
-// (t_d8fbad57): the pre-split shims went schema-less, models emitted
-// mistyped args (live repro 2026-11-07: the wire carried "limit":"5"
-// as a string and the handler refused it with an error that read as
-// a lie), and nothing validated the type first. The dotted files.read
-// declares the typed schema and the read path accepts a numeric
-// string so an already-mistyped argument reads rather than lies.
+// Regression pins for, carried onto the dotted wire.
 
 import (
 	"context"
@@ -16,10 +10,7 @@ import (
 	"testing"
 )
 
-// TestReadDeclaresTypedParamSchema pins the schema contract: the
-// dotted read tool carries its own params with integer offset/limit
-// (the t_b9f74bea drift fix - a schema-less tool gives the model no
-// type contract).
+// TestReadDeclaresTypedParamSchema pins the schema contract.
 func TestReadDeclaresTypedParamSchema(t *testing.T) {
 	p := &FileProvider{}
 	tools := p.Tools()
@@ -43,8 +34,7 @@ func TestReadDeclaresTypedParamSchema(t *testing.T) {
 	}
 }
 
-// TestReadWithLimitAndOffsetWindowsExactly is the acceptance probe:
-// files.read with limit + offset returns the exact window.
+// TestReadWithLimitAndOffsetWindowsExactly is the acceptance probe.
 func TestReadWithLimitAndOffsetWindowsExactly(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/f.txt"
@@ -68,10 +58,7 @@ func TestReadWithLimitAndOffsetWindowsExactly(t *testing.T) {
 	}
 }
 
-// TestReadAcceptsStringifiedLimit pins the convenience half: the
-// tool accepts the transcript's mistyped shape ("limit":"35" was the
-// recorded wire form) and parses it; a non-numeric token still fails
-// with an error that names the offending value.
+// TestReadAcceptsStringifiedLimit pins the convenience half.
 func TestReadAcceptsStringifiedLimit(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/f.txt"

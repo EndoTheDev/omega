@@ -66,10 +66,10 @@ func chat(text string) []core.ProviderStreamEvent {
 	}
 }
 
-// TestCuratorStalenessArchives: the deterministic pass - a 40d-idle
-// skill lands in .archive with backup + ledger row; 20d-idle skills
-// are only marked stale (never-used ones included: absence of usage
-// inside the stale window still ages them out); fresh skills stay.
+// TestCuratorStalenessArchives: the deterministic pass - a 40d-idle skill lands
+// in.archive with backup + ledger row; 20d-idle skills are only marked stale
+// (never-used ones included: absence of usage inside the stale window still ages them
+// out); fresh skills stay.
 func TestCuratorStalenessArchives(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -96,7 +96,6 @@ func TestCuratorStalenessArchives(t *testing.T) {
 	if rep.MarkedStale != 2 {
 		t.Fatalf("marked stale %d, want 2 (report %+v)", rep.MarkedStale, rep)
 	}
-	// archive: the folder moved, the backup exists, the ledger row exists.
 	if _, err := os.Stat(filepath.Join(dir, "ancient", "SKILL.md")); !os.IsNotExist(err) {
 		t.Fatal("ancient skill still on disk after archive")
 	}
@@ -143,17 +142,15 @@ func TestCuratorStaleListSurfaces(t *testing.T) {
 	}
 }
 
-// TestCuratorMergeByteExactRollback: an LLM merge proposal absorbs a
-// source into an umbrella - the target gains the section, the source
-// is archived, one ledger row covers both files; the rollback
-// restores both byte-exact and un-archives the source.
+// TestCuratorMergeByteExactRollback: an LLM merge proposal absorbs a source into an
+// umbrella - the target gains the section, the source is archived, one ledger row
+// covers both files; the rollback restores both byte-exact and un-archives the source.
 func TestCuratorMergeByteExactRollback(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
 	writeAgentSkill(t, dir, "umbrella", "# umbrella\n\nexisting rules")
 	writeAgentSkill(t, dir, "narrow", "narrow insight one")
-	// A payload file the ledger row never records - it must survive
-	// the merge rollback through the folder move back (t_c8f31a8c).
+	// A payload file the ledger row never records - it must survive the merge rollback.
 	if err := os.MkdirAll(filepath.Join(dir, "narrow", "scripts"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -224,8 +221,7 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	}
 }
 
-// TestCuratorArchiveRollbackByteExact: the staleness archive undoes
-// through the same ledger row.
+// TestCuratorArchiveRollbackByteExact: the staleness archive undoes through the same.
 func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -260,10 +256,9 @@ func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	}
 }
 
-// TestCuratorArchiveRollbackMultiFile: a multi-file skill survives
-// archive + rollback whole (card t_c8f31a8c) - the folder moves back
-// from .archive, so scripts/ and references/ come home byte-exact
-// instead of vanishing with a ledger row that only recorded SKILL.md.
+// TestCuratorArchiveRollbackMultiFile: a multi-file skill survives archive + rollback
+// whole - the folder moves back from.archive, so scripts/ and references/ come home
+// byte-exact instead of vanishing with a ledger row that only recorded SKILL.md.
 func TestCuratorArchiveRollbackMultiFile(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -329,8 +324,7 @@ func readStr(t *testing.T, p string) string {
 	return string(b)
 }
 
-// TestCuratorRefusesHandAuthoredMerge: the LLM proposes it, the code
-// refuses - agent-created class only.
+// TestCuratorRefusesHandAuthoredMerge: the LLM proposes it, the code refuses.
 func TestCuratorRefusesHandAuthoredMerge(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -353,10 +347,9 @@ func TestCuratorRefusesHandAuthoredMerge(t *testing.T) {
 	}
 }
 
-// TestCuratorDistillOnlyOverThreshold: distill applies only to bodies
-// past the 24k floor; the under-floor candidate is refused in code,
-// the over-floor one is applied with frontmatter intact and rolls
-// back byte-exact.
+// TestCuratorDistillOnlyOverThreshold: distill applies only to bodies past the 24k
+// floor; the under-floor candidate is refused in code, the over-floor one is applied
+// with frontmatter intact and rolls back byte-exact.
 func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -403,8 +396,7 @@ func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	}
 }
 
-// TestCuratorModelOverride: the configured model wins for the
-// consult (WithModel copy, receiver untouched).
+// TestCuratorModelOverride: the configured model wins for the consult.
 func TestCuratorModelOverride(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -445,8 +437,7 @@ func TestCuratorBackupKeepFive(t *testing.T) {
 	}
 }
 
-// TestRunCuratorNilProviderStillStaleRun: no provider - the
-// deterministic pass still runs and the report says what was skipped.
+// TestRunCuratorNilProviderStillStaleRun: no provider.
 func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -465,23 +456,17 @@ func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// The curator goes live (card t_f78acfd6): the consult slot resolves from
-// the LIVE SkillsProvider (curatorSlot) per pass; the host's hot-apply
-// swaps it (SetCuratorModel) and the next curator action consults the new
-// slot - no restart, no re-mount.
-// ---------------------------------------------------------------------------
+// ------------------------------------------------------------------------ The curator
+// goes live.
 
-// spySlotProvider records every WithModel derivation: the consult's
-// slot is the fact the live-flip test pins.
+// spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {
 	agent.Provider // the underlying fake (embedded interface)
 	saw            []string
 }
 
-// WithModel records the derived model before delegating. The returned
-// provider stays the plain fake (the caller streams from it); the spy
-// only needs the derivation trail.
+// WithModel records the derived model before delegating. The returned provider stays
+// the plain fake (the caller streams from it); the spy only needs the derivation trail.
 func (p *spySlotProvider) WithModel(model string) agent.Provider {
 	p.saw = append(p.saw, model)
 	return p.Provider.WithModel(model)
@@ -495,7 +480,6 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 	sp.SetProviderFn(func() agent.Provider { return spy })
 	sp.SetCuratorModel("") // the boot section: slot empty
 
-	// Boot: empty slot = the session provider's own model, no derivation.
 	if _, err := sp.handleCuratorCommand(context.Background(), "run"); err != nil {
 		t.Fatal(err)
 	}
@@ -503,8 +487,7 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 		t.Errorf("boot consult must not derive a slot: %v", spy.saw)
 	}
 
-	// THE flip: the live slot swaps - the SAME provider (no re-mount)
-	// consults the new slot on the next pass.
+	// THE flip: the live slot swaps.
 	sp.SetCuratorModel("curator-flip")
 	if _, err := sp.handleCuratorCommand(context.Background(), "run"); err != nil {
 		t.Fatal(err)
@@ -514,12 +497,7 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 	}
 }
 
-// TestCuratorStateLivesUnderDotCurator pins the ONE state dir
-// (finding C2, card t_a48be895): the ledger and the backup root both
-// live inside <skillsdir>/.curator, the single dir the repo's ignore
-// rule covers. A drift back to the bare <dir>/.curator_ledger.jsonl /
-// <dir>/.curator_backups shape leaks untracked files into git status
-// in every dev checkout whose home is the repo's bin/.
+// TestCuratorStateLivesUnderDotCurator pins the ONE state dir.
 func TestCuratorStateLivesUnderDotCurator(t *testing.T) {
 	dir := t.TempDir()
 	writeAgentSkill(t, dir, "alpha", "body")
@@ -542,13 +520,9 @@ func TestCuratorStateLivesUnderDotCurator(t *testing.T) {
 	}
 }
 
-// TestLegacyCuratorStateMigratesIntoDotCurator: a pre-t_a48be895 home
-// (ledger + backup root sitting BESIDE .curator) is adopted on first
-// touch - the audit history keeps its row ids, so a rollback id
-// written before the move still resolves, and the keep-5 backup window
-// moves with it. A home that already holds the new path keeps it: the
-// stale legacy copy is left on disk, never merged and never
-// overwritten.
+// TestLegacyCuratorStateMigratesIntoDotCurator: a pre- home (ledger + backup root. A
+// home that already holds the new path keeps it: the stale legacy copy is left on disk,
+// never merged and never overwritten.
 func TestLegacyCuratorStateMigratesIntoDotCurator(t *testing.T) {
 	dir := t.TempDir()
 	legacyRow := `{"id":"deadbeef","ts":"2026-11-01T00:00:00Z","actor":"curator","action":"remove","skill":"old","files":[]}` + "\n"
@@ -586,8 +560,7 @@ func TestLegacyCuratorStateMigratesIntoDotCurator(t *testing.T) {
 		t.Fatalf("backup payload must move byte-exact: %q / %v", kept, err)
 	}
 
-	// A second touch is idempotent, and a live new-path ledger is never
-	// clobbered by a stale legacy file reappearing beside it.
+	// A second touch is idempotent, and a live new-path ledger is never clobbered.
 	if _, err := sp.AppendLedger("curator", LedgerRemove, "newer", "second writer", nil, nil); err != nil {
 		t.Fatalf("AppendLedger: %v", err)
 	}

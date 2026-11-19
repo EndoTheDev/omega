@@ -1,8 +1,8 @@
-// omega webui: unit tests for the insights surface (card t_e1e61680).
+// omega webui: unit tests for the insights surface.
 // Two layers, matching the house patterns:
-// - omega.ts fetchInsights: real fetch interception (URL shape + the
+// omega.ts fetchInsights: real fetch interception (URL shape + the
 //   honest days semantics: null = bare /insights, 0 = all time);
-// - InsightsTab.vue: the payload contract the renderer relies on and
+// InsightsTab.vue: the payload contract the renderer relies on and
 //   the honest-empty rule (an empty window prints text, not charts).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -21,7 +21,7 @@ function read(...parts: string[]): string {
   return readFileSync(join(modules, ...parts), "utf8");
 }
 
-// --- fetchInsights: URL contract ---
+// fetchInsights: URL contract
 
 test("fetchInsights with no arg requests the bare endpoint (server default window)", async () => {
   const seen: { url: string; init: RequestInit | undefined }[] = [];
@@ -85,11 +85,10 @@ test("fetchInsights throws the server's message, not a bare status", async () =>
   }
 });
 
-// --- InsightsTab.vue: the render contract ---
+// InsightsTab.vue: the render contract
 
 test("the view renders from the payload - every block the TUI prints has a home", () => {
   const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
-  // one source: the omega fetch helper, no inline fetch
   assert.match(vue, /fetchInsights/, "the view fetches through omega.ts");
   assert.ok(!/fetch\(\s*["'`\/]/.test(vue), "no private fetch: the endpoint URL lives in omega.ts");
   // the TUI report's blocks, in the view
@@ -109,8 +108,7 @@ test("the view renders from the payload - every block the TUI prints has a home"
 
 test("an empty window is honest: text, zeroed payload, no fake rows", () => {
   const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
-  // the sessions === 0 branch prints text (mirrors the TUI's
-  // "[no sessions in the last N days]"), all-time gets its own voice
+  // the sessions === 0 branch prints text.
   assert.match(vue, /data\.sessions === 0/, "the empty branch exists");
   assert.match(vue, /no sessions in the last/, "windowed empty text");
   assert.match(vue, /no sessions yet/, "all-time empty text");
@@ -121,11 +119,9 @@ test("an empty window is honest: text, zeroed payload, no fake rows", () => {
 test("the tab's initial window is 7 days, not the server default 30 (Endo 2026-10-29)", async () => {
   // the exported default constant is the tab's initial `days` value
   assert.equal(INSIGHTS_DEFAULT_DAYS, 7);
-  // the initial ref is wired to the constant (behavior via the import,
-  // not a literal in the SFC)
+  // the initial ref is wired to the constant.
   const vue = read("webui", "..", "harness", "store", "ui", "InsightsTab.vue");
   assert.match(vue, /ref<number \| null>\(INSIGHTS_DEFAULT_DAYS\)/);
-  // the bare-endpoint fold survives: load() still maps null -> no param
   assert.match(vue, /days\.value === null \? null : days\.value/);
 });
 
@@ -140,29 +136,21 @@ test("the window selector rides the themed listbox and mirrors the TUI arg seman
 test("the view's home is the secondary sidebar (card t_d7fd3ad3)", () => {
   const dockables = read("webui", "app", "composables", "dockables.ts");
   assert.match(dockables, /id: "insights"/, "registry entry exists");
-  // the home ruling recorded where it lives: right shell, unclosable,
-  // capital-I label - the default-visible inspector tab
   assert.match(
     dockables,
     /id: "insights",\n    title: "Insights",/,
     "the tab label reads Insights (capital I)",
   );
-  // card t_d04a1c80: the new-tab placeholder entry closes the registry
-  // now, so pin the insights ENTRY's own shape (right shell, unclosable)
-  // instead of its position at the inventory's tail
+  // the new-tab placeholder entry closes the registry now, so pin the insights.
   assert.match(
     dockables,
     /id: "insights",\n    title: "Insights",[\s\S]*?class: "secondary-sidebar",\n    closable: false,\n  \},/,
     "insights is right-shell, unclosable",
   );
   assert.match(dockables, /card t_d7fd3ad3/, "the ruling is recorded at the entry");
-  // the app outlet exists (the tab renders wherever it lives)
   const app = read("webui", "app", "app.vue");
   assert.match(app, /#pane-insights/, "the outlet template exists");
   assert.match(app, /<InsightsTab/, "the view mounts in the outlet");
-  // the mobile drawer seats the shell-owned tab before the module
-  // catch-all (InspectorPanel(module="insights") would render an empty
-  // body - extensions' t_14f73742 ruling, insights joins it)
   assert.match(
     app,
     /inspectorDrawerActiveId === 'insights'/,

@@ -1,11 +1,5 @@
-// omega webui: source-check for the sidebar's new-session control (card
-// t_55a571ff): the split button reads "+ New Session" and the type
-// picker is DATA - two entries (New Session, Ephemeral). Card
-// t_c7222095 REMOVED the Continuous entry: the roster folded into the
-// Agents tab, so no picker slot remains (deletability law: no alias).
-// The template renders the list, so the contract is pinned against
-// AppSidebar.vue's source.
-// Run: node --test "test/*.test.ts" (node >= 23 runs TS natively)
+// omega webui: source-check for the sidebar's new-session control. The template renders
+// the list, so the contract is pinned against AppSidebar.vue's source.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -15,11 +9,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const src = (p: string): string => readFileSync(`${root}${p}`, "utf8");
 
 const sidebar = src("../harness/store/ui/AppSidebar.vue");
-// the picker's data lives in one array - match only inside it, never the
-// whole component (other sites carry label-like strings). Card t_0a9edc72
-// made the list a COMPUTED (the New Session entry carries the live
-// draft-focus dim), so both the plain-array and the computed forms match:
-// the pin is the ENTRIES, not the declaration keyword.
+// the picker's data lives in one array - match only inside it, never the whole.
 const picker =
   sidebar.match(
     /const newMenuEntries (?::[^=]+)?= (?:computed<NewMenuEntry\[\]>\(\s*\(\)\s*=>\s*)?\[([\s\S]*?)\n\s*\][,)]*;/,
@@ -39,8 +29,6 @@ describe("AppSidebar: the new-session control (card t_55a571ff)", () => {
   it("the Continuous entry is GONE - the roster folded into the Agents tab (card t_c7222095)", () => {
     assert.doesNotMatch(picker, /"Continuous"/, "no picker slot survives the merge");
     assert.doesNotMatch(sidebar, /new-continuous/, "no emit wiring survives the merge");
-    // card t_55a571ff's disabled-dim rule still holds for any future
-    // disabled entry - the styling stays even now nothing uses it.
     assert.match(sidebar, /\.new-menu-item:disabled\b/, "the disabled styling survives");
   });
 
@@ -71,8 +59,6 @@ describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
   });
 
   it("the chevron renders at 12x12 through the iconset wrapper (card t_502b8e81)", () => {
-    // the hand-rolled svg is gone - the caret is the wrapper's
-    // chevron-down at 12, the 8px inline chevron with it
     const at = sidebar.indexOf('class="new-caret-chevron"');
     assert.notEqual(at, -1, "the caret chip is the wrapper's chevron-down");
     const start = sidebar.lastIndexOf("<Icon", at);
@@ -88,12 +74,9 @@ describe("AppSidebar: the caret affordance (card t_a0a466c6)", () => {
 });
 
 describe("AppSidebar: the caret opens on a real click (card t_902f7ba5)", () => {
-  // the suite has no DOM, so the real-pointer repro lives outside it
-  // (live driver proof, 10 consecutive real clicks on the caret). What
-  // the suite CAN pin is the mechanism that made real clicks die: the
-  // clickaway listener catching its own opening event. The guard is
-  // the contract - a pointer inside .new-btn is the toggle, never
-  // clickaway, and the guard must return BEFORE the close.
+  // the suite has no DOM, so the real-pointer repro lives outside it (live driver. The
+  // guard is the contract - a pointer inside.new-btn is the toggle, never clickaway,
+  // and the guard must return BEFORE the close.
   it("the clickaway listener guards against its own opening click", () => {
     const body =
       sidebar.match(/function onDocClick\([^)]*\)\s*\{([\s\S]*?)\n  \}/)?.[1] ?? "";

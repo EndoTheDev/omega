@@ -1,17 +1,8 @@
-// omega webui: the elapsed meter's remount anchor, pinned end to end
-// (card t_95385aba). Endo's report: switching tabs or reloading while
-// an answer streamed reset the duration label to zero, while tool rows
-// survived the same event. The asymmetry was the defect - the tool row
-// handed useElapsed an initialMs (the server's elapsed-so-far) and the
-// answer/thinking rows did not.
-//
-// The pure halves live in transcript.test.ts (the restore mapping) and
-// omega.test.ts (the panel mapping + the normalizer). What is left is
-// the WIRING, which node --test cannot render: these pins hold the
-// three links of the chain structurally (the toolrows.test.ts
-// convention) - the item fields reach the components, the components
-// declare the prop, and each one hands it to the meter as initialMs.
-// Run: node --test webui/test/ (node >= 23 runs TS)
+// omega webui: the elapsed meter's remount anchor, pinned end to end. What is left is
+// the WIRING, which node --test cannot render: these pins hold the three links of the
+// chain structurally (the toolrows.test.ts convention) - the item fields reach the
+// components, the components declare the prop, and each one hands it to the meter as
+// initialMs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -26,11 +17,9 @@ const message = src("components/chat/ChatMessage.vue");
 const thinking = src("components/chat/ThinkingBlock.vue");
 const toolLine = src("components/chat/ToolCallLine.vue");
 
-// --- link 1: ChatItem hands every metered row its anchor ---
+// link 1: ChatItem hands every metered row its anchor
 
 test("ChatItem binds :elapsed-ms on all three metered rows", () => {
-  // one binding per child component: answer, thinking, tool call. A
-  // row that loses its binding falls back to mounting at zero.
   const bindings = chatItem.match(/:elapsed-ms="item\.elapsedMs"/g) ?? [];
   assert.equal(bindings.length, 3, "answer, thinking and tool rows each carry the anchor");
   for (const child of ["<ChatMessage", "<ThinkingBlock", "<ToolCallLine"]) {
@@ -43,7 +32,7 @@ test("ChatItem binds :elapsed-ms on all three metered rows", () => {
   }
 });
 
-// --- link 2 + 3: the components declare the prop and pass it ---
+// link 2 + 3: the components declare the prop and pass it
 
 for (const [name, source] of [
   ["ChatMessage", message],
@@ -52,9 +41,7 @@ for (const [name, source] of [
 ] as const) {
   test(`${name} declares elapsedMs and anchors useElapsed with it`, () => {
     assert.match(source, /elapsedMs\?: number;/, `${name} declares the prop`);
-    // the third useElapsed argument is the initialMs getter - the
-    // whole point of the card is that it is not omitted (comments
-    // may sit between the arguments, so read the call's own text)
+    // the third useElapsed argument is the initialMs getter.
     const at = source.indexOf("useElapsed(");
     assert.ok(at >= 0, `${name} runs the shared meter`);
     const call = source.slice(at, source.indexOf(");", at));
@@ -63,8 +50,7 @@ for (const [name, source] of [
   });
 }
 
-// The collapsed tool group renders the same line the flat row does - a
-// running call inside a group counts on from the same anchor.
+// The collapsed tool group renders the same line the flat row does.
 test("ToolGroup hands its rows the anchor too", () => {
   const group = src("components/chat/ToolGroup.vue");
   const at = group.indexOf("<ToolCallLine");
@@ -74,8 +60,7 @@ test("ToolGroup hands its rows the anchor too", () => {
   assert.match(block, /:final-ms="item\.finalMs"/, "a grouped settled call keeps its span");
 });
 
-// The meter's own contract: an omitted/undefined offset must never
-// produce NaN arithmetic (the `startedAt = now() - undefined` shape).
+// The meter's own contract: an omitted/undefined offset must never produce NaN.
 test("useElapsed documents the initialMs contract", () => {
   const meter = src("composables/useElapsed.ts");
   assert.match(meter, /initialMs: \(\) => number = \(\) => 0/, "a missing getter falls back to zero");

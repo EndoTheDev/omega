@@ -1,8 +1,5 @@
 package delegate
 
-// law_test.go: the defaulting law (Endo, 2026-11-01) plus the gap-close
-// pins for THE delegation ruling - the mount-side recursion guard, the
-// stored+searchable child session, and the summary-back surfaces.
 
 import (
 	"context"
@@ -17,9 +14,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestDefaultingLawAgent pins the law's agent half: empty (or the
-// literal "default", or whitespace) resolves to the default agent -
-// never an error, never a ghost layer.
+// TestDefaultingLawAgent pins the law's agent half: empty (or the literal "default", or
+// whitespace) resolves to the default agent - never an error, never a ghost layer.
 func TestDefaultingLawAgent(t *testing.T) {
 	cases := map[string]string{
 		"":         agent.DefaultAgentName,
@@ -46,11 +42,9 @@ func TestDefaultingLawModel(t *testing.T) {
 	}
 }
 
-// TestChildEnvDefaultingLaw pins the spawn deltas: the recursion guard
-// always, OMEGA_AGENT only off-default, OMEGA_MODEL only explicit, and
-// the caller's store path only when the host routed one (card
-// t_93b4e521 - the pin is what keeps `run --session <id>` on the
-// database the host pre-created the child session in).
+// TestChildEnvDefaultingLaw pins the spawn deltas: the recursion guard always,
+// OMEGA_AGENT only off-default, OMEGA_MODEL only explicit, and the caller's store path
+// only when the host routed one.
 func TestChildEnvDefaultingLaw(t *testing.T) {
 	onlyGuard := []string{"OMEGA_SUBAGENT=1"}
 	if got := childEnv("", "", ""); got[0] != "OMEGA_SUBAGENT=1" || len(got) != 1 {
@@ -73,10 +67,7 @@ func TestChildEnvDefaultingLaw(t *testing.T) {
 	}
 }
 
-// TestWorkerFenceStamp pins the machine-fence spawn deltas (card
-// t_8b32a09a): every delegate child is stamped OMEGA_WORKER=1 and
-// OMEGA_WORKER_CARD=<task>; the PATH delta appears only when an
-// executable shim sits beside the binary.
+// TestWorkerFenceStamp pins the machine-fence spawn deltas.
 func TestWorkerFenceStamp(t *testing.T) {
 	stamp := workerStamp("task-1", "")
 	if stamp[0] != "OMEGA_WORKER=1" {
@@ -89,10 +80,9 @@ func TestWorkerFenceStamp(t *testing.T) {
 		t.Errorf("workerStamp(no binary) must carry no PATH delta, got %v", stamp)
 	}
 
-	// Real shim beside the binary: exe dir + shims/git, executable.
-	// Windows: the exec-bit gate cannot fire on NTFS (perms live in
-	// ACLs), so the fence honestly degrades to the env-only posture -
-	// a real windows fence is the parked windows-fence design item.
+	// Real shim beside the binary: exe dir + shims/git, executable. Windows: the exec-bit
+	// gate cannot fire on NTFS (perms live in ACLs), so the fence honestly degrades to the
+	// env-only posture - a real windows fence is the parked windows-fence design item.
 	if runtime.GOOS == "windows" {
 		t.Skip("windows fence = design item; exec-bit gate cannot fire on NTFS; see the fence design card")
 	}
@@ -124,9 +114,7 @@ func TestWorkerFenceStamp(t *testing.T) {
 	}
 }
 
-// TestSpawnRefusedInsideSubagent pins the recursion guard's tool face:
-// inside a subagent child (OMEGA_SUBAGENT set) delegate.task refuses at
-// dispatch - depth stays at one level even if nothing else holds.
+// TestSpawnRefusedInsideSubagent pins the recursion guard's tool face.
 func TestSpawnRefusedInsideSubagent(t *testing.T) {
 	t.Setenv("OMEGA_SUBAGENT", "1")
 	d := NewDelegate()
@@ -148,9 +136,7 @@ func TestSpawnRefusedInsideSubagent(t *testing.T) {
 	}
 }
 
-// TestSubagentChildMountsNoDelegateTools pins the guard's mount face:
-// the module mounts in a child (the plugin census keeps counting it)
-// but registers ZERO delegate tools there.
+// TestSubagentChildMountsNoDelegateTools pins the guard's mount face.
 func TestSubagentChildMountsNoDelegateTools(t *testing.T) {
 	t.Setenv("OMEGA_SUBAGENT", "1")
 	ctx := &core.Context{}
@@ -167,11 +153,9 @@ func TestSubagentChildMountsNoDelegateTools(t *testing.T) {
 	}
 }
 
-// stubStore is the minimal store seam for the session pins. Only the
-// create paths are reachable - everything else rides the nil embedded
-// interface (calling it panics, and nothing does). The two create
-// surfaces are recorded apart so a test can prove which lineage kind a
-// spawn used (t_6c4ab302: delegate lineage must never ride parent_id).
+// stubStore is the minimal store seam for the session pins. Only the create paths are
+// reachable - everything else rides the nil embedded interface (calling it panics, and
+// nothing does).
 type stubStore struct {
 	agent.StoreProvider
 	created  []string // "id|delegate_parent|label" rows, in call order
@@ -195,18 +179,15 @@ func (s *stubStore) CreateDelegateSession(ctx context.Context, id, delegateParen
 	return nil
 }
 
-// writeStubArgs is writeStub pattern plus argc/argv echo: the stub
-// prints its own argument vector so the test can see the flags the
-// host built (run --session <id> <prompt>).
+// writeStubArgs is writeStub pattern plus argc/argv echo.
 func writeStubArgs(t *testing.T, name string) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), name)
 	var body string
 	if runtime.GOOS == "windows" {
 		bin += ".bat"
-		// `args=%*` (the posix branches echo `args="$*"`): the tests
-		// pin `args=` as the echo marker, so the token must match
-		// across stub shapes
+		// `args=%*` (the posix branches echo `args="$*"`): the tests pin `args=` as the echo
+		// marker, so the token must match across stub shapes
 		body = "@echo off\r\necho args=%*\r\nexit /b 0\r\n"
 	} else {
 		bin += ".sh"
@@ -218,14 +199,12 @@ func writeStubArgs(t *testing.T, name string) string {
 	return bin
 }
 
-// TestChildSessionStoredAndPassed pins the stored+searchable ruling:
-// with the store seam mounted, the host pre-creates the child's
-// session (label delegate:<task>, lineage = the calling session when
-// the context carries one) and the child inherits it via run
-// --session - the --session persist contract makes the child's prompt,
-// report and tool results land in the sessions list. Lineage rides
-// delegate_parent by ruling (t_6c4ab302): the fork parent_id stays
-// empty so the child never inherits the caller's context.
+// TestChildSessionStoredAndPassed pins the stored+searchable rule: with the store
+// seam mounted, the host pre-creates the child's session (label delegate:<task>,
+// lineage = the calling session when the context carries one) and the child inherits it
+// via run --session - the --session persist contract makes the child's prompt, report
+// and tool results land in the sessions list. Lineage rides delegate_parent by rule:
+// the fork parent_id stays empty so the child never inherits the caller's context.
 func TestChildSessionStoredAndPassed(t *testing.T) {
 	bin := writeStubArgs(t, "stub-args-omega")
 	t.Setenv("OMEGA_BIN", bin)
@@ -238,8 +217,7 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runDelegateTask: %v (%s)", err, out)
 	}
-	// The report IS the tool result now (card t_0805d438): the child's
-	// own stdout returns to the caller.
+	// The report IS the tool result now: the child's own stdout returns to the caller.
 	if !strings.Contains(out, "--session") {
 		t.Fatalf("child argv missing --session: %q", out)
 	}
@@ -272,10 +250,9 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	}
 }
 
-// forkOnlyStore is a store seam that predates the delegate surface (no
-// CreateDelegateSession). The spawn must degrade to an UNLINKED root -
-// a store without the split cannot express delegate lineage, and the
-// context-inheriting parent link is never an acceptable fallback.
+// forkOnlyStore is a store seam that predates the delegate surface (no. The spawn must
+// degrade to an UNLINKED root - a store without the split cannot express delegate
+// lineage, and the context-inheriting parent link is never an acceptable fallback.
 type forkOnlyStore struct {
 	agent.StoreProvider
 	created []string
@@ -311,9 +288,8 @@ func TestLegacyStoreGetsUnlinkedChild(t *testing.T) {
 	}
 }
 
-// TestSessionCreateFailureDegradesToPlainRun pins the nil-safe law:
-// a failing store NEVER fails the spawn - the child degrades to the
-// old plain run shape, nothing persisted, result still injected.
+// TestSessionCreateFailureDegradesToPlainRun pins the nil-safe law: a failing store
+// NEVER fails the spawn.
 func TestSessionCreateFailureDegradesToPlainRun(t *testing.T) {
 	bin := writeStubArgs(t, "stub-degrade-omega")
 	t.Setenv("OMEGA_BIN", bin)
@@ -328,8 +304,7 @@ func TestSessionCreateFailureDegradesToPlainRun(t *testing.T) {
 	if strings.Contains(out, "(session ") {
 		t.Fatalf("degraded spawn leaked a session handle: %q", out)
 	}
-	// The report IS the tool result: the child's args echo rides it,
-	// and the degraded shape carries no --session.
+	// The report IS the tool result.
 	if !strings.Contains(out, "args=") {
 		t.Fatalf("plain-run result missing: %q", out)
 	}
@@ -338,9 +313,7 @@ func TestSessionCreateFailureDegradesToPlainRun(t *testing.T) {
 	}
 }
 
-// TestSummaryCapTruncation pins the small-caller-context law: an
-// oversized child answer is cut at the cap, middle out, with a named
-// marker - head kept, tail kept, nothing silent.
+// TestSummaryCapTruncation pins the small-caller-context law.
 func TestSummaryCapTruncation(t *testing.T) {
 	s := strings.Repeat("a", summaryHead) + strings.Repeat("m", 10000) + strings.Repeat("z", summaryTail)
 	clipped := clipSummary(s)

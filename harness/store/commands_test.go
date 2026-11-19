@@ -9,7 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// --- sessionDisplayName ---
+// sessionDisplayName
 
 func TestSessionDisplayName(t *testing.T) {
 	cases := []struct {
@@ -36,7 +36,7 @@ func TestSessionDisplayName(t *testing.T) {
 	}
 }
 
-// --- agent.FormatNumber ---
+// agent.FormatNumber
 
 func TestFormatNumber(t *testing.T) {
 	cases := []struct {
@@ -65,14 +65,13 @@ func TestFormatNumber(t *testing.T) {
 	}
 }
 
-// --- newSessionID ---
+// newSessionID
 
 func TestNewSessionID(t *testing.T) {
 	id, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("newSessionID error: %v", err)
 	}
-	// 16 bytes -> 32 hex chars.
 	if len(id) != 32 {
 		t.Fatalf("len = %d, want 32", len(id))
 	}
@@ -81,7 +80,6 @@ func TestNewSessionID(t *testing.T) {
 		t.Fatalf("not valid hex: %q (%v)", id, err)
 	}
 
-	// Uniqueness: two calls should not collide.
 	id2, err := agent.NewSessionID()
 	if err != nil {
 		t.Fatalf("second newSessionID error: %v", err)
@@ -91,7 +89,7 @@ func TestNewSessionID(t *testing.T) {
 	}
 }
 
-// --- messageRole ---
+// messageRole
 
 func TestMessageRole(t *testing.T) {
 	cases := []struct {
@@ -113,7 +111,6 @@ func TestMessageRole(t *testing.T) {
 		})
 	}
 
-	// Unknown message type returns "unknown".
 	t.Run("unknown", func(t *testing.T) {
 		got := core.MessageRole(core.ModelChange{Model: "x"})
 		if got != "unknown" {
@@ -122,7 +119,7 @@ func TestMessageRole(t *testing.T) {
 	})
 }
 
-// --- messageContent ---
+// messageContent
 
 func TestMessageContent(t *testing.T) {
 	cases := []struct {
@@ -145,7 +142,6 @@ func TestMessageContent(t *testing.T) {
 		})
 	}
 
-	// Unknown message type returns empty string.
 	t.Run("unknown", func(t *testing.T) {
 		got := agent.MessageText(core.ModelChange{Model: "x"})
 		if got != "" {
@@ -154,7 +150,7 @@ func TestMessageContent(t *testing.T) {
 	})
 }
 
-// --- HandleNewCommand ---
+// HandleNewCommand
 
 func TestHandleNewCommand(t *testing.T) {
 	t.Run("default no args", func(t *testing.T) {
@@ -212,7 +208,7 @@ func TestHandleNewCommand(t *testing.T) {
 	})
 }
 
-// --- agent.FormatInsights ---
+// agent.FormatInsights
 
 func TestFormatInsightsPopulated(t *testing.T) {
 	in := &core.Insights{
@@ -241,7 +237,6 @@ func TestFormatInsightsPopulated(t *testing.T) {
 
 	got := agent.FormatInsights(in)
 
-	// Verify key elements are present.
 	checks := []string{
 		"omega insights — 30 days",
 		"Period: 2026-08-01 — 2026-08-30",
@@ -270,7 +265,6 @@ func TestFormatInsightsPopulated(t *testing.T) {
 }
 
 func TestFormatInsightsEmpty(t *testing.T) {
-	// Zero-value Insights: no tools, no notable sessions, no period start.
 	in := &core.Insights{}
 
 	got := agent.FormatInsights(in)
@@ -279,19 +273,15 @@ func TestFormatInsightsEmpty(t *testing.T) {
 	if !strings.Contains(got, "Through: ") {
 		t.Errorf("empty insights missing 'Through:' line\ngot:\n%s", got)
 	}
-	// Overview section present with zeros.
 	if !strings.Contains(got, "Sessions:          0") {
 		t.Errorf("empty insights missing Sessions: 0\ngot:\n%s", got)
 	}
-	// No Top Tools section when Tools is empty.
 	if strings.Contains(got, "Top Tools") {
 		t.Errorf("empty insights should not contain Top Tools\ngot:\n%s", got)
 	}
-	// No Notable Sessions section when all notable values are 0.
 	if strings.Contains(got, "Notable Sessions") {
 		t.Errorf("empty insights should not contain Notable Sessions\ngot:\n%s", got)
 	}
-	// Activity by Day is always present (renders 7 zero rows).
 	if !strings.Contains(got, "Activity by Day") {
 		t.Errorf("empty insights missing Activity by Day\ngot:\n%s", got)
 	}

@@ -3,14 +3,10 @@
     ref="rootEl"
     class="cron-list"
     :class="{ narrow: narrow }">
-    <!-- card t_308e6d9b: the UNIVERSAL band - the Files pattern lands on
-         every tab. Card t_529628d5: the band carries the compact in-band
-         search seat (the t_7ee0a673 sessions seat, TabBand's shared
-         .band-search) - the query filters the LOADED jobs by name or
-         schedule, client-side, hide-rows-only - and the REFRESH tool
-         (the Skills/Tools/MCP band-tool look): the click re-fetches GET
-         /cron/jobs. Rendered BEFORE the scroll body: scrolling never
-         moves it. -->
+    <!--
+      the UNIVERSAL band - the Files pattern lands on every tab.
+      Rendered BEFORE the scroll body: scrolling never moves it.
+    -->
     <TabBand title="Cron">
       <div class="band-search">
         <SearchInput
@@ -27,10 +23,6 @@
           name="refresh"
           :size="13" />
       </button>
-      <!-- card t_ecec864e: the job editor lives here - the tab SHOWS and
-           EDITS all job fields (kind, cadence, agent, model, prompt,
-           deliver target, enabled). The plus tool opens a new-job form;
-           each main-home row carries its own pencil. -->
       <button
         class="band-tool"
         title="add cron job"
@@ -41,8 +33,9 @@
           :size="13" />
       </button>
     </TabBand>
-    <!-- the editor panel: one at a time, above the rows so the scroll
-         never moves it mid-edit (the band-before-body law's sibling). -->
+    <!--
+      the editor panel: one at a time, above the rows so the scroll never moves it.
+    -->
     <div
       v-if="editor"
       class="cron-editor">
@@ -97,20 +90,14 @@
             v-model="editor.draft.file"
             placeholder="journal (empty = dated journal file)" />
         </label>
-        <!-- card t_60e0651e, rulings 1-2: agent and model are COMBOBOXES.
-             Agent reads the agents registry (GET /agents), model reads
-             the same GET /models catalog the settings model knobs use.
-             ONE block, driven by COMBO_FIELDS: the two controls differ
-             only in their source, placeholder and the note they carry.
-             Picking is the fast path; TYPING stays legal both ways - a
-             job may reference an agent home or a model that no longer
-             exists, and the editor never strands that edit.
-             card t_7fb3b35a: an EMPTY field is the inheritance chain -
-             the agent inherits the main agent, the model inherits the
-             agent's own model (which itself may inherit). The chain
-             speaks through an "inherited" chip and its one-line note,
-             so an empty box names what the fire will use; typing a
-             value flips the field to authored and both go away. -->
+        <!--
+          rulings 1-2: agent and model are COMBOBOXES.
+          Picking is the fast path; TYPING stays legal both ways - a job may reference
+          an agent home or a model that no longer exists, and the editor never strands
+          that edit.: an EMPTY field is the inheritance chain - the agent inherits the
+          main agent, the model inherits the agent's own model (which itself may
+          inherit).
+        -->
         <div
           v-for="f in COMBO_FIELDS"
           :key="f.field"
@@ -163,10 +150,6 @@
               </li>
             </ul>
           </div>
-          <!-- the chain's own line: the source an inherited value comes
-               from, with the resolved value when the source names it
-               (the blocked chain - a wake leaning on the main agent -
-               speaks in the danger voice) -->
           <p
             v-if="chainOf(f.field).inherited"
             class="cron-field-note cron-chain-note"
@@ -177,12 +160,6 @@
             v-if="unknownNote(f.field)"
             class="cron-field-note">{{ unknownNote(f.field) }}</p>
         </div>
-        <!-- t_3885c975: the fire-pinned skills - the bodies ride the fire
-             prompt ahead of the prompt. card t_60e0651e, ruling 3: a
-             STRICT multi-select - a checkbox dropdown with its own
-             search, chosen names riding the closed control as chips.
-             Strict: only names the skills registry (GET /skills) serves
-             can be chosen or loaded. -->
         <div class="cron-editor-field cron-editor-wide">
           <span>skills</span>
           <div
@@ -316,20 +293,12 @@
         <div class="cron-head reg-row-head">
           <div class="reg-row-main">
             <span class="cron-name reg-row-name">{{ j.name }}</span>
-            <!-- the row law's subtitle: the mono cadence (kind-aware),
-                 with the next fire + the deliver/agent/model meta riding
-                 the same dim line - the two-line reference anatomy,
-                 uniform row heights. -->
             <span class="reg-row-sub">
               <span class="cron-meta reg-row-sub-text">
                 {{ cadenceOf(j) }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>{{ lastMeta(j) }}{{ jobMeta(j) }}
               </span>
             </span>
           </div>
-          <!-- card t_ecec864e: the row's edit affordance - a pencil per
-               MAIN-home row opening the editor pre-filled with the job
-               (agent-home wake rows carry no pencil: their file belongs
-               to a different home, the LoadAllConfigs law). -->
           <button
             v-if="editableOf(j)"
             class="band-tool cron-edit-ctrl"
@@ -339,16 +308,6 @@
               name="pencil"
               :size="13" />
           </button>
-          <!-- card t_561dc4e0: the "enabled"/"disabled" text dies - the
-               one right control is the SHARED TogglePill (card
-               t_d93864e7, the MCP pill), ONE click applies (card
-               t_5051d523: the arm/confirm two-step and its "click again
-               to confirm" note are dead - they made every job need a
-               double click), top-aligned with the name. The click POSTs
-               /cron/toggle (harness/cron/ui/toggle.ts): the write path
-               is the per-job `enabled:` flag in the crons.yaml that owns
-               the job, hot-reloaded - the same config-file law the MCP
-               tab's own toggle rides. -->
           <TogglePill
             class="cron-toggle reg-row-ctrl"
             :state="j.enabled"
@@ -358,23 +317,14 @@
         </div>
       </li>
       </ul>
-      <!-- card t_529628d5: the row anatomy law - the filter HIDES rows,
-           it never changes their shape; a query that hides all of them
-           reads as a search miss, NOT as the "no jobs configured" empty
-           state (that state is the crons.yaml activation story and only
-           speaks when the listing itself is empty). -->
+      <!--
+        the row anatomy law - the filter HIDES rows, it never changes their shape.
+      -->
       <p
         v-else-if="query.trim()"
         class="panel-status">
         no matching jobs
       </p>
-      <!-- card t_6072e718: the empty state is the designed pattern, not a
-           bare corner status line - centered in the panel body, the cron
-           clock glyph above the headline, and the crons.yaml activation
-           hint below it. Activation is a file action, so there is no
-           call-to-action button. The constants live in emptyState.ts (the
-           composition-test convention: the node suite pins them without
-           compiling this SFC). -->
       <div
         v-else
         class="cron-empty">
@@ -392,20 +342,14 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
-  // the empty-state copy lives in its own PURE module (card t_6072e718,
-  // the serverRows.ts / boardLogic.ts convention): the node suite pins
-  // it without compiling this SFC.
+  // the empty-state copy lives in its own PURE module.
   import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "./emptyState";
   import {
     cronKeyOf,
     setCronJobEnabled,
     type CronJobWire,
   } from "./toggle";
-  // card t_529628d5: the band search's filter (name / schedule),
-  // pure so the node suite pins it without compiling the SFC.
   import { filterCronJobs } from "./search";
-  // card t_ecec864e: the job editor chain (pure module - the toggle
-  // convention). The SFC only wires the form state and the buttons.
   import {
     DELIVER_TARGETS,
     agentChain,
@@ -438,37 +382,17 @@
     type ModelCatalog,
   } from "./edit";
 
-  // Module-owned UI (card t_db430fea): the cron scheduler's job set,
-  // from GET /cron/jobs. v1 shipped read-only (names, schedules,
-  // enablement and next fire time); card t_561dc4e0 adds the per-job
-  // toggle; card t_ecec864e exposes ALL job definition fields - the
-  // editor POSTs the full job (upsert) into the main crons.yaml, the
-  // write validated through the loader's own schema law.
+  // Module-owned UI: the cron scheduler's job set, from GET /cron/jobs.
   const jobs = ref<(CronJobWire & { kind?: string; minutes?: number; deliver?: string; model?: string; file?: string })[]>([]);
   const loaded = ref(false);
   const error = ref("");
 
-  // card t_529628d5: the in-band search - CLIENT-SIDE on the loaded
-  // listing (the filter rides the already-fetched jobs; no new
-  // backend route), name or schedule, hide-rows-only.
+  // the in-band search - CLIENT-SIDE on the loaded listing.
   const query = ref("");
   const filteredJobs = computed(() => filterCronJobs(jobs.value, query.value));
 
-  // --- the fetch (shared by mount + the band's refresh tool) ---------
-  // card t_529628d5: the refresh is GET /cron/jobs re-run - the same
-  // fetch chain the mount drove (cron keeps its fetch semantics; the
-  // band tool is the Skills/Tools/MCP pattern). A failure lands on the
-  // panel's existing error line and the current rows stand (the
-  // reload.ts ruling); the refreshing lock drops a second click while
-  // a chain is in flight (the in-flight chain answers).
   const refreshing = ref(false);
 
-  // --- the job editor (card t_ecec864e) -------------------------------
-  // One editor at a time, keyed by the row it edits (creating = a new
-  // job, the name is the only identity). draftOf pre-fills from the
-  // wire row; emptyDraft seeds a new one. The two-step delete is its
-  // own guard (a DELETE, not a switch: card t_5051d523 killed the
-  // toggle's arm step, not the delete's).
   const editor = ref<{
     creating: boolean;
     draft: JobDraft;
@@ -476,26 +400,20 @@
     busy: boolean;
     armedDelete: boolean;
   } | null>(null);
-  // editorSeq invalidates an in-flight options callback when the open
-  // editor changes (a ref's value is a proxy - identity compares lie)
+  // editorSeq invalidates an in-flight options callback when the open editor changes.
   let editorSeq = 0;
 
-  // --- the field option sources (card t_60e0651e) ---------------------
-  // Rulings 1-2: agent and model are COMBOBOXES fed by the agents
-  // registry (GET /agents) and the model catalog the settings knobs
-  // read (GET /models). Ruling 3: skills is a STRICT multi-select fed
-  // by the skills registry (GET /skills). Each source loads once per
-  // panel mount (re-armed on a failed answer); a source that is down
-  // degrades its ONE control, never the edit.
+  // the field option sources --------------------- Rulings 1-2. Each source loads once
+  // per panel mount (re-armed on a failed answer); a source that is down degrades its
+  // ONE control, never the edit.
   type ComboField = "agent" | "model";
 
   const agentOptions = ref<FieldOption[]>([]);
   const modelOptions = ref<FieldOption[]>([]);
   const skillOptions = ref<FieldOption[]>([]);
-  // modelCurrent is the model this omega RUNS (GET /models' `current`):
-  // the chain's last link, the model the main agent fires on (card
-  // t_7fb3b35a). Empty when the catalog never answered - the chain then
-  // names the source without a value instead of inventing one.
+  // modelCurrent is the model this omega RUNS (GET /models' `current`). Empty when the
+  // catalog never answered - the chain then names the source without a value instead of
+  // inventing one.
   const modelCurrent = ref("");
   const optionErrors = ref<Record<"agent" | "model" | "skills", string>>({
     agent: "",
@@ -522,10 +440,7 @@
     return false;
   }
 
-  // applyModelSource is applySource for the catalog answer, which
-  // carries the run model beside the option list (the chain's last
-  // link). A degraded catalog clears BOTH - a stale `current` under a
-  // failed fetch would name a model the lane no longer runs.
+  // applyModelSource is applySource for the catalog answer, which carries the run.
   function applyModelSource(settled: PromiseSettledResult<ModelCatalog>): boolean {
     if (settled.status === "fulfilled") {
       modelOptions.value = settled.value.options;
@@ -541,9 +456,7 @@
     return false;
   }
 
-  // ensureOptions loads the three sources once. A partial failure stays
-  // degraded for that ONE control and is retried on the next editor
-  // open: optionsReady latches only when every source answered.
+  // ensureOptions loads the three sources once.
   function ensureOptions(): Promise<void> {
     if (optionsInflight) return optionsInflight;
     if (optionsReady.value) return Promise.resolve();
@@ -565,13 +478,9 @@
     return optionsInflight;
   }
 
-  // --- the comboboxes (rulings 1-2) -----------------------------------
-  // One open control at a time; the typed text IS the field's value, so
-  // picking is only a shortcut and a value the registry does not list
-  // still saves (the never-strand-an-edit law).
-  // COMBO_FIELDS drives the ONE combobox block: the agent field (the
-  // agents registry) and the model field (the settings knobs' catalog)
-  // differ only in source, label and placeholder.
+  // the comboboxes (rulings 1-2) ----------------------------------- One open control
+  // at a time; the typed text IS the field's value, so picking is only a shortcut and a
+  // value the registry does not list still saves (the never-strand-an-edit law).
   const COMBO_FIELDS: { field: ComboField; label: string; placeholder: string }[] = [
     { field: "agent", label: "agent", placeholder: "the main agent" },
     {
@@ -587,8 +496,7 @@
   });
   const comboQuery = ref("");
 
-  // comboRows is the open control's list: its own source, narrowed by
-  // what the operator typed into it.
+  // comboRows is the open control's list.
   function comboRows(field: ComboField): FieldOption[] {
     const source = field === "agent" ? agentOptions.value : modelOptions.value;
     return filterFieldOptions(source, comboQuery.value);
@@ -655,8 +563,7 @@
     }
   }
 
-  // optionStatus is the empty-list line: a failed fetch names its own
-  // error, an honest zero says the source answered with nothing.
+  // optionStatus is the empty-list line.
   function optionStatus(field: "agent" | "model" | "skills"): string {
     const err = optionErrors.value[field];
     if (err) {
@@ -680,13 +587,7 @@
     return "not in the registry - kept as typed";
   }
 
-  // --- the inheritance chain (card t_7fb3b35a) ------------------------
-  // ONE mechanism for both surfaces (the agents panel answers the same
-  // authored-vs-inherited question in its config layer): an empty
-  // field is INHERITED, and the chain names the link that supplies the
-  // value. The resolution is display data only - the draft keeps the
-  // field empty, so the write path (save.go's chainJob) keeps
-  // inheriting instead of pinning today's resolved value as authored.
+  // the inheritance chain ------------------------ ONE mechanism for both surfaces.
   const CHAIN_IDLE: ChainValue = {
     inherited: false,
     value: "",
@@ -708,11 +609,9 @@
       : modelChain(chain, agentOptions.value, modelCurrent.value);
   }
 
-  // --- the skills multi-select (ruling 3) ------------------------------
-  // STRICT: options come only from the skills registry, the closed
-  // control renders the chosen names as chips, and the panel carries
-  // its own search. A job's pinned name the registry cannot serve is
-  // dropped from the draft and NAMED on screen - visible, never silent.
+  // the skills multi-select ------------------------------ STRICT. A job's pinned name
+  // the registry cannot serve is dropped from the draft and NAMED on screen - visible,
+  // never silent.
   const skillsOpen = ref(false);
   const skillQuery = ref("");
   const skillsDropped = ref<string[]>([]);
@@ -729,8 +628,7 @@
     if (skillsOpen.value) skillQuery.value = "";
   }
 
-  // setChips writes the chip list back into the draft's comma voice -
-  // the one string saveCronJob parses (the upsert path is untouched).
+  // setChips writes the chip list back into the draft's comma voice.
   function setChips(next: string[]) {
     if (!editor.value) return;
     editor.value.draft.skills = skillsVoice(next);
@@ -795,8 +693,6 @@
     closeCombo();
     skillsOpen.value = false;
     skillsDropped.value = [];
-    // the strict skills load needs the registry: trim once it lands,
-    // and only while THIS editor is still the open one
     void ensureOptions().then(() => {
       if (editorSeq === token) applyStrictSkills();
     });
@@ -811,9 +707,7 @@
 
   async function commitEditor() {
     if (!editor.value || editor.value.busy) return;
-    // the chain's law needs the roster's main agent (a wake may not
-    // lean on it); an unanswered GET /agents falls back to the Go
-    // constant inside validateDraft
+    // the chain's law needs the roster's main agent (a wake may not lean on it).
     const msg = validateDraft(
       editor.value.draft,
       mainAgentOf(agentOptions.value),
@@ -877,10 +771,7 @@
     }
   }
 
-  // --- the per-job toggle (card t_561dc4e0) ----------------------------
-  // ONE click commits (card t_5051d523: the two-step arm/confirm the
-  // mcp tab used to ride is dead - click one armed the row, click two
-  // applied, i.e. every job needed a double click). busy holds the
+  // the per-job toggle ---------------------------- ONE click commits. busy holds the
   // committing key so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
@@ -889,8 +780,7 @@
     apply(j);
   }
 
-  // the commit: POST the toggle (the `enabled:` flag write lands and
-  // the runner hot-reloads), then re-render from the fresh listing.
+  // the commit: POST the toggle.
   async function apply(j: CronJobWire) {
     const target = !j.enabled;
     busy.value = cronKeyOf(j);
@@ -904,12 +794,7 @@
     }
   }
 
-  // --- narrow adaptation, the module-UI recipe (card t_a2fdc630): this
-  // root measures its OWN rendered container (the inspector column it
-  // currently rides in) and flips the class; the scoped stylesheet
-  // below condenses. Same mechanism as the shell's useNarrow - kept
-  // in-module because module UI imports no shell code (Board
-  // precedent); the threshold is unit-covered in ./narrow.ts.
+  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -938,9 +823,7 @@
     resizeObs = null;
   });
 
-  // shortTime renders the RFC3339 next fire as a local, compact
-  // date-time ("10/20 08:00") - the raw RFC string is noise in a row
-  // that already carries the schedule.
+  // shortTime renders the RFC3339 next fire as a local, compact date-time.
   function shortTime(rfc3339: string): string {
     const t = new Date(rfc3339);
     if (Number.isNaN(t.getTime())) return rfc3339;
@@ -959,10 +842,6 @@
 </script>
 
 <style scoped>
-  /* card t_308e6d9b: the band anchors the top, the body owns the scroll.
-     The old root padding (10px 12px 14px) rides the body now; the
-     empty state still centers in the body's full height (card
-     t_6072e718). */
   .cron-list {
     flex: 1;
     min-height: 0;
@@ -986,10 +865,6 @@
     font-size: 11px;
     opacity: 0.6;
   }
-  /* card t_6072e718: the designed empty state. Flexes to the body's full
-     height and centers its glyph + copy both axes; the colors ride the
-     shell variables so both themes read right (module UI carries its own
-     scoped CSS, no main.css edit). */
   .cron-empty {
     flex: 1;
     display: flex;
@@ -1020,9 +895,11 @@
     margin: 0;
     padding: 0;
   }
-  /* card t_ecec864e: the job editor panel. It anchors under the band
-     (above the scroll body, the band's own law) so edits never scroll
-     away; the fields ride a 2-wide grid, the textarea spans both. */
+  /*
+   * the job editor panel.
+   * It anchors under the band (above the scroll body, the band's own law) so edits
+   * never scroll away; the fields ride a 2-wide grid, the textarea spans.
+   */
   .cron-editor {
     padding: 8px 12px;
     border-bottom: 1px solid var(--border, rgba(128, 128, 128, 0.25));
@@ -1100,40 +977,28 @@
   .cron-editor-btn.danger {
     color: var(--danger, #e5484d);
   }
-  /* the row pencil sits beside the toggle pill on the right edge */
   .cron-edit-ctrl {
     margin-right: 2px;
     flex: none;
     align-self: flex-start;
   }
-  /* card t_561dc4e0: the row geometry (paddings, separators, name/sub
-     typography, the right-control seat, the confirm note line) lives
-     in the shared resources css/registry-row.css anatomy - this block
-     keeps only the cron specifics: the disabled dim, the mono
-     schedule voice (the row law keeps the expression mono), the
-     narrow condensation. */
   .cron-row.disabled {
     opacity: 0.5;
   }
   .cron-meta {
     font-family: var(--mono, monospace);
   }
-  /* card t_60e0651e: the three option controls. Hand-rolled (no styling
-     library, docs/webui.md); the combobox lists and the skills panel
-     float on the z2 layer with the layer shadow, and the chosen skills
-     ride the CLOSED control as chips. Tokens only - main.css owns the
-     values. */
   .cron-field-note {
     margin: 2px 0 0;
     font-size: 10.5px;
     color: var(--text-dim, #8a8a92);
   }
-  /* card t_7fb3b35a: the inheritance chain's visible half - the label
-     row carries an "inherited" chip when the field is absent from the
-     yaml, and the note under it names the link that supplies the value.
-     `blocked` is the chain the fire can never satisfy (a wake leaning
-     on the main agent, which never wakes) and speaks in the danger
-     voice, the same state save.go refuses. Tokens only. */
+  /*
+   * the inheritance chain's visible half.
+   * `blocked` is the chain the fire can never satisfy (a wake leaning on the main
+   * agent, which never wakes) and speaks in the danger voice, the same state save.go
+   * refuses.
+   */
   .cron-field-head {
     display: flex;
     align-items: center;
@@ -1163,8 +1028,6 @@
     position: relative;
     min-width: 0;
   }
-  /* the control fills its field (a bare input keeps its intrinsic ~20ch
-     width and overflows a narrow grid column) */
   .cron-combo input {
     width: 100%;
   }
@@ -1217,8 +1080,6 @@
     font-size: 10.5px;
     color: var(--text-dim, #8a8a92);
   }
-  /* the skills multi-select: a closed control carrying the chips, and a
-     searchable checkbox panel under it */
   .cron-skills {
     position: relative;
   }
@@ -1292,8 +1153,9 @@
     max-height: 180px;
     overflow-y: auto;
   }
-  /* the row checkboxes are SELECTION boxes, not switches (the one-switch
-     law covers on/off toggles) - they keep the browser's own box */
+  /*
+   * the row checkboxes are SELECTION boxes, not switches.
+   */
   .cron-editor-field .cron-skill-row input {
     margin: 0;
     padding: 0;
@@ -1326,20 +1188,17 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  /* narrow: the module-UI recipe (card t_a2fdc630). The rows are
-     already single-column; what dies first at ~300px is horizontal
-     breathing room - the head's name/sub pair wraps and the chrome
-     condenses so a long schedule line never elides. */
+  /*
+   * narrow: the module-UI recipe.
+   * The rows are already single-column; what dies first at ~300px is horizontal
+   * breathing room - the head's name/sub pair wraps and the chrome condenses so a long
+   * schedule line never elides.
+   */
   .cron-list.narrow .cron-body {
     padding: 4px 8px 10px;
   }
-  /* card t_60e0651e: the editor's 2-wide grid collapses at the narrow
-     threshold - a combobox list floating inside a half-width column is
-     unreadable at ~300px */
   .cron-list.narrow .cron-editor-grid {
     grid-template-columns: 1fr;
   }
-  /* card t_561dc4e0: the narrow name shrunk to 11.5px under the old
-     bespoke anatomy - the row law's uniform heights carry narrow (the
-     shared .narrow .reg-row rule), the name keeps its one size. */
+  /* the narrow name shrunk to 11.5px under the old bespoke anatomy. */
 </style>

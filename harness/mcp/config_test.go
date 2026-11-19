@@ -18,8 +18,7 @@ func TestLoadConfigEnvVar(t *testing.T) {
 	}
 }
 
-// TestLoadConfigYAMLFile verifies mcp.yaml in OMEGA_HOME is used when the
-// env var is unset.
+// TestLoadConfigYAMLFile verifies mcp.yaml in OMEGA_HOME is used when the env var is.
 func TestLoadConfigYAMLFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -53,8 +52,7 @@ func TestLoadConfigJSONFile(t *testing.T) {
 	}
 }
 
-// TestLoadConfigEmpty verifies an empty config (no env var, no files) is
-// returned without error — the bridge is a no-op in that case.
+// TestLoadConfigEmpty verifies an empty config (no env var, no files) is returned.
 func TestLoadConfigEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -68,8 +66,7 @@ func TestLoadConfigEmpty(t *testing.T) {
 	}
 }
 
-// TestLoadConfigYAMLInConfigSubdir verifies mcp.yaml in <home>/config/
-// (the Endo 2026-10-18 layout) is used when nothing is at the home root.
+// TestLoadConfigYAMLInConfigSubdir verifies mcp.yaml in <home>/config/ is used when.
 func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -89,8 +86,7 @@ func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
 	}
 }
 
-// TestLoadConfigRootWinsOverSubdir verifies a root mcp.yaml shadows one
-// in config/ (legacy installs keep working unchanged).
+// TestLoadConfigRootWinsOverSubdir verifies a root mcp.yaml shadows one in config/.
 func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -122,8 +118,7 @@ func TestLoadConfigInvalidYAML(t *testing.T) {
 	}
 }
 
-// TestNewBridgeFromEnvEmptyConfig verifies NewBridgeFromEnv with an empty
-// config produces a working, tool-less bridge.
+// TestNewBridgeFromEnvEmptyConfig verifies NewBridgeFromEnv with an empty config.
 func TestNewBridgeFromEnvEmptyConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -146,13 +141,10 @@ func TestNewBridgeFromEnvBadConfig(t *testing.T) {
 	}
 }
 
-// TestNewBridgeFromEnvToolDiscovery verifies env-configured tools end up in
-// the bridge when pointed at a fake in-process connection.
+// TestNewBridgeFromEnvToolDiscovery verifies env-configured tools end up.
 func TestNewBridgeFromEnvToolDiscovery(t *testing.T) {
-	// ponytail: connect() has no injection point for test conns, so this
-	// exercises loadConfig -> NewBridge wiring only with a server entry that
-	// fails to connect (a URL that refuses). The bridge must still be usable
-	// and the failure must be non-fatal.
+	// ponytail: connect has no injection point for test conns, so this exercises. The
+	// bridge must still be usable and the failure must be non-fatal.
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"dead","url":"http://127.0.0.1:1"}]}`)

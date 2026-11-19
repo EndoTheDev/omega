@@ -1,8 +1,4 @@
-// omega webui: card t_9ed6cad7 - closing an edge pane HIDES state, it does
-// not delete it. The hide stows the pane's full record (tabs, active, fixed,
-// grown); the reopen restores THE pane instead of minting a fresh default;
-// the layout record carries the stow (`hiddenEdges`), so a reload behaves
-// like the live closed window. Render-free; node's built-in test runner.
+// omega webui: - closing an edge pane HIDES state, it does not delete it.
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -31,7 +27,7 @@ import {
   type HiddenEdgeState,
 } from "../app/composables/dock.ts";
 
-// helpers ------------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -67,8 +63,7 @@ function asSplit(n: DockNode): DockSplit {
   return n as DockSplit;
 }
 
-/** the default boot shape's test twin: row [sidebar(240), chat, inspector
-    (300)] through ensurePinnedEdges so the edge markers ride on it. */
+/** the default boot shape's test twin. */
 function shellTree(): DockSplit {
   const inspector: DockPane = {
     kind: "pane",
@@ -103,8 +98,7 @@ function countTab(t: DockNode, component: string): number {
   );
 }
 
-// a stowed pane the tests mint/restore: the left shell after the user
-// dragged the kanban tab in (sessions + kanban, kanban focused)
+// a stowed pane the tests mint/restore.
 function hiddenSidebar(): DockPane {
   return {
     kind: "pane",
@@ -116,12 +110,9 @@ function hiddenSidebar(): DockPane {
   };
 }
 
-// tests ---------------------------------------------------------------------
+// tests ------------------------------------------------------------------
 
 describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
-  /** the realistic reveal context: the shell already pruned from the tree
-      (the hide's product) - reveal always runs on the CLOSED tree. The
-      kanban tab is REALLY moved (lifted out of the inspector). */
   function closedWithKanbanStowed(): { closed: DockSplit; stow: DockPane } {
     const open = ensurePinnedEdges(shellTree());
     const left = findEdgePane(open, "sidebar")!;
@@ -140,11 +131,9 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const { closed, stow } = closedWithKanbanStowed();
     const opened = asSplit(revealEdgePane(closed, "sidebar", "before", null, stow));
     const pane = asPane(findEdgePane(opened, "sidebar")!);
-    // canvas C1: the fresh left shell seats its CLASS (sessions + its
-    // companions); the dragged kanban rides after them
+    // canvas C1: the fresh left shell seats its CLASS (sessions + its companions).
     assert.deepEqual(pane.tabs, [...PRIMARY_TAB_COMPONENTS.map((c) => ({ component: c })), { component: "kanban" }]);
     assert.equal(pane.active, 1);
-    // the stow's own px wins over the sub-320 reopen clamp
     assert.equal(pane.fixed, 480);
   });
 
@@ -162,8 +151,6 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const opened = revealEdgePane(closed, "sidebar", "before", null, stow);
     const pane = asPane(findEdgePane(opened, "sidebar")!);
     assert.notEqual(pane.id, stow.id);
-    // every id in the restored tree is unique - a live split may have minted
-    // over the stow's ids while the shell sat hidden
     const ids = new Set<string>();
     for (const p of panesOf(opened)) {
       assert.ok(!ids.has(p.id), `duplicate id ${p.id}`);
@@ -203,7 +190,6 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const old = JSON.stringify({
       v: 3,
       tree: ((): unknown => {
-        // prune the sidebar pane by hand (the pre-change hide result)
         const root = asSplit(tree);
         const rest = root.children.filter((c) => (c as DockPane).edge !== "left");
         return { kind: "split", id: root.id, direction: "row", px: [700, 300], children: rest };
@@ -213,8 +199,6 @@ describe("edge pane hide/reveal - the stow (card t_9ed6cad7)", () => {
     const back = deserializeLayout(old)!;
     assert.deepEqual(back.closedEdges, ["sidebar"]);
     assert.equal(back.hiddenEdges, undefined);
-    // the total reader stays null-free with today's semantics: the record's
-    // closed edge stays closed, nothing stowed
     const parsed = parseAnyLayout(old, () => tree);
     assert.equal(findEdgePane(parsed.tree, "sidebar"), null);
     assert.equal(parsed.hiddenEdges, undefined);
@@ -243,7 +227,6 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     const boot = dock.tree.value;
     const sidebar = findEdgePane(boot, "sidebar")!;
     assert.ok(sidebar, "the default boot mints the left shell");
-    // drag kanban in and focus it
     const kb = findComponentTab(boot, "kanban");
     assert.ok(kb, "the default boot seats kanban in the inspector");
     dock.moveTab(kb.paneId, kb.index, sidebar.id, 1);
@@ -251,11 +234,9 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     const kb2 = findComponentTab(dock.tree.value, "kanban")!;
     dock.focus(kb2.paneId, kb2.index);
     await flush();
-    // close
     dock.toggleEdge("sidebar", "before");
     await flush();
     assert.equal(findEdgePane(dock.tree.value, "sidebar"), null);
-    // the record carries the stow
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!) as {
       closedEdges?: string[];
       hiddenEdges?: Record<string, { tabs: { component: string }[]; active: number }>;
@@ -263,8 +244,6 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     assert.ok(rec.closedEdges?.includes("sidebar"));
     assert.deepEqual(
       rec.hiddenEdges?.sidebar?.tabs,
-      // the drag inserted kanban at index 1 - right after sessions
-      // (the class's companions ride behind it)
       [PRIMARY_TAB_COMPONENTS[0]!, "kanban", ...PRIMARY_TAB_COMPONENTS.slice(1)].map((c) => ({
         component: c,
       })),
@@ -273,14 +252,12 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     // RELOAD (closed): the record carries the closure AND the stow
     const dock2 = createDock(store);
     assert.equal(findEdgePane(dock2.tree.value, "sidebar"), null, "still closed after reload");
-    // reopen: the closed window's composition comes back, active preserved
     dock2.toggleEdge("sidebar", "before");
     await flush();
     const sb2 = asPane(findEdgePane(dock2.tree.value, "sidebar")!);
     assert.equal(countTab(dock2.tree.value, "kanban"), 1);
     assert.equal(findComponentTab(dock2.tree.value, "kanban")!.paneId, sb2.id);
     assert.equal(sb2.active, 1);
-    // the in-page cycle again (no reload in between): still the user's state
     dock2.toggleEdge("sidebar", "before");
     await flush();
     dock2.toggleEdge("sidebar", "before");
@@ -324,7 +301,6 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
   it("empty-state edge: the inspector reduced to its last non-default tab keeps that composition across close + reopen + reload", async () => {
     const store = new MemoryStorage();
     const dock = createDock(store);
-    // move every default inspector tab out except kanban
     const chat = findComponentTab(dock.tree.value, "chat")!;
     for (const c of INSPECTOR_TAB_COMPONENTS.filter((x) => x !== "kanban")) {
       const loc = findComponentTab(dock.tree.value, c);
@@ -335,7 +311,6 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     const inspPane = asPane(findPane(dock.tree.value, insp.paneId)!);
     assert.ok(inspPane.edge === "right");
     assert.deepEqual(inspPane.tabs, [{ component: "kanban" }]);
-    // close, reopen, reload, reopen: the composition survives
     dock.toggleEdge("inspector", "after");
     await flush();
     dock.toggleEdge("inspector", "after");
@@ -356,11 +331,9 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     const store = new MemoryStorage();
     const dock = createDock(store);
     await flush();
-    // starve the window: the inspector gives way first
     dock.narrowSqueeze(800);
     await flush();
     assert.equal(findEdgePane(dock.tree.value, "inspector"), null);
-    // the record stowed it (the give-way closure persists across reloads)
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!) as {
       closedEdges?: string[];
       hiddenEdges?: Record<string, { tabs: unknown[] }>;
@@ -376,9 +349,7 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
   });
 
   it("divider drag-close is a hide too: the stow restores on the toggle", async () => {
-    // pure path: hide via the model, stow by the same call the drag intents
-    // run (dragSplitDivider's intents funnel through the store's setClosed +
-    // hiddenState capture); here the pure reveal side of that capture.
+    // pure path: hide via the model, stow by the same call the drag intents run.
     const store = new MemoryStorage();
     const dock = createDock(store);
     await flush();
@@ -394,8 +365,7 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
       INSPECTOR_TAB_COMPONENTS.map((c) => c as string),
     );
     assert.equal(countTab(dock.tree.value, "files"), 1);
-    // card t_00e4a784: settings is not a seated inspector tab any more -
-    // the stow/restore never mints one
+    // settings is not a seated inspector tab any more - the stow/restore never mints.
     assert.equal(countTab(dock.tree.value, "settings"), 0);
   });
 
@@ -410,8 +380,7 @@ describe("createDock: the closed window keeps its composition (card t_9ed6cad7)"
     await flush();
     const pane = asPane(findEdgePane(dock.tree.value, "inspector")!);
     assert.equal(pane.tabs.length, INSPECTOR_TAB_COMPONENTS.length, "the pre-hide composition came back");
-    // the restored pane carries the FULL recorded composition, no duplicates
-    // the record's stow retired with the open edge (watch fired after undo)
+    // the restored pane carries the FULL recorded composition, no duplicates.
     await flush();
     const rec = JSON.parse(store.getItem(DOCK_LAYOUT_KEY)!) as { closedEdges?: string[] };
     assert.ok(!rec.closedEdges?.includes("inspector"));

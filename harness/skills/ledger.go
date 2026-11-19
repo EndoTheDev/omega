@@ -13,15 +13,9 @@ import (
 	"time"
 )
 
-// Curator audit ledger (card t_9972dfd0, ported from Hermes
-// tools/skill_ledger.py): every curator mutation appends one row with
-// the before/after of the primary artifact (SKILL.md content), so a
-// single row is a single-edit revert. Full-folder copies ride the
-// sidecar backups (keep 5) - the ledger stays small, the restores stay
-// byte-exact. Rows are JSON lines at <skillsdir>/.curator/ledger.jsonl:
-// every non-skill file the curator owns (usage.json, ledger.jsonl,
-// backups/) lives under the one ignored .curator dir, so a dev
-// checkout sees no untracked skills noise (finding C2, t_a48be895).
+// Curator audit ledger: every curator mutation appends one row with the before/after.
+// Full-folder copies ride the sidecar backups (keep 5) - the ledger stays small, the
+// restores stay byte-exact.
 
 // Ledger actions.
 const (
@@ -32,18 +26,13 @@ const (
 	LedgerRollback = "rollback"
 )
 
-// LedgerEntry is one audit row. Files carries one entry per touched
-// SKILL.md: before = the content before the edit, after = the content
-// after ("" for an archive's removed file). FromPath/ToPath record an
-// archive/undo move so rollback knows where the folder went.
+// LedgerEntry is one audit row.
 type LedgerEntry struct {
 	ID     string `json:"id"`
 	TS     string `json:"ts"`
 	Actor  string `json:"actor"`
 	Action string `json:"action"`
 	Skill  string `json:"skill"`
-	// Evidence is the why (the LLM's one-line reason) plus any
-	// structured provenance the pass recorded.
 	Evidence map[string]any `json:"evidence,omitempty"`
 	Files    []LedgerFile   `json:"files"`
 }
@@ -60,10 +49,7 @@ const (
 	backupKeep       = 5
 )
 
-// Curator state paths, all under <skillsdir>/.curator (the one ignored
-// directory beside the skills themselves). The legacy names are the
-// pre-t_a48be895 layout, which sat BESIDE .curator and leaked untracked
-// files around its own ignore rule.
+// Curator state paths, all under <skillsdir>/.curator.
 const (
 	curatorDirName    = ".curator"
 	ledgerFileName    = "ledger.jsonl"
@@ -72,11 +58,7 @@ const (
 	legacyBackupsName = ".curator_backups"
 )
 
-// curatorRoot returns the curator's state root (<skillsdir>/.curator)
-// and creates it. Creating it is deliberate: the ledger and the backup
-// root both need the parent, the migration below needs a rename
-// target, and an empty dot dir is invisible to the scanner (dot dirs
-// are skipped), so nothing about discovery changes.
+// curatorRoot returns the curator's state root (<skillsdir>/.curator) and creates it.
 func (sp *SkillsProvider) curatorRoot() (string, error) {
 	if sp.Dir == "" {
 		return "", fmt.Errorf("skills directory not configured")
@@ -89,15 +71,9 @@ func (sp *SkillsProvider) curatorRoot() (string, error) {
 	return root, nil
 }
 
-// migrateLegacyCuratorState adopts the pre-t_a48be895 layout: the
-// ledger and the backup root used to sit beside .curator
-// (<dir>/.curator_ledger.jsonl, <dir>/.curator_backups). Both are
-// renamed in on first touch, so an existing audit history keeps its
-// rollback ids and the keep-5 backup window survives the move.
-//
-// The call is best-effort and idempotent. A home that already holds
-// the new path keeps it and the stale legacy path is LEFT on disk -
-// nothing is merged, because the on-disk copy is the record; a rename
+// migrateLegacyCuratorState adopts the pre- layout. The call is best-effort and
+// idempotent. A home that already holds the new path keeps it and the stale legacy path
+// is LEFT on disk - nothing is merged, because the on-disk copy is the record; a rename
 // that fails (permissions, a lock) never blocks the ledger write.
 func migrateLegacyCuratorState(dir, root string) {
 	move := func(old, dst string) {
@@ -113,8 +89,7 @@ func migrateLegacyCuratorState(dir, root string) {
 	move(filepath.Join(dir, legacyBackupsName), filepath.Join(root, backupsDirName))
 }
 
-// ledgerFile returns the ledger path for the provider's write home:
-// <skillsdir>/.curator/ledger.jsonl.
+// ledgerFile returns the ledger path for the provider's write home.
 func (sp *SkillsProvider) ledgerFile() (string, error) {
 	root, err := sp.curatorRoot()
 	if err != nil {
@@ -123,12 +98,10 @@ func (sp *SkillsProvider) ledgerFile() (string, error) {
 	return filepath.Join(root, ledgerFileName), nil
 }
 
-// ledgerMu serializes ledger appends and rollbacks - the file is the
-// audit record; a torn line is worse than a wait.
+// ledgerMu serializes ledger appends and rollbacks.
 var ledgerMu sync.Mutex
 
-// readLedger returns every ledger row, oldest first. A missing file
-// is an empty history.
+// readLedger returns every ledger row, oldest first.
 func (sp *SkillsProvider) readLedger() ([]LedgerEntry, error) {
 	path, err := sp.ledgerFile()
 	if err != nil {
@@ -155,12 +128,9 @@ func (sp *SkillsProvider) readLedger() ([]LedgerEntry, error) {
 	return out, nil
 }
 
-// AppendLedger appends one audit row and returns its id. The actor is
-// the writer's class (the curator's passes; ActorWebui for the tab
-// editor's own writes) - the audit trail names its writer. The before
-// contents are snapped from disk by the caller; this function only
-// records. Errors surface - the caller must not mutate anything when
-// the ledger refuses (the audit row IS the mutation's receipt).
+// AppendLedger appends one audit row and returns its id. The before contents are
+// snapped from disk by the caller; this function only records. Errors surface - the
+// caller must not mutate anything when the ledger refuses.
 func (sp *SkillsProvider) AppendLedger(actor, action, skill, reason string, files []LedgerFile, extra map[string]any) (string, error) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
@@ -209,8 +179,7 @@ func writeLedger(sp *SkillsProvider, entries []LedgerEntry) error {
 	return os.WriteFile(path, []byte(sb.String()), 0o644)
 }
 
-// backupDir returns the sidecar backup root:
-// <skillsdir>/.curator/backups (inside the ignored curator dir).
+// backupDir returns the sidecar backup root.
 func (sp *SkillsProvider) backupDir() (string, error) {
 	root, err := sp.curatorRoot()
 	if err != nil {
@@ -219,9 +188,7 @@ func (sp *SkillsProvider) backupDir() (string, error) {
 	return filepath.Join(root, backupsDirName), nil
 }
 
-// archiveDir returns the retired-skills root: <skillsdir>/.archive
-// (the Hermes path shape). The scanner skips dot dirs, so archived
-// skills leave discovery but stay one mv away from recovery.
+// archiveDir returns the retired-skills root.
 func (sp *SkillsProvider) archiveDir() (string, error) {
 	if sp.Dir == "" {
 		return "", fmt.Errorf("skills directory not configured")
@@ -229,10 +196,8 @@ func (sp *SkillsProvider) archiveDir() (string, error) {
 	return filepath.Join(sp.Dir, ".archive"), nil
 }
 
-// BackupSkill copies a skill folder into .curator/backups by NAME in
-// the own skills dir (the curator's callers; the editor's delete backs
-// up from the merge-winner's folder via backupFrom). Returns the
-// backup path.
+// BackupSkill copies a skill folder into.curator/backups by NAME in the own skills dir
+// (the curator's callers.
 func (sp *SkillsProvider) BackupSkill(name, action string) (string, error) {
 	root, err := sp.backupDir()
 	if err != nil {
@@ -241,10 +206,8 @@ func (sp *SkillsProvider) BackupSkill(name, action string) (string, error) {
 	return sp.backupFrom(filepath.Join(sp.Dir, name), root, name, action)
 }
 
-// backupFrom copies one skill folder (src, the whole tree: SKILL.md
-// plus references/scripts) into the backup root named <ts>-<action>-
-// <skill>, pruned to the keep set. The source is the caller's resolved
-// folder so a shared-dir winner is backed up from where it lives.
+// backupFrom copies one skill folder (src, the whole tree. The source is the caller's
+// resolved folder so a shared-dir winner is backed up from where it lives.
 func (sp *SkillsProvider) backupFrom(src, root, name, action string) (string, error) {
 	dst := filepath.Join(root, fmt.Sprintf("%s-%s-%s", time.Now().UTC().Format("20060102-150405"), action, name))
 	if err := copyDir(src, dst); err != nil {
@@ -304,13 +267,7 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
-// Rollback reverts one ledger row: the single-edit revert (card law).
-// A merge/distill restores every recorded file's before bytes; an
-// archive (or a merge's absorbed source) moves the whole folder back
-// from .archive, so a multi-file skill's scripts/ and references/
-// survive the undo (card t_c8f31a8c). The rollback itself is
-// ledgered, so a reverted curator pass leaves two rows, not none.
-// Returns a report.
+// Rollback reverts one ledger row: the single-edit revert.
 func (sp *SkillsProvider) Rollback(id string) (string, error) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
@@ -332,10 +289,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		return "", fmt.Errorf("rollback: entry %s is already a rollback", id)
 	}
 	var report strings.Builder
-	// Archive and merge rollbacks move the retired folder back whole
-	// (card t_c8f31a8c): the ledger records SKILL.md bytes only, so
-	// restoring just the recorded files would drop a multi-file
-	// skill's scripts/ and references/ payloads.
 	arched, aerr := sp.archiveDir()
 	if aerr != nil {
 		return "", aerr
@@ -348,8 +301,7 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 			if _, lerr := os.Stat(live); lerr == nil {
 				return "", fmt.Errorf("rollback: %s exists live and in .archive - resolve by hand", live)
 			}
-			// The archived copy itself must match the recorded before
-			// bytes - a hand-tampered folder is not this entry's undo.
+			// The archived copy itself must match the recorded before bytes.
 			for _, f := range target.Files {
 				if f.Path != filepath.Join(sp.Dir, target.Skill, "SKILL.md") {
 					continue
@@ -370,13 +322,11 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 	movedRoot := filepath.Join(sp.Dir, target.Skill) + string(os.PathSeparator)
 	for _, f := range target.Files {
 		if moved && strings.HasPrefix(f.Path, movedRoot) {
-			// The folder came back whole; skip the recorded files it
-			// carried (writing them again could clobber the payload
-			// copy with a stale ledger line).
+			// The folder came back whole; skip the recorded files it carried (writing them again
+			// could clobber the payload copy with a stale ledger line).
 			continue
 		}
-		// Refuse when the file changed since the row: the single-edit
-		// restore would clobber newer work.
+		// Refuse when the file changed since the row: the single-edit restore would clobber.
 		cur, rerr := os.ReadFile(f.Path)
 		if rerr == nil && string(cur) != f.After {
 			return "", fmt.Errorf("rollback: %s changed since entry %s - restore it by hand", f.Path, id)
@@ -386,8 +336,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		}
 		switch target.Action {
 		case LedgerArchive:
-			// Degraded fallback: the archived folder is gone, so the
-			// recorded files are all that is left to restore.
 			if err := os.WriteFile(f.Path, []byte(f.Before), 0o644); err != nil {
 				return "", fmt.Errorf("rollback: %w", err)
 			}
@@ -399,16 +347,12 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 			report.WriteString("restored " + f.Path + "\n")
 		}
 	}
-	// Merge rollbacks un-archive too: the source moved to .archive as
-	// part of the absorb, so the undo takes the folder back the same
-	// way an archive undo does.
 	if target.Action == LedgerArchive || target.Action == LedgerMerge {
 		arch, err := sp.archiveDir()
 		if err == nil {
 			_ = os.RemoveAll(filepath.Join(arch, target.Skill))
 		}
 	}
-	// Reactivate the record the archive pass retired.
 	if target.Action == LedgerArchive {
 		usageMu.Lock()
 		m := readUsageLocked(sp.Dir)
@@ -419,9 +363,8 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		writeUsageLocked(sp.Dir, m)
 		usageMu.Unlock()
 	}
-	// Archive-folder rollback: the archived folder vanishes above, so
-	// the ledger row's undo is complete. Merge/distill leave both files
-	// restored from `before` - byte-exact by construction.
+	// Archive-folder rollback: the archived folder vanishes above, so the ledger.
+	// Merge/distill leave both files restored from `before` - byte-exact by construction.
 	undo := LedgerEntry{
 		ID:     randID(),
 		TS:     time.Now().UTC().Format(time.RFC3339),

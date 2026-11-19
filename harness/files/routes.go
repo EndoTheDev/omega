@@ -1,16 +1,10 @@
-// The file domain's REST face (the webui explorer): browse, read and
-// preview the RESOLVED root, the raw image bytes, plus the write half
-// (card t_a4504a25, the Files tab toolbar's add-file/add-folder).
-// GET routes answer reads; POST /files/write and POST /files/mkdir
-// create nodes INSIDE the same root, guarded by the SAME three layers
-// the read half enforces: relative paths and empty segments are
-// rejected, ONLY the "." and ".." traversal segments die (hidden names
-// like .git and .gitignore are ordinary paths - hiding them is the
-// listings' job, never the guard's), and the cleaned path is
-// symlink-resolved and verified to stay under the root before the disk
-// is touched. The routes are capsule vocabulary (the module REST rail,
-// RegisterRoute): a disabled files capsule answers 404 at the module
-// mux - the explorer is the file tools wearing a second face.
+// The file domain's REST face (the webui explorer). GET routes answer reads; POST
+// /files/write and POST /files/mkdir create nodes INSIDE the same root, guarded by the
+// SAME three layers the read half enforces: relative paths and empty segments are
+// rejected, ONLY the "." and "." traversal segments die (hidden names like.git
+// and.gitignore are ordinary paths - hiding them is the listings' job, never the
+// guard's), and the cleaned path is symlink-resolved and verified to stay under the
+// root before the disk is touched.
 
 package files
 
@@ -33,8 +27,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fileReadCap is the preview size cap: contents are cut at 64 KiB and
-// the truncated flag tells the UI the cut happened.
+// fileReadCap is the preview size cap.
 const fileReadCap = 64 * 1024
 
 // fileEntry is one /files/browse row.
@@ -45,17 +38,9 @@ type fileEntry struct {
 	ModTime   string `json:"mod_time"`
 }
 
-// validateRelPath checks a user-supplied relative path against the
-// segment rules and returns the cleaned relative path ("" = the root).
-// Absolute paths and empty segments are rejected, and the ONLY dot
-// segments rejected are "." and ".." - the traversal set (card
-// t_ccd4a000 narrowed this guard from every dot-prefixed segment: its
-// security job is traversal prevention, not name hiding; the earlier
-// width made listed dot-folders (.git, .github, .worktrees) and dot
-// files (.gitignore) permanently unopenable while hiding nothing).
-// Containment never rests on this scan: every caller resolves the
-// cleaned path under the root via EvalSymlinks and verifies it with
-// ensureUnderRoot.
+// validateRelPath checks a user-supplied relative path against the segment rules.
+// Containment never rests on this scan: every caller resolves the cleaned path under
+// the root via EvalSymlinks and verifies it with ensureUnderRoot.
 func validateRelPath(req string) (string, error) {
 	if req == "" {
 		return "", nil
@@ -77,16 +62,12 @@ func validateRelPath(req string) (string, error) {
 	return strings.Join(cleaned, "/"), nil
 }
 
-// resolveUnderRoot joins a validated relative path against root and
-// resolves it through symlink evaluation, returning the real root
-// (EvalSymlinks-resolved) alongside the resolved target. Containment
-// is checked against the returned realRoot, never the raw root: the
-// working directory itself may sit behind a symlink (/tmp on macOS,
-// /var/run/...), and comparing a realRoot-resolved path against the
-// raw root would fail every request in such environments. A missing
-// leaf is not an error here - the resolved parent is returned and the
-// caller's disk operation reports not-found. Symlink escapes are
-// caught by ensureUnderRoot.
+// resolveUnderRoot joins a validated relative path against root and resolves it.
+// Containment is checked against the returned realRoot, never the raw root: the working
+// directory itself may sit behind a symlink (/tmp on macOS, /var/run/.), and comparing
+// a realRoot-resolved path against the raw root would fail every request in such
+// environments. A missing leaf is not an error here - the resolved parent is returned
+// and the caller's disk operation reports not-found.
 func resolveUnderRoot(root, rel string) (realRoot, resolved string, err error) {
 	realRoot, err = filepath.EvalSymlinks(root)
 	if err != nil {
@@ -95,8 +76,7 @@ func resolveUnderRoot(root, rel string) (realRoot, resolved string, err error) {
 	target := filepath.Join(realRoot, rel)
 	resolved, err = filepath.EvalSymlinks(target)
 	if err != nil {
-		// EvalSymlinks fails for a nonexistent leaf; resolve the parent
-		// so a missing file still gets the containment check
+		// EvalSymlinks fails for a nonexistent leaf.
 		realParent, perr := filepath.EvalSymlinks(filepath.Dir(target))
 		if perr != nil {
 			return "", "", perr
@@ -117,8 +97,8 @@ func ensureUnderRoot(realRoot, resolved string) error {
 	return nil
 }
 
-// sortFileEntries returns the entries ordered: directories first, then
-// names, case-insensitive. Pure - sorts a copy, never the caller's slice.
+// sortFileEntries returns the entries ordered. Pure - sorts a copy, never the caller's
+// slice.
 func sortFileEntries(entries []fileEntry) []fileEntry {
 	out := append([]fileEntry(nil), entries...)
 	sort.SliceStable(out, func(i, j int) bool {
@@ -143,48 +123,34 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v) // the client is gone; nothing to report to
 }
 
-// files root sources, reported on every /files/browse response so the
-// UI knows whether the tree sits on a real workspace (header shows) or
-// the bare cwd fallback (header hides entirely - the Endo ruling: no
-// dead header row over a rooted-nowhere tree).
+// files root sources, reported on every /files/browse response so the UI knows.
 const (
 	filesSourceSession = "session"
 	filesSourceDefault = "default"
 	filesSourceCwd     = "cwd"
 )
 
-// sessionStores is the workspace-pin face the roots chain reads (the
-// store capsule offered under the "store" key): the resolved root's
-// step 1 - the focused session's pinned workspace. The capsule's own
-// local interface per the seam grammar; nil-safe absence = the chain
+// sessionStores is the workspace-pin face the roots chain reads (the store capsule. The
+// capsule's own local interface per the seam grammar; nil-safe absence = the chain
 // falls through to the default knob and the cwd.
 type sessionStores interface {
 	GetSession(ctx context.Context, id string) (core.Session, error)
 }
 
-// Routes is the file domain's REST face: the five explorer routes
-// bound under the capsule's /files namespace, the default_workspace
-// knob (hot: the resolution law reads it per request), and the live
-// store resolver (the seam resolve per request - a toggle swaps the
-// offer under the handlers' feet, exactly the Server's seam law).
-//
-// The knob's default arrives at mount from the capsule's config
-// section (cfg.Server.DefaultWorkspace, card t_a5f9d185); the
-// settings seam's hot-apply pushes later saves through
-// SetDefaultWorkspace, so a settings-pane save re-roots the Files tab
-// live, no restart.
+// Routes is the file domain's REST face: the five explorer routes bound under the
+// capsule's /files namespace, the default_workspace knob (hot: the resolution law reads
+// it per request), and the live store resolver (the seam resolve per request - a toggle
+// swaps the offer under the handlers' feet, exactly the Server's seam law).
 type Routes struct {
 	// storeFn resolves the workspace-pin face LIVE per request.
 	storeFn func() sessionStores
-	// defaultWorkspace is the `default_workspace` knob. Written by
-	// SetDefaultWorkspace (wire time + the settings seam's hot-apply)
-	// while requests read it concurrently, so it rides an atomic
-	// value - never a bare field.
+	// defaultWorkspace is the `default_workspace` knob. Written by SetDefaultWorkspace
+	// (wire time + the settings seam's hot-apply) while requests read it concurrently, so
+	// it rides an atomic value - never a bare field.
 	defaultWorkspace atomic.Value
 }
 
-// SetDefaultWorkspace hot-sets the default_workspace knob: the mid
-// chain step of the root resolution law.
+// SetDefaultWorkspace hot-sets the default_workspace knob.
 func (r *Routes) SetDefaultWorkspace(ws string) {
 	r.defaultWorkspace.Store(ws)
 }
@@ -229,10 +195,8 @@ func (r *Routes) resolveFilesRoot(ctx context.Context, sessionID string) (root, 
 	return wd, filesSourceCwd, nil
 }
 
-// handleFilesBrowse serves GET /files/browse?path=<rel>&session=<id>,
-// listing one directory of the RESOLVED root (the resolution law). Empty
-// or missing path lists the root. The response carries root + source so
-// the tab's header knows exactly what it sits on.
+// handleFilesBrowse serves GET /files/browse?path=<rel>&session=<id>, listing one. The
+// response carries root + source so the tab's header knows exactly what it sits.
 func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -250,7 +214,6 @@ func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	}
 	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
 	if rerr != nil {
-		// fail closed: no containment verdict, no disk access
 		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
 		return
 	}
@@ -294,13 +257,7 @@ func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// handleFilesRead serves GET /files/read?path=<rel>&session=<id>,
-// returning up to 64 KiB of a file's content under the RESOLVED root
-// (the resolution law, same chain as browse). Non-UTF-8 bytes come back
-// as binary=true with empty content - the content is not previewed here;
-// the mime field tells the viewer whether the file is an image or a pdf
-// it can pull from /files/raw (cards t_08d822bb, t_42c8aced) or a binary
-// it announces, and the size field is the full size on disk.
+// handleFilesRead serves GET /files/read?path=<rel>&session=<id>, returning up to 64.
 func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -318,7 +275,6 @@ func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 	}
 	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
 	if rerr != nil {
-		// fail closed: no containment verdict, no disk access
 		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
 		return
 	}
@@ -368,18 +324,13 @@ func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 		"truncated": truncated,
 		"binary":    binary,
 		"mime":      detectFileMime(data[:min(512, len(data))], rel),
-		// the full size on disk (t_42c8aced): the binary no-preview state
-		// announces the name + size; the read cap never hides it
+		// the full size on disk: the binary no-preview state announces the name + size; the
+		// read cap never hides it
 		"size": info.Size(),
 	})
 }
 
-// detectFileMime sniffs a file's leading bytes (the card's law: stdlib
-// http.DetectContentType, max 512 bytes, no new dependency) and returns
-// the file's mime type. Extension guessing is ONLY the tiebreak the card
-// allows: DetectContentType has no SVG magic, so a text-shaped file
-// named .svg climbs to image/svg+xml; every other file rides the sniff
-// verbatim, extension or not.
+// detectFileMime sniffs a file's leading bytes and returns the file's mime type.
 func detectFileMime(head []byte, rel string) string {
 	sniff := http.DetectContentType(head)
 	if strings.HasSuffix(strings.ToLower(rel), ".svg") &&
@@ -391,18 +342,14 @@ func detectFileMime(head []byte, rel string) string {
 	return sniff
 }
 
-// handleFilesRaw serves GET /files/raw?path=<rel>&session=<id>: the raw
-// bytes behind the viewer tab's preview branches (card t_08d822bb: the
-// image <img>; card t_42c8aced: the pdf <iframe> on the browser's native
-// viewer). The containment is the EXACT chain /files/read runs -
-// validateRelPath, resolveFilesRoot, resolveUnderRoot, ensureUnderRoot,
-// never a copy - and one gate the read surface does not have: the
-// sniffed mime must be image/* or application/pdf, anything else refuses
-// with 400 (renderable previews only - no audio/video surface).
-// download=1 is the second lane: any sniffed mime serves, but the bytes
-// ride Content-Disposition: attachment (never rendered as a document),
-// the binary no-preview state's download affordance. Every byte lane
-// streams with the sniffed Content-Type plus nosniff, so a mislabelled
+// handleFilesRaw serves GET /files/raw?path=<rel>&session=<id>. The containment is the
+// EXACT chain /files/read runs - validateRelPath, resolveFilesRoot, resolveUnderRoot,
+// ensureUnderRoot, never a copy - and one gate the read surface does not have: the
+// sniffed mime must be image/* or application/pdf, anything else refuses with 400
+// (renderable previews only - no audio/video surface). download=1 is the second lane:
+// any sniffed mime serves, but the bytes ride Content-Disposition: attachment (never
+// rendered as a document), the binary no-preview state's download affordance. Every
+// byte lane streams with the sniffed Content-Type plus nosniff, so a mislabelled
 // payload can never render as something it is not.
 func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
@@ -421,7 +368,6 @@ func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	}
 	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
 	if rerr != nil {
-		// fail closed: no containment verdict, no disk access
 		fileError(w, http.StatusInternalServerError, "resolve path: "+rerr.Error())
 		return
 	}
@@ -467,28 +413,23 @@ func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	}
 	w.Header().Set("Content-Type", mime)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	// the download lane never renders: attachment keeps every mime out of
-	// the browser's document surfaces, whatever the sniff said
+	// the download lane never renders.
 	if downloading {
 		w.Header().Set("Content-Disposition", "attachment; filename="+strconv.Quote(filepath.Base(rel)))
 	}
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	if _, cerr := io.Copy(w, f); cerr != nil {
-		// the response already started; nothing structured left to send
 		return
 	}
 }
 
-// filesPostCap caps every POST body on the file surface: the path and
-// the file content ride one JSON envelope, and an unbounded Decode
-// before validation is a DoS seam on the same class as an unjailed path.
+// filesPostCap caps every POST body on the file surface.
 const filesPostCap = 1 << 20 // 1 MiB
 
-// filesPostBody decodes the JSON request body of the file surface's
-// POST handlers into dst, capped at filesPostCap+1 bytes so an
-// oversized body fails loudly instead of silently truncating mid-JSON.
-// Writes the method-405 / decode-400 envelope and returns false when
-// the request never reaches the handler's real body of work.
+// filesPostBody decodes the JSON request body of the file surface's POST handlers into
+// dst, capped at filesPostCap+1 bytes so an oversized body fails loudly instead of
+// silently truncating mid-JSON. Writes the method-405 / decode-400 envelope and returns
+// false when the request never reaches the handler's real body of work.
 func filesPostBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -507,11 +448,9 @@ func filesPostBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 // (500) - the same split the browse handler draws on status codes.
 var errUncontained = errors.New("path refused")
 
-// resolveForWrite runs the shared root jail over a write request's
-// path: segment validation, symlink resolution, containment - the exact
-// pair resolveUnderRoot + ensureUnderRoot the browse/read handlers run,
-// never a copy. Returns the root-relative path and the resolved
-// absolute path.
+// resolveForWrite runs the shared root jail over a write request's path: segment
+// validation, symlink resolution, containment - the exact pair resolveUnderRoot +
+// ensureUnderRoot the browse/read handlers run, never a copy.
 func resolveForWrite(root, req string) (rel, resolved string, err error) {
 	rel, err = validateRelPath(req)
 	if err != nil {
@@ -519,10 +458,9 @@ func resolveForWrite(root, req string) (rel, resolved string, err error) {
 	}
 	realRoot, resolved, rerr := resolveUnderRoot(root, rel)
 	if rerr != nil {
-		// fail closed: no containment verdict, no disk write. A missing
-		// leaf or parent is the caller's made-up path (loud 400); the
-		// vanished-working-directory edge rides the same refusal - the
-		// write never happens either way.
+		// fail closed: no containment verdict, no disk write. A missing leaf or parent is the
+		// caller's made-up path (loud 400); the vanished-working-directory edge rides the
+		// same refusal - the write never happens either way.
 		if os.IsNotExist(rerr) {
 			return "", "", fmt.Errorf("%w: %v", errUncontained, rerr)
 		}
@@ -534,11 +472,9 @@ func resolveForWrite(root, req string) (rel, resolved string, err error) {
 	return rel, resolved, nil
 }
 
-// handleFilesWrite serves POST /files/write {path, content}: creates or
-// overwrites one file inside the working directory. An empty name is a
-// loud 400 - there is no "write the root". The parent directory must
-// already exist (the toolbar's add-folder button makes it), the leaf
-// must not be a directory, and empty content is a legal empty file.
+// handleFilesWrite serves POST /files/write {path, content}: creates or overwrites. The
+// parent directory must already exist (the toolbar's add-folder button makes it), the
+// leaf must not be a directory, and empty content is a legal empty file.
 func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Path    string `json:"path"`
@@ -578,11 +514,7 @@ func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 		fileError(w, http.StatusBadRequest, "parent directory: "+perr.Error())
 		return
 	}
-	// the write is atomic (v0.14.1 audit, the same tmp+rename class the
-	// config writes run): the previous os.WriteFile could truncate an
-	// existing user file when the process died mid-write. Same-directory
-	// tmp keeps the rename same-filesystem; the leaf exists untouched
-	// until the rename lands.
+	// the write is atomic.
 	tmpFile, terr := os.CreateTemp(filepath.Dir(resolved), filepath.Base(resolved)+".omega-write-*")
 	if terr != nil {
 		fileError(w, http.StatusInternalServerError, "write file: "+terr.Error())
@@ -613,11 +545,10 @@ func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": rel})
 }
 
-// handleFilesMkdir serves POST /files/mkdir {path, session}: creates one
-// folder inside the RESOLVED root. Empty and existing names are loud
-// 400s; the leaf chain must already exist above the leaf - the same
-// resolution rule the write half runs under (no made-up parent chains,
-// no symlinks smuggled through a half-existing path).
+// handleFilesMkdir serves POST /files/mkdir {path, session}. Empty and existing names
+// are loud 400s; the leaf chain must already exist above the leaf - the same resolution
+// rule the write half runs under (no made-up parent chains, no symlinks smuggled
+// through a half-existing path).
 func (r *Routes) handleFilesMkdir(w http.ResponseWriter, req *http.Request) {
 	var body struct {
 		Path    string `json:"path"`

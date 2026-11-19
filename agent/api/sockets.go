@@ -1,22 +1,6 @@
 package api
 
-// The push channel's hub (card t_7624bab1; design of record
-// Workshop/omega/websocket-channel.md). ONE websocket per browser
-// connection, every update a typed topic on it - and this file is the
-// fan-out, deliberately transport-blind: the importability law keeps a
-// websocket library out of agent/api, so the serving shell (api/ws.go)
-// upgrades the request, attaches a subscriber here and writes its
-// frames.
-//
-// Events are hints, state is truth (ruling 4). The hub buffers NOTHING,
-// replays NOTHING and keeps no per-session queue: a client that falls
-// behind is cut (or, on the lossy chips topic, loses frames) and
-// reconnects; catch-up is a refetch of the visible panes through the GET
-// API, which stays complete and authoritative (ruling: the GET API stays
-// authoritative, the socket never becomes the only way to read state).
-//
-// The broadcast hooks live at the one seam the loop already fans out
-// through - see emitRunFrame / CanvasEmit / prepareRun / wakeHome.
+// The push channel's hub.
 
 import (
 	"encoding/json"
@@ -26,74 +10,46 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The topic vocabulary: one closed set, six names (five live on every
-// connection; `logs` is subscription-gated).
+// The topic vocabulary: one closed set, six names.
 const (
-	// TopicChat carries run event deltas - the exact frames the SSE
-	// stream emits (event name + verbatim payload), so the SPA's
-	// existing frame dispatch works unchanged.
+	// TopicChat carries run event deltas.
 	TopicChat = "chat"
-	// TopicChips carries the pending chip's live tail while a tool runs
-	// and the fill when the call settles.
+	// TopicChips carries the pending chip's live tail while a tool runs and the fill.
 	TopicChips = "chips"
-	// TopicCanvas carries canvas ViewModelDeltas - panel state from
-	// every mounted capsule, notifications toasts and board changes
-	// included. One topic, not one per module: the panel descriptor
-	// names itself, so the shell never learns a capsule noun (the
-	// binary-purity law).
+	// TopicCanvas carries canvas ViewModelDeltas. One topic, not one per module: the panel
+	// descriptor names itself, so the shell never learns a capsule noun (the binary-purity
+	// law).
 	TopicCanvas = "canvas"
-	// TopicRuns carries the live-run truth (session + active) - the
-	// fact the SPA used to poll GET /sessions for.
+	// TopicRuns carries the live-run truth (session + active).
 	TopicRuns = "runs"
-	// TopicHealth carries the server heartbeat - the fact the SPA used
-	// to poll GET /health for.
+	// TopicHealth carries the server heartbeat.
 	TopicHealth = "health"
-	// TopicLogs carries the log tail's DELTA: only the lines appended to
-	// the server's own log file since the previous frame on this topic,
-	// never the 200-line snapshot (the pane's first read stays
-	// GET /logs; the socket carries what comes after it). Subscription-
-	// gated by design - a log tail is high-frequency, so a connection
-	// that did not ask for `logs` receives nothing (card t_0e7bc0bb,
-	// ruling: overloading `runs`/`canvas` would make the vocabulary
-	// lie).
+	// TopicLogs carries the log tail's DELTA: only the lines appended to the server's own
+	// log file since the previous frame on this topic, never the 200-line snapshot (the
+	// pane's first read stays GET /logs; the socket carries what comes after it).
 	TopicLogs = "logs"
 )
 
-// Topics is the closed topic set, in wire order. A subscriber starts
-// subscribed to all of them and may narrow the set; an unknown name is
-// ignored, never invented.
+// Topics is the closed topic set, in wire order. A subscriber starts subscribed to all
+// of them and may narrow the set; an unknown name is ignored, never invented.
 var Topics = []string{TopicChat, TopicChips, TopicCanvas, TopicRuns, TopicHealth, TopicLogs}
 
-// SocketMessage is one pushed frame. The envelope is topic-typed: Topic
-// says what it is, Event carries the chat topic's SSE event name (empty
-// on the other topics - their Data is a typed payload and the topic IS
-// the type), and Seq is the hub's monotonic counter so a client can
-// notice a gap and refetch.
+// SocketMessage is one pushed frame.
 type SocketMessage struct {
 	Topic string `json:"topic"`
-	// Session scopes the frame to one conversation ("" = global: canvas
-	// and health).
 	Session string `json:"session,omitempty"`
 	Event   string `json:"event,omitempty"`
 	Seq     uint64 `json:"seq"`
-	// Data is the frame's payload: the chat topic's SSE bytes verbatim,
-	// a typed struct for the other topics.
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// ChipFrame is the chips topic's payload: the pending chip's live tail
-// while the call runs (Fill false, Text growing) and its fill when it
-// settles (Fill true, Content the result).
+// ChipFrame is the chips topic's payload.
 type ChipFrame struct {
 	CallID string `json:"call_id"`
 	Tool   string `json:"tool"`
 	Fill   bool   `json:"fill,omitempty"`
-	// Text is one live output chunk (streaming half); Content is the
-	// settled result text (fill half).
 	Text    string `json:"text,omitempty"`
 	Content string `json:"content,omitempty"`
-	// Truncated marks the streaming path's own cap (the truncation
-	// marker law) - the tail the chip holds is not the whole output.
 	Truncated bool  `json:"truncated,omitempty"`
 	IsError   bool  `json:"is_error,omitempty"`
 	Timeout   bool  `json:"timeout,omitempty"`
@@ -105,56 +61,41 @@ type RunState struct {
 	Active bool `json:"active"`
 }
 
-// LogLines is the logs topic's payload: the lines the log file gained
-// since the previous frame on the topic - a delta, never the tail. Each
-// element is one raw line exactly as the file holds it (timestamp
-// included), so a pushed line and the same line read back through
-// GET /logs are byte-identical.
+// LogLines is the logs topic's payload: the lines the log file gained since the
+// previous frame on the topic - a delta, never the tail. Each element is one raw line
+// exactly as the file holds it (timestamp included), so a pushed line and the same line
+// read back through GET /logs are byte-identical.
 type LogLines struct {
 	Lines []string `json:"lines"`
 }
 
-// HealthState is the health topic's payload - the same body GET /health
-// serves, so the reconnect fetch and the pushed frames agree byte for
-// byte. The three fact objects below are OPTIONAL and additive: an
-// absent one means this build (or this process, before the first probe
-// landed) has no source for that fact, and the popover renders "not
-// reported" rather than an invented value. A sourced fact always rides
-// as an object, so "none recorded" (an error object with an empty
-// message) stays distinguishable from "no source".
+// HealthState is the health topic's payload - the same body GET /health serves, so the
+// reconnect fetch and the pushed frames agree byte for byte.
 type HealthState struct {
 	Status        string `json:"status"`
 	UptimeSeconds int    `json:"uptime_seconds"`
 	Version       string `json:"version,omitempty"`
-	// Provider is the cached model-endpoint probe's verdict.
 	Provider *HealthProvider `json:"provider,omitempty"`
-	// Database is the store seam's liveness ping.
 	Database *HealthDatabase `json:"database,omitempty"`
-	// LastError is the newest error the process logger recorded.
 	LastError *HealthError `json:"last_error,omitempty"`
 }
 
-// HealthProvider is the provider-reachability fact: the last probe's
-// verdict and when it was taken. Detail carries the probe's error text
-// when it failed (empty on success) - the popover's tooltip.
+// HealthProvider is the provider-reachability fact.
 type HealthProvider struct {
 	Reachable bool   `json:"reachable"`
 	CheckedAt int64  `json:"checked_at"` // unix seconds of the probe
 	Detail    string `json:"detail,omitempty"`
 }
 
-// HealthDatabase is the store-health fact: whether the store's database
-// answered a round trip on this very health read (it is probed inline,
-// not cached, so the row is never stale). Detail carries the ping's
-// error text when it failed.
+// HealthDatabase is the store-health fact: whether the store's database answered a
+// round trip on this very health read (it is probed inline, not cached, so the row is
+// never stale).
 type HealthDatabase struct {
 	Healthy bool   `json:"healthy"`
 	Detail  string `json:"detail,omitempty"`
 }
 
-// HealthError is the last-error fact. Message empty = the logger has
-// recorded no error since the process started (a sourced "none"); At is
-// the entry's unix seconds and stays 0 in that case.
+// HealthError is the last-error fact.
 type HealthError struct {
 	Message string `json:"message"`
 	At      int64  `json:"at,omitempty"`
@@ -165,8 +106,7 @@ type HealthError struct {
 // comfortably inside this; a client that cannot keep up is cut.
 const socketSubBuffer = 64
 
-// SocketHub is the process-side fan-out. Attach on connect, detach on
-// close; Publish from every hook. Safe for concurrent use.
+// SocketHub is the process-side fan-out. Safe for concurrent use.
 type SocketHub struct {
 	mu   sync.Mutex
 	subs map[*SocketSub]struct{}
@@ -178,10 +118,8 @@ func NewSocketHub() *SocketHub {
 	return &SocketHub{subs: map[*SocketSub]struct{}{}}
 }
 
-// SocketSub is one attached connection: its frame channel, its topic
-// set, and the closed flag the hub uses to cut it exactly once. Every
-// field except ch is guarded by the hub's mutex - one lock for the whole
-// fan-out keeps publish a single pass.
+// SocketSub is one attached connection: its frame channel, its topic set, and the
+// closed flag the hub uses to cut it exactly once.
 type SocketSub struct {
 	hub    *SocketHub
 	ch     chan []byte
@@ -189,8 +127,7 @@ type SocketSub struct {
 	closed bool
 }
 
-// Attach registers one connection. It starts subscribed to every topic;
-// Subscribe narrows the set.
+// Attach registers one connection.
 func (h *SocketHub) Attach() *SocketSub {
 	sub := &SocketSub{hub: h, ch: make(chan []byte, socketSubBuffer), topics: map[string]bool{}}
 	for _, t := range Topics {
@@ -202,23 +139,18 @@ func (h *SocketHub) Attach() *SocketSub {
 	return sub
 }
 
-// Close detaches the connection and closes its frame channel (ending the
-// transport's write loop). Idempotent: the read side and the write side
-// both close on their way out.
+// Close detaches the connection and closes its frame channel.
+// Idempotent: the read side and the write side both close on their way out.
 func (s *SocketSub) Close() {
 	s.hub.mu.Lock()
 	defer s.hub.mu.Unlock()
 	s.hub.drop(s)
 }
 
-// Messages is the frame stream the transport writes, one JSON message
-// per element. A closed channel means the connection is done.
+// Messages is the frame stream the transport writes, one JSON message per element.
 func (s *SocketSub) Messages() <-chan []byte { return s.ch }
 
-// Subscribe replaces the connection's topic set and returns the accepted
-// names. Unknown names are dropped (the set is closed); an empty list
-// keeps the current set - "subscribed to nothing" is not a state the
-// wire needs.
+// Subscribe replaces the connection's topic set and returns the accepted names.
 func (s *SocketSub) Subscribe(topics []string) []string {
 	if len(topics) == 0 {
 		return Topics
@@ -243,10 +175,9 @@ func (s *SocketSub) Subscribe(topics []string) []string {
 	return accepted
 }
 
-// Publish marshals one payload and fans it out to every subscriber that
-// wants the topic. The payload marshals once (never per subscriber) and
-// not at all when nobody wants the topic - a shell command with no
-// browser attached pays one map scan per chunk.
+// Publish marshals one payload and fans it out to every subscriber that wants the. The
+// payload marshals once (never per subscriber) and not at all when nobody wants the
+// topic - a shell command with no browser attached pays one map scan per chunk.
 func (h *SocketHub) Publish(topic, session string, payload any) {
 	if !h.wanted(topic) {
 		return
@@ -280,23 +211,17 @@ func (h *SocketHub) wanted(topic string) bool {
 	return false
 }
 
-// Wants reports whether any live subscriber holds the topic. It is the
-// read a publisher whose payload comes from OUTSIDE the hub uses to
-// skip the work entirely - the log follower (api/server_inspector.go)
-// only reads the file when a pane actually asked for `logs`.
+// Wants reports whether any live subscriber holds the topic.
 func (h *SocketHub) Wants(topic string) bool { return h.wanted(topic) }
 
-// SubscriberCount is the number of attached connections - the read the
-// reconnect test and any future "is anyone listening" inspection needs.
+// SubscriberCount is the number of attached connections.
 func (h *SocketHub) SubscriberCount() int {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return len(h.subs)
 }
 
-// publish stamps the sequence and delivers to every subscriber under the
-// one lock. Marshaling happens inside the lock so frame order IS state
-// order (the same law the canvas emitter holds).
+// publish stamps the sequence and delivers to every subscriber under the one lock.
 func (h *SocketHub) publish(msg SocketMessage) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -306,12 +231,9 @@ func (h *SocketHub) publish(msg SocketMessage) {
 	if err != nil {
 		return
 	}
-	// The chips topic is the one LOSSY topic: a chunk or a fill that
-	// arrives too late is worth less than the wire itself (the tool
-	// result and the transcript remain the truth), so a full queue drops
-	// the frame. Every authoritative topic cuts the stalled subscriber
-	// instead - a silent frame loss there would look like state that
-	// never changed.
+	// The chips topic is the one LOSSY topic. Every authoritative topic cuts the stalled
+	// subscriber instead - a silent frame loss there would look like state that never
+	// changed.
 	lossy := msg.Topic == TopicChips
 	for sub := range h.subs {
 		if sub.closed || !sub.topics[msg.Topic] {
@@ -327,8 +249,7 @@ func (h *SocketHub) publish(msg SocketMessage) {
 	}
 }
 
-// drop detaches one subscriber and ends its frame stream. Called with
-// the hub's mutex held.
+// drop detaches one subscriber and ends its frame stream.
 func (h *SocketHub) drop(sub *SocketSub) {
 	if sub.closed {
 		return
@@ -338,29 +259,20 @@ func (h *SocketHub) drop(sub *SocketSub) {
 	close(sub.ch)
 }
 
-// --- the broadcast hooks (the publish side of the serve seam) ------------
+// the broadcast hooks (the publish side of the serve seam) ---------
 
-// emitRunFrame is the ONE run broadcast seam: every frame the SSE
-// subscribers see also rides the chat topic. launchRun and persistRun
-// call this instead of the hub directly, so a wake turn (which launches
-// through launchRun like any other) fans out on the same path with zero
-// extra wiring.
+// emitRunFrame is the ONE run broadcast seam.
 func (s *Server) emitRunFrame(run *activeRun, f runFrame) {
 	s.runs.broadcast(run, f)
 	s.sockets.PublishEvent(TopicChat, run.id, f.event, f.data)
 }
 
-// publishRunState pushes one session's live-run truth (the runs topic):
-// taken by prepareRun (the single run-slot truth, human sends and wake
-// launches alike) and released when launchRun's finish hook runs.
+// publishRunState pushes one session's live-run truth (the runs topic).
 func (s *Server) publishRunState(sessionID string, active bool) {
 	s.sockets.Publish(TopicRuns, sessionID, RunState{Active: active})
 }
 
-// publishChipFill pushes one settled pending call onto the chips topic -
-// the pending chip's fill. wakeHome is the only settle entry point
-// (immediate-yield dispatches and budget escalations alike), so this is
-// the fill's one source.
+// publishChipFill pushes one settled pending call onto the chips topic.
 func (s *Server) publishChipFill(sessionID string, res core.YieldResult) {
 	frame := ChipFrame{
 		CallID:  res.ToolCallID,
@@ -376,11 +288,7 @@ func (s *Server) publishChipFill(sessionID string, res core.YieldResult) {
 	s.sockets.Publish(TopicChips, sessionID, frame)
 }
 
-// chipTap is the run's output tap (core.RunOutputTap): a tool that
-// streams (the shell's log tail, tapLog in harness/terminal) hands its
-// live tail here and it lands on the chips topic straight away. Nothing
-// accumulates: the hub holds no state, so a chip missed on a dead
-// socket costs one refetch.
+// chipTap is the run's output tap (core.RunOutputTap).
 func (s *Server) chipTap(sessionID string) core.RunOutputTap {
 	return func(chunk core.ToolOutputChunk) {
 		s.sockets.Publish(TopicChips, sessionID, ChipFrame{
@@ -392,41 +300,28 @@ func (s *Server) chipTap(sessionID string) core.RunOutputTap {
 	}
 }
 
-// --- the verdict issuance push (card t_ce2162cd) -------------------------
+// the verdict issuance push ----------------------
 
-// verdictIssuedEvent is the chat-topic event name a card's ISSUANCE
-// rides. The SSE /chat event set and the ws chat topic share
-// vocabulary, so the name is claimed here and nowhere else: it is not
-// an agent event (no frame the loop emits carries it), it exists only
-// on the ws chat topic. The webui's hint set in app.vue names the same
-// string; webui/test/socket.test.ts pins the agreement across the
-// language boundary (the nuxt build does not typecheck Go).
+// verdictIssuedEvent is the chat-topic event name a card's ISSUANCE rides.
 const verdictIssuedEvent = "verdict_issued"
 
-// verdictCardSource is the consumer-side face of the verdict capsule's
-// issuance notification (part 3, the seam constitution): just the one
-// registration call this server makes. The capsule's hub satisfies it
-// structurally, so agent/api carries no harness import and core/ gains
-// no module noun.
+// verdictCardSource is the consumer-side face of the verdict capsule's issuance.
 type verdictCardSource interface {
 	OnCardRegistered(fn func(core.QuestionPrompt))
 }
 
-// verdictIssuedFrame is the issuance hint's payload: MINIMAL on purpose.
-// The frame is a HINT, state is truth - the webui re-reads GET /verdicts
-// on it, so the card's options/body/expiry come from the REST read and
-// never need duplicating here.
+// verdictIssuedFrame is the issuance hint's payload: MINIMAL on purpose. The frame is a
+// HINT, state is truth - the webui re-reads GET /verdicts on it, so the card's
+// options/body/expiry come from the REST read and never need duplicating here.
 type verdictIssuedFrame struct {
 	CardID    string `json:"card_id"`
 	SessionID string `json:"session_id"`
 	Title     string `json:"title"`
 }
 
-// subscribeVerdictCards wires the issuance push at serve boot and after
-// every live module rewire: resolve the verdicts service from the live
-// Context and, when it carries the notification face, subscribe. Nil
-// safe - a host without the verdict capsule (disabled, or never
-// mounted) subscribes nothing and boots clean.
+// subscribeVerdictCards wires the issuance push at serve boot and after every live. Nil
+// safe - a host without the verdict capsule (disabled, or never mounted) subscribes
+// nothing and boots clean.
 func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	if ctx == nil {
 		return
@@ -437,10 +332,6 @@ func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	}
 	src, ok := svc.(verdictCardSource)
 	if !ok {
-		// wrong-shaped offer: this is an optional consumer, so the
-		// push degrades (no hints) instead of panicking the boot - the
-		// mount machinery shape-asserts the NEEDS it owns, and this
-		// face is a consumer's own declaration.
 		return
 	}
 	if !s.claimVerdictSource(src) {
@@ -449,10 +340,7 @@ func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	src.OnCardRegistered(s.publishVerdictIssued)
 }
 
-// claimVerdictSource records the source this server subscribed to and
-// reports whether it is a NEW one. RewireSeams runs at boot and after
-// every live toggle; without this, each rewire would register another
-// listener on the same hub and one issuance would publish N frames.
+// claimVerdictSource records the source this server subscribed to and reports whether.
 func (s *Server) claimVerdictSource(src verdictCardSource) bool {
 	s.verdictMu.Lock()
 	defer s.verdictMu.Unlock()
@@ -463,11 +351,10 @@ func (s *Server) claimVerdictSource(src verdictCardSource) bool {
 	return true
 }
 
-// sameVerdictSource reports whether two offers name the same object.
-// Interface equality would be the obvious form and would PANIC on a
-// non-comparable dynamic type, so compare pointer-shaped values by
-// address and treat anything else as a new source (one extra
-// subscription is harmless; a panic at boot is not).
+// sameVerdictSource reports whether two offers name the same object. Interface equality
+// would be the obvious form and would PANIC on a non-comparable dynamic type, so
+// compare pointer-shaped values by address and treat anything else as a new source (one
+// extra subscription is harmless; a panic at boot is not).
 func sameVerdictSource(a, b verdictCardSource) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -483,11 +370,10 @@ func sameVerdictSource(a, b verdictCardSource) bool {
 	return false
 }
 
-// publishVerdictIssued pushes one issued card onto the chat topic under
-// the card's own session. It runs on the issuing goroutine (the Ask
-// that registered the card), outside the hub's lock, and it is
-// deliberately fire-and-forget: with no subscriber the hub does no work
-// and nothing is buffered - the GET routes stay the truth.
+// publishVerdictIssued pushes one issued card onto the chat topic under the card's. It
+// runs on the issuing goroutine, outside the hub's lock, and it is deliberately
+// fire-and-forget: with no subscriber the hub does no work and nothing is buffered -
+// the GET routes stay the truth.
 func (s *Server) publishVerdictIssued(card core.QuestionPrompt) {
 	if s.sockets == nil {
 		return

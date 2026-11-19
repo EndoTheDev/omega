@@ -15,9 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fixedClock returns a settable time source for the recorder's pairing
-// math: durations are derived from two observations, so a real clock
-// would make the assertions flaky by design.
+// fixedClock returns a settable time source for the recorder's pairing math.
 type fixedClock struct{ t time.Time }
 
 func (c *fixedClock) now() time.Time      { return c.t }
@@ -57,9 +55,7 @@ func TestRingDropsOldestWhenFull(t *testing.T) {
 	}
 }
 
-// TestPageOrdersOldestFirstWhileKeepingNewest pins the page contract: a
-// bounded page selects the NEWEST matches and returns them in reading
-// order, so the last row of any page is the most recent record.
+// TestPageOrdersOldestFirstWhileKeepingNewest pins the page contract.
 func TestPageOrdersOldestFirstWhileKeepingNewest(t *testing.T) {
 	ring := NewRing(16)
 	for i := 0; i < 10; i++ {
@@ -77,9 +73,8 @@ func TestPageOrdersOldestFirstWhileKeepingNewest(t *testing.T) {
 	}
 }
 
-// TestSessionScoping feeds two conversations' runs through one recorder
-// and pins that a scoped read sees exactly its own session - the filter
-// the tab's default scope rides.
+// TestSessionScoping feeds two conversations' runs through one recorder and pins that a
+// scoped read sees exactly its own session - the filter the tab's default scope rides.
 func TestSessionScoping(t *testing.T) {
 	rec, ring, _ := newTestRecorder(32)
 	rec.Observe("sess-a", core.AgentStart{Type: "agent_start", ModelName: "m"})
@@ -132,9 +127,7 @@ func TestLevelFilter(t *testing.T) {
 	}
 }
 
-// TestDerivedDurations pins the two pairings the probe said must be
-// derived: a tool call's call->result span and a turn's start->end span.
-// Both are asserted to the millisecond against a pinned clock.
+// TestDerivedDurations pins the two pairings the probe said must be derived.
 func TestDerivedDurations(t *testing.T) {
 	rec, ring, clock := newTestRecorder(32)
 
@@ -159,9 +152,8 @@ func TestDerivedDurations(t *testing.T) {
 	}
 }
 
-// TestUnpairedResultStillReports pins the honesty rule: a result whose
-// call the ring never saw is still an event - named "unknown", with no
-// fabricated duration.
+// TestUnpairedResultStillReports pins the honesty rule: a result whose call the ring
+// never saw is still an event.
 func TestUnpairedResultStillReports(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
 	rec.Observe("s1", core.ToolResultEvent{Message: core.ToolResult{ToolCallID: "never-seen", Content: "ok"}})
@@ -174,8 +166,7 @@ func TestUnpairedResultStillReports(t *testing.T) {
 	}
 }
 
-// TestStreamChunksAreDropped keeps the ring structural: a burst of token
-// deltas must not evict the rows the tab exists to show.
+// TestStreamChunksAreDropped keeps the ring structural: a burst of token deltas must.
 func TestStreamChunksAreDropped(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
 	rec.Observe("s1", core.AgentStart{Type: "agent_start"})
@@ -189,9 +180,8 @@ func TestStreamChunksAreDropped(t *testing.T) {
 	}
 }
 
-// TestStreamEndErrorsAndTokenCounts pins the stream row: an error is an
-// error row with its text, a token ceiling is a warning, and the usage
-// numbers ride the summary.
+// TestStreamEndErrorsAndTokenCounts pins the stream row: an error is an error row with
+// its text, a token ceiling is a warning, and the usage numbers ride the summary.
 func TestStreamEndErrorsAndTokenCounts(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
 	prompt, eval := 120, 34
@@ -238,9 +228,8 @@ func TestAgentEndLevels(t *testing.T) {
 	}
 }
 
-// TestStopSilencesRecording pins the lifecycle teardown: a stopped
-// recorder writes nothing, so a dismounted capsule's leftover observer
-// costs one atomic read per event.
+// TestStopSilencesRecording pins the lifecycle teardown: a stopped recorder writes
+// nothing, so a dismounted capsule's leftover observer costs one atomic read per event.
 func TestStopSilencesRecording(t *testing.T) {
 	rec, ring, _ := newTestRecorder(4)
 	rec.Stop()
@@ -255,11 +244,7 @@ func TestStopSilencesRecording(t *testing.T) {
 	}
 }
 
-// TestPluginMountsRoutesAndObserver pins the mount surface end to end:
-// both routes registered, one spine subscription installed, events
-// flowing through the Context's own snapshot into the ring, and the
-// dismount taking the routes away (the journal) while the observer goes
-// inert (the lifecycle Stop).
+// TestPluginMountsRoutesAndObserver pins the mount surface end to end.
 func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	ctx := &core.Context{}
 	p := NewPlugin()
@@ -282,10 +267,6 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	if len(subs) != 1 {
 		t.Fatalf("session observers = %d, want 1 (the recorder)", len(subs))
 	}
-	// The host's boot sequence, in order: mount, StartAll arms the fence
-	// handles, then work happens. The recorder starts ON at construction,
-	// so this arm is about teardown - StopAll (from Dismount) only stops
-	// handles it started.
 	if err := ctx.RunGroup().StartAll(context.Background(), core.StartDeps{}, ""); err != nil {
 		t.Fatalf("start handles: %v", err)
 	}
@@ -304,7 +285,6 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	if got := len(ctx.RunGroup().Snapshot()); got != 0 {
 		t.Fatalf("lifecycle handles survived the dismount: %d", got)
 	}
-	// The leftover observer is inert: the Stop flipped the recorder off.
 	rec := p.rec
 	rec.Observe("sess-mount", core.AgentStart{Type: "agent_start"})
 	if got := p.ring.Len(); got != 1 {
@@ -312,10 +292,9 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	}
 }
 
-// TestNoTelemetryDependency is the card's no-export proof: this capsule
-// imports no telemetry library, and the repository carries no OTLP or
-// exporter module. It parses real imports rather than trusting comments:
-// a future exporter cannot land here without turning this test red.
+// TestNoTelemetryDependency is the card's no-export proof. It parses real imports
+// rather than trusting comments: a future exporter cannot land here without turning
+// this test red.
 func TestNoTelemetryDependency(t *testing.T) {
 	forbidden := []string{"otel", "opentelemetry", "otlp", "jaeger", "zipkin", "prometheus"}
 

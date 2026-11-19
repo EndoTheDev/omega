@@ -4,13 +4,7 @@ package terminal
 
 import "testing"
 
-// The serializer's windows pin (card t_82107785, split out of
-// process_test.go by card t_590976b0): the shell string must ride a
-// RAW child command line so no argv escaping layer can rewrap it.
-// syscall.SysProcAttr.CmdLine exists only on windows, so the field
-// read lives behind this build tag - a runtime guard is not a
-// compile guard, and the guarded read red the linux vet lane
-// (nightly 42410701275).
+// The serializer's windows pin: the shell string must ride a RAW child command line.
 func TestBuildShellRawCommandLineWindows(t *testing.T) {
 	command := `powershell -NoProfile -Command "$x=5; Write-Output $x"`
 	c := detachedShellCommand(command)

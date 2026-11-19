@@ -133,7 +133,6 @@ func TestSetLabel(t *testing.T) {
 	if sess.Label != "my label" {
 		t.Fatalf("label = %q, want my label", sess.Label)
 	}
-	// Empty label clears it.
 	if err := s.UpdateSession(ctx, "s1", ""); err != nil {
 		t.Fatalf("clear label: %v", err)
 	}
@@ -149,7 +148,6 @@ func TestSetLabel(t *testing.T) {
 func TestGetSessionTree(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
-	// root -> child -> grandchild, plus a second root.
 	if err := s.CreateSession(ctx, "root", "", ""); err != nil {
 		t.Fatalf("create root: %v", err)
 	}
@@ -169,7 +167,6 @@ func TestGetSessionTree(t *testing.T) {
 	if len(roots) != 2 {
 		t.Fatalf("roots = %d, want 2", len(roots))
 	}
-	// Find the root with a child.
 	var root *core.SessionNode
 	for _, r := range roots {
 		if r.ID == "root" {
@@ -257,7 +254,6 @@ func TestAppendAndGetMessages(t *testing.T) {
 		t.Fatalf("len = %d, want %d", len(got), len(messages))
 	}
 
-	// Verify each round-trips to the same concrete type and content.
 	assertUser(t, got[1], "hello")
 	assertAssistant(t, got[2], "hi there")
 	assertToolResult(t, got[3], "ok", "call_1", false)
@@ -303,7 +299,6 @@ func TestGetMessagesWithTimes(t *testing.T) {
 }
 
 func TestMessagesPersistAcrossStoreReopen(t *testing.T) {
-	// A file-backed store proves persistence across Close/Open.
 	dir := t.TempDir()
 	dsn := dir + "/test.db"
 
@@ -375,10 +370,9 @@ func TestCountMessages(t *testing.T) {
 	}
 }
 
-// TestSessionCounts covers the read-time counts: sessions with N
-// messages and M tool results report exactly those numbers, bookkeeping
-// entries are excluded from message_count, and empty sessions stay out
-// of the map.
+// TestSessionCounts covers the read-time counts: sessions with N messages and M tool
+// results report exactly those numbers, bookkeeping entries are excluded from
+// message_count, and empty sessions stay out of the map.
 func TestSessionCounts(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -387,8 +381,6 @@ func TestSessionCounts(t *testing.T) {
 			t.Fatalf("create %s: %v", id, err)
 		}
 	}
-	// s1: 5 stored messages (2 user, 1 assistant, 2 tool results) + 2
-	// bookkeeping entries -> message_count 5, tool_count 2.
 	for _, m := range []core.Message{
 		core.NewUser("a"),
 		core.NewAssistant("b"),
@@ -415,14 +407,12 @@ func TestSessionCounts(t *testing.T) {
 	}
 }
 
-// TestMigrationAddsTokenColumns upgrades a pre-migration database and
-// verifies the new totals default to 0 instead of breaking on load.
+// TestMigrationAddsTokenColumns upgrades a pre-migration database and verifies.
 func TestMigrationAddsTokenColumns(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
 	ctx := context.Background()
 
-	// Build the pre-migration schema by hand.
 	pre, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		t.Fatalf("open pre-migration db: %v", err)
@@ -455,7 +445,6 @@ CREATE TABLE IF NOT EXISTS messages (
 		t.Fatalf("close pre-migration db: %v", err)
 	}
 
-	// Opening through the store migrates in place.
 	s, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open post-migration: %v", err)
@@ -476,7 +465,6 @@ CREATE TABLE IF NOT EXISTS messages (
 		t.Fatalf("len = %d, want 1", len(msgs))
 	}
 
-	// Fresh sessions also default to 0 and accept token adds.
 	if err := s.AddSessionTokens(ctx, "old", 12, 3); err != nil {
 		t.Fatalf("add tokens: %v", err)
 	}
@@ -497,15 +485,12 @@ CREATE TABLE IF NOT EXISTS messages (
 	if sess.PromptTokens != 20 || sess.CompletionTokens != 3 {
 		t.Fatalf("accumulated totals = %d/%d, want 20/3", sess.PromptTokens, sess.CompletionTokens)
 	}
-	// Zero usage is a no-op.
 	if err := s.AddSessionTokens(ctx, "old", 0, 0); err != nil {
 		t.Fatalf("add zero tokens: %v", err)
 	}
 }
 
-// TestMigrationAddsPinnedColumn upgrades a database that predates the
-// pinned flag and verifies old sessions come through unpinned, then
-// covers the pin/unpin round-trip.
+// TestMigrationAddsPinnedColumn upgrades a database that predates the pinned flag.
 func TestMigrationAddsPinnedColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -533,8 +518,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("close pre-migration db: %v", err)
 	}
 
-	// Opening through the store migrates in place; old sessions default
-	// to unpinned.
 	s, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open post-migration: %v", err)
@@ -576,9 +559,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestMigrationAddsArchivedColumn upgrades a database that predates
-// the archived flag and verifies old sessions come through unarchived,
-// then covers the archive/unarchive round-trip.
+// TestMigrationAddsArchivedColumn upgrades a database that predates the archived flag.
 func TestMigrationAddsArchivedColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -606,8 +587,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("close pre-migration db: %v", err)
 	}
 
-	// Opening through the store migrates in place; old sessions default
-	// to unarchived.
 	s, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open post-migration: %v", err)
@@ -645,10 +624,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSessionReadAndUnread covers the server-side unread state: the
-// last_read_at migration stamps existing rows read, CreateSession
-// births sessions read, a message landing after last_read_at flips
-// unread on, and SetSessionRead clears it without touching updated_at.
+// TestSessionReadAndUnread covers the server-side unread state.
 func TestSessionReadAndUnread(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -683,8 +659,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 	defer s.Close()
 
-	// Migration data-fix: the old row's stamp is its own updated_at,
-	// so everything the user already saw reads as seen.
+	// Migration data-fix: the old row's stamp is its own updated_at, so everything.
 	old, err := s.GetSession(ctx, "old")
 	if err != nil {
 		t.Fatalf("get old session: %v", err)
@@ -696,7 +671,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("migrated session unread = true, want false")
 	}
 
-	// New sessions are born read; unread only comes from later output.
 	if err := s.CreateSession(ctx, "s1", "", ""); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
@@ -711,7 +685,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("never-touched session unread = true, want false")
 	}
 
-	// A message landing after last_read_at flips unread on.
+	// A message landing after last_read_at flips unread.
 	if err := s.AppendMessage(ctx, "s1", core.NewUser("hi")); err != nil {
 		t.Fatalf("append: %v", err)
 	}
@@ -723,8 +697,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("session after new message unread = false, want true")
 	}
 
-	// SetSessionRead clears unread; reading is not activity, updated_at
-	// does not move.
 	updatedAt := sess.UpdatedAt
 	if err := s.SetSessionRead(ctx, "s1"); err != nil {
 		t.Fatalf("mark read: %v", err)
@@ -740,8 +712,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("read moved updated_at: %q -> %q", updatedAt, sess.UpdatedAt)
 	}
 
-	// A generated title landing after the read stamp is cosmetic - the
-	// title write must not touch updated_at and resurrect unread.
+	// A generated title landing after the read stamp is cosmetic - the title write must.
 	if err := s.SetSessionTitle(ctx, "s1", "generated title", false); err != nil {
 		t.Fatalf("set title: %v", err)
 	}
@@ -757,8 +728,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSessionModels covers the read-time last-model map: the latest
-// model_change wins, sessions without a model entry stay out of the map.
+// TestSessionModels covers the read-time last-model map.
 func TestSessionModels(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -826,8 +796,7 @@ func assertToolResult(t *testing.T, m core.Message, wantContent, wantID string, 
 	}
 }
 
-// TestDeleteSessionCascades verifies deleting a session removes its
-// messages and child branches via foreign key cascade.
+// TestDeleteSessionCascades verifies deleting a session removes its messages.
 func TestDeleteSessionCascades(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -849,23 +818,19 @@ func TestDeleteSessionCascades(t *testing.T) {
 		t.Fatalf("delete root: %v", err)
 	}
 
-	// Parent gone.
 	if _, err := s.GetSession(ctx, "root"); err == nil {
 		t.Fatal("root still exists after delete")
 	}
-	// Child gone (cascade).
 	if _, err := s.GetSession(ctx, "child"); err == nil {
 		t.Fatal("child still exists after parent delete (cascade failed)")
 	}
-	// Messages gone (cascade).
 	msgs, err := s.GetMessages(ctx, "root")
 	if err == nil && len(msgs) != 0 {
 		t.Fatalf("root messages remain: %d", len(msgs))
 	}
 }
 
-// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session
-// is not an error.
+// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session is not.
 func TestDeleteSessionMissingIsNoOp(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.DeleteSession(context.Background(), "nope"); err != nil {
@@ -887,7 +852,6 @@ func TestSearchMessages(t *testing.T) {
 		t.Fatalf("append assistant: %v", err)
 	}
 
-	// Second session with different content.
 	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create session 2: %v", err)
 	}
@@ -895,7 +859,6 @@ func TestSearchMessages(t *testing.T) {
 		t.Fatalf("append s2: %v", err)
 	}
 
-	// Search for a term only in s1.
 	results, err := s.SearchMessages(ctx, "fox")
 	if err != nil {
 		t.Fatalf("search: %v", err)
@@ -914,7 +877,6 @@ func TestSearchMessages(t *testing.T) {
 		t.Fatalf("no result for s1 with non-empty snippet; got %+v", results)
 	}
 
-	// Query matching nothing returns empty, no error.
 	empty, err := s.SearchMessages(ctx, "nonexistentterm12345")
 	if err != nil {
 		t.Fatalf("search no-match: %v", err)
@@ -947,7 +909,6 @@ func TestSearchMessages(t *testing.T) {
 		t.Fatalf("expected literal 'foo AND bar' to hit s2 only, got %+v", results)
 	}
 
-	// Embedded double quotes are escaped, not a syntax error.
 	if err := s.AppendMessage(ctx, "s1", core.NewUser(`the "quoted" section`)); err != nil {
 		t.Fatalf("append quote msg: %v", err)
 	}
@@ -971,26 +932,19 @@ func helperSessionWithContent(t *testing.T, s *Store, id, label, content string)
 	}
 }
 
-// TestSearchSessions covers the unified search: one pass over the label
-// index and the message-content index, merged to one hit per session
-// with label (title) hits first. Progressive typing must never empty
-// mid-word: fib -> fibo -> fibonacci each keep hitting (quoteFTS
-// trailing star).
+// TestSearchSessions covers the unified search. Progressive typing must never empty
+// mid-word: fib -> fibo -> fibonacci each keep hitting (quoteFTS trailing star).
 func TestSearchSessions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	// s1 matches by BOTH label and content; title must win (one hit,
-	// Title=true, snippet is the label itself).
+	// s1 matches by BOTH label and content; title must win.
 	helperSessionWithContent(t, s, "s1", "Fibonacci series",
 		"why does the fibonacci sequence grow so fast")
-	// s2 matches by content only.
 	helperSessionWithContent(t, s, "s2", "Weather notes",
 		"recursion homework: fibonacci numbers again")
-	// s3 matches by label only.
 	helperSessionWithContent(t, s, "s3", "Fibonacci proof sketch", "no useful terms")
 
-	// Title hits lead, content hits follow, one hit per session.
 	results, err := s.SearchSessions(ctx, "fib")
 	if err != nil {
 		t.Fatalf("search fib: %v", err)
@@ -1032,7 +986,6 @@ func TestSearchSessions(t *testing.T) {
 		}
 	}
 
-	// Title-only search: "weather" finds s2 by label alone.
 	hits, err := s.SearchSessions(ctx, "weather")
 	if err != nil {
 		t.Fatalf("title-only search: %v", err)
@@ -1042,7 +995,6 @@ func TestSearchSessions(t *testing.T) {
 		t.Fatalf("title-only search for 'weather', got %+v", hits)
 	}
 
-	// No-match query returns empty, no error.
 	none, err := s.SearchSessions(ctx, "nonexistentterm12345")
 	if err != nil {
 		t.Fatalf("no-match search: %v", err)
@@ -1051,8 +1003,6 @@ func TestSearchSessions(t *testing.T) {
 		t.Fatalf("want 0 hits for no-match, got %+v", none)
 	}
 
-	// Renaming the label updates the title index both ways: the new
-	// label hits as a title, the old one falls back to content-only.
 	if err := s.UpdateSession(ctx, "s1", "Prime numbers"); err != nil {
 		t.Fatalf("rename s1: %v", err)
 	}
@@ -1086,7 +1036,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	// Session 1: 2 user messages + 1 assistant with 2 tool calls.
 	if err := s.CreateSession(ctx, "s1", "", "first session"); err != nil {
 		t.Fatalf("create s1: %v", err)
 	}
@@ -1103,7 +1052,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Fatalf("append s1 a1: %v", err)
 	}
 
-	// Session 2: 1 user message + 1 assistant with 1 tool call.
 	if err := s.CreateSession(ctx, "s2", "", "second session"); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
@@ -1116,7 +1064,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Fatalf("append s2 a1: %v", err)
 	}
 
-	// Add a metadata entry to verify it's skipped from message counts.
 	if err := s.AppendMessage(ctx, "s1", core.NewModelChange("gpt-4o")); err != nil {
 		t.Fatalf("append s1 model change: %v", err)
 	}
@@ -1126,7 +1073,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Fatalf("ComputeInsights(0): %v", err)
 	}
 
-	// Period label.
 	if insights.Period != "All time" {
 		t.Errorf("Period = %q, want %q", insights.Period, "All time")
 	}
@@ -1134,28 +1080,23 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Errorf("Days = %d, want 0", insights.Days)
 	}
 
-	// Sessions.
 	if insights.Sessions != 2 {
 		t.Errorf("Sessions = %d, want 2", insights.Sessions)
 	}
 
-	// Messages: s1 has 3 conversation + 1 model_change (skipped) = 3,
-	// s2 has 2, total = 5.
+	// Messages: s1 has 3 conversation + 1 model_change (skipped) = 3, s2 has 2, total = 5.
 	if insights.Messages != 5 {
 		t.Errorf("Messages = %d, want 5", insights.Messages)
 	}
 
-	// User messages: s1=2, s2=1, total=3.
 	if insights.UserMessages != 3 {
 		t.Errorf("UserMessages = %d, want 3", insights.UserMessages)
 	}
 
-	// Tool calls: s1=2, s2=1, total=3.
 	if insights.ToolCalls != 3 {
 		t.Errorf("ToolCalls = %d, want 3", insights.ToolCalls)
 	}
 
-	// Total tokens should be > 0 (content is non-empty).
 	if insights.TotalTokens <= 0 {
 		t.Errorf("TotalTokens = %d, want > 0", insights.TotalTokens)
 	}
@@ -1181,19 +1122,14 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Errorf("Tools[0] = %+v, want shell.run/2", insights.Tools[0])
 	}
 
-	// Daily activity should have 7 entries.
 	for i, d := range insights.Daily {
 		if d.Day == "" {
 			t.Errorf("Daily[%d].Day empty", i)
 		}
 	}
 
-	// Notable stats should be populated (s1 has most msgs/tokens, s2 has fewest).
 	if insights.NotableMsgs.Value != 4 {
-		// s1 has 3 conversation msgs + 1 model_change = 4 msgs in GetMessages,
-		// but sessMsgs counts all msgs from GetMessages BEFORE the type switch
-		// filter — actually the code computes sessMsgs=len(msgs) which includes
-		// model_change. So s1 has 4, s2 has 2.
+		// s1 has 3 conversation msgs + 1 model_change = 4 msgs in GetMessages, but sessMsgs.
 		t.Errorf("NotableMsgs.Value = %d, want 4", insights.NotableMsgs.Value)
 	}
 	if insights.NotableMsgs.Detail == "" {
@@ -1203,7 +1139,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 		t.Errorf("NotableTokens.Value = %d, want > 0", insights.NotableTokens.Value)
 	}
 	if insights.NotableTools.Value != 2 {
-		// s1 has 2 tool calls (max).
 		t.Errorf("NotableTools.Value = %d, want 2", insights.NotableTools.Value)
 	}
 }
@@ -1212,11 +1147,9 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	// Create a session and record its creation timestamp in the past.
 	if err := s.CreateSession(ctx, "old", "", "old session"); err != nil {
 		t.Fatalf("create old: %v", err)
 	}
-	// Manually update the created_at to 10 days ago.
 	tenDaysAgo := time.Now().AddDate(0, 0, -10).Format(time.RFC3339)
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET created_at = ? WHERE id = ?`, tenDaysAgo, "old"); err != nil {
@@ -1226,7 +1159,6 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 		t.Fatalf("append old: %v", err)
 	}
 
-	// Recent session (created now).
 	if err := s.CreateSession(ctx, "recent", "", "recent session"); err != nil {
 		t.Fatalf("create recent: %v", err)
 	}
@@ -1234,7 +1166,6 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 		t.Fatalf("append recent: %v", err)
 	}
 
-	// days=1 should exclude the old session.
 	insights, err := s.ComputeInsights(ctx, 1)
 	if err != nil {
 		t.Fatalf("ComputeInsights(1): %v", err)
@@ -1260,7 +1191,6 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 		t.Error("PeriodEnd empty")
 	}
 
-	// days=0 (all time) should include both.
 	allInsights, err := s.ComputeInsights(ctx, 0)
 	if err != nil {
 		t.Fatalf("ComputeInsights(0): %v", err)
@@ -1293,7 +1223,6 @@ func TestComputeInsightsEmpty(t *testing.T) {
 	if len(insights.Tools) != 0 {
 		t.Errorf("Tools len = %d, want 0", len(insights.Tools))
 	}
-	// Daily should still have 7 entries (all zero counts).
 	for i, d := range insights.Daily {
 		if d.Count != 0 {
 			t.Errorf("Daily[%d].Count = %d, want 0", i, d.Count)
@@ -1304,11 +1233,10 @@ func TestComputeInsightsEmpty(t *testing.T) {
 	}
 }
 
-// TestComputeInsightsSingleUserTurn pins the Overview for the minimal
-// realistic store: one session holding exactly one persisted user turn
-// - no assistant reply, no tool calls. A real session is in exactly
-// this shape on disk while its first turn is still running, so this is
-// the boundary between the empty store's honest zeros and the
+// TestComputeInsightsSingleUserTurn pins the Overview for the minimal realistic store:
+// one session holding exactly one persisted user turn - no assistant reply, no tool
+// calls. A real session is in exactly this shape on disk while its first turn is still
+// running, so this is the boundary between the empty store's honest zeros and the
 // multi-session seed.
 func TestComputeInsightsSingleUserTurn(t *testing.T) {
 	s := newTestStore(t)
@@ -1326,7 +1254,6 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Fatalf("ComputeInsights(30): %v", err)
 	}
 
-	// Windowed run: period label and both window dates are set.
 	if insights.Period != "Last 30 days" {
 		t.Errorf("Period = %q, want %q", insights.Period, "Last 30 days")
 	}
@@ -1334,9 +1261,7 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Errorf("PeriodStart/End = %q/%q, want both set", insights.PeriodStart, insights.PeriodEnd)
 	}
 
-	// The Overview: the session counts, the turn is the only message,
-	// and there are no tool calls. EstimateTokens gives
-	// len("first and only user turn") = 24 chars / 4 = 6.
+	// The Overview: the session counts, the turn is the only message, and there are no.
 	if insights.Sessions != 1 {
 		t.Errorf("Sessions = %d, want 1", insights.Sessions)
 	}
@@ -1356,7 +1281,6 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Errorf("AvgSessionMsgs = %f, want 1.0", insights.AvgSessionMsgs)
 	}
 
-	// No tool rows: a window with no tool calls has no breakdown.
 	if len(insights.Tools) != 0 {
 		t.Errorf("Tools len = %d, want 0", len(insights.Tools))
 	}
@@ -1376,8 +1300,6 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Errorf("sum of Daily counts = %d, want 1", sum)
 	}
 
-	// The lone session owns the msgs and tokens maxima; with zero
-	// tool calls the tools notable stays at its honest zero.
 	if insights.NotableMsgs.Value != 1 || !strings.HasSuffix(insights.NotableMsgs.Detail, ", only turn") {
 		t.Errorf("NotableMsgs = %+v, want value 1, detail suffix \", only turn\"", insights.NotableMsgs)
 	}
@@ -1389,10 +1311,9 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 	}
 }
 
-// TestMigrationTitlesLabeledSessions covers the title_state data fix: a
-// pre-title-state database with one labeled and one unlabeled session.
-// On migration the labeled row lands at final state 2 (never retitled),
-// the unlabeled row at 0. A reopen must not re-run the backfill.
+// TestMigrationTitlesLabeledSessions covers the title_state data fix. On migration the
+// labeled row lands at final state 2 (never retitled), the unlabeled row at 0. A reopen
+// must not re-run the backfill.
 func TestMigrationTitlesLabeledSessions(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -1441,8 +1362,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("unlabeled title_state = %d, want 0", unlabeled.TitleState)
 	}
 
-	// Reopen: the column exists, so the backfill must not fire again -
-	// a provisional state would otherwise be promoted to final.
+	// Reopen: the column exists, so the backfill must not fire again.
 	if err := s.SetSessionTitle(ctx, "unlabeled", "generated", false); err != nil {
 		t.Fatalf("provisional title: %v", err)
 	}
@@ -1463,9 +1383,7 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSetSessionTitleTransitions covers the title_state state machine
-// end to end: provisional only from 0, final from 0 or 1, and every
-// write blocked once the session reached 2.
+// TestSetSessionTitleTransitions covers the title_state state machine end to end.
 func TestSetSessionTitleTransitions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -1473,7 +1391,6 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	// Provisional 0 -> 1.
 	if err := s.SetSessionTitle(ctx, "s1", "provisional title", false); err != nil {
 		t.Fatalf("provisional: %v", err)
 	}
@@ -1481,7 +1398,6 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("after provisional: %+v", after)
 	}
 
-	// Provisional again at state 1: blocked, label untouched.
 	if err := s.SetSessionTitle(ctx, "s1", "second provisional", false); err != nil {
 		t.Fatalf("second provisional: %v", err)
 	}
@@ -1489,7 +1405,6 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("second provisional overwrote: %+v", after)
 	}
 
-	// Final 1 -> 2.
 	if err := s.SetSessionTitle(ctx, "s1", "final title", true); err != nil {
 		t.Fatalf("final: %v", err)
 	}
@@ -1497,7 +1412,6 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("after final: %+v", after)
 	}
 
-	// Everything is blocked at 2.
 	for _, tc := range []struct {
 		name  string
 		final bool
@@ -1510,8 +1424,7 @@ func TestSetSessionTitleTransitions(t *testing.T) {
 		t.Fatalf("state-2 write overwrote: %+v", after)
 	}
 
-	// Final directly from 0 (provisional never fired, e.g. the session
-	// was retired before the request-start call landed).
+	// Final directly from 0.
 	if err := s.CreateSession(ctx, "s2", "", ""); err != nil {
 		t.Fatalf("create s2: %v", err)
 	}
@@ -1556,7 +1469,6 @@ func TestSetSessionLastRun(t *testing.T) {
 	if sess.LastRun == nil || sess.LastRun.TokensPerSecond != 41 || sess.LastRun.ChunksPerSecond != 17 {
 		t.Fatalf("last_run round-trip = %+v, want 41/17", sess.LastRun)
 	}
-	// The write is not activity.
 	if sess.UpdatedAt != sess.CreatedAt {
 		t.Fatalf("updated_at moved %q -> %q, want untouched", sess.CreatedAt, sess.UpdatedAt)
 	}
@@ -1582,9 +1494,7 @@ func TestSetSessionLastRun(t *testing.T) {
 	}
 }
 
-// TestMigrationAddsLastRunColumn upgrades a database that predates the
-// last-run block and verifies old rows come through with none, then let
-// a write land normally.
+// TestMigrationAddsLastRunColumn upgrades a database that predates the last-run block.
 func TestMigrationAddsLastRunColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -1611,7 +1521,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 		t.Fatalf("close pre-migration db: %v", err)
 	}
 
-	// Opening through the store migrates in place; old rows have no run.
 	s, err := Open(dsn)
 	if err != nil {
 		t.Fatalf("open post-migration: %v", err)

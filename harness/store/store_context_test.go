@@ -8,9 +8,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// TestSessionContextRoundTrip pins the model + workspace setters (card
-// t_9de5b009): a value written on a session row survives reopen, and a
-// setter on a missing row does not panic.
+// TestSessionContextRoundTrip pins the model + workspace setters: a value written on a
+// session row survives reopen, and a setter on a missing row does not panic.
 func TestSessionContextRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/rt.db"
@@ -30,7 +29,6 @@ func TestSessionContextRoundTrip(t *testing.T) {
 	}
 	s.Close()
 
-	// Reopen from disk: both fields restore.
 	s2, err := Open(path)
 	if err != nil {
 		t.Fatalf("reopen store: %v", err)
@@ -62,8 +60,7 @@ func TestSessionContextRoundTrip(t *testing.T) {
 		t.Errorf("clear: got model %q workspace %q, want both empty", sess.Model, sess.Workspace)
 	}
 
-	// A setter on a nonexistent row is a silent no-op (same contract
-	// as the pinned/archived setters - rows only).
+	// A setter on a nonexistent row is a silent no-op.
 	if err := s2.SetSessionModel(ctx, "gone", "m"); err != nil {
 		t.Errorf("set model on missing row: %v (want nil)", err)
 	}
@@ -72,9 +69,7 @@ func TestSessionContextRoundTrip(t *testing.T) {
 	}
 }
 
-// card t_7dcd4280: the provider INSTANCE pin round-trips like the
-// model pin - written, restored on reopen, cleared with "", and a
-// missing row is a silent no-op.
+// the provider INSTANCE pin round-trips like the model pin.
 func TestSessionProviderRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/rt.db"
@@ -118,9 +113,7 @@ func TestSessionProviderRoundTrip(t *testing.T) {
 	}
 }
 
-// TestSessionContextDefaultsEmpty pins the legacy contract: sessions
-// created before the session-context columns existed (and every session
-// since) boot with empty model and workspace - today's behavior.
+// TestSessionContextDefaultsEmpty pins the legacy contract.
 func TestSessionContextDefaultsEmpty(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -136,17 +129,14 @@ func TestSessionContextDefaultsEmpty(t *testing.T) {
 	}
 }
 
-// TestSessionContextMigration pins the schema migration: a database
-// created by an OLDER schema (no model / workspace columns) opens, and
-// the columns land empty - no rewrite, no loss.
+// TestSessionContextMigration pins the schema migration.
 func TestSessionContextMigration(t *testing.T) {
 	path := t.TempDir() + "/old.db"
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatalf("open raw db: %v", err)
 	}
-	// The pre-session-context sessions table (every column up to
-	// last_run - the layout the model/workspace migration upgrades).
+	// The pre-session-context sessions table.
 	_, err = db.Exec(`CREATE TABLE sessions (
 	id         TEXT PRIMARY KEY,
 	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,

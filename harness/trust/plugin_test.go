@@ -1,8 +1,6 @@
 package trust
 
-// The plugin-level pins (v0.12 phase C2): the api mount publishes the
-// seam, and the classic Mount is a fail-loud stub
-// (docs/migrating-a-module.md is the recipe).
+// The plugin-level pins (v0.12 phase C2).
 
 import (
 	"testing"
@@ -11,9 +9,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestMountWithAPIShape pins the migrated mount's registrations: the
-// trust lands on the exact field the classic mount assigned, and the
-// classic stub fails loud.
+// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}

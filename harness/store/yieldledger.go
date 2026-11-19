@@ -6,17 +6,10 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The pending-calls ledger (async agent loop phase 1, card t_f3f953d0):
-// the durable backing of agent.YieldLedger over the SQLite
-// pending_calls table. The store satisfies the consumer's face
-// structurally - no agent-side adapter, no import inversion. A
-// session's rows survive restarts; the serve-start boot recovery sweep
-// (agent/api/wakes.go recoverPendingCalls) reads All() and injects a
-// synthetic timeout result per entry.
+// The pending-calls ledger.
 
-// Register records one dispatched call (agent.YieldLedger). A
-// same-key (session, call id) re-registration replaces - the clean
-// idempotent retry.
+// Register records one dispatched call (agent.YieldLedger). A same-key (session, call
+// id) re-registration replaces - the clean idempotent retry.
 func (s *Store) Register(pc agent.PendingCall) error {
 	_, err := s.db.Exec(`INSERT INTO pending_calls
 		(session_id, call_id, tool_name, arguments, dispatched_at)
@@ -29,8 +22,7 @@ func (s *Store) Register(pc agent.PendingCall) error {
 	return err
 }
 
-// Settle removes a completed call's row (agent.YieldLedger). An
-// unknown key is a no-op.
+// Settle removes a completed call's row (agent.YieldLedger).
 func (s *Store) Settle(sessionID, callID string) error {
 	_, err := s.db.Exec(`DELETE FROM pending_calls WHERE session_id = ? AND call_id = ?`, sessionID, callID)
 	return err
@@ -49,8 +41,7 @@ func (s *Store) Pending(sessionID string) []agent.PendingCall {
 	return scanPendingCalls(rows)
 }
 
-// All lists every unsettled call in dispatch order (agent.YieldLedger)
-// - the boot recovery sweep. Same errorless read law as Pending.
+// All lists every unsettled call in dispatch order (agent.YieldLedger).
 func (s *Store) All() []agent.PendingCall {
 	rows, err := s.db.Query(`SELECT session_id, call_id, tool_name, arguments, dispatched_at
 		FROM pending_calls ORDER BY dispatched_at, call_id`)

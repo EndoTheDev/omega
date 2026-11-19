@@ -5,12 +5,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin implements agent.Plugin. It wraps a Delegate and mounts it
-// into the agent Context as a ToolProvider. The inject seam retired
-// with the async agent loop phase 2 (card t_0805d438): delegate.task
-// is yield-class - the report re-enters as the call's tool result
-// through the loop's own wake machinery, and no delegate-owned
-// re-entry surface remains.
+// Plugin implements agent.Plugin.
 type Plugin struct {
 	delegate *Delegate
 }
@@ -27,60 +22,43 @@ func (p *Plugin) Description() string {
 	return "delegate: spawns subagents to run subtasks in isolated sessions"
 }
 
-// ConfigKey names the config section this plugin reads from
-// ctx.Configs (see agent.Describer). Empty = reads no section.
+// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
-// Requires: logging (the logger is read at mount time to dispatch the
-// spawns). The notifications edge died with its capture: the
-// dispatched-run emitter is a registration now - the seam arrives at
-// mount end, nil when the module is absent (recipe law 4,
-// docs/migrating-a-module.md, v0.12 phase C2).
+// Requires: logging (the logger is read at mount time to dispatch the spawns). The
+// notifications edge died with its capture: the dispatched-run emitter is a
+// registration now - the seam arrives at mount end, nil when the module is absent
+// (recipe law 4, docs/migrating-a-module.md, v0.12 phase C2).
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
-// MountWithAPI implements agent.APIPlugin. This registration is the
-// module's whole surface (arc 6 capsule, card t_47675b6a): the two
-// namespaced tools (delegate.task, delegate.status) and the
-// dispatched-run emitter capture ship from here, and the module ships
-// nothing else - no command, no REST route, no skills, no canvas panel
-// (nothing rendered delegate before the arc). Removal proof:
-// TestDelegateRemovalProof (cmd/omega/removal_test.go).
+// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
-	// the logger is read at mount time - the logging Requires edge
-	// stays (recipe law 4)
+	// the logger is read at mount time - the logging Requires edge stays (recipe law 4)
 	p.delegate.logger = seam[agent.LoggerProvider](ctx, "logger")
-	// the store seam is an opportunistic capture, NOT a Requires edge:
-	// the store mounts before delegate (slice-order tiebreak) and is
-	// not toggleable, but an edge naming delegate from here would be
-	// the removal recipe's stop signal in the other direction. Nil-safe.
+	// the store seam is an opportunistic capture, NOT a Requires edge. Nil-safe.
 	p.delegate.store = seam[agent.StoreProvider](ctx, "store")
-	// The caller's store file (card t_93b4e521): the child is spawned
-	// AS an agent, and the agent layer points an unset store at the
-	// agent's own data dir - a different database than the one this
-	// host pre-creates the child session in, which is exactly how
-	// `run --session <id>` died "session not found" at startup. The
-	// path rides the child env as OMEGA_DB_PATH (childEnv), so the
-	// spawned run opens the store its caller owns. Consumer-owned
-	// local interface: the store capsule never learns its consumers.
-	// A store without the accessor pins nothing (the pre-fix shape).
+	// The caller's store file: the child is spawned AS an agent, and the agent layer
+	// points an unset store at the agent's own data dir - a different database than the
+	// one this host pre-creates the child session in, which is exactly how `run --session
+	// <id>` died "session not found" at startup. The path rides the child env as
+	// OMEGA_DB_PATH (childEnv), so the spawned run opens the store its caller owns.
+	// Consumer-owned local interface: the store capsule never learns its consumers.
 	if pth, ok := p.delegate.store.(interface{ DBPath() string }); ok {
 		p.delegate.storeDBPath = pth.DBPath()
 	}
-	// card t_5d9032d3: dispatched runs report to the finished-things
-	// store. The hook receives the mounted notifications seam at mount
-	// end, nil when the module is absent (nil is legal - the emitter
-	// is nil-safe by the classic law).
+	// dispatched runs report to the finished-things store. The hook receives the mounted
+	// notifications seam at mount end, nil when the module is absent (nil is legal - the
+	// emitter is nil-safe by the classic law).
 	d := p.delegate
 	if err := api.RegisterEmitter(func(svc any) {
 		d.notifier, _ = svc.(finishedThings)
 	}); err != nil {
 		return err
 	}
-	// The recursion guard's mount face (THE delegation ruling, depth):
-	// inside a subagent child (OMEGA_SUBAGENT set) the delegate tools
-	// do not register at all - the child cannot spawn children.
+	// The recursion guard's mount face: inside a subagent child (OMEGA_SUBAGENT set) the
+	// delegate tools do not register at all - the child cannot spawn children.
 	if d.spawnable {
 		for name, tool := range d.Tools() {
 			if err := api.RegisterTool(name, tool); err != nil {
@@ -91,6 +69,5 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the
-// tier law): the config.yaml disabled: list may name it.
+// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }

@@ -1,7 +1,4 @@
-// omega webui: unit tests for the session list helpers (bucketing,
-// relative age, search filter, token formatting, row meta) in
-// composables/omega.ts. Run: node --test "test/*.test.ts" (node >= 23
-// runs TS natively)
+// omega webui: unit tests for the session list helpers.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -26,8 +23,7 @@ function sess(overrides: Partial<Session> & { id: string }): Session {
 
 const NOW = new Date("2026-10-17T14:00:00");
 
-// 2026-10-17 is a Saturday; NOW is 14:00 local, midnight local is the
-// today/yesterday/earlier boundary
+// is a Saturday; NOW is 14:00 local, midnight local is the today/yesterday/earlier.
 const TODAY = "2026-10-17";
 const YESTERDAY = "2026-10-16";
 
@@ -98,13 +94,11 @@ describe("bucketSessions", () => {
       sess({ id: "pin", updated_at: "2026-10-10T12:00:00", pinned: true }),
     ];
     const b = bucketSessions(sessions, NOW);
-    // pinned session keeps its own group even though its day is "earlier"
     assert.deepEqual(b.pinned.map((s) => s.id), ["pin"]);
     assert.deepEqual(
       b.today.map((s) => s.id),
       ["today"],
     );
-    // within a bucket: newest first (23:50 before 08:00)
     assert.deepEqual(
       b.yesterday.map((s) => s.id),
       ["yest", "yest2"],

@@ -6,10 +6,9 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestImagesOllamaWire: the ollama /api/chat lane expects images as a
-// raw base64 STRING array, not the object shape core.User marshals - a
-// live probe (glm-5.3, 2026-10-20) 400s on the object form with
-// "cannot unmarshal object into Alias.images.0". Stream() must convert.
+// TestImagesOllamaWire: the ollama /api/chat lane expects images as a raw base64 STRING
+// array, not the object shape core.User marshals - a live probe 400s on the object form
+// with "cannot unmarshal object into Alias.images.0". Stream must convert.
 func TestImagesOllamaWire(t *testing.T) {
 	msgs := []core.Message{
 		core.NewSystem("sys"),
@@ -19,7 +18,6 @@ func TestImagesOllamaWire(t *testing.T) {
 		}),
 	}
 
-	// drive the wire conversion the way Stream does without the network
 	msgJSON := messagesToJSON(msgs, false)
 	imagesToOllamaWire(msgJSON)
 
@@ -35,7 +33,6 @@ func TestImagesOllamaWire(t *testing.T) {
 		t.Fatalf("content = %v, want look", user["content"])
 	}
 
-	// text-only messages: no images key, nothing rewritten
 	textOnly := messagesToJSON([]core.Message{core.NewUser("hi")}, false)
 	if _, has := textOnly[0]["images"]; has {
 		t.Fatal("text-only user carries an images key")
@@ -43,17 +40,13 @@ func TestImagesOllamaWire(t *testing.T) {
 	imagesToOllamaWire(textOnly) // must not panic
 }
 
-// TestImagesAnthropicWire: images become Anthropic image source blocks
-// in the user message content; the text becomes a text block.
+// TestImagesAnthropicWire: images become Anthropic image source blocks in the user.
 func TestImagesAnthropicWire(t *testing.T) {
 	msgs := []core.Message{
 		core.NewUserWithImages("look", []core.ImageContent{
 			{MediaType: "image/png", Base64: "iVBORw0KGgo="},
 		}),
 	}
-	// anthropicConvertMessages consumes the messagesToJSON output - the
-	// role key comes from that layer, not a bare marshal of the typed
-	// messages (core.User JSON carries no role field)
 	maps := messagesToJSON(msgs, false)
 	system, result := anthropicConvertMessages(maps)
 	_ = system
@@ -80,7 +73,6 @@ func TestImagesAnthropicWire(t *testing.T) {
 		t.Fatalf("second block = %v, want a text block", content[1])
 	}
 
-	// imageless user stays a plain string
 	textOnlyMsgs := []core.Message{core.NewUser("hi")}
 	maps = messagesToJSON(textOnlyMsgs, false)
 	_, result = anthropicConvertMessages(maps)

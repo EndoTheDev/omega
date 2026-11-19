@@ -165,11 +165,10 @@ func TestLoopWithToolCalls(t *testing.T) {
 	}
 }
 
-// TestLoopDeniedTool pins the run-scoped tool deny (agent.WithDeniedTools):
-// a provider-merged registry drops the denied name BEFORE the model sees
-// schemas or dispatch - a memory tool riding a ToolProvider vanishes for
-// a denied run, and a tool the model still cannot help calling errors as
-// an IsError result instead of executing.
+// TestLoopDeniedTool pins the run-scoped tool deny (agent.WithDeniedTools): a
+// provider-merged registry drops the denied name BEFORE the model sees schemas or
+// dispatch - a memory tool riding a ToolProvider vanishes for a denied run, and a tool
+// the model still cannot help calling errors as an IsError result instead of executing.
 func TestLoopDeniedTool(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -182,8 +181,7 @@ func TestLoopDeniedTool(t *testing.T) {
 		},
 	)
 
-	// memory rides a PROVIDER (the real mount shape): filtering the
-	// caller's Tools map alone would not reach it
+	// memory rides a PROVIDER (the real mount shape): filtering the caller's Tools map.
 	providerTools := map[string]core.Tool{
 		"memory": {
 			Description: "Save a memory",
@@ -223,13 +221,11 @@ func TestLoopDeniedTool(t *testing.T) {
 	}
 }
 
-// TestLoopToolless pins the toolless run (agent.WithToolless): the merged
-// registry - the caller's map PLUS every tool provider's contribution -
-// is replaced wholesale, so a side-effectful tool (delegate.task is the
-// live case: the title turn spawned real subagents) is absent from the
-// schema list and the dispatch map, and a model that still cannot help
-// calling it errors as an IsError result instead of executing. Unlike
-// the deny list, no name is enumerated: the run is toolless, period.
+// TestLoopToolless pins the toolless run (agent.WithToolless): the merged registry -
+// the caller's map PLUS every tool provider's contribution - is replaced wholesale, so
+// a side-effectful tool (delegate.task is the live case: the title turn spawned real
+// subagents) is absent from the schema list and the dispatch map, and a model that
+// still cannot help calling it errors as an IsError result instead of executing.
 func TestLoopToolless(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -290,12 +286,9 @@ func TestLoopToolless(t *testing.T) {
 	}
 }
 
-// fixedToolSet is the pinned plugin-shaped tool set both determinism
-// tests mount: 7 tools (>8 is not required - a single Go map bucket is
-// traversed from a randomized start offset, so even a small map yields a
-// different range order per call). Tool names are deliberately NOT
-// alphabetical in declaration order, so only the sort can make them
-// alphabetical on the wire.
+// fixedToolSet is the pinned plugin-shaped tool set both determinism tests mount. Tool
+// names are deliberately NOT alphabetical in declaration order, so only the sort can
+// make them alphabetical on the wire.
 func fixedToolSet() map[string]core.Tool {
 	return map[string]core.Tool{
 		"shell.run": {
@@ -333,12 +326,11 @@ func fixedToolSet() map[string]core.Tool {
 	}
 }
 
-// TestToolSchemasDeterministicJSON pins the sort in toolSchemas: five
-// serializations of the same tool map are byte-identical, and the names
-// arrive in sorted order. Without the sort the map's randomized range
-// order rotates the list from call to call, and the tools[] block - the
-// wire's largest stable prefix - diverges at its first tool, which drops
-// the provider's prompt-cache hit back to the system prompt alone.
+// TestToolSchemasDeterministicJSON pins the sort in toolSchemas: five serializations of
+// the same tool map are byte-identical, and the names arrive in sorted order. Without
+// the sort the map's randomized range order rotates the list from call to call, and the
+// tools[] block - the wire's largest stable prefix - diverges at its first tool, which
+// drops the provider's prompt-cache hit back to the system prompt alone.
 func TestToolSchemasDeterministicJSON(t *testing.T) {
 	tools := fixedToolSet()
 
@@ -373,8 +365,7 @@ func TestToolSchemasDeterministicJSON(t *testing.T) {
 	}
 }
 
-// recordingProvider wraps a Provider and records the tools argument of
-// every Stream call - the exact slice the wire serializes.
+// recordingProvider wraps a Provider and records the tools argument of every Stream.
 type recordingProvider struct {
 	agent.Provider
 	toolsJSON [][]byte
@@ -394,11 +385,11 @@ func (r *recordingProvider) Stream(ctx context.Context, messages []core.Message,
 // TestLoopToolsBlockStableAcrossTurns pins the HOIST and the sort at the
 // real path (agent_loop.go's turn loop -> Provider.Stream):
 //
-//   - every turn of a multi-turn run hands the provider byte-identical
+// every turn of a multi-turn run hands the provider byte-identical
 //     tools[] JSON (the prefix a cache can reuse),
-//   - every turn hands it the SAME backing array - the schema list is
+// every turn hands it the SAME backing array - the schema list is
 //     computed once per Run, not re-derived per turn,
-//   - a second run over the same tool map produces the same bytes again
+// a second run over the same tool map produces the same bytes again
 //     (determinism does not depend on run-time state).
 func TestLoopToolsBlockStableAcrossTurns(t *testing.T) {
 	tools := fixedToolSet()

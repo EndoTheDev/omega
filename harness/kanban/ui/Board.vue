@@ -4,19 +4,12 @@
     class="board"
     :class="{ narrow: narrow }"
     :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }">
-    <!-- card t_308e6d9b: the UNIVERSAL band (the shared TabBand) - the
-         board switcher + count ride the band now (the law: the tab's
-         actions live in the band, not floating over the body).
-         The board scroll columns start BELOW the band - scrolling never
-         moves it.
-         card t_2b644603 (Endo's narrow-pane ruling): the band keeps the
-         TabBand FAMILY contract - title + board chip + count | filter,
-         the shape the cron and agents bands hold. Gone from the band:
-         the "board" switch-label (the chip already names the board), the
-         permanent rename/remove pair (they are rows of the chip's
-         dropdown, under the board list) and the standalone scope toggle
-         (the all-boards scope is a chip that only exists while a filter
-         query runs). -->
+    <!--
+      the UNIVERSAL band (the shared TabBand).
+      The board scroll columns start BELOW the band - scrolling never moves it.: the
+      band keeps the TabBand FAMILY contract - title + board chip + count | filter, the
+      shape the cron and agents bands hold.
+    -->
     <TabBand title="Kanban">
       <template #lead>
         <template v-if="boards.length > 0">
@@ -37,11 +30,7 @@
               title="keep the old name"
               @click="cancelRename">cancel</button>
           </template>
-          <!-- card t_acad02ec (audit M1): the switcher rides the themed
-               listbox (BandSelect) - a native select popup is OS chrome
-               over the pane. card t_2b644603: its ladder ends with the
-               board VERBS (rename board, remove board) - one popup, one
-               keyboard law, no band space spent on the destructive pair -->
+          <!-- (audit M1): the switcher rides the themed listbox (BandSelect). -->
           <BandSelect
             v-else
             class="board-switch-select"
@@ -56,9 +45,7 @@
         </template>
       </template>
       <template v-if="boards.length > 0">
-        <!-- ONE filter seat, TWO scopes - the scope is a chip ON the seat
-             and it appears with the query: an unfiltered board has no
-             "all boards" question to ask, so it spends no band space. -->
+        <!-- ONE filter seat, TWO scopes. -->
         <input
           v-model="query"
           class="board-search"
@@ -84,9 +71,11 @@
       role="status">
       {{ notice }}
     </p>
-    <!-- the zero-board empty state (0.17.3 make-over): zero boards is a
-         LEGAL registry, so the panel must not render a grid over nothing -
-         it offers the one way back, a board name. -->
+    <!--
+      the zero-board empty state (0.17.3 make-over): zero boards is a LEGAL registry,
+      so the panel must not render a grid over nothing - it offers the one way back, a
+      board name.
+    -->
     <div
       v-if="registryKnown && boards.length === 0"
       class="board-empty">
@@ -121,15 +110,7 @@
         :data-count="col.length"
         :class="{ folded: isLaneFolded(BOARD_STATUSES[i], col.length) }"
         :style="{ '--lane-rail-width': `${LANE_RAIL_PX}px`, '--lane-ease': `${LANE_EASE_MS}ms` }">
-        <!-- card t_50a8c145: ANY lane folds to a rail. The rail is BOTH a
-             button (click unfolds) and a live drop target - the drag
-             machinery resolves .board-col, so dropping on a rail needs no
-             drop code of its own (the card lands at the top of the lane).
-             The dot row sits at the header row's height, so dots line up
-             across the board whether a lane is folded or not. 0.17.3: a
-             click expands a collapsed lane whether it holds cards or not -
-             an empty lane opens to its create form instead of being a dead
-             strip. -->
+        <!-- ANY lane folds to a rail. -->
         <div
           v-if="isLaneFolded(BOARD_STATUSES[i], col.length)"
           class="lane-rail-wrap">
@@ -160,9 +141,6 @@
 
         <template v-else>
           <header class="col-head">
-            <!-- every lane folds: the dot + name are the fold control. In
-                 the narrow stack there are no rails at all, so the control
-                 is honestly disabled there rather than a dead click. -->
             <button
               class="col-fold-btn"
               :aria-expanded="true"
@@ -177,9 +155,6 @@
               <span class="col-name">{{ BOARD_STATUSES[i] }}</span>
             </button>
             <span class="col-count">{{ col.length }}</span>
-            <!-- round t_f81e845e: every column grows cards - the + opens
-                 the full create form (title, body, assignee, priority);
-                 the column the + sits in is the preset status -->
             <button
               class="icon-btn col-create-btn"
               :title="`new card in ${BOARD_STATUSES[i]}`"
@@ -189,8 +164,7 @@
             </button>
           </header>
 
-          <!-- the full create form (round t_f81e845e): open under exactly
-               one column at a time -->
+          <!-- the full create form: open under exactly one column at a time -->
           <form
             v-if="createOpen === BOARD_STATUSES[i]"
             class="col-create"
@@ -206,12 +180,11 @@
               class="col-create-body"
               placeholder="body (optional)"
               aria-label="new card body" />
-            <!-- 0.17.3 make-over: the assignee is a COMBOBOX fed by the
-                 agent registry - GET /agents, the same source the cron
-                 editor's agent field reads. Typing stays legal: a card may
-                 name a worker the registry no longer lists, and the form
-                 must never strand that card. A failed GET degrades to no
-                 options (the field stays a plain text input). -->
+            <!--
+              0.17.3 make-over: the assignee is a COMBOBOX fed by the agent registry.
+              Typing stays legal: a card may name a worker the registry no longer
+              lists, and the form must never strand that card.
+            -->
             <div class="col-create-combo">
               <input
                 v-model="createAssignee"
@@ -290,12 +263,7 @@
               <div
                 v-if="bodyPreview(t.body)"
                 class="card-preview card-clamp">{{ bodyPreview(t.body) }}</div>
-              <!-- the meta row (card t_65ea61a1): assignee as a chip, the
-                   running heartbeat, the age - the Hermes card grammar. -->
               <div class="card-meta">
-                <!-- the all-boards scope renders a mixed grid: a row says
-                     which board it came from, or the card would look like
-                     it lives in the lane's current board -->
                 <span
                   v-if="scope === 'all' && t.board"
                   class="card-board-chip"
@@ -313,17 +281,11 @@
                     : 'the card is running and its worker is beating'">
                   <span class="card-heartbeat-dot" />{{ heartbeats[t.id].label }}
                 </span>
-                <!-- one time telling per card: a running card's story is
-                     its heartbeat, so the created-age stands down there
-                     (both would compete for a 218px row and the chip
-                     would clip) -->
                 <span
                   v-else
                   class="card-age">{{ age(t.created_at) }}</span>
                 <span class="card-moves">
-                  <!-- a mixed list (all-boards scope) is a READING surface:
-                       the arrows would move a card inside the wrong board,
-                       and the cross-board-move ban is the store's law -->
+                  <!-- a mixed list (all-boards scope) is a READING surface. -->
                   <button
                     v-if="scope !== 'all' && step(BOARD_STATUSES[i], -1)"
                     class="icon-btn"
@@ -419,9 +381,6 @@
     type SearchScope,
   } from "./board/boardLogic";
 
-  // The module-owned board view: 9 hermes columns in one horizontal
-  // scroll, self-contained API wiring (fetch /tasks) so it rides the
-  // desktop / VS Code builds alone, like the tools canary did.
   defineEmits<{
     (e: "open-session", id: string): void;
   }>();
@@ -429,45 +388,29 @@
   const tasks = ref<BoardTask[]>([]);
   const error = ref("");
 
-  // --- board switcher (card t_d7a7beaa): the dropdown rides GET
-  // /boards; "main" is only the seeded first board's name. "" means the
-  // registry has no board at all (0.17.3: a LEGAL state - the panel then
-  // renders its create-board empty state). The inspector (drawer) reads
-  // the same board - every call below goes through withBoard.
+  // board switcher: the dropdown rides GET /boards.
   const boards = ref<BoardInfo[]>([]);
   const boardName = ref("");
-  // registryKnown separates "the registry answered, and it is EMPTY" from
-  // "the registry never answered" - only the first one is the empty state,
-  // the second is the old silent degrade (the board still renders).
+  // registryKnown separates "the registry answered, and it is EMPTY" from "the registry
+  // never answered".
   const registryKnown = ref(false);
   const newBoardName = ref("");
 
-  // the filter seat (0.17.3 make-over) ------------------------------
-  // ONE input, TWO scopes: this board, or every board. The all-boards
-  // scope is a SERVER read (?scope=all) whose rows carry their board name,
-  // so a mixed grid still addresses each card correctly.
+  // the filter seat (0.17.3 make-over) ------------------------------ ONE input, TWO.
   const query = ref("");
   const scope = ref<SearchScope>("board");
   const visibleTasks = computed(() => filterTasks(tasks.value, query.value));
-  // card t_2b644603: the scope UI exists only while the seat holds a
-  // query - and so does the count's match form ("3/12").
+  // the scope UI exists only while the seat holds a query.
   const filtering = computed(() => query.value.trim() !== "");
   const countLabel = computed(() =>
     boardCount(visibleTasks.value.length, tasks.value.length, filtering.value),
   );
 
-  // the chip's dropdown ladder (BandSelect): one row per board registry
-  // entry, then the two board VERBS (card t_2b644603). The verb rows are
-  // sentinels, so no board name can ever mean one (boardLogic.boardMenuPick
-  // owns the classification, and it is exact-match only).
+  // the chip's dropdown ladder (BandSelect).
   const boardMenu = computed(() => boardMenuOptions(boards.value, confirmingRemove.value));
 
   async function fetchBoards() {
-    // The mounted fetch runs ONCE, so a miss under suite load left no
-    // switcher chip for the whole page life (nightlies 42268953671 and
-    // 42260775149, cards t_7cdac186 / t_82e5d149). The bounded retry
-    // lives in boardLogic (pure, stubbed-fetch test); a final miss
-    // keeps the old behavior - silent, the board still renders.
+    // The mounted fetch runs ONCE, so a miss under suite load left no switcher chip.
     const fetched = await fetchBoardsRetry(fetch);
     if (!fetched) return; // absent capability or every attempt missed
     boards.value = fetched;
@@ -476,8 +419,7 @@
   }
 
   function switchBoard(pick: string) {
-    // card t_2b644603: the dropdown carries the board VERBS too - a verb
-    // is not a selection, so it dispatches before the switch guard.
+    // the dropdown carries the board VERBS too.
     const want = boardMenuPick(pick);
     if (want.kind === "rename") {
       startRename();
@@ -503,15 +445,13 @@
     fetchBoard();
   }
 
-  // card t_2b644603: the scope chip only RENDERS while a query runs, so an
-  // emptied seat must not leave the read widened with nothing on screen
-  // saying so - clearing the filter returns the read to THIS board.
+  // the scope chip only RENDERS while a query runs, so an emptied seat must not leave.
   watch(query, (q) => {
     if (q.trim() !== "" || scope.value === "board") return;
     toggleScope();
   });
 
-  // --- create board (0.17.3): the empty state's only control -----------
+  // create board (0.17.3): the empty state's only control --------
   async function submitCreateBoard() {
     const name = newBoardName.value.trim();
     if (!name) return;
@@ -537,10 +477,9 @@
     }
   }
 
-  // --- rename (0.17.3): the band's rename control swaps the selector for
-  // an input; Enter/PATCH saves, Esc keeps the old name. The row keeps its
-  // id server-side, so the cards never move - only the name they are
-  // reached under.
+  // rename (0.17.3): the band's rename control swaps the selector for an input. The row
+  // keeps its id server-side, so the cards never move - only the name they are reached
+  // under.
   const renaming = ref(false);
   const renameDraft = ref("");
 
@@ -590,22 +529,17 @@
     }
   }
 
-  // --- board removal (card t_95c5527f): destructive, so the confirm is
-  // an armed second click on the same control (inline relabel, matching
-  // the module toggle arm/apply pattern - no native confirm dialog). The
-  // server is the law: DeleteBoard refuses the default board, the
-  // current pointer target and boards still holding tasks, and the
-  // refusal text surfaces verbatim in the notice line.
-  // card t_2b644603: the control is the dropdown's remove row now, so the
-  // arm closes the popup with it - the notice line names the second click
-  // (the one trail the closed popup cannot show) and the window is wide
-  // enough to reopen the menu.
+  // board removal: destructive, so the confirm is an armed second click on the. The
+  // server is the law: DeleteBoard refuses the default board, the current pointer
+  // target and boards still holding tasks, and the refusal text surfaces verbatim in
+  // the notice line.: the control is the dropdown's remove row now, so the arm closes
+  // the popup with it - the notice line names the second click (the one trail the
+  // closed popup cannot show) and the window is wide enough to reopen the menu.
   const REMOVE_ARM_MS = 10000;
   const confirmingRemove = ref(false);
   const notice = ref("");
   const noticeErr = ref(false);
   let disarmTimer: ReturnType<typeof setTimeout> | undefined;
-  /** the arm hint currently on the notice line (cleared with the arm) */
   let armNotice = "";
 
   function setNotice(text: string, isErr = false) {
@@ -619,8 +553,7 @@
       clearTimeout(disarmTimer);
       disarmTimer = undefined;
     }
-    // the arm's own hint must not outlive the arm (a stale "click again"
-    // over a disarmed row reads as a live instruction)
+    // the arm's own hint must not outlive the arm.
     if (armNotice && notice.value === armNotice) setNotice("");
     armNotice = "";
   }
@@ -633,8 +566,7 @@
       // popup closes with the pick, so the trail must outlive it
       armNotice = `click "confirm remove" in the board menu again to remove "${boardName.value}"`;
       setNotice(armNotice);
-      // disarm on timeout: the second click lands only while the
-      // warning still shows
+      // disarm on timeout: the second click lands only while the warning still shows
       if (disarmTimer) clearTimeout(disarmTimer);
       disarmTimer = setTimeout(disarmRemove, REMOVE_ARM_MS);
       return;
@@ -649,16 +581,13 @@
     try {
       const res = await fetch(boardDeletePath(name), { method: "DELETE" });
       if (!res.ok) {
-        // refusal text (default board, pointer target, tasks present)
-        // comes back as plain text - the handler wrote it for this line
         const detail = await res.text().catch(() => `DELETE /boards: ${res.status}`);
         setNotice(detail, true);
         return;
       }
       setNotice(`board "${name}" removed`);
       selected.value = null; // the drawer's card belonged to the gone board
-      // refresh the registry first; the removed row must leave the
-      // switcher even if the boot fetch reads stale
+      // refresh the registry first; the removed row must leave the switcher even if.
       try {
         const res = await fetch("/boards");
         if (res.ok) {
@@ -668,9 +597,6 @@
       } catch {
         boards.value = boards.value.filter((b) => b.name !== name);
       }
-      // the selection falls to whatever survives the delete - and to
-      // NOTHING when the last board just left, which is the legal
-      // zero-board state (the panel renders its empty state)
       boardName.value = pickBootBoard(boards.value);
       await fetchBoard();
     } catch (e) {
@@ -678,15 +604,10 @@
     }
   }
 
-  // --- notification board select (card t_556ee727) ---
-  // The shell's task-notification click focuses this tab and wants the
-  // task's board picked. The seam is a window event + a pending stash
-  // (module UI imports no shell code: no prop, no shell import) - the
-  // shell publishes both (composables/notifications.ts). The stash
-  // covers the mount race: the tab focus mounts the board component on
-  // the tick AFTER the shell published, so the mount consumes the stash
-  // once; the event covers the already-mounted case (the consumer
-  // clears the stash it supersedes).
+  // notification board select --- The shell's task-notification click focuses this. The
+  // stash covers the mount race: the tab focus mounts the board component on the tick
+  // AFTER the shell published, so the mount consumes the stash once; the event covers
+  // the already-mounted case (the consumer clears the stash it supersedes).
   const BOARD_SELECT_EVENT = "omega-select-board";
   function consumeBoardStash(): string | undefined {
     const w = window as unknown as { __omegaBoardSelect?: string };
@@ -709,12 +630,7 @@
     window.removeEventListener(BOARD_SELECT_EVENT, onBoardSelect);
   });
 
-  // --- live refresh (card t_b5784de3): the 5s poll is DEAD --------------
-  // The board re-reads its own REST view when the shell announces a canvas
-  // delta. The tasks panel is NOT enough to render this grid (rows carry no
-  // body, no priority, no position, and cap at 20 - see panel.go), so the
-  // event is a pulse: it says "task state moved", the board answers with
-  // the same GET its mount fetch runs. Nothing here repeats on a cadence.
+  // live refresh: the 5s poll is DEAD -------------- The board re-reads its own.
   const CANVAS_DELTA_EVENT = "omega-canvas-delta";
   // The same event also carries a RESET pulse (id "reconnect"): the shell
   // fires it from its reconnect catch-up, because a delta that landed
@@ -726,9 +642,8 @@
   interface CanvasDeltaPanel {
     id?: string;
   }
-  // A burst of deltas coalesces into ONE list read: a sibling agent
-  // touching N tasks must not fan N full-list GETs. The first event
-  // queues the read, the rest of the burst ride it.
+  // A burst of deltas coalesces into ONE list read: a sibling agent touching N tasks
+  // must not fan N full-list GETs.
   const DELTA_COALESCE_MS = 120;
   let deltaTimer: ReturnType<typeof setTimeout> | null = null;
   function scheduleBoardRefetch() {
@@ -742,8 +657,7 @@
     const detail = (ev as CustomEvent<CanvasDeltaPanel>).detail;
     if (!detail || typeof detail !== "object") return;
     if (detail.id === CANVAS_RESET_ID) {
-      // a reconnect: the registry AND the list may have moved while the
-      // socket was down, and no delta survives it - re-read the pane.
+      // a reconnect: the registry AND the list may have moved while the socket was.
       void reloadAll();
       return;
     }
@@ -754,17 +668,13 @@
     if (detail.id === "boards") void refreshRegistry();
   }
 
-  // reloadAll is the reset path: the registry first (the selected board
-  // may have vanished), then the list - fetchBoard never runs on a stale
-  // boardName.
+  // reloadAll is the reset path: the registry first (the selected board may have
+  // vanished), then the list - fetchBoard never runs on a stale boardName.
   async function reloadAll() {
     await refreshRegistry();
     await fetchBoard();
   }
 
-  // a boards-panel delta: the registry grew or shrank elsewhere. Re-read
-  // the list only - a live selection outranks the pointer target, so the
-  // board name stays unless the selected board is the one that vanished.
   async function refreshRegistry() {
     try {
       const res = await fetch("/boards");
@@ -781,28 +691,23 @@
     }
   }
 
-  // the list's request epoch: an event-triggered refetch and a mutation's
-  // own refetch can overlap, and the older answer must never overwrite the
-  // newer one.
+  // the list's request epoch: an event-triggered refetch and a mutation's own refetch
+  // can overlap, and the older answer must never overwrite the newer one.
   let fetchSeq = 0;
 
   async function fetchBoard() {
     if (drag.value && drag.value.moved) return; // a live drag owns the list
     const seq = ++fetchSeq;
     try {
-      // status=all: the board grid carries the archived lane too (no
-      // status is filtered out of the grid), so it can never default to
-      // the active-only view the list tool shows (t_02a8beea).
-      // The scope picks the address: this board, or (0.17.3) every board
-      // in one answer whose rows each carry their board name.
+      // status=all: the board grid carries the archived lane too (no status is filtered
+      // out of the grid), so it can never default to the active-only view the list tool
+      // shows.
       const res = await fetch(tasksPath(boardName.value, scope.value));
       if (!res.ok) throw new Error(`GET /tasks: ${res.status}`);
       const body = await res.json();
       if (seq !== fetchSeq) return; // a newer read owns the list
       tasks.value = body.tasks ?? [];
       error.value = "";
-      // keep the open drawer honest: if the drawn task is gone or moved,
-      // refresh the drawer's view of it
       if (selected.value) applyDetailPatch(selected.value.id);
     } catch (e) {
       if (seq !== fetchSeq) return;
@@ -810,27 +715,17 @@
     }
   }
 
-  // the grid renders the FILTERED list; the counts in the band stay the
-  // board's own (a filter is a lens, not a second truth)
+  // the grid renders the FILTERED list.
   const cols = computed(() => columns(visibleTasks.value));
 
-  // --- the running heartbeat chip (card t_65ea61a1): the board already
-  // receives everything the chip needs (status, started_at, and
-  // last_heartbeat_at when the store stamps it - see boardLogic's
-  // BoardTask note), so this is a CLOCK, not a wire call. One tick moves
-  // the whole board's chips: the labels read whole minutes, so a 5s
-  // cadence advances them on the minute. The tick NEVER fetches - it
-  // only re-dates `now`, which the chip map derives from. (The pin that
-  // killed the old 5s fetch poll still holds: the only timer here is
-  // this self-chaining clock.)
+  // the running heartbeat chip. The tick NEVER fetches - it only re-dates `now`, which
+  // the chip map derives.
   const now = ref(new Date());
   let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
   function tickHeartbeat() {
     now.value = new Date();
     heartbeatTimer = setTimeout(tickHeartbeat, HEARTBEAT_TICK_MS);
   }
-  // one pass per render, keyed by card id: the template reads the map
-  // instead of re-deriving a chip per element (and per re-render).
   const heartbeats = computed(() => {
     const at = now.value;
     const out: Record<string, HeartbeatChip> = {};
@@ -841,14 +736,6 @@
     return out;
   });
 
-  // --- narrow adaptation (card t_49d0b308): the inspector column is
-  // ~300px (card ruling); the full-width column strip only works wide,
-  // so the rendered width flips the `narrow` class - the columns stack
-  // into a read-mostly vertical list instead of scrolling sideways.
-  // The threshold is unit-covered in boardLogic.ts; this is the only
-  // DOM-measuring part. Same mechanism as the shell's
-  // composables/useNarrow (kept in-module: module UI imports no shell
-  // code).
   const boardEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -873,16 +760,10 @@
     resizeObs = null;
   });
 
-  // --- lane rails (card t_50a8c145, 0.17.3 make-over): any lane folds to
-  // a rail, and an EMPTY lane folds itself. The click is what outranks
-  // reality now: a collapsed lane - empty or not - EXPANDS on click, so
-  // the pin below is the only override and nothing reconciles it away
-  // (the old reconcile dropped a drained lane's pin, which would have
-  // re-folded the lane the user just opened).
-  //
-  // Pins are component state, not persisted: the lane set is a view of
-  // the current board, and a pin that outlived its lane would be exactly
-  // the override-fighting-reality shape the law forbids.
+  // lane rails: any lane folds to a rail, and an EMPTY lane folds itself. Pins are
+  // component state, not persisted: the lane set is a view of the current board, and a
+  // pin that outlived its lane would be exactly the override-fighting-reality shape the
+  // law forbids.
   const lanePins = ref<LanePins>({});
   const laneCounts = computed(() => {
     const counts: Record<string, number> = {};
@@ -892,17 +773,8 @@
     return counts;
   });
 
-  // A live drag FREEZES the lane fold state. The optimistic reorder seats
-  // the dragged card in the lane under the pointer, which drains its
-  // source lane and fills its target lane - and an empty lane folds while
-  // a filled one unfolds, so without the freeze every lane beside the
-  // moving card re-lays-out mid-gesture and the drop lands on whatever
-  // slid under the cursor (measured live: a release on the folded
-  // `blocked` rail at x=908 persisted into `ready`, 74px to its left).
-  // Snapshot when the gesture becomes a drag, release it on pointerup:
-  // rails stay rails under the cursor, and the lane the card LANDS in
-  // takes its new shape after the commit. Same law as the live-reorder
-  // feedback: the geometry a drag is aiming at never moves under it.
+  // A live drag FREEZES the lane fold state. Same law as the live-reorder feedback: the
+  // geometry a drag is aiming at never moves under it.
   const frozenLanes = ref<Record<string, boolean> | null>(null);
 
   function freezeLaneLayout() {
@@ -917,12 +789,10 @@
     frozenLanes.value = frozen;
   }
 
-  // rails are a horizontal-scroll affordance only (Endo ruling: "not in
-  // mobile view") - the narrow-stack mode renders every lane expanded.
-  // An open create form also holds the lane in its column shape: a rail
-  // cannot be unfolded (an empty lane is always folded), so the create
-  // form is the ONE way to grow a lane from nothing - it must be able to
-  // open, and it is an editor rather than a resting lane.
+  // rails are a horizontal-scroll affordance only. An open create form also holds the
+  // lane in its column shape: a rail cannot be unfolded (an empty lane is always
+  // folded), so the create form is the ONE way to grow a lane from nothing - it must be
+  // able to open, and it is an editor rather than a resting lane.
   function isLaneFolded(status: string, count: number): boolean {
     if (narrow.value) return false;
     if (createOpen.value === status) return false;
@@ -936,9 +806,7 @@
     lanePins.value = toggleLanePin(status, count, lanePins.value);
   }
 
-  // --- create form (round t_f81e845e): one column hosts it at a time,
-  // the host column is the preset status. Fields: title (required),
-  // body, assignee, priority (0..3, the board ladder).
+  // create form: one column hosts it at a time, the host column is the preset.
   const createOpen = ref<string | null>(null);
   const createTitle = ref("");
   const createBody = ref("");
@@ -957,8 +825,6 @@
     createPriority.value = 0;
     closeAssigneeCombo();
     void ensureAgentOptions(); // the assignee's source, loaded on first use
-    // focus the title once the form mounts (the ref array inside v-for
-    // is messy; the scoped query by data-status is straight)
     requestAnimationFrame(() => {
       boardEl.value
         ?.querySelector<HTMLInputElement>(`.board-col[data-status="${status}"] .col-create-title`)
@@ -992,9 +858,6 @@
     }
   }
 
-  // --- moves: arrow buttons and the drawer's status selector. The board a
-  // card is moved IN is the card's own (the all-boards read stamps it), not
-  // the board being viewed - the cross-board-move ban holds.
   async function moveBoard(t: BoardTask, status: string) {
     const board = boardOf(t, boardName.value);
     try {
@@ -1011,16 +874,13 @@
     }
   }
 
-  // --- drag-and-drop reorder (card t_09b44af1): a card is draggable
-  // with the pointer; during the drag the board's list itself is
-  // reordered live (the pushed-around cards ARE the drop feedback),
-  // and the drop PATCHes the same pair the live view rendered -
-  // {status, after_id} - so the optimistic view is exactly what the
-  // server persisted. A drag that never clears the threshold stays a
-  // click (the drawer). The click that trails a real drag is
-  // suppressed, and a canvas delta that arrives mid-drag never
-  // re-reads the list (fetchBoard's guard) so the gesture keeps the
-  // view it is building.
+  // drag-and-drop reorder: a card is draggable with the pointer; during the drag the
+  // board's list itself is reordered live, and the drop PATCHes the same pair the live
+  // view rendered - {status, after_id} - so the optimistic view is exactly what the
+  // server persisted. A drag that never clears the threshold stays a click (the
+  // drawer). The click that trails a real drag is suppressed, and a canvas delta that
+  // arrives mid-drag never re-reads the list (fetchBoard's guard) so the gesture keeps
+  // the view it is building.
   interface DragState {
     id: string;
     fromStatus: string;
@@ -1039,8 +899,7 @@
   function updateDropTarget(x: number, y: number) {
     const d = drag.value;
     if (!d || !boardEl.value) return;
-    // the pointer rides elementsFromPoint - the dragged card itself may
-    // be under the cursor, so search the stack, not just the top element
+    // the pointer rides elementsFromPoint.
     const colEl = document
       .elementsFromPoint(x, y)
       .flatMap((el) => (el instanceof Element ? [el.closest(".board-col")] : []))
@@ -1088,8 +947,6 @@
       if (!d) return;
       if (!d.moved && Math.hypot(e.clientX - sx, e.clientY - sy) < DRAG_THRESHOLD_PX) return;
       if (!d.moved) {
-        // the gesture is a drag now: pin every lane's shape before the
-        // optimistic reorder can move one (see freezeLaneLayout)
         d.moved = true;
         freezeLaneLayout();
       }
@@ -1119,7 +976,6 @@
 
   async function commitDrag(d: DragState) {
     if (!d.over) {
-      // released off-board: snap the optimistic view back to the server
       await fetchBoard();
       return;
     }
@@ -1134,14 +990,11 @@
       );
       if (!res.ok) throw new Error(`PATCH /tasks/${d.id}: ${res.status}`);
     } catch (e) {
-      // the server refused the slot: the refetch below snaps the card back
       setNotice(e instanceof Error ? e.message : String(e), true);
     }
     await fetchBoard();
   }
 
-  // click trails pointerup: a real drag suppresses it once, a plain
-  // press (below threshold) opens the drawer
   let suppressNextClick = false;
   function onCardClick(t: BoardTask) {
     if (suppressNextClick) {
@@ -1151,7 +1004,6 @@
     openDetail(t);
   }
 
-  // --- detail drawer
   const selected = ref<BoardTask | null>(null);
   const detailComments = ref<BoardComment[]>([]);
   const detailEvents = ref<BoardEvent[]>([]);
@@ -1171,8 +1023,7 @@
       selected.value = d.task;
       detailComments.value = d.comments ?? [];
       detailEvents.value = d.events ?? [];
-      // fold the fresh detail back into the board row - a move in the
-      // drawer must not wait for the next board read to leave the column
+      // fold the fresh detail back into the board row - a move in the drawer must not.
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = { ...d.task, board: tasks.value[i].board };
     } catch (e) {
@@ -1180,8 +1031,6 @@
     }
   }
 
-  // board-read drawer refresh: pull the drawn task's detail without
-  // spinning the loading flag (the user may be typing a comment)
   async function applyDetailPatch(id: string) {
     const board = selected.value ? boardOf(selected.value, boardName.value) : boardName.value;
     try {
@@ -1194,12 +1043,9 @@
       const i = tasks.value.findIndex((x) => x.id === id);
       if (i >= 0) tasks.value[i] = { ...d.task, board: tasks.value[i].board };
     } catch {
-      // a failed patch read stays silent - the next board read retries
     }
   }
 
-  // --- in-place edits (round t_f81e845e): the drawer reports a patch
-  // (title/body/priority); the board PATCHes and refetches both views
   async function onDrawerSave(patch: { title?: string; body?: string; priority?: number }) {
     if (!selected.value) return;
     const id = selected.value.id;
@@ -1222,11 +1068,7 @@
     }
   }
 
-  // armed delete (card t_5a638160): the drawer confirmed a NAMED card; the
-  // card leaves the grid on the click, not on the round trip (optimistic),
-  // and the drawer closes with it. A refused DELETE (server is the law, and
-  // there is no undo anywhere - the confirm is the safety) snaps the board
-  // back to the server's truth and says why.
+  // armed delete: the drawer confirmed a NAMED card.
   async function onDrawerDelete() {
     if (!selected.value) return;
     const id = selected.value.id;
@@ -1273,13 +1115,9 @@
     }
   }
 
-  // --- the assignee combobox (0.17.3 make-over) ------------------------
-  // The create form's assignee reads the AGENT REGISTRY (GET /agents) - the
-  // same source the cron editor's agent field reads. Picking is the fast
-  // path; TYPING stays legal both ways: a card may name a worker the
-  // registry no longer lists, and the form must never strand that card.
-  // The source is loaded lazily (first create form open) and cached; a
-  // failed GET keeps the field a plain text input and says why.
+  // the assignee combobox (0.17.3 make-over) ------------------------ The create.
+  // Picking is the fast path; TYPING stays legal both ways: a card may name a worker
+  // the registry no longer lists, and the form must never strand that card.
   const agentOptions = ref<AgentOption[]>([]);
   const agentOptionsError = ref("");
   let agentsInflight: Promise<void> | null = null;
@@ -1357,9 +1195,7 @@
   onMounted(() => {
     fetchBoards().then(() => fetchBoard());
     window.addEventListener(CANVAS_DELTA_EVENT, onCanvasDelta);
-    // the heartbeat clock: a running card's "working - Xm" must advance
-    // without a fetch (the card body moved a minute older, nothing
-    // changed on the wire)
+    // the heartbeat clock: a running card's "working - Xm" must advance without a fetch
     tickHeartbeat();
   });
   onUnmounted(() => {
@@ -1386,34 +1222,34 @@
     position: relative;
     overflow: hidden;
   }
-  /* card t_308e6d9b: the head row is the shared TabBand now - the
-     band's own padding/lead replace the old .board-head geometry; only
-     the action-group spacing rides here (the band look is shared).
-     card t_2b644603: the slot holds exactly two things - the filter seat
-     and its scope chip - so the gap is the chip's HUG, and the SLOT is
-     the flexible one: the chip is fixed, the input gives up the width.
-     (TabBand ships flex-shrink: 0 for tabs whose actions are buttons; a
-     band that grows an inline seat must let the seat absorb the pane.) */
+  /*
+   * the head row is the shared TabBand now - the band's own padding/lead replace the
+   * old.board-head geometry; only the action-group spacing rides here (the band look is
+   * shared).: the slot holds exactly two things - the filter seat and its scope chip -
+   * so the gap is the chip's HUG, and the SLOT is the flexible one: the chip is fixed,
+   * the input gives up the width.
+   * (TabBand ships flex-shrink: 0 for tabs whose actions are buttons; a band that grows
+   * an inline seat must let the seat absorb the pane.) / /
+   */
   .board :deep(.tab-band-actions) {
     gap: 3px;
     flex-shrink: 1;
     min-width: 0;
   }
-  /* card t_acad02ec: the switcher is the shared BandSelect chip - the
-     band's dim look (no box at rest, like .band-tool) */
+  /* the switcher is the shared BandSelect chip. */
   .board-switch-select :deep(.model-chip) {
     padding: 2px 6px;
     font-size: 11.5px;
     background: transparent;
   }
-  /* card t_2b644603: the dropdown's ladder ends with the board VERBS -
-     one hairline separates the board list from the commands (the rows
-     carry the pop's own look, the second-to-last is "rename board") */
+  /* the dropdown's ladder ends with the board VERBS. */
   .board-switch-select :deep(.model-list li:nth-last-child(2)) {
     border-top: 1px solid color-mix(in srgb, currentcolor 12%, transparent);
   }
-  /* the armed remove ROW: the marker class rides BandSelect's `cls` seam,
-     and the tint is the second-click warning the band used to carry */
+  /*
+   * the armed remove ROW: the marker class rides BandSelect's `cls` seam, and the tint
+   * is the second-click warning the band used to carry / /
+   */
   .board-switch-select :deep(.model-list li.armed) {
     color: var(--err);
     font-weight: 600;
@@ -1422,15 +1258,15 @@
     font-size: 10.5px;
     opacity: 0.5;
   }
-  /* a NARROW pane with a live filter: the count steps aside - the lanes
-     carry their own counts, and the chip + the seat are what the eye is
-     after. This is the width where "title + chip + count | filter + chip"
-     cannot all be one row (card t_2b644603). */
+  /*
+   * a NARROW pane with a live filter.
+   * This is the width where "title + chip + count | filter + chip" cannot all be one
+   * row.
+   */
   .board.narrow:has(.board-scope-chip) .board-switch-count {
     display: none;
   }
-  /* 0.17.3 make-over: the rename seat takes the selector's place - the same
-     compact in-band rhythm, wide enough for a board name */
+  /* 0.17.3 make-over: the rename seat takes the selector's place. */
   .board-rename-input {
     font: inherit;
     font-size: 11.5px;
@@ -1441,10 +1277,6 @@
     border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
     border-radius: var(--r-chip);
   }
-  /* the filter seat: one input, two scopes. The chip beside it says which
-     scope is live, and it exists only while the seat holds a query
-     (card t_2b644603) - so the input is the seat's whole width at rest and
-     gives up just enough to the chip while filtering. */
   .board-search {
     font: inherit;
     font-size: 11.5px;
@@ -1461,8 +1293,7 @@
   .board-search::placeholder {
     opacity: 0.5;
   }
-  /* the scope chip: the family .band-tool look, tightened, and no wrap -
-     "all boards" is the widest thing the band ever holds in a 318px pane */
+  /* the scope chip: the family.band-tool look, tightened, and no wrap. */
   .board-scope-chip {
     flex: none;
     font-size: 10.5px;
@@ -1474,8 +1305,7 @@
     font-weight: 600;
     opacity: 0.95;
   }
-  /* the zero-board empty state (0.17.3): the panel's whole body when the
-     registry holds nothing - one sentence and the one way back */
+  /* the zero-board empty state (0.17.3). */
   .board-empty {
     flex: 1;
     min-height: 0;
@@ -1561,19 +1391,13 @@
     border-radius: var(--r-pane);
     padding: 8px;
     gap: 8px;
-    /* the header row and the rail's dot row are the SAME height - that is
-       why dots line up across the board in either state (card t_50a8c145).
-       24px is the row the header already settles at (its + rides the
-       shell's 24px icon button); pinning it keeps a folded lane's dot on
-       the same line as an unfolded lane's. */
+    /* the header row and the rail's dot row are the SAME height. */
     --lane-head-h: 24px;
-    /* the fold ease: ~180ms width, ruled (Hermes snaps; omega eases) */
     transition:
       flex-basis var(--lane-ease, 180ms) cubic-bezier(0.4, 0, 0.2, 1),
       padding var(--lane-ease, 180ms) cubic-bezier(0.4, 0, 0.2, 1);
   }
-  /* a folded lane IS the rail: a thin vertical strip whose dot row sits at
-     the expanded lanes' header row height */
+  /* a folded lane IS the rail. */
   .board-col.folded {
     flex: 0 0 var(--lane-rail-width, 36px);
     padding: 8px 0;
@@ -1641,9 +1465,6 @@
     height: var(--lane-head-h, 24px);
     cursor: default;
   }
-  /* every lane folds: dot + name are the control (no settled-only branch).
-     The dot centers on the header ROW (not on the button box), which is
-     what puts it on the same line as a folded lane's dot row. */
   .col-fold-btn {
     display: flex;
     align-items: center;
@@ -1696,8 +1517,7 @@
     min-height: 40px;
     resize: vertical;
   }
-  /* the assignee combobox (0.17.3 make-over): the input keeps the field
-     look; the list hangs under it like the cron editor's combo */
+  /* the assignee combobox (0.17.3 make-over). */
   .col-create-combo {
     position: relative;
     display: flex;
@@ -1817,7 +1637,6 @@
   .card:hover {
     border-color: color-mix(in srgb, currentcolor 22%, transparent);
   }
-  /* drag-and-drop reorder: the live-wrestled card dims in place */
   .card.dragging {
     opacity: 0.35;
     cursor: grabbing;
@@ -1828,7 +1647,6 @@
     gap: 6px;
     min-width: 0;
   }
-  /* priority chip: heat rises with the level (0 stays silent entirely) */
   .card-prio {
     flex: none;
     font-size: 10px;
@@ -1854,9 +1672,7 @@
     opacity: 0.55;
     overflow-wrap: anywhere;
   }
-  /* the card text clamp (card t_65ea61a1): two lines, fed by the
-     CARD_CLAMP_LINES constant. A long title no longer pushes the meta
-     row off the card - the full text lives in the drawer. */
+  /* the card text clamp: two lines, fed by the CARD_CLAMP_LINES constant. */
   .card-clamp {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -1876,17 +1692,16 @@
     font-size: 10.5px;
     opacity: 0.65;
     min-width: 0;
-    /* one row never spills the card: the chips shrink, the move
-       controls keep their place (card t_65ea61a1 - the heartbeat chip
-       pushed the row past the column and the LANE grew a scrollbar) */
+    /* one row never spills the card. */
     overflow: hidden;
   }
   .card-age,
   .card-moves {
     flex: none;
   }
-  /* the assignee as a CHIP (card t_65ea61a1): a bordered token reads as
-     a person, not as stray "@name" text in the meta line */
+  /*
+   * the assignee as a CHIP: a bordered token reads as a person, not as stray "@name".
+   */
   .card-assignee-chip {
     border: 1px solid color-mix(in srgb, currentcolor 22%, transparent);
     border-radius: var(--r-chip);
@@ -1898,8 +1713,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  /* the board a mixed-scope row came from (0.17.3): dimmer than the
-     assignee - it names a place, not a person */
+  /* the board a mixed-scope row came from (0.17.3). */
   .card-board-chip {
     flex: none;
     border: 1px dashed color-mix(in srgb, currentcolor 26%, transparent);
@@ -1912,15 +1726,10 @@
     white-space: nowrap;
     opacity: 0.8;
   }
-  /* the running heartbeat chip (card t_65ea61a1): a dot that breathes
-     while the worker beats, a flat red dot once it goes quiet. The tone
-     is the running lane's own green; stale is the blocked lane's red. */
   .card-heartbeat {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    /* the chip is the row's shrinker: a long duration truncates before
-       anything is pushed off the card (card t_65ea61a1) */
     flex: 0 1 auto;
     min-width: 0;
     max-width: 100%;
@@ -1941,7 +1750,6 @@
     color: color-mix(in srgb, #f87171 85%, currentcolor);
     font-weight: 600;
   }
-  /* a dead beat does not pretend to pulse */
   .card-heartbeat.stale .card-heartbeat-dot {
     animation: none;
     box-shadow: 0 0 0 1px color-mix(in srgb, currentcolor 35%, transparent);
@@ -1969,10 +1777,6 @@
     padding: 0 3px;
   }
 
-  /* narrow (card t_49d0b308): the inspector's ~300px column. The wide
-     strip flex: 0 0 236px column row only works in the main pane - under
-     the measured threshold the root scrolls and the columns stack into
-     read-mostly vertical lists, full width, no horizontal scroll. */
   .board.narrow {
     overflow-y: auto;
   }
@@ -1993,7 +1797,6 @@
   .board.narrow .col-create-body {
     min-height: 32px;
   }
-  /* the drawer overlays the visible column, not the scrollable content */
   .board.narrow :deep(.drawer) {
     position: fixed;
     right: 0;

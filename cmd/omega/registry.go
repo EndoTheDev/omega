@@ -1,14 +1,9 @@
 package main
 
-// registry.go: the host's registry-browser toggle adapter (v0.14.1) -
-// core.RegistryToggles behind the /disabled surface, one write path
-// into config.yaml's `disabled:` fold (the same key boot reads, Q7's
-// one code path). The toggle order is always: validate the name
-// against its registry (disable direction only - a re-enable must
-// always work, even for a name whose registry entry has since
-// vanished), mutate the live fold, write config.yaml, then apply the
-// live effect. A persistence failure leaves the fold and the live
-// state untouched rather than half-applied.
+// registry.go: the host's registry-browser toggle adapter (v0.14.1). The toggle order
+// is always: validate the name against its registry (disable direction only - a
+// re-enable must always work, even for a name whose registry entry has since vanished),
+// mutate the live fold, write config.yaml, then apply the live effect.
 
 import (
 	"fmt"
@@ -21,10 +16,6 @@ import (
 )
 
 // omegaRegistries implements core.RegistryToggles for the serve host.
-// modules is the mount machinery's toggle adapter (omegaModules);
-// this is the sibling for the skills/tools/agents registries - both
-// write DISABLED: folds through the same writeDisabled, and both name
-// the modules namespace from the live registry at write time.
 type omegaRegistries struct {
 	pctx       *agent.Context
 	reg        *agent.Registry
@@ -40,11 +31,10 @@ type omegaRegistries struct {
 // Compile-time assertion that omegaRegistries implements the seam.
 var _ core.RegistryToggles = (*omegaRegistries)(nil)
 
-// Sync applies a hand-edited disabled fold (the config watcher path):
-// the skills/tools/agents namespaces take live, exactly as a toggle
-// would leave them. The modules namespace is untouched - the mount
-// machinery is boot business; a hand edit there keeps applying at the
-// next boot exactly as it did before v0.14.1.
+// Sync applies a hand-edited disabled fold (the config watcher path): the
+// skills/tools/agents namespaces take live, exactly as a toggle would leave them. The
+// modules namespace is untouched - the mount machinery is boot business; a hand edit
+// there keeps applying at the next boot exactly as it did before v0.14.1.
 func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	if r == nil {
 		return
@@ -55,8 +45,6 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	r.fold.Agents = sortedCopy(d.Agents)
 	r.mu.Unlock()
 	r.applyLive()
-	// The serving channels re-read: same law the module toggle carries
-	// (the fold changed; every LiveSeams surface follows).
 	if r.pctx == nil {
 		return
 	}
@@ -71,9 +59,7 @@ func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	}
 }
 
-// applyLive pushes the live fold state into the live registries
-// (the skills provider, the tool opt-out, the continuous machine's
-// disabled-agents hook).
+// applyLive pushes the live fold state into the live registries.
 func (r *omegaRegistries) applyLive() {
 	if r.pctx == nil {
 		return
@@ -92,22 +78,17 @@ func (r *omegaRegistries) applyLive() {
 	}
 }
 
-// skillDisabler is the host registry's own need face of the skills
-// capsule (part 3): the toggle seam swaps the skill disable list live.
-// Resolved by key from the universal registry; the capsule's type
-// stays the capsule's.
+// skillDisabler is the host registry's own need face of the skills capsule (part 3).
 type skillDisabler interface {
 	SetDisabled(names []string)
 }
 
-// skillInventory is the registry's validation face: the loaded names
-// for unknown-name rejection (std-typed, part 3).
+// skillInventory is the registry's validation face.
 type skillInventory interface {
 	SkillsEntries() (index map[string]string, contents map[string]string, err error)
 }
 
-// Disabled returns the three registry lists verbatim (sorted; the wire
-// shows the persisted order).
+// Disabled returns the three registry lists verbatim.
 func (r *omegaRegistries) Disabled() core.DisabledNames {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -118,8 +99,7 @@ func (r *omegaRegistries) Disabled() core.DisabledNames {
 	}
 }
 
-// ToggleSkill implements core.RegistryToggles: a disabled skill leaves
-// the session prompt build; the registry keeps it (the tab lists it).
+// ToggleSkill implements core.RegistryToggles.
 func (r *omegaRegistries) ToggleSkill(name string, enabled bool) error {
 	return r.toggle("skills", name, enabled, r.skillKnown, func(next []string) {
 		if sp, ok := r.pctx.Services().Resolve("skills").(skillDisabler); ok && sp != nil {
@@ -128,9 +108,7 @@ func (r *omegaRegistries) ToggleSkill(name string, enabled bool) error {
 	})
 }
 
-// ToggleTool implements core.RegistryToggles: a disabled tool is
-// absent from every tool union - the merge law is untouched, the
-// filter runs after it (Agent.Tools / the loop's loop-merge filter).
+// ToggleTool implements core.RegistryToggles.
 func (r *omegaRegistries) ToggleTool(name string, enabled bool) error {
 	return r.toggle("tools", name, enabled, r.toolKnown, func(next []string) {
 		if r.pctx != nil {
@@ -139,13 +117,11 @@ func (r *omegaRegistries) ToggleTool(name string, enabled bool) error {
 	})
 }
 
-// ToggleAgent implements core.RegistryToggles - the soft toggle. The
-// agent home directory is never touched: registration is folder
-// presence, and the fold only removes the roster row and the wake.
-// The DEFAULT agent refuses HERE at the seam as well as the handler
-// (card t_2d8deb8c): the lock is belt-and-suspenders - every caller
-// of the seam (curl through the handler, the setup wizard, a future
-// CLI verb) hits the same wall.
+// ToggleAgent implements core.RegistryToggles - the soft toggle. The agent home
+// directory is never touched: registration is folder presence, and the fold only
+// removes the roster row and the wake. The DEFAULT agent refuses HERE at the seam as
+// well as the handler: the lock is belt-and-suspenders - every caller of the seam (curl
+// through the handler, the setup wizard, a future CLI verb) hits the same wall.
 func (r *omegaRegistries) ToggleAgent(name string, enabled bool) error {
 	if !enabled && name == agent.DefaultAgentName {
 		return &registryToggleError{kind: "agents", name: name,
@@ -159,8 +135,6 @@ func (r *omegaRegistries) ToggleAgent(name string, enabled bool) error {
 }
 
 // toggle is the one mutation+write+apply path for all three registries.
-// known is consulted only when DISABLING (the add direction) - enabling
-// an entry whose registry has moved on just cleans the fold.
 func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(name string) error, apply func(next []string)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -197,8 +171,6 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	case "agents":
 		r.fold.Agents = next
 	}
-	// The modules namespace is registry truth at write time - the live
-	// mount state, not a stale boot list.
 	r.fold.Modules = disabledNow(r.reg)
 	if err := writeDisabled(r.configPath, *r.fold); err != nil {
 		switch kind {
@@ -214,8 +186,6 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 		}
 		return fmt.Errorf("%s %s, but the config.yaml disabled write failed: %w", kind, name, err)
 	}
-	// The live effect is second: the fold is written, the serving
-	// surfaces follow (the channel also re-reads the response lists).
 	apply(next)
 	if r.logger != nil {
 		r.logger.Printf("omega: %s %q %s (config.yaml disabled fold)", kind, name, toggleWord(enabled))
@@ -223,9 +193,7 @@ func (r *omegaRegistries) toggle(kind, name string, enabled bool, known func(nam
 	return nil
 }
 
-// skillKnown answers an unknown skill name loudly: the skills tab only
-// lists loaded skills, so a persisted unknown name would be invisible
-// forever (and re-enabling one would look like a silent no-op).
+// skillKnown answers an unknown skill name loudly.
 func (r *omegaRegistries) skillKnown(name string) error {
 	if r.pctx == nil {
 		return nil // no skills module: nothing to validate
@@ -245,10 +213,7 @@ func (r *omegaRegistries) skillKnown(name string) error {
 		cause: fmt.Errorf("no such skill in the loaded inventory")}
 }
 
-// toolKnown answers an unknown tool name loudly: the tools tab lists
-// the agent's registry, so the same invisibility law applies. The
-// check is against the FULL registry (the agent's built-ins plus every
-// ToolProvider), not the current filtered union.
+// toolKnown answers an unknown tool name loudly.
 func (r *omegaRegistries) toolKnown(name string) error {
 	if r.pctx == nil {
 		return nil
@@ -265,9 +230,7 @@ func (r *omegaRegistries) toolKnown(name string) error {
 		cause: fmt.Errorf("no tool with that name in the registry")}
 }
 
-// agentKnown answers unknown + non-continuous agents loudly - the soft
-// toggle's semantics (roster + wake exclusion) only mean something for
-// agent homes; the main home is the daemon and has neither.
+// agentKnown answers unknown + non-continuous agents loudly.
 func (r *omegaRegistries) agentKnown(name string) error {
 	p, err := agent.LoadProfile(r.home, name)
 	if err != nil {

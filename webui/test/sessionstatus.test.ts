@@ -21,7 +21,7 @@ function row(
 const NO_STREAM = new Set<string>();
 const STREAM_S1 = new Set(["s1"]);
 
-// --- shape channel: pinned owns the shape, hover is the affordance ---
+// shape channel: pinned owns the shape, hover is the affordance
 
 test("unpinned idle row shows a dot", () => {
   const st = sessionRowStatus(row(), NO_STREAM, false, null);
@@ -44,7 +44,7 @@ test("hovering a pinned row keeps the star (no downgrade)", () => {
   assert.equal(st.shape, "star");
 });
 
-// --- color channel: streaming > unread > idle ---
+// color channel: streaming > unread > idle
 
 test("unread row turns blue while idle", () => {
   const st = sessionRowStatus(row({ unread: true }), NO_STREAM, false, null);
@@ -90,7 +90,7 @@ test("hover-star on a streaming row stays streaming orange", () => {
   assert.equal(st.color, "streaming");
 });
 
-// --- the viewed session never reads unread ---
+// the viewed session never reads unread
 
 test("the active session suppresses unread (the open is the read)", () => {
   const st = sessionRowStatus(
@@ -122,7 +122,7 @@ test("the active session still pulses while streaming", () => {
   assert.equal(st.color, "streaming");
 });
 
-// --- missing fields behave as neutral defaults ---
+// missing fields behave as neutral defaults
 
 test("a session without unread or pinned defaults to grey dot", () => {
   const st = sessionRowStatus(

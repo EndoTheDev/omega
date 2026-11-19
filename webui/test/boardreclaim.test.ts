@@ -1,12 +1,8 @@
-// omega webui: unit tests for the /board route's host-pane reclaim
-// (card t_96844dcb, journey 98's CI red) - the pure side of the route:
-// the host preference (a chat-hosting main pane first) and the foreground
-// plan (none / focus / mint), applied the way app.vue's resolveBoardRoute
-// applies it. The CI shape is recipe 96's persisted layout: the boot draft
-// chat tab closed, the browser singleton left in the main pane's
-// foreground - a /board reload must end with a chat tab ACTIVE in the
-// host pane, the only state where DockPane renders the chat outlet the
-// board folds into. Render-free; node's built-in test runner.
+// omega webui: unit tests for the /board route's host-pane reclaim. The CI shape is
+// recipe 96's persisted layout: the boot draft chat tab closed, the browser singleton
+// left in the main pane's foreground - a /board reload must end with a chat tab ACTIVE
+// in the host pane, the only state where DockPane renders the chat outlet the board
+// folds.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -44,7 +40,7 @@ function fixedTree(children: DockNode[]): DockNode {
   ]);
 }
 
-// --- the CI shape: browser-only main pane -----------------------------------
+// the CI shape: browser-only main pane --------------------------------
 
 describe("boardHost reclaim: the CI shape (t_96844dcb)", () => {
   it("a browser-only main pane plans a MINT and names no chat pane", () => {

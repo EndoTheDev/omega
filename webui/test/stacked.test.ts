@@ -1,9 +1,4 @@
-// omega webui: unit tests for the stacked chat appearance - the block
-// split (splitBlocks) and the appearance knob parse. The block boundary
-// matches the backend's segmented persistence: one user message starts
-// a turn. Live-block binding is the host's busy slot (chat.ts), not a
-// transcript-derived property, so it has no pure unit shape here. Run:
-// node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: unit tests for the stacked chat appearance.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -16,8 +11,7 @@ import {
 import type { TranscriptItem } from "../app/composables/omega.ts";
 import type { TranscriptWireItem } from "../app/composables/omega.ts";
 
-// item builders keep the tests shape-honest: they are the same items the
-// live stream and the restore path produce
+// item builders keep the tests shape-honest.
 const user = (content: string): TranscriptItem => ({
   kind: "message",
   role: "user",
@@ -69,7 +63,6 @@ describe("splitBlocks", () => {
   });
 
   it("leading non-user items form their own block - nothing dropped", () => {
-    // an orphaned error bubble from a failed session create
     const items = [assistant("error: session create failed"), user("retry")];
     const blocks = splitBlocks(items);
     assert.equal(blocks.length, 2);
@@ -92,8 +85,6 @@ describe("splitBlocks", () => {
   });
 
   it("restored history and live converge on the same blocks", () => {
-    // the wire payload of a two-exchange session, mapped the same way
-    // restore maps it
     const wire: TranscriptWireItem[] = [
       { kind: "user", content: "one" },
       { kind: "message", content: "first answer" },

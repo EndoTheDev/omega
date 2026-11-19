@@ -1,24 +1,24 @@
-// omega webui: the mobile DRAWER resolution law (card t_07ad4fda, widened by
-// card t_572015db).
+// omega webui: the mobile DRAWER resolution law
+// ).
 //
 // Below 768px the three edge shells collapse into overlay drawers, and
 // each drawer renders its active tab through a v-if/v-else-if chain that
-// ends in a generic `<InspectorPanel :module="activeId">` catch-all. That
-// catch-all resolves the PANEL manifest (module-panels.generated.ts) -
+// ends in a generic `<InspectorPanel:module="activeId">` catch-all. That
+// catch-all resolves the PANEL manifest (module-panels.generated.ts)
 // fine for a module that ships an inspector panel body, a trap for every
 // tab whose view lives elsewhere:
 //
-//   - a TAB capsule (TAB_MODULES: terminal / browser / notifications /
+// a TAB capsule (TAB_MODULES: terminal / browser / notifications /
 //     observability) rides module-tabs.generated.ts, not the panel list;
-//   - a SHELL-owned view (files, settings, extensions, insights, agents)
+// a SHELL-owned view (files, settings, extensions, insights, agents)
 //     is imported by app.vue and needs its own branch.
 //
 // A tab with no branch renders "module not loaded" for a tab that IS
-// loaded (card t_e703180e fixed the Logs tab this way; card t_07ad4fda
+// loaded
 // found the same shape on `terminal` - the bottom drawer's first default
 // tab - and on `agents` in the right drawer).
 //
-// t_572015db settled the cross-host half. A tab is FREE CONTENT in the
+// settled the cross-host half. A tab is FREE CONTENT in the
 // dock: any unlocked tab can be dragged into any pane, so a drawer's tab
 // list (which reads the LIVE edge pane) can hold a tab no branch of that
 // drawer covers - agents dragged into the bottom pane, terminal into the
@@ -61,24 +61,17 @@ import type { DockPane } from "../app/composables/dock.ts";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const app = readFileSync(join(root, "webui", "app", "app.vue"), "utf8");
 
-/** the mobile drawers, keyed by their side: the shell whose edge pane it
-    reads, the active-id ref the branch chain tests against, and the registry
-    floor app.vue feeds the derivation (a source pin - the floor is what keeps
-    an edge-home tab reachable when its live pane instance is elsewhere). */
+/** the mobile drawers, keyed by their side. */
 const DRAWERS = {
   left: {
     shell: "sidebar",
     activeRef: "sidebarDrawerActiveId",
-    // canvas C1: the left floor is the PRIMARY class's members (sessions,
-    // agents, cron), gate-filtered like the right one
     floorArg: `drawerTabsFor("sidebar", sidebarFloor.value)`,
     floor: PRIMARY_TAB_COMPONENTS,
   },
   right: {
     shell: "inspector",
     activeRef: "inspectorDrawerActiveId",
-    // card t_103e30a6: the floor is the gate-filtered one now (a disabled
-    // module owns no drawer chip either)
     floorArg: `drawerTabsFor("inspector", inspectorFloor.value)`,
     floor: INSPECTOR_TAB_COMPONENTS,
   },
@@ -100,9 +93,7 @@ const HOST_OF_SIDE: Record<DrawerSide, string> = {
   bottom: "bottom",
 };
 
-/** the app.vue slice for one MobileDrawer: from its opening tag to its
-    closing tag. The drawers are siblings, so the first `</MobileDrawer>`
-    after the opening tag ends the block. */
+/** the app.vue slice for one MobileDrawer: from its opening tag to its closing tag. */
 function drawerBlock(side: DrawerSide): string {
   const chunks = app.split("<MobileDrawer").slice(1);
   const block = chunks
@@ -112,17 +103,14 @@ function drawerBlock(side: DrawerSide): string {
   return block;
 }
 
-/** the ids a module PANEL manifest can resolve - a module with a ui/
-    directory whose .vue files are panel bodies. TAB capsules ship a .vue
-    too but are not panels (their dockable is one tab view). */
+/** the ids a module PANEL manifest can resolve. */
 const PANEL_MODULES = new Set(
   scanModuleUIs(join(root, "harness"))
     .map((m) => m.module)
     .filter((m) => !(TAB_MODULES as readonly string[]).includes(m)),
 );
 
-/** the drawer's clamp, exactly as app.vue composes it: a declared branch id,
-    or a module panel the generic catch-all honestly resolves. */
+/** the drawer's clamp, exactly as app.vue composes it. */
 function canRender(side: DrawerSide, id: DockComponentName): boolean {
   return (
     (DRAWER_RENDERABLE[DRAWERS[side].shell] as readonly string[]).includes(id) ||
@@ -130,8 +118,7 @@ function canRender(side: DrawerSide, id: DockComponentName): boolean {
   );
 }
 
-/** every host that may keep an instance of `id` - the two registry fields the
-    dock machinery reads (hostsOf's `homes`, and the fresh-seat `defaultHome`) */
+/** every host that may keep an instance of `id`. */
 function homesOf(id: DockComponentName): string[] {
   const entry = DOCKABLES.find((d) => d.id === id);
   if (!entry) throw new Error(`${id} is a registry entry`);
@@ -215,8 +202,6 @@ test("every edge-home dockable is renderable in its home drawer", () => {
 });
 
 test("every edge-home dockable is reachable from its home drawer's floor", () => {
-  // the drawer unions the live pane with the floor; a home tab absent from
-  // the floor is stranded on mobile once the live pane holds something else
   for (const side of SIDES) {
     const host = HOST_OF_SIDE[side];
     for (const d of DOCKABLES) {
@@ -242,8 +227,7 @@ test("every openable dockable is triaged: drawer-rendered, panel-resolved, or de
         `surfaces it`,
     );
   }
-  // and the exemption list stays honest: an id declared unbranched must not
-  // also be claimed renderable (or panel-resolved) somewhere
+  // and the exemption list stays honest: an id declared unbranched must not also be.
   for (const id of DRAWER_UNBRANCHED) {
     assert.ok(!rendered.has(id), `'${id}' is declared unbranched AND renderable`);
     assert.ok(!PANEL_MODULES.has(id), `'${id}' is declared unbranched AND panel-resolved`);
@@ -267,10 +251,7 @@ test("each drawer derives its tabs through the clamp, never the raw edge read", 
 });
 
 test("cross-host drag residual: a tab outside a drawer's branch set never surfaces as a chip", () => {
-  // REPRO: agents' home is the right pane; dragged into the bottom pane and
-  // the viewport narrowed, the bottom drawer showed an Agents chip whose
-  // pane rendered "module not loaded". Same class: terminal into the right
-  // pane, any shell view anywhere its branch does not exist.
+  // REPRO: agents' home is the right pane.
   const bottom = drawerTabs(
     paneOf(["agents", "files"], "bottom"),
     defaultHostTabs("bottom"),
@@ -298,9 +279,6 @@ test("cross-host drag residual: a tab outside a drawer's branch set never surfac
     "the agents view stays reachable from a sidebar drawer it visits",
   );
 
-  // reachability is the other half of the law: the tab a drawer clamped is
-  // still offered by the drawer of the host that owns it. canvas C1: agents'
-  // HOME is the primary sidebar, so the LEFT floor is its reachability.
   const bottomHome = drawerTabs(null, defaultHostTabs("bottom"), title, clamped("bottom"));
   assert.ok(bottomHome.some((t) => t.id === "terminal"), "terminal keeps its home drawer");
   const leftHome = drawerTabs(null, PRIMARY_TAB_COMPONENTS, title, clamped("left"));
@@ -339,7 +317,7 @@ test("the bottom drawer seats the terminal capsule from the tabs manifest (card 
     block.includes(':focused-session="focusedSessionId"'),
     "the drawer copy keeps the focused-session claim the desktop outlet passes",
   );
-  // ...and it seats BEFORE the catch-all, or the catch-all wins the chain
+  // .and it seats BEFORE the catch-all, or the catch-all wins the chain
   assert.ok(
     block.indexOf(':is="terminalTabView"') < block.lastIndexOf("<InspectorPanel"),
     "the terminal branch precedes the InspectorPanel catch-all",
@@ -348,8 +326,7 @@ test("the bottom drawer seats the terminal capsule from the tabs manifest (card 
 
 test("the right drawer seats the agents view by its own branch (card t_07ad4fda)", () => {
   const block = drawerBlock("right");
-  // agents is a SHELL-owned view: harness/continuous ships the component,
-  // the shell imports it - it appears in no generated manifest
+  // agents is a SHELL-owned view.
   assert.ok(
     block.includes("<AgentsPanel") &&
       block.includes(`inspectorDrawerActiveId === 'agents'`),

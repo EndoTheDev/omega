@@ -1,8 +1,6 @@
 package kanban
 
-// Plugin-level multi-board tests: Mount resolves the pointer, /board
-// switches the session's active board, the task tools follow it, and
-// a board arg in the tool call overrides everything (t_d7a7beaa).
+// Plugin-level multi-board tests.
 
 import (
 	"context"
@@ -14,10 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must
-// point there) - the same wiring the hosts do. Mount dispatches
-// through agent.MountAllAPI (the ExtensionAPI path is kanban's only
-// mount since the v0.12 phase-C1 migration).
+// mountAt mounts a fresh plugin on an existing home (OMEGA_HOME must point there).
 func mountAt(t *testing.T, home string) *Plugin {
 	t.Helper()
 	t.Setenv("OMEGA_HOME", home)
@@ -44,11 +39,7 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 	return p, ctx, home
 }
 
-// TestMountWithAPIShape pins the migrated mount's registrations: the
-// REST routes land on ctx.ModuleRoutes, the seven dotted kanban.*
-// tools register, the commands take their table order with a chain
-// that falls through to the miss error, and the live panel provider
-// lands with module-qualified, namespaced action ids.
+// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	_, ctx, _ := mountPlugin(t)
 	patterns := map[string]bool{}
@@ -78,7 +69,6 @@ func TestMountWithAPIShape(t *testing.T) {
 			t.Fatalf("tool %q registered %d times, want exactly once (registry %v)", want, names[want], names)
 		}
 	}
-	// the command table and the chain
 	var cmds []string
 	for _, c := range ctx.Commands {
 		cmds = append(cmds, c.Name)
@@ -97,8 +87,6 @@ func TestMountWithAPIShape(t *testing.T) {
 		!strings.Contains(fmt.Sprint(err), "no handler for /notes") {
 		t.Fatalf("foreign command must fall through to the miss error, got %v", err)
 	}
-	// the panels: one live provider, two module-qualified panels with
-	// namespaced action ids
 	if len(ctx.PanelProviders) != 1 {
 		t.Fatalf("panel providers = %d", len(ctx.PanelProviders))
 	}
@@ -131,9 +119,7 @@ func TestMountSeesCurrentBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the flag moves; the FIRST mount's "" resolution reads the registry
-	// live (the row is the one truth), so both mounts converge on alpha.
-	// t.Setenv restores between; set it again for the remount.
+	// the flag moves; the FIRST mount's "" resolution reads the registry live.
 	t.Setenv("OMEGA_HOME", home)
 	p2 := NewPlugin()
 	ctx := &core.Context{Configs: map[string]any{"kanban": Config{DBPath: "kanban.db"}}}
@@ -148,11 +134,9 @@ func TestMountSeesCurrentBoard(t *testing.T) {
 	if err != nil || !strings.HasPrefix(out, "created t_") {
 		t.Fatalf("create on alpha: %q %v", out, err)
 	}
-	// the first mount's store resolves "" live too: it sees alpha's card
 	if tests, err := p.store.ListTasks(context.Background(), "", ""); err != nil || len(tests) != 1 {
 		t.Fatalf("first mount default tasks = %d %v", len(tests), err)
 	}
-	// main reachable by name, still empty
 	if tests, err := p.store.ListTasks(context.Background(), "alpha", ""); err != nil || len(tests) != 1 {
 		t.Fatalf("alpha named = %d %v", len(tests), err)
 	}
@@ -164,13 +148,11 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// /boards shows main as pointer target
 	res, err := p.handleCommand("/boards", "")
 	if err != nil || !strings.Contains(res.Text, "main") {
 		t.Fatalf("/boards: %q %v", res.Text, err)
 	}
 
-	// /board alpha switches; the tools follow
 	if res, err := p.handleCommand("/board", "alpha"); err != nil || res.Text != "board: alpha" {
 		t.Fatalf("/board alpha: %q %v", res.Text, err)
 	}
@@ -186,7 +168,6 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 	if !strings.Contains(out, "created t_") {
 		t.Fatalf("create: %q", out)
 	}
-	// the card landed on alpha, not the default board
 	tasks, err := p.store.ListTasks(context.Background(), "alpha", "")
 	if err != nil || len(tasks) != 1 {
 		t.Fatalf("alpha tasks = %d %v", len(tasks), err)
@@ -195,7 +176,6 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 		t.Fatalf("default leak: %d cards %v", len(tasks), err)
 	}
 
-	// explicit board arg overrides the session board
 	if _, _, err := p.tools.runTaskOp(context.Background(), p.tools.board, map[string]any{
 		"action": "create", "title": "explicit", "board": "main",
 	}); err != nil {
@@ -205,7 +185,6 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 		t.Fatalf("main override leak: %d %v", len(tasks), err)
 	}
 
-	// /board resets to the default
 	if _, err := p.handleCommand("/board", DefaultBoardName); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +192,6 @@ func TestBoardCommandSwitchesSessionBoard(t *testing.T) {
 		t.Fatalf("reset board = %q", got)
 	}
 
-	// unknown and illegal names refuse
 	if _, err := p.handleCommand("/board", "gamma"); err == nil {
 		t.Fatal("unknown board accepted")
 	}
@@ -230,8 +208,6 @@ func TestCommandChainDelegates(t *testing.T) {
 	ctx.CommandHandler = func(c context.Context, name, args string) (core.CommandResult, error) {
 		return core.CommandResult{}, fmt.Errorf("unreachable: %s", name)
 	}
-	// rewrite the chain the way a later extension would: kanban's own
-	// /board passes through p.handleCommand, anything else falls back
 	kanbanOnly := func(c context.Context, name, args string) (core.CommandResult, error) {
 		if name == "/board" || name == "/boards" {
 			return p.handleCommand(name, args)

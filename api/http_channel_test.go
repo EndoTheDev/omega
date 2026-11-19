@@ -43,7 +43,6 @@ func TestPluginMount(t *testing.T) {
 }
 
 func TestPluginMountDefaultConfig(t *testing.T) {
-	// No config on the Context — plugin falls back to defaults.
 	p := NewPlugin()
 	ctx := &core.Context{}
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
@@ -63,7 +62,6 @@ func TestPluginMountDefaultConfig(t *testing.T) {
 }
 
 func TestPluginMountMultiple(t *testing.T) {
-	// Channels are additive: two mounts produce two channels.
 	ctx := &core.Context{
 		Configs: map[string]any{
 			"http_channel": Default(),
@@ -82,8 +80,7 @@ func TestPluginMountMultiple(t *testing.T) {
 	}
 }
 
-// explicit bind list creates one channel per address; empty list falls
-// back to loopback only (TestPluginMountDefaultConfig covers that).
+// explicit bind list creates one channel per address.
 func TestPluginMountBindList(t *testing.T) {
 	ctx := &core.Context{Configs: map[string]any{
 		"http_channel": Config{Port: 9999, Bind: []string{"127.0.0.1", "100.101.126.30"}},
@@ -120,9 +117,7 @@ func TestStartNoProvider(t *testing.T) {
 	}
 }
 
-// runtimeTitleModel is the wire boundary for the title knob (card
-// t_b403ad88): the persisted word stays in config.yaml, the server only
-// ever sees a model name or the empty "no knob" value.
+// runtimeTitleModel is the wire boundary for the title knob.
 func TestRuntimeTitleModelKnob(t *testing.T) {
 	cases := []struct{ configured, want string }{
 		{"", ""},
@@ -138,13 +133,10 @@ func TestRuntimeTitleModelKnob(t *testing.T) {
 	}
 }
 
-// TestTitleModelDefaultFollowsTheRunModel walks the REAL wire path
-// (plugin Config -> HTTPChannel.wire -> SetChannelKnobs) with
-// title_model: default and a chat whose title call follows it: the
-// detached title call must stream through the model the chat ran, never
-// through a model literally NAMED "default". Before the boundary
-// normalisation the word rode the server verbatim, so this red as a title
-// call to "default".
+// TestTitleModelDefaultFollowsTheRunModel walks the REAL wire path (plugin Config ->
+// HTTPChannel.wire -> SetChannelKnobs) with title_model: default and a chat whose title
+// call follows it: the detached title call must stream through the model the chat ran,
+// never through a model literally NAMED "default".
 func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 	prov := newMockProvider("run-model", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -158,8 +150,6 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 		t.Fatalf("mount: %v", err)
 	}
 	ctx.ApplyOffer("provider", "test", prov)
-	// The loop seam's floor (no loop mounted) answers nothing; the api
-	// test double drives the streamed turn deterministically.
 	ctx.ApplyOffer("loop", "test", testLoop{})
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -186,13 +176,11 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 		resp.Body.Close()
 		cancel()
 	})
-	// The title call is a detached goroutine fired once the exchange
-	// lands: wait for it, then judge every model that served. The wait
-	// condition must be the observable the assertions read - the store's
-	// label - not the provider's request count: the second request is
-	// served before the title goroutine has parsed the response and
-	// written the label, and a loaded box widens that gap (the nightly
-	// flake this test shipped with).
+	// The title call is a detached goroutine fired once the exchange lands. The wait
+	// condition must be the observable the assertions read - the store's label - not the
+	// provider's request count: the second request is served before the title goroutine
+	// has parsed the response and written the label, and a loaded box widens that gap (the
+	// nightly flake this test shipped with).
 	waitFor(t, "the chat and its detached title call", func() bool {
 		if len(prov.servedModelNames()) < 2 {
 			return false
@@ -209,19 +197,14 @@ func TestTitleModelDefaultFollowsTheRunModel(t *testing.T) {
 			t.Fatalf("call %d served by %q, want the run's model (served: %v)", i+1, model, models)
 		}
 	}
-	// The title really landed: the detached call ran, not just the chat.
 	if sess, err := st.GetSession(context.Background(), "title-default"); err != nil || sess.Label == "" {
 		t.Fatalf("no title written (session=%+v, err=%v) - the title call never ran", sess, err)
 	}
 }
 
-// TestMultiBindWebsocketSharesOneHub pins the multi-bind push seam
-// (t_229edd92) on the real start path: two loopback binds, one
-// websocket client per bind, a chat run started on the FIRST bind - and
-// the chat frames must land on BOTH clients. Per-bind hubs (one per
-// wire, NewServer's floor) delivered them only to the publishing bind's
-// own subscriber set, so the other bind's browser sat blind to every
-// frame the process emitted.
+// TestMultiBindWebsocketSharesOneHub pins the multi-bind push seam on the real start
+// path: two loopback binds, one websocket client per bind, a chat run started on the
+// FIRST bind - and the chat frames must land on BOTH clients.
 func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
 	prov := newMultiProvider("step")
 	st, err := store.Open(":memory:")
@@ -230,7 +213,6 @@ func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
 	}
 	t.Cleanup(func() { st.Close() })
 
-	// A private port for this test's two binds.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("reserve port: %v", err)
@@ -270,14 +252,10 @@ func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
 		t.Fatalf("mounted channel %T is not an HTTPChannel", p.mounted[1])
 	}
 
-	// One websocket client per bind, each dialling the bind's real
-	// listener.
 	connA := dialSocketURL(t, fmt.Sprintf("ws://%s:%d/ws", binds[0], port))
 	connB := dialSocketURL(t, fmt.Sprintf("ws://%s:%d/ws", binds[1], port))
 
-	// The seam under test: both binds serve ONE hub, and both clients
-	// are attached to it before the run starts (a per-bind hub answers
-	// 1 subscriber here, this bind's own).
+	// The seam under test: both binds serve ONE hub, and both clients are attached to it.
 	if hubA, hubB := chA.srv.Sockets(), chB.srv.Sockets(); hubA != hubB {
 		t.Fatalf("bind %s serves hub %p, bind %s serves hub %p: one hub cannot be per-bind and shared", binds[0], hubA, binds[1], hubB)
 	}
@@ -285,8 +263,6 @@ func TestMultiBindWebsocketSharesOneHub(t *testing.T) {
 		return chA.srv.Sockets().SubscriberCount() == 2
 	})
 
-	// The trigger: a chat run started on bind A over bind A's listener.
-	// Every chat frame it emits is published through bind A's server.
 	sbody, _ := json.Marshal(map[string]any{"id": "mb-ws"})
 	sresp, err := http.Post(fmt.Sprintf("http://%s:%d/sessions", binds[0], port), "application/json", bytes.NewReader(sbody))
 	if err != nil {
@@ -336,10 +312,8 @@ func dialSocketURL(t *testing.T, url string) *websocket.Conn {
 	return conn
 }
 
-// readFrameTopic reads frames until one carries the wanted topic,
-// skipping the rest - both binds push their own health heartbeat onto
-// the shared hub, so a first frame is not necessarily the one under
-// test. The deadline bounds a HANG, never correctness.
+// readFrameTopic reads frames until one carries the wanted topic, skipping the rest.
+// The deadline bounds a HANG, never correctness.
 func readFrameTopic(t *testing.T, conn *websocket.Conn, topic string) agentapi.SocketMessage {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)

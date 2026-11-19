@@ -1,17 +1,13 @@
 <template>
-  <!-- custom dropdown: a native <select> popup is OS chrome that can't be
-       themed - this renders the listbox ourselves on the design tokens.
-       Card t_1914a8c9: the flat list became the Hermes-desktop picker -
-       one COLLAPSIBLE section per provider (the grouped /models payload,
-       "default" first, named instances sorted after), searchable across
-       sections, a listing failure shown inline in its section (never a
-       silent drop of the provider), and footer actions: refresh models
-       (re-fetch every provider's catalog), add custom model..., edit
-       models... (custom models ride localStorage - picker-level extras
-       merged into their section, no config machinery). A pick emits the
-       slot grammar: "instance:model" for a named section (the resolved
-       pin sticks server-side), "default:model" for the base provider
-       (the explicit left-the-instance pick cancels the sticky pin). -->
+  <!--
+    custom dropdown: a native <select> popup is OS chrome that can't be themed - this
+    renders the listbox ourselves on the design tokens.: the flat list became the
+    Hermes-desktop picker - one COLLAPSIBLE section per provider (the grouped /models
+    payload, "default" first, named instances sorted after), searchable across
+    sections, a listing failure shown inline in its section (never a silent drop of the
+    provider), and footer actions: refresh models (re-fetch every provider's catalog),
+    add custom model., edit models.
+  -->
   <div
     class="model-select"
     :class="{ down: flipDown, measured: measured }"
@@ -27,10 +23,11 @@
       :aria-controls="open ? listId : undefined"
       @click="open ? close() : openNow()"
       @keydown.down.prevent="openNow()">
-      <!-- the label keeps its NAME when the composer's squeeze ladder
-           sheds it (card t_27ff2bbd): the rung removes the label from the
-           row (out of flow, never truncated mid-word), and the aria-label
-           above is what still announces the current model then -->
+      <!--
+        the label keeps its NAME when the composer's squeeze ladder sheds it: the rung
+        removes the label from the row (out of flow, never truncated mid-word), and the
+        aria-label above is what still announces the current model then
+      -->
       <span class="chip-name">{{ chipText }}</span>
       <span
         class="chev"
@@ -54,12 +51,11 @@
         placeholder="filter models"
         spellcheck="false"
         @keydown="onSearchKey" />
-      <!-- the aux INHERIT row (card t_dac84a33, Endo's ruling 1): PINNED
-           above the provider sections - never folded into one, because the
-           word "default" here means "follow the chat's model", NOT the base
-           provider's section. It sits OUTSIDE .model-body so it stays put
-           while the sections scroll. Only a settings knob marked
-           default_option passes inheritRow; the composer never does. -->
+      <!--
+        the aux INHERIT row: PINNED above the provider sections - never folded into.
+        Only a settings knob marked default_option passes inheritRow; the composer
+        never does.
+      -->
       <button
         v-if="inheritRow"
         type="button"
@@ -227,37 +223,26 @@
   import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
   import type { ModelProviderSection } from "../../composables/omega";
   import { AUX_DEFAULT_VALUE } from "../../composables/modelCatalog";
-  // the app's ONE keyboard arithmetic (the command palette's wrap) - the
-  // model rows ride the same grammar instead of inventing a second one
-  // (card t_a990f422)
+  // the app's ONE keyboard arithmetic (the command palette's wrap).
   import { clampIndex } from "../../composables/commandRegistry";
 
   const props = defineProps<{
     model: string;
-    /** the flat floor (the settings pickers' fallback list) - the chat
-         picker renders it as the default section when no grouped
-         catalog arrived yet */
     models: string[];
-    /** the grouped catalog (card t_1914a8c9): one section per provider;
-         empty falls back to the flat models prop */
     groups?: ModelProviderSection[];
-    /** the chip's tooltip (card t_dac84a33: a settings row must say WHICH
-         knob it sets; the composer leaves it and renders "Model") */
     label?: string;
-    /** the aux INHERIT row (card t_dac84a33): pins a TOP row above the
-         provider sections that emits the literal "default" - "follow the
-         model the current chat runs". Off by default, so the composer
-         (which has no default to follow) renders exactly as before. */
+    /**
+     * the aux INHERIT row: pins a TOP row above the provider sections that emits.
+     * Off by default, so the composer (which has no default to follow) renders exactly
+     * as before.
+     */
     inheritRow?: boolean;
-    /** qualify marks a model row unusable and says WHY ("not a vision
-         model"): a rejected row renders DISABLED with the reason as its
-         title and never emits a pick - it is shown, never hidden, so the
-         catalog reads complete. Off by default: every composer row is
-         pickable. */
+    /**
+     * qualify marks a model row unusable and says WHY ("not a vision model"): a
+     * rejected row renders DISABLED with the reason as its title and never emits a pick
+     * - it is shown, never hidden, so the catalog reads complete.
+     */
     qualify?: (section: string, model: string) => string | null;
-    /** where the pop opens (card t_dac84a33): the composer's chip sits on
-         the floor, so "up" is the default and the geometry is unchanged;
-         a settings row sits mid-pane and passes "down" */
     drop?: "up" | "down";
   }>();
 
@@ -266,16 +251,14 @@
     (e: "refresh-models"): void;
   }>();
 
-  // The inherit row's exact label (Endo's ruling 1, card t_dac84a33). It
-  // is NOT a provider section and must never read as one: the same word
-  // spells the composer grammar's base-provider prefix ("default:model").
+  // The inherit row's exact label. It is NOT a provider section and must never read as
+  // one: the same word spells the composer grammar's base-provider prefix
+  // ("default:model").
   const INHERIT_LABEL = "default (inherit from the main model)";
   const INHERIT_CHIP = "default (inherit)";
 
   const chipTitle = computed(() => props.label ?? "Model");
-  // the chip face: the stored value, except that an INHERITED knob reads
-  // as the word's meaning rather than dropping a bare "default" beside a
-  // slot knob's "default:llama3" (two different defaults would look alike)
+  // the chip face: the stored value, except that an INHERITED knob reads.
   const chipText = computed(() =>
     props.inheritRow && props.model === AUX_DEFAULT_VALUE
       ? INHERIT_CHIP
@@ -288,8 +271,7 @@
   const chipEl = ref<HTMLButtonElement | null>(null);
   const searchEl = ref<HTMLInputElement | null>(null);
 
-  // ---- the custom models ("add custom model..." store) - localStorage:
-  // picker-level extras merged into their section, no config machinery.
+  // - the custom models ("add custom model." store) - localStorage.
   const CUSTOMS_KEY = "omega.model-picker.customs";
   const customs = ref<Record<string, string[]>>(loadCustoms());
 
@@ -319,7 +301,6 @@
     try {
       localStorage.setItem(CUSTOMS_KEY, JSON.stringify(customs.value));
     } catch {
-      // a full quota or a closed storage is no reason to break the picker
     }
   }
 
@@ -336,9 +317,6 @@
     }));
   });
 
-  // collapsed provider sections (in-memory: the pop reopens expanded -
-  // the Hermes picker behaves the same); searching forces every section
-  // open so the query reads across providers.
   const collapsed = ref(new Set<string>());
 
   const visibleGroups = computed(() => {
@@ -372,15 +350,10 @@
     collapsed.value = next;
   }
 
-  // ---- the pick: the slot grammar (card t_1914a8c9). A named section
-  // addresses its instance ("backup:llama3" - the server resolves the
-  // instance and sticks the pin); the default section names the base
-  // provider ("default:llama3" - the explicit left-the-instance pick
-  // cancels a sticky pin). The flat floor also rides "default:" so a
-  // pick from the default section never re-routes a pinned session.
+  // - the pick: the slot grammar. The flat floor also rides "default:" so a pick from
+  // the default section never re-routes a pinned session.
   function pick(g: ModelProviderSection, m: string) {
-    // a DISABLED-with-reason row (card t_dac84a33) never stores anything:
-    // the reason is information, not an override of the slot's rule
+    // a DISABLED-with-reason row never stores anything.
     if (reasonFor(g.name, m) !== null) return;
     emit(
       "update:model",
@@ -389,9 +362,7 @@
     close();
   }
 
-  // the inherit row emits THE LITERAL WORD - never a section prefix. It is
-  // the aux lane's one magic value ("follow the chat's model"), not the
-  // composer grammar's "default:" section address (card t_dac84a33).
+  // the inherit row emits THE LITERAL WORD - never a section prefix.
   function pickInherit() {
     emit("update:model", AUX_DEFAULT_VALUE);
     close();
@@ -403,40 +374,35 @@
     return props.qualify ? props.qualify(section, model) : null;
   }
 
-  // current-row highlight: the chip may carry the slot value OR the
-  // legacy bare name (pre-reshape sessions) - both count for default.
+  // current-row highlight: the chip may carry the slot value OR the legacy bare name.
   function isCurrent(g: ModelProviderSection, m: string): boolean {
     if (g.name === "default" && props.model === m) return true;
     return props.model === `${g.name}:${m}`;
   }
 
-  // --- the KEYBOARD LAW (card t_a990f422) --------------------------------
-  //
-  // The rows carried role="option" and nothing else - a keyboard user could
-  // not reach a single model, and the whole popup was mouse-only. They are
-  // now a real listbox: exactly ONE row is in the tab order (roving
-  // tabindex), arrows walk the rows through the app's palette arithmetic
-  // (clampIndex - the same wrap the command palette rides), Enter/Space
-  // picks the focused row, Escape closes and hands focus back to the chip,
-  // and the ACTIVE row is highlighted so the visible cursor follows focus.
-  // Disabled-with-reason rows stay IN the walk: the reason is information
-  // an AT user must be able to read, Enter on one is simply a no-op.
+  // the KEYBOARD LAW -------------------------------- The rows carried. They are now a
+  // real listbox: exactly ONE row is in the tab order (roving tabindex), arrows walk
+  // the rows through the app's palette arithmetic (clampIndex - the same wrap the
+  // command palette rides), Enter/Space picks the focused row, Escape closes and hands
+  // focus back to the chip, and the ACTIVE row is highlighted so the visible cursor
+  // follows focus. Disabled-with-reason rows stay IN the walk: the reason is
+  // information an AT user must be able to read, Enter on one is simply a no-op.
   let pickerSeq = 0;
   const pickerId = `model-picker-${++pickerSeq}`;
   const listId = `${pickerId}-list`;
 
-  /** every row the popup paints right now, in VISUAL order - the flat index
-      is the keyboard's address space and it can never disagree with what
-      the user sees (a query forces every section open). */
+  /**
+   * every row the popup paints right now, in VISUAL order - the flat index is the
+   * keyboard's address space and it can never disagree with what the user sees (a query
+   * forces every section open).
+   */
   const flatRows = computed(() =>
     visibleGroups.value.flatMap((g) =>
       isExpanded(g) ? g.models.map((m) => ({ section: g.name, model: m })) : [],
     ),
   );
 
-  /** the row the keyboard is ON. Null means "not seated yet": the popup
-      opens on the current value's row, and a query that hides it falls back
-      to the first row. */
+  /** the row the keyboard is ON. */
   const activeKey = ref<string | null>(null);
   // the identity of a row: a model name may itself carry a colon
   // ("clef:27b"), so the separator can never be a printable character
@@ -467,8 +433,6 @@
     );
   }
 
-  /** the option the search input's aria-activedescendant points at - the
-      input keeps DOM focus only until an arrow moves it into the list. */
   const activeDomId = computed(() => {
     const seat = flatRows.value[activeIndex.value];
     return seat ? optionId(seat.section, seat.model) : "";
@@ -487,8 +451,7 @@
     activeKey.value = rowKey(section, model);
   }
 
-  /** land the keyboard on row `i` and move DOM focus there - the highlight
-      and the focus ring are the same cursor. */
+  /** land the keyboard on row `i` and move DOM focus there. */
   function focusRow(i: number) {
     const rows = flatRows.value;
     if (i < 0 || i >= rows.length) return;
@@ -543,12 +506,10 @@
       case "Enter":
       case " ":
         e.preventDefault();
-        // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue's
-        // onKeyCapture jumps into the chat composer on any PRINTABLE key):
-        // activating an option is not typing, so the keystroke must not
-        // bubble out and steal the focus this pop is about to hand back to
-        // the chip. Enter is not printable - the pair rides one line so the
-        // focus-return law holds for BOTH pick keys.
+        // Space is ALSO the shell's TYPE-TO-CAPTURE key (app.vue's onKeyCapture jumps
+        // into the chat composer on any PRINTABLE key): activating an option is not
+        // typing, so the keystroke must not bubble out and steal the focus this pop is
+        // about to hand back to the chip.
         e.stopPropagation();
         pickRow(section, model);
         break;
@@ -564,8 +525,10 @@
     }
   }
 
-  /** a keyboard pick goes through the SAME guard as a click: a disabled
-      row is information, never an override of the slot's rule. */
+  /**
+   * a keyboard pick goes through the SAME guard as a click: a disabled row is
+   * information, never an override of the slot's rule.
+   */
   function pickRow(section: string, model: string) {
     if (reasonFor(section, model) !== null) return;
     const g = visibleGroups.value.find((x) => x.name === section);
@@ -619,13 +582,6 @@
     saveCustoms();
   }
 
-  // Where the pop opens (card t_dac84a33). The composer's chip sits on the
-  // floor, so the shared .model-pop anchors UP and nothing is measured. A
-  // settings row asks for "down" - but the settings body CLIPS its
-  // overflow, so a pop poking past a floor is simply invisible. At open the
-  // chip measures its nearest scrolling container: the pop takes the roomier
-  // side and the section body is capped to what is left, so the list scrolls
-  // inside the pop instead of disappearing behind the clip.
   const flipDown = ref(false);
   const measured = ref(false);
   const popRoom = ref<Record<string, string>>({});
@@ -649,8 +605,7 @@
     const below = floor - chip.bottom - 12;
     const above = chip.top - ceil - 12;
     flipDown.value = below >= above;
-    // search + footer + padding + the inherit row: the body keeps the rest,
-    // never more than the grouped design's own 260px cap
+    // search + footer + padding + the inherit row: the body keeps the rest, never.
     const room = (flipDown.value ? below : above) - 106;
     popRoom.value = {
       "--model-pop-body": `${Math.round(Math.max(120, Math.min(260, room)))}px`,
@@ -663,15 +618,12 @@
     adding.value = false;
     editing.value = false;
     query.value = "";
-    // seat the keyboard on the CURRENT value's row: opening lands the
-    // cursor where the knob already points, not on row one
+    // seat the keyboard on the CURRENT value's row.
     seatOnCurrent();
     placePop();
     nextTick(() => searchEl.value?.focus());
   }
 
-  /** the seat a fresh popup takes: the row the knob's value already names,
-      or the first row when the value is not in this catalog. */
   function seatOnCurrent() {
     const rows = flatRows.value;
     const seat = rows.find((r) =>
@@ -682,9 +634,6 @@
 
   function close(restoreFocus = true) {
     if (!open.value) return;
-    // the popup is about to unmount: if the keyboard was inside it, focus
-    // would fall to <body> and the user's place in the page would be lost.
-    // Hand it back to the chip that opened the list.
     const hadFocus = !!root.value?.contains(document.activeElement);
     open.value = false;
     query.value = "";
@@ -706,24 +655,24 @@
 </script>
 
 <style scoped>
-  /* the settings pickers open DOWN (their row sits mid-pane); the shared
-     .model-pop anchors upward for the composer's floor chip - same flip
-     BandSelect makes for its drop="down" seats */
+  /* the settings pickers open DOWN (their row sits mid-pane). */
   .model-select.down .model-pop {
     bottom: auto;
     top: calc(100% + 6px);
   }
-  /* a MEASURED seat (settings) caps the section body to the room its own
-     scrolling container leaves, so the list scrolls inside the pop instead
-     of being clipped by the pane. The composer never sets the var. */
+  /*
+   * a MEASURED seat (settings) caps the section body to the room its own scrolling.
+   * The composer never sets the var.
+   */
   .model-select.measured .model-body {
     max-height: var(--model-pop-body, 260px);
   }
-  /* the KEYBOARD CURSOR (card t_a990f422): the ACTIVE row is the one the
-     roving tabindex and DOM focus sit on. It reads as the hover row, so a
-     keyboard user sees the same affordance a mouse user gets; a disabled
-     row keeps the highlight too (its reason is information, and Enter on
-     it is a no-op, never a pick). */
+  /*
+   * the KEYBOARD CURSOR: the ACTIVE row is the one the roving tabindex and DOM focus.
+   * It reads as the hover row, so a keyboard user sees the same affordance a mouse user
+   * gets; a disabled row keeps the highlight too (its reason is information, and Enter
+   * on it is a no-op, never a pick).
+   */
   .model-list li.active {
     background: var(--z1-raised);
     color: var(--text);

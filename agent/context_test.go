@@ -22,8 +22,7 @@ func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOpt
 
 func (s *stubPromptBuilder) Guidelines() []string { return s.guidelines }
 
-// stubLogger satisfies LoggerProvider for testing. It records calls so
-// tests can assert the logger was wired through.
+// stubLogger satisfies LoggerProvider for testing.
 type stubLogger struct {
 	lines []string
 }
@@ -42,8 +41,7 @@ func (s *stubLogger) Warnf(format string, args ...any) {
 
 func (s *stubLogger) Close() error { return nil }
 
-// TestNewFromContextFull verifies that NewFromContext wires every field
-// from a fully-populated Context and AgentOptions into the resulting Agent.
+// TestNewFromContextFull verifies that NewFromContext wires every field.
 func TestNewFromContextFull(t *testing.T) {
 	prov := &stubProvider{name: "full-model"}
 	comp := stubCompactor{}
@@ -79,7 +77,6 @@ func TestNewFromContextFull(t *testing.T) {
 		t.Fatal("NewFromContext returned nil")
 	}
 
-	// Provider wired through.
 	if ag.ModelName() != "full-model" {
 		t.Fatalf("ModelName = %q, want %q", ag.ModelName(), "full-model")
 	}
@@ -93,14 +90,8 @@ func TestNewFromContextFull(t *testing.T) {
 		t.Fatalf("loop not wired: %v", end)
 	}
 
-	// PromptBuilder wired — the loop's LoopOptions carries it; the stub
-	// records a BuildPrompt call only if the loop invokes it. The test
-	// loop does not call BuildPrompt, so instead verify via the agent's
-	// Run path by checking that a non-cancelled run reaches the loop. We
-	// already confirmed the loop ran (no "no loop configured" error).
+	// PromptBuilder wired — the loop's LoopOptions carries it.
 
-	// ToolProviders wired — run with a provider that streams a tool call
-	// for "alpha" and confirm the extension tool is available.
 	prov2 := NewFakeProviderScripts("full-model",
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "alpha", Arguments: map[string]any{}}},
@@ -111,7 +102,6 @@ func TestNewFromContextFull(t *testing.T) {
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 		},
 	)
-	// Swap the provider for this agent without mutating the shared context: a fresh Context with the same offers under a second provider.
 	ctxSwap := &Context{}
 	ctxSwap.ApplyOffer("provider", "test2", prov2)
 	ctxSwap.ApplyOffer("loop", "test2", loop)
@@ -132,10 +122,9 @@ func TestNewFromContextFull(t *testing.T) {
 		t.Fatal("alpha tool from ToolProviders not executed")
 	}
 
-	// Logger wired — the loop's LoopOptions carries it; verify the agent
-	// does not panic when logger is set (the test loop ignores it, but
-	// the field must be non-nil to prove wiring). We confirm via a fresh
-	// run that completes without error.
+	// Logger wired — the loop's LoopOptions carries it; verify the agent does not panic
+	// when logger is set (the test loop ignores it, but the field must be non-nil to prove
+	// wiring).
 	_ = logger
 }
 
@@ -158,9 +147,7 @@ func TestNewFromContextMinimal(t *testing.T) {
 	}
 }
 
-// TestNewFromContextNilOptional verifies that NewFromContext with an
-// empty Context and zero-value AgentOptions creates an Agent without
-// panicking.
+// TestNewFromContextNilOptional verifies that NewFromContext with an empty Context.
 func TestNewFromContextNilOptional(t *testing.T) {
 	prov := &stubProvider{name: "nil-optional"}
 	ctx := &Context{}

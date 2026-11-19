@@ -5,7 +5,7 @@ package provider
 // via env. Base URL defaults to the standard keypool port.
 //
 //	KEYPOOL_CLIENT_KEY=<key> KEYPOOL_HOST=http://127.0.0.1:11435 \
-//	  go test ./modules/provider/ -run TestLive -v
+// go test./modules/provider/ -run TestLive -v
 
 import (
 	"os"
@@ -18,8 +18,7 @@ import (
 
 const keypoolModel = "glm-5.3"
 
-// keypoolDefaultHost is the standard keypool surface: the openai and
-// anthropic lanes live under /v1, the ollama-native lane at the root.
+// keypoolDefaultHost is the standard keypool surface.
 const keypoolDefaultHost = "http://127.0.0.1:11435/v1"
 
 func keypoolProvider(t *testing.T, typ string) (*Provider, string) {
@@ -31,10 +30,7 @@ func keypoolProvider(t *testing.T, typ string) (*Provider, string) {
 	return &Provider{typ: typ, baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}, host
 }
 
-// TestLiveKeypoolAnthropic drives the anthropic lane end to end: auth,
-// streaming with thinking chunks, a full tool loop (tool_use -> folded
-// tool_result -> final text), usage counters, and rotation across
-// repeated requests (each request is a separate HTTP connection).
+// TestLiveKeypoolAnthropic drives the anthropic lane end to end.
 func TestLiveKeypoolAnthropic(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
@@ -46,7 +42,6 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 		Parameters:  map[string]any{"type": "object", "properties": map[string]any{"city": map[string]any{"type": "string"}}, "required": []any{"city"}},
 	}}
 
-	// Turn 1: expect a get_weather tool call.
 	got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("Use the get_weather tool for Tokyo. Do not answer from your own knowledge.")}, tools))
 	text, thinking := "", ""
 	var callID string
@@ -111,8 +106,7 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 	t.Logf("lane=%s host=%s", "anthropic", host)
 }
 
-// TestLiveKeypoolOpenAI drives the openai lane end to end: auth,
-// streaming, reasoning chunks, tool-call round trip, usage counters.
+// TestLiveKeypoolOpenAI drives the openai lane end to end.
 func TestLiveKeypoolOpenAI(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
@@ -155,7 +149,6 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 	t.Logf("openai lane host=%s: %d tool call(s), thinking %d chars, usage in=%v out=%v cached=%v",
 		host, len(calls), len(thinking), deref(end.PromptEvalCount), deref(end.EvalCount), deref(end.CachedCount))
 
-	// Tool result round trip.
 	messages := []core.Message{
 		core.NewUser("Use the get_weather tool for Tokyo."),
 		core.Assistant{Content: "", ToolCalls: []core.ToolCall{{ID: calls[0].ToolCall.ID, Name: "get_weather", Arguments: calls[0].ToolCall.Arguments}}},
@@ -179,14 +172,11 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 	}
 }
 
-// TestLiveKeypoolOllama drives the ollama-native lane end to end:
-// tool call (arguments arrive as an object), then the tool result
-// folded back (role "tool") and the model answering from it.
+// TestLiveKeypoolOllama drives the ollama-native lane end to end.
 func TestLiveKeypoolOllama(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
 	}
-	// The ollama-native lane serves at the root, not under /v1.
 	host := strings.TrimSuffix(os.Getenv("KEYPOOL_HOST"), "/v1")
 	if host == "" {
 		host = strings.TrimSuffix(keypoolDefaultHost, "/v1")

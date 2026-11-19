@@ -79,7 +79,6 @@ func TestRunGroupStopAllReverseAndRestart(t *testing.T) {
 	if len(stops) != 2 || stops[0] != "b" || stops[1] != "a" {
 		t.Fatalf("stop order must reverse start order: got %v", stops)
 	}
-	// Stopped handles are startable again (the remount path).
 	if err := l.StartAll(context.Background(), StartDeps{}, ""); err != nil {
 		t.Fatal(err)
 	}

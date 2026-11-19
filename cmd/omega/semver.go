@@ -8,10 +8,10 @@ import (
 // compareVersions compares two version strings ("vMAJOR.MINOR.PATCH"
 // with optional "-PRERELEASE") per semver precedence:
 //
-//   - core fields compare numerically field by field
-//   - a prerelease sorts BELOW the same core without one
+// core fields compare numerically field by field
+// a prerelease sorts BELOW the same core without one
 //     (v0.9.1-nightly.20261021 < v0.9.1)
-//   - prerelease identifiers compare numerically when both are
+// prerelease identifiers compare numerically when both are
 //     numeric ("9" < "10"), alphanumerics lexically, and numeric
 //     identifiers sort below alphanumeric ones
 //
@@ -38,8 +38,7 @@ func compareVersions(a, b string) (int, bool) {
 	return comparePrereleaseIDs(preA, preB), true
 }
 
-// splitSemver breaks a version into its numeric core fields and its
-// (possibly empty) prerelease string. Accepts an optional leading "v".
+// splitSemver breaks a version into its numeric core fields and its (possibly empty).
 func splitSemver(v string) (core [3]int, prerelease string, ok bool) {
 	v = strings.TrimPrefix(strings.TrimPrefix(v, "v"), "V")
 	if i := strings.IndexByte(v, '-'); i >= 0 {
@@ -75,8 +74,7 @@ func compareCoreFields(a, b [3]int) int {
 	return 0
 }
 
-// comparePrereleaseIDs applies semver dot-separated identifier
-// precedence to two non-empty prerelease strings.
+// comparePrereleaseIDs applies semver dot-separated identifier precedence to two.
 func comparePrereleaseIDs(a, b string) int {
 	idsA := strings.Split(a, ".")
 	idsB := strings.Split(b, ".")
@@ -116,10 +114,10 @@ func comparePrereleaseID(a, b string) int {
 	}
 }
 
-// isNightlyTag reports whether a release tag is a nightly prerelease
-// tag. The nightly channel is the hyphen form vMAJOR.MINOR.PATCH-nightly.YYYYMMDD
-// (see .github/workflows/nightly.yml), so anything carrying the
-// "-nightly." marker counts; stable and other prereleases (rc, beta) do not.
+// isNightlyTag reports whether a release tag is a nightly prerelease tag. The nightly
+// channel is the hyphen form vMAJOR.MINOR.PATCH-nightly.YYYYMMDD
+// (see.github/workflows/nightly.yml), so anything carrying the "-nightly." marker
+// counts; stable and other prereleases (rc, beta) do not.
 func isNightlyTag(tag string) bool {
 	return strings.Contains(tag, "-nightly.")
 }

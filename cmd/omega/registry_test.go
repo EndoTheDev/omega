@@ -1,9 +1,8 @@
 package main
 
-// registry_test.go: the seam-level lock (card t_2d8deb8c). The
-// DEFAULT agent's disable refuses at the handler AND the seam - a
-// seam caller (the setup wizard, a future CLI verb) hits the same
-// wall, and the fold stays untouched.
+// registry_test.go: the seam-level lock. The DEFAULT agent's disable refuses at the
+// handler AND the seam - a seam caller (the setup wizard, a future CLI verb) hits the
+// same wall, and the fold stays untouched.
 
 import (
 	"strings"
@@ -24,12 +23,10 @@ func newLockTestRegistries(t *testing.T) *omegaRegistries {
 	return r
 }
 
-// newTestMutex avoids importing sync in two places - same shape the
-// other seams' tests use.
+// newTestMutex avoids importing sync in two places.
 func newTestMutex() *sync.Mutex { return &sync.Mutex{} }
 
-// TestToggleAgentRefusesDefaultAgent pins the belt-and-suspenders law:
-// the disable direction refuses before any fold mutation or write.
+// TestToggleAgentRefusesDefaultAgent pins the belt-and-suspenders law.
 func TestToggleAgentRefusesDefaultAgent(t *testing.T) {
 	r := newLockTestRegistries(t)
 	err := r.ToggleAgent("default", false)
@@ -42,12 +39,9 @@ func TestToggleAgentRefusesDefaultAgent(t *testing.T) {
 	if len(r.fold.Agents) != 0 {
 		t.Fatalf("fold changed: %v - the refusal bypassed into the fold", r.fold.Agents)
 	}
-	// the enable direction stays a no-op passthrough (stale-entry
-	// cleanup), and non-default names keep toggling.
 	if err := r.ToggleAgent("default", true); err != nil {
 		t.Fatalf("enable default refused: %v", err)
 	}
-	// unknown agent home: the loud 404-error lane still works.
 	if err := r.ToggleAgent(agent.DefaultAgentName+"-ghost", false); err == nil {
 		t.Fatal("an unknown agent was folded")
 	}

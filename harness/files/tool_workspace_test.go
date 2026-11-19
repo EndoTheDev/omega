@@ -14,18 +14,16 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// TestWorkspaceFilesRoot pins the session-workspace rooting (card
-// t_9de5b009) for the file tool (the shell half is pinned in
-// harness/terminal): a run scoped to a folder resolves RELATIVE paths
-// against it, absolute paths pass through, and runs without a
-// workspace keep today's behavior exactly.
+// TestWorkspaceFilesRoot pins the session-workspace rooting for the file tool (the
+// shell half is pinned in harness/terminal): a run scoped to a folder resolves RELATIVE
+// paths against it, absolute paths pass through, and runs without a workspace keep
+// today's behavior exactly.
 func TestWorkspaceFilesRoot(t *testing.T) {
 	ws := t.TempDir()
 	ctx := core.WithRunWorkspace(context.Background(), ws, "")
 	plain := context.Background()
 	p := &FileProvider{}
 
-	// Write rooted: a relative path lands inside the workspace.
 	if _, err := p.RunWriteFile(ctx, map[string]any{"path": "nested/out.txt", "content": "rooted"}); err != nil {
 		t.Fatalf("write: %v", err)
 	}
@@ -37,13 +35,11 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 		t.Fatalf("write leaked outside the workspace (process cwd)")
 	}
 
-	// Read rooted: the relative path reads from the workspace.
 	out, err := p.RunReadFile(ctx, map[string]any{"path": "nested/out.txt"})
 	if err != nil || !strings.Contains(out, "rooted") {
 		t.Fatalf("read: %v (got %q)", err, out)
 	}
 
-	// Edit rooted.
 	if _, err := p.RunEdit(ctx, map[string]any{"path": "nested/out.txt", "old_string": "rooted", "new_string": "edited"}); err != nil {
 		t.Fatalf("edit: %v", err)
 	}
@@ -52,8 +48,7 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 		t.Fatalf("edit: got %q, want \"edited\"", string(b))
 	}
 
-	// Atomic batch rooted: both ops of operations[].path resolve in
-	// the workspace.
+	// Atomic batch rooted: both ops of operations[].path resolve in the workspace.
 	if _, err := p.Tools()["files.batch"].Run(ctx, map[string]any{"operations": []map[string]any{
 		{"action": "write", "path": "a.txt", "content": "A"},
 		{"action": "write", "path": "b.txt", "content": "B"},
@@ -64,7 +59,6 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 		t.Fatalf("batch a.txt not in workspace: %v", err)
 	}
 
-	// Absolute paths pass through untouched, workspace or not.
 	abs := filepath.Join(t.TempDir(), "abs.txt")
 	if _, err := p.RunWriteFile(ctx, map[string]any{"path": abs, "content": "abs"}); err != nil {
 		t.Fatalf("abs write: %v", err)
@@ -73,8 +67,6 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 		t.Fatalf("abs path ignored the workspace: %v", err)
 	}
 
-	// No workspace: relative paths behave today - they resolve against
-	// the process cwd, where the path simply does not exist.
 	out, err = p.RunReadFile(plain, map[string]any{"path": "definitely/missing/nowhere.txt"})
 	// not-exist via errors.Is, never the posix "no such file" text:
 	// windows os errors word it "The system cannot find the path
@@ -87,15 +79,7 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 	}
 }
 
-// TestUploadsTreeReachable pins the card t_2eb2d274 finding: an
-// attachment under <home>/uploads/<session>/ is readable through
-// files.read with NO new code - absolute paths pass through the
-// workspace rooting untouched, and the only path wall on the tool is
-// the instance-db guard, which names the store's own file. The uploads
-// tree therefore needs no allow-list, no new tool and no new seam.
-// A run rooted at a DIFFERENT workspace (the normal case: the agent
-// works in a project folder while uploads live in the home) reaches it
-// the same way.
+// TestUploadsTreeReachable pins the finding.
 func TestUploadsTreeReachable(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, "uploads", "s1")
@@ -106,7 +90,6 @@ func TestUploadsTreeReachable(t *testing.T) {
 	if err := os.WriteFile(path, []byte("a,b\n1,2\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A realistic guard: the instance db lives beside the uploads dir.
 	p := &FileProvider{guard: datadir.NewGuard(filepath.Join(home, "omega.db"))}
 
 	for _, ctx := range []context.Context{

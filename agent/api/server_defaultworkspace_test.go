@@ -7,12 +7,11 @@ import (
 	"testing"
 )
 
-// TestPrepareRunDefaultWorkspace pins the default_workspace fallback
-// (card t_ccf74d88): a session WITHOUT a pinned workspace roots its
-// tool runs at the configured server.default_workspace - a defined
-// default, never the process working directory. A pinned session keeps
-// its own root; a stat refusal keeps the previous root (card
-// t_9825147c part 3) - a vanished folder never uproots live sessions.
+// TestPrepareRunDefaultWorkspace pins the default_workspace fallback: a session WITHOUT
+// a pinned workspace roots its tool runs at the configured server.default_workspace - a
+// defined default, never the process working directory. A pinned session keeps its own
+// root; a stat refusal keeps the previous root - a vanished folder never uproots live
+// sessions.
 func TestPrepareRunDefaultWorkspace(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ws := t.TempDir()
@@ -22,7 +21,6 @@ func TestPrepareRunDefaultWorkspace(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	// Unset knob: today's shape - no root, workspace stays empty.
 	s.wsMu.Lock()
 	s.defaultWorkspace = ""
 	s.wsMu.Unlock()
@@ -36,7 +34,6 @@ func TestPrepareRunDefaultWorkspace(t *testing.T) {
 		t.Errorf("unset default: workspace = %q, want empty", req.workspace)
 	}
 
-	// The knob is set: the workspace-less session roots at it.
 	s.wsMu.Lock()
 	s.defaultWorkspace = ws
 	s.wsMu.Unlock()
@@ -50,7 +47,6 @@ func TestPrepareRunDefaultWorkspace(t *testing.T) {
 		t.Errorf("default root: workspace = %q, want %q", req.workspace, ws)
 	}
 
-	// A pinned session wins over the default.
 	pinned := t.TempDir()
 	if err := st.SetSessionWorkspace(ctx, "w1", pinned); err != nil {
 		t.Fatalf("pin workspace: %v", err)
@@ -65,10 +61,8 @@ func TestPrepareRunDefaultWorkspace(t *testing.T) {
 		t.Errorf("pinned root: workspace = %q, want %q", req.workspace, pinned)
 	}
 
-	// The impossible-path rule (card t_9825147c part 3): a stat
-	// failure is a REFUSAL, the previous root survives - it never
-	// silently clears to the process cwd. The pinned session here
-	// keeps winning over the kept default.
+	// The impossible-path rule: a stat failure is a REFUSAL, the previous root survives -
+	// it never silently clears to the process cwd.
 	s.SetDefaultWorkspace("/omega-definitely-not-here")
 	if s.defaultWorkspace != ws {
 		t.Fatalf("vanished default: knob = %q, want the previous root %q kept", s.defaultWorkspace, ws)
@@ -84,11 +78,7 @@ func TestPrepareRunDefaultWorkspace(t *testing.T) {
 	}
 }
 
-// TestSetDefaultWorkspaceGuards pins the setter's validation half
-// (card t_9825147c part 3): a path that does not exist (or names a
-// file) is refused and the PREVIOUS value survives - the silent clear
-// to the process cwd was the bug. The empty value is still the
-// intentional clear.
+// TestSetDefaultWorkspaceGuards pins the setter's validation half.
 func TestSetDefaultWorkspaceGuards(t *testing.T) {
 	s := newTestServer()
 	ws := t.TempDir()
@@ -109,7 +99,6 @@ func TestSetDefaultWorkspaceGuards(t *testing.T) {
 		t.Errorf("file path: defaultWorkspace = %q, want kept %q", s.defaultWorkspace, ws)
 	}
 
-	// Empty clears.
 	s.SetDefaultWorkspace("")
 	if s.defaultWorkspace != "" {
 		t.Errorf("clear: defaultWorkspace = %q, want unset", s.defaultWorkspace)

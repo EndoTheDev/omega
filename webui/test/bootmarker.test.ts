@@ -1,4 +1,4 @@
-// omega webui: the boot-settled marker (card t_a071ee45).
+// omega webui: the boot-settled marker.
 //
 // The shell publishes "my boot reads are done" as
 // `document.documentElement.dataset.omegaBooted = "1"`, and the journey
@@ -12,11 +12,11 @@
 // The whole value is the ISSUED vs RESOLVED distinction, so that is what
 // this file pins (the SFC and the store are not importable in node --test;
 // source pins are the house form here):
-// - the store holds its boot refresh as a promise the shell can await,
+// the store holds its boot refresh as a promise the shell can await,
 //   instead of firing it into the void;
-// - app.vue collects the boot group and sets the marker inside the
+// app.vue collects the boot group and sets the marker inside the
 //   Promise.allSettled continuation, after every read landed;
-// - the group still carries each boot read (a read dropped from it would
+// the group still carries each boot read (a read dropped from it would
 //   move the boundary back to "issued" for that route).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
@@ -79,7 +79,7 @@ test("the boot group carries every read the poller window grades", () => {
   for (const member of [
     "notificationFeedSettled()", // /notifications + /verdicts
     "refreshModels()", // /models
-    "fetchSettingKnob(DEFAULT_WORKSPACE_KNOB)", // /settings?key= (card t_0a9edc72: the one knob, not the registry)
+    "fetchSettingKnob(DEFAULT_WORKSPACE_KNOB)", // /settings?key=
     "refreshSessions()", // /sessions
     "canvas.refresh()", // /ui/canvas
   ]) {

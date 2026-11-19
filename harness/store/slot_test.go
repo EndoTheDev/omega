@@ -8,13 +8,9 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The summarizer's model slot (card t_fc0b2f2d): an "instance:model"
-// value routes the hygiene consult through the named provider
-// instance; a bare value (or an unconfigured prefix) stays on the
-// default instance. The summary text identifies the routed provider.
+// The summarizer's model slot.
 
-// newSlotSession seeds ONE settled aged session so the pass has one
-// candidate.
+// newSlotSession seeds ONE settled aged session so the pass has one candidate.
 func newSlotSession(t *testing.T) (context.Context, *Store) {
 	t.Helper()
 	s := newFileStore(t)
@@ -32,8 +28,7 @@ func newSlotSession(t *testing.T) (context.Context, *Store) {
 	return ctx, s
 }
 
-// slotProviders builds the default summarizer with one named instance;
-// the "big:<model>" slot routes there, everything else stays.
+// slotProviders builds the default summarizer with one named instance.
 func slotProviders() *agent.FakeProvider {
 	base := fakeSummary("base-consult")
 	base.SetInstances(map[string]agent.Provider{"big": fakeSummary("instance-consult")})
@@ -65,8 +60,7 @@ func TestSummarizerSlotRoutesInstance(t *testing.T) {
 	}
 }
 
-// A bare slot (and an unconfigured instance prefix over it) stays on
-// the default instance.
+// A bare slot (and an unconfigured instance prefix over it) stays on the default.
 func TestSummarizerSlotBareStays(t *testing.T) {
 	ctx, s := newSlotSession(t)
 	prov := slotProviders()
@@ -79,8 +73,7 @@ func TestSummarizerSlotBareStays(t *testing.T) {
 	}
 }
 
-// An empty slot keeps today's consult (the default instance, main
-// model).
+// An empty slot keeps today's consult (the default instance, main model).
 func TestSummarizerSlotEmpty(t *testing.T) {
 	ctx, s := newSlotSession(t)
 	prov := slotProviders()

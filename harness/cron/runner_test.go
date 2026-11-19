@@ -16,8 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newTestRunner builds a Runner with stubbed time and turn hooks,
-// pointed at a temp home dir.
+// newTestRunner builds a Runner with stubbed time and turn hooks, pointed at a temp.
 func newTestRunner(t *testing.T, home string, jobs ...Job) *Runner {
 	t.Helper()
 	r := NewRunner(&Config{Jobs: jobs}, home)
@@ -25,7 +24,7 @@ func newTestRunner(t *testing.T, home string, jobs ...Job) *Runner {
 	return r
 }
 
-// --- test doubles ---
+// test doubles
 
 // fakeMemory records Add calls (core.MemoryProvider).
 type fakeMemory struct {
@@ -78,7 +77,7 @@ func (l *recordingLogger) has(substr string) bool {
 // noop is the waitFor trigger for a wait that only observes.
 func noop() error { return nil }
 
-// --- guard (single instance per job) ---
+// guard (single instance per job)
 
 func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),
@@ -86,7 +85,6 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 		Job{Name: "fast", Schedule: "0 9 * * *", Prompt: "p"},
 	)
 
-	// runTurn blocks for "slow" until released.
 	entered := make(chan string, 4)
 	release := make(chan struct{})
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
@@ -109,7 +107,6 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	// Second fire of the same job skips, logged, never queued.
 	r.fire(ctx, r.jobsSnapshot()[0], time.Now())
 
-	// Other jobs still fire in parallel while slow runs.
 	fired.Add(1)
 	go func() {
 		defer fired.Done()
@@ -120,8 +117,7 @@ func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	}
 
 	close(release)
-	// Fires write cronstate.json into the TempDir; wait them out so
-	// cleanup never races a straggler write.
+	// Fires write cronstate.json into the TempDir; wait them out so cleanup never races.
 	fired.Wait()
 }
 
@@ -144,8 +140,7 @@ func TestFireGuardLogsSkip(t *testing.T) {
 		r.fire(ctx, r.jobsSnapshot()[0], time.Now())
 	}()
 
-	// Wait until the job is actually running (guard held), then a
-	// synchronous fire must skip without ever entering runTurn.
+	// Wait until the job is actually running (guard held), then a synchronous fire must.
 	r.mu.Lock()
 	for !r.running["busy"] {
 		r.mu.Unlock()
@@ -159,9 +154,8 @@ func TestFireGuardLogsSkip(t *testing.T) {
 		t.Fatalf("skip not logged: %v", rec.snapshot())
 	}
 	close(release)
-	// Fires write cronstate.json into the TempDir home; wait the
-	// background fire out so cleanup never races a straggler write
-	// (same law as TestFireGuard above).
+	// Fires write cronstate.json into the TempDir home; wait the background fire out so
+	// cleanup never races a straggler write (same law as TestFireGuard above).
 	fired.Wait()
 }
 
@@ -199,13 +193,12 @@ func (l *logRecorder) waitContains(sub string, limit time.Duration) bool {
 	return false
 }
 
-// --- catch-up ---
+// catch-up
 
 func TestCatchUpFiresOnceWithin24h(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "daily", Schedule: "30 7 * * *", Prompt: "p"})
 
-	// Last fire 26.5h ago; the scheduled 07:30 today was missed 2.5h ago.
 	last := mustLocal(2026, 10, 16, 4, 0)
 	r.lastFire["daily"] = last.Unix()
 
@@ -227,7 +220,6 @@ func TestCatchUpFiresOnceWithin24h(t *testing.T) {
 		t.Fatalf("state = %d, want missed scheduled time %d", got, prev.Unix())
 	}
 
-	// Restart before the next scheduled fire: no second catch-up.
 	r.catchUp(context.Background(), now)
 	if len(fired) != 1 {
 		t.Fatalf("second catch-up fired again (%d total), want 1", len(fired))
@@ -238,7 +230,6 @@ func TestCatchUpSkipsOlderThan24h(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "weekly", Schedule: "0 9 * * 0", Prompt: "p"})
 
-	// Last fire 8 days ago; most recent Sunday 09:00 is ~6 days back.
 	last := mustLocal(2026, 10, 9, 9, 0)
 	r.lastFire["weekly"] = last.Unix()
 
@@ -285,7 +276,7 @@ func TestCatchUpSkipsNeverFiredJob(t *testing.T) {
 	}
 }
 
-// --- regular fire + state ---
+// regular fire + state
 
 func TestFirePersistsSessionAndState(t *testing.T) {
 	home := t.TempDir()
@@ -297,9 +288,6 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	defer st.Close()
 	r.store = st
 
-	// The real loop persists the turn copies now (t_471f6d4a): run the
-	// default agentTurn against a scripted provider - one tool turn,
-	// then the final answer.
 	script := []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response_chunk", Content: "thinking"},
 		core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "nop"}},
@@ -309,8 +297,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 		core.ResponseChunk{Type: "response_chunk", Content: "final answer"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
-	// WithDelay spaces the scripted events so the phase meters measure
-	// real wall-clock - the zero-delay fake floors every span to 0.
+	// WithDelay spaces the scripted events so the phase meters measure real wall-clock.
 	r.ag = agent.NewAgent(agent.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
@@ -336,8 +323,6 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get messages: %v", err)
 	}
-	// Provider-correct order: user -> assistant(A + calls) -> tool
-	// result -> assistant(B).
 	if len(msgs) != 4 {
 		t.Fatalf("want prompt+assistant+result+answer persisted, got %d messages", len(msgs))
 	}
@@ -366,7 +351,7 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	}
 }
 
-// --- deliver targets ---
+// deliver targets
 
 func TestDeliverJournalCreatesFileAndAppends(t *testing.T) {
 	home := t.TempDir()
@@ -437,7 +422,7 @@ func TestDeliverSkipsEmptyFinal(t *testing.T) {
 	}
 }
 
-// --- hot reload ---
+// hot reload
 
 func TestHotReloadAddsAndDisablesWithoutRestart(t *testing.T) {
 	home := t.TempDir()
@@ -463,7 +448,6 @@ func TestHotReloadAddsAndDisablesWithoutRestart(t *testing.T) {
 		watcher.Wait()
 	}()
 
-	// Add a job + disable starter: one reload carries both changes.
 	updated := `
 jobs:
   - name: starter
@@ -488,10 +472,6 @@ jobs:
 		t.Fatalf("scheduled = %v, want [added]", names)
 	}
 
-	// Invalid yaml keeps the previous job set. Wait for the rejection
-	// itself: a fixed sleep expires mid-reload on a loaded machine and
-	// reads the set the broken write was still racing (the CI red of
-	// 2026-11-10).
 	broken := []byte("jobs:\n  - name: broken\n    schedule: \"oops\"\n    prompt: p\n")
 	waitFor(t, testWaitTimeout, func() bool {
 		return log.has("crons reload failed (keeping previous jobs)")
@@ -506,13 +486,10 @@ jobs:
 	}
 }
 
-// TestHotReloadShortReadKeepsPreviousJobs pins the truncated-write law
-// (card t_8be45d55, the CI red this card fixes): a non-atomic save
-// shortens crons.yaml before it writes, and a poll landing in that
-// window reads a zero-byte file. Empty content parses as a valid
-// EMPTY config, so nothing errors - the reload must refuse it anyway,
-// because applying it drops every live job. "Delete every job" stays
-// expressible as `jobs: []` and applies normally (next test).
+// TestHotReloadShortReadKeepsPreviousJobs pins the truncated-write law: a non-atomic
+// save shortens crons.yaml before it writes, and a poll landing in that window reads a
+// zero-byte file. Empty content parses as a valid EMPTY config, so nothing errors - the
+// reload must refuse it anyway, because applying it drops every live job.
 func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
@@ -523,8 +500,6 @@ func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
 	if err := os.WriteFile(cfgPath, []byte(initial), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// 1ms poll: the truncate window below is ~20ms, so the poll is
-	// essentially certain to land inside it.
 	r.pollInterval = time.Millisecond
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -539,22 +514,18 @@ func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
 		watcher.Wait()
 	}()
 
-	// Land a clean reload first, so the live set is provably non-empty
-	// and the empty read has something to destroy.
+	// Land a clean reload first, so the live set is provably non-empty and the empty.
 	waitFor(t, testWaitTimeout, func() bool {
 		return contains(r.scheduledNames(), "starter")
 	}, func() error {
 		return os.WriteFile(cfgPath, []byte(initial), 0o644)
 	})
 
-	// The non-atomic save: shorten the file, let a poll read the
-	// window, then write the real content.
+	// The non-atomic save: shorten the file, let a poll read the window, then write.
 	if err := os.Truncate(cfgPath, 0); err != nil {
 		t.Fatal(err)
 	}
-	// The window was SEEN by the watcher: prove it changed nothing. The
-	// wait latches on either outcome, so a regression reds fast with the
-	// applied-empty-set verdict instead of timing out.
+	// The window was SEEN by the watcher: prove it changed nothing.
 	waitFor(t, testWaitTimeout, func() bool {
 		return log.has("empty content") || len(r.jobsSnapshot()) == 0
 	}, noop)
@@ -568,7 +539,6 @@ func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
 		t.Fatal("a zero-byte read applied as an empty job set")
 	}
 
-	// The completing write applies normally.
 	updated := "jobs:\n  - name: starter\n    schedule: \"0 5 1 * *\"\n    prompt: p\n  - name: added\n    schedule: \"0 6 1 * *\"\n    prompt: p\n"
 	waitFor(t, testWaitTimeout, func() bool {
 		return contains(r.scheduledNames(), "added") && contains(r.scheduledNames(), "starter")
@@ -577,10 +547,9 @@ func TestHotReloadShortReadKeepsPreviousJobs(t *testing.T) {
 	})
 }
 
-// TestHotReloadAppliesJobsEmpty pins the other half of the law: an
-// operator who removes every job writes `jobs: []` (or a comment-only
-// file), and that EMPTY PARSED SET applies - only a zero-byte /
-// whitespace-only read is refused.
+// TestHotReloadAppliesJobsEmpty pins the other half of the law: an operator who removes
+// every job writes `jobs: []` (or a comment-only file), and that EMPTY PARSED SET
+// applies - only a zero-byte / whitespace-only read is refused.
 func TestHotReloadAppliesJobsEmpty(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
@@ -615,10 +584,7 @@ func TestHotReloadAppliesJobsEmpty(t *testing.T) {
 	})
 }
 
-// TestReloadRefusesEmptyContent pins the loader half of
-// the truncated-write law directly: empty content is a RELOAD error, a
-// missing file and `jobs: []` still mean "no jobs" and apply, and the
-// lenient boot read is untouched.
+// TestReloadRefusesEmptyContent pins the loader half of the truncated-write law.
 func TestReloadRefusesEmptyContent(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "crons.yaml")
@@ -664,8 +630,7 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// waitFor retries cond until true, retrying the (idempotent) trigger
-// each interval; on timeout it fails with the last cond state.
+// waitFor retries cond until true, retrying the (idempotent) trigger each interval.
 func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func() error) {
 	t.Helper()
 	deadline := time.Now().Add(limit)
@@ -680,11 +645,9 @@ func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func()
 	t.Fatalf("condition not reached within %s", limit)
 }
 
-// --- plugin mount ---
+// plugin mount
 
-// notificationsPlugin provides the presence the cron Requires edge
-// declares (Q3): the runner's notifier arrives through CronDeps.Ctx at
-// Start, but the mount pins need the seam provided to mount at all.
+// notificationsPlugin provides the presence the cron Requires edge declares (Q3).
 type notificationsPlugin struct{}
 
 func (notificationsPlugin) Name() string                                                  { return "notifications" }
@@ -692,8 +655,7 @@ func (notificationsPlugin) Provides() []string                                  
 func (notificationsPlugin) Requires() []string                                            { return nil }
 func (notificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
 
-// TestPluginMountSetsCronSeam pins the api mount (the only mount since
-// the v0.12 phase-C2 migration).
+// TestPluginMountSetsCronSeam pins the api mount.
 func TestPluginMountSetsCronSeam(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "a", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
 	ctx := &core.Context{}
@@ -708,20 +670,16 @@ func TestPluginMountSetsCronSeam(t *testing.T) {
 	}
 }
 
-// TestCronSeamCarriesTheHostRunTimeoutPush pins the whole hop the host
-// takes (card t_e635df3a): the offered "cron" seam value satisfies the
-// host's consumer-owned SetRunTimeout face, and the value it receives is
-// the cap the next fire actually runs under. A renamed offer key or a
-// drifted signature would compile on both ends and leave the push a
-// silent no-op - the fire would fall back to a home it never booted on.
+// TestCronSeamCarriesTheHostRunTimeoutPush pins the whole hop the host takes. A renamed
+// offer key or a drifted signature would compile on both ends and leave the push a
+// silent no-op - the fire would fall back to a home it never booted.
 func TestCronSeamCarriesTheHostRunTimeoutPush(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
 	ctx := &core.Context{}
 	if _, err := agent.MountAllAPI([]agent.Plugin{notificationsPlugin{}, p}, ctx, nil, nil); err != nil {
 		t.Fatalf("api mount: %v", err)
 	}
-	// The host's own face, declared here exactly as cmd/omega declares
-	// it (runTimeoutSetter): no capsule type crosses the seam.
+	// The host's own face, declared here exactly as cmd/omega declares it.
 	type runTimeoutSetter interface{ SetRunTimeout(time.Duration) }
 	svc := ctx.Services().Resolve("cron")
 	setter, ok := svc.(runTimeoutSetter)
@@ -748,17 +706,15 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 	}
 }
 
-// --- inspector snapshot (card t_db430fea) ---
+// inspector snapshot
 
-// enabledOff returns the disabled flag a crons.yaml `enabled: false`
-// decodes to.
+// enabledOff returns the disabled flag a crons.yaml `enabled: false` decodes.
 func enabledOff() *bool {
 	b := false
 	return &b
 }
 
-// Compile-time proof that the Runner satisfies the read-only inspector
-// seam the http_channel asserts.
+// Compile-time proof that the Runner satisfies the read-only inspector seam.
 var _ = (*Runner)(nil)
 
 func TestJobsInspectorSnapshot(t *testing.T) {
@@ -774,7 +730,6 @@ func TestJobsInspectorSnapshot(t *testing.T) {
 	if jobs[0].Name != "aa-minute" || jobs[1].Name != "zz-daily" {
 		t.Fatalf("order = %s,%s, want aa-minute,zz-daily", jobs[0].Name, jobs[1].Name)
 	}
-	// disabled job: Enabled false, no next fire promised
 	if jobs[0].Enabled || jobs[0].Next != "" {
 		t.Fatalf("disabled job = %+v", jobs[0])
 	}
@@ -799,11 +754,7 @@ func TestJobsInspectorEmptyConfig(t *testing.T) {
 	}
 }
 
-// TestFireTurnCapUsesConfiguredRunTimeout pins the turn's wall-clock cap
-// (card t_ef885fd4): the configured server.run_timeout reaches the fire's
-// context, and the 30-minute default holds when the host sets none. Seen
-// through the ONE witness that matters - the deadline the turn actually
-// runs under.
+// TestFireTurnCapUsesConfiguredRunTimeout pins the turn's wall-clock cap.
 func TestFireTurnCapUsesConfiguredRunTimeout(t *testing.T) {
 	cases := []struct {
 		name string
@@ -853,26 +804,22 @@ func TestFireTurnCapUsesConfiguredRunTimeout(t *testing.T) {
 	}
 }
 
-// TestFireTurnCapHostPushWins pins the host push (card t_e635df3a): the
-// fire's cap is the value the HOST resolved from the config file it
-// actually booted on - an explicit `--config <elsewhere>` path, or the
-// exe-dir home an install without OMEGA_HOME resolves - which this
-// module cannot re-derive from its own home candidates. The file in
-// this test deliberately disagrees with the push, so a fire that goes
-// back to re-reading it instead of the pushed value fails here.
+// TestFireTurnCapHostPushWins pins the host push: the fire's cap is the value the HOST
+// resolved from the config file it actually booted on - an explicit `--config
+// <elsewhere>` path, or the exe-dir home an install without OMEGA_HOME resolves - which
+// this module cannot re-derive from its own home candidates.
 func TestFireTurnCapHostPushWins(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
 		t.Fatalf("mkdir config: %v", err)
 	}
-	// The module's own candidate: a home this process never booted on.
+	// The module's own candidate: a home this process never booted.
 	const moduleFile = "server:\n  run_timeout: 9999\n"
 	if err := os.WriteFile(filepath.Join(home, "config", "config.yaml"), []byte(moduleFile), 0o644); err != nil {
 		t.Fatalf("write config.yaml: %v", err)
 	}
 	r := newTestRunner(t, home, Job{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"})
 
-	// The push wins over the file the module can see.
 	r.SetRunTimeout(45 * time.Second)
 	if got := firedTurnCap(t, r); !withinASecond(got, 45*time.Second) {
 		t.Fatalf("turn cap = %s, want the host-pushed 45s (the push must beat the home-candidate read)", got.Round(time.Millisecond))
@@ -883,13 +830,10 @@ func TestFireTurnCapHostPushWins(t *testing.T) {
 	if got := firedTurnCap(t, r); !withinASecond(got, 2*time.Minute) {
 		t.Fatalf("turn cap after re-push = %s, want 2m", got.Round(time.Millisecond))
 	}
-	// Clearing the push restores the file read - the fallback a host
-	// without the knob (tests, embedders) relies on.
 	r.SetRunTimeout(0)
 	if got := firedTurnCap(t, r); !withinASecond(got, 9999*time.Second) {
 		t.Fatalf("turn cap after clearing the push = %s, want the file's 9999s", got.Round(time.Minute))
 	}
-	// No push and no file: the 30-minute default stands.
 	bare := newTestRunner(t, t.TempDir(), Job{Name: "capped", Schedule: "0 8 * * *", Prompt: "p"})
 	bare.SetRunTimeout(0)
 	if got := firedTurnCap(t, bare); !withinASecond(got, turnCapDefault) {
@@ -897,8 +841,7 @@ func TestFireTurnCapHostPushWins(t *testing.T) {
 	}
 }
 
-// firedTurnCap runs one fire and returns the wall-clock cap the turn
-// actually ran under - the one witness that matters for the knob.
+// firedTurnCap runs one fire and returns the wall-clock cap the turn actually ran.
 func firedTurnCap(t *testing.T, r *Runner) time.Duration {
 	t.Helper()
 	var got time.Duration
@@ -918,16 +861,14 @@ func firedTurnCap(t *testing.T, r *Runner) time.Duration {
 	return got
 }
 
-// withinASecond keeps a cap pin about the VALUE, never about scheduling
-// jitter: the deadline is stamped microseconds before the turn starts.
+// withinASecond keeps a cap pin about the VALUE, never about scheduling jitter.
 func withinASecond(got, want time.Duration) bool {
 	return got >= want-time.Second && got <= want+time.Second
 }
 
-// The host reaches the push hook through the offered seam (Services
-// "cron"), typed by its OWN consumer-owned face (cmd/omega's
-// runTimeoutSetter) - the capsule's type name never crosses. A
-// signature drift on either side would compile on both ends and
+// The host reaches the push hook through the offered seam (Services "cron"), typed by
+// its OWN consumer-owned face (cmd/omega's runTimeoutSetter) - the capsule's type name
+// never crosses. A signature drift on either side would compile on both ends and
 // silently stop the push, so the match is pinned here.
 var _ interface {
 	SetRunTimeout(time.Duration)

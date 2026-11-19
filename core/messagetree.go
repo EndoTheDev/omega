@@ -5,10 +5,7 @@ import (
 	"strconv"
 )
 
-// BranchInfo describes one branch point on the wire: the parent
-// message id ("message_id"), the sibling RUN HEAD ids in append order
-// ("siblings"), how many variants exist ("count"), and which sibling
-// index is the active path ("active").
+// BranchInfo describes one branch point on the wire.
 type BranchInfo struct {
 	ParentID    string   `json:"message_id"`
 	Siblings    []string `json:"siblings,omitempty"`
@@ -16,20 +13,8 @@ type BranchInfo struct {
 	ActiveIndex int      `json:"active"`
 }
 
-// ActiveView is the tree-derived view of a session: Path is the active
-// path (render + context assembly), Branches the >=2-sibling branch
-// points the transcript wire serves. The remaining maps are the
-// navigation ground truth for the variants endpoint: SiblingHeads lists
-// every branch point's run heads in append order (single runs too),
-// ActiveHeads the selected head per branch, HeadByMessage each
-// conversation message's run head (itself for heads), BranchByHead each
-// head's branch point. Path/Branches are wire fields; the maps are
-// internal resolution surfaces and never serialized.
-//
-// The two structs moved into core ahead of the rest of messagetree
-// (arc 1b: StoreProvider.GetActiveView returns ActiveView and the seam
-// contracts must be self-contained; arc 1c, t_483de955, moves the
-// remaining tree code).
+// ActiveView is the tree-derived view of a session. Path/Branches are wire fields; the
+// maps are internal resolution surfaces and never serialized.
 type ActiveView struct {
 	Path     []StoredMessage
 	Branches []BranchInfo
@@ -41,8 +26,6 @@ type ActiveView struct {
 }
 
 // isConversation reports whether a message takes part in the tree.
-// Bookkeeping entries (model change, thinking level, variant selects,
-// system entries) are outside the conversation.
 func isConversation(msg Message) bool {
 	switch msg.(type) {
 	case User, Assistant, ToolResult, YieldResult:
@@ -51,8 +34,7 @@ func isConversation(msg Message) bool {
 	return false
 }
 
-// parentIDOf reads a message's tree pointer (conversation types only;
-// the type switch is total for the roles isConversation admits).
+// parentIDOf reads a message's tree pointer.
 func parentIDOf(msg Message) string {
 	switch m := msg.(type) {
 	case User:
@@ -72,16 +54,12 @@ func MsgID(id int64) string {
 	return strconv.FormatInt(id, 10)
 }
 
-// ParentIDOf reads a message's tree pointer. Conversation message
-// types carry the pointer; everything else (bookkeeping entries) has
-// none.
+// ParentIDOf reads a message's tree pointer.
 func ParentIDOf(msg Message) string {
 	return parentIDOf(msg)
 }
 
-// WithParentID returns the conversation message with its tree pointer
-// set to parent (other types come back unchanged - the /chat fork path
-// uses this to chain its incoming message onto the forked point).
+// WithParentID returns the conversation message with its tree pointer set to parent.
 func WithParentID(msg Message, parent string) Message {
 	return setParentNode(msg, parent)
 }
@@ -108,22 +86,21 @@ func setParentNode(msg Message, parent string) Message {
 // DeriveTree builds the active view from a session's persisted
 // messages in append (row) order. Semantics:
 //
-//   - Implicit chain: a conversation message without a pointer parents
+// Implicit chain: a conversation message without a pointer parents
 //     to the previous conversation message in row order (legacy rows
-//     written before pointers existed therefore stay one linear path -
+// written before pointers existed therefore stay one linear path
 //     they render exactly as they always did).
-//   - A run head is an ASSISTANT message whose parent is a user
+// A run head is an ASSISTANT message whose parent is a user
 //     message. Retry/fork re-runs produce another head with the same
 //     parent user - sibling variants.
-//   - Selections come from VariantSelect entries; the last entry per
-//     branch wins. No entry: the LAST sibling is active (row order) -
+// Selections come from VariantSelect entries; the last entry per
+// branch wins. No entry: the LAST sibling is active (row order)
 //     a retry's fresh response is the active one with no selector
 //     state.
-//   - The leaf is the newest (row order) conversation message whose
+// The leaf is the newest (row order) conversation message whose
 //     ancestor chain carries only active heads; the path is that leaf's
 //     ancestor chain, root first.
 func DeriveTree(msgs []StoredMessage) ActiveView {
-	// Selections first: the last variant_select entry per branch wins.
 	sel := map[string]string{}
 	for _, sm := range msgs {
 		if vs, ok := sm.Message.(VariantSelect); ok {
@@ -131,7 +108,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		}
 	}
 
-	// Conversation messages in row order with resolved parents.
 	parentOf := map[string]string{} // id -> parent id ("" = root)
 	roleOf := map[string]string{}   // id -> role, by id
 	idOf := make([]string, 0, len(msgs))
@@ -150,13 +126,11 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		idOf = append(idOf, id)
 		prevID = id
 	}
-	// Role of each pointed-at parent ("" when dangling).
 	parentRole := make(map[string]string, len(parentOf))
 	for id, parent := range parentOf {
 		parentRole[id] = roleOf[parent]
 	}
 
-	// Heads: assistants parented to a user; their siblings per branch.
 	headsOf := map[string][]string{} // branch (user id) -> head ids
 	branchOf := map[string]string{}  // head id -> branch (user id)
 	for _, sm := range msgs {
@@ -172,10 +146,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		branchOf[id] = branch
 	}
 
-	// Active head per branch: persisted selection (last entry wins;
-	// stale or dangling children fall back to the default), else the
-	// LAST sibling in row order - the newest response is active by
-	// default.
 	active := map[string]string{}
 	for branch, heads := range headsOf {
 		active[branch] = heads[len(heads)-1]
@@ -186,8 +156,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		}
 	}
 
-	// Wire branch points (>=2) in first-appearance order; every branch
-	// point lands in SiblingHeads/ActiveHeads regardless of count.
 	branches := []BranchInfo{}
 	siblingHeads := map[string][]string{}
 	activeHeads := map[string]string{}
@@ -220,8 +188,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 			})
 		}
 	}
-	// Each conversation message resolves to its run head: the first
-	// head on the ancestor chain (a head resolves to itself).
 	for _, id := range idOf {
 		walked := map[string]bool{}
 		for cur := id; cur != "" && !walked[cur]; {
@@ -234,9 +200,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		}
 	}
 
-	// chain reports whether id's ancestor chain carries only active
-	// heads at every branch point. Root nodes (no parent row) are
-	// always fine.
 	valid := func(id string) bool {
 		seen := map[string]bool{}
 		for cur := id; cur != ""; {
@@ -252,7 +215,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		return true
 	}
 
-	// Leaf: the newest conversation message matching the selections.
 	var leaf string
 	for i := len(idOf) - 1; i >= 0; i-- {
 		if valid(idOf[i]) {
@@ -264,7 +226,6 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 		return ActiveView{Branches: branches, SiblingHeads: siblingHeads, ActiveHeads: activeHeads, HeadByMessage: headByMessage, BranchByHead: branchByHead}
 	}
 
-	// Path: walk the ancestor chain, then reverse to root-first.
 	var rev []StoredMessage
 	seen := map[string]bool{}
 	for cur := leaf; cur != "" && !seen[cur]; {
@@ -287,8 +248,7 @@ func DeriveTree(msgs []StoredMessage) ActiveView {
 	}
 }
 
-// nodeByID finds the StoredMessage carrying a row id. Linear scan:
-// sessions are hundreds of messages, and DeriveTree is O(n) already.
+// nodeByID finds the StoredMessage carrying a row id.
 func nodeByID(msgs []StoredMessage, id string) (StoredMessage, bool) {
 	for _, sm := range msgs {
 		if MsgID(sm.ID) == id {

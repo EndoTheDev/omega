@@ -1,9 +1,8 @@
-// omega webui: card t_8bcbe72e - two wall-law follow-ups from the same wave.
-// D1: the both-flexible divider branch floors the LEFT pane at ITS contract
-// floor (320 for a flexible chat pane), symmetric with the right side - the
-// drag may never park a flexible pane at 128. D2: a reveal the window cannot
-// seat refuses cleanly BEFORE any state mutates (same tree back, no churn,
-// no clean-up for the watcher's give-way to race). Render-free; node --test.
+// omega webui: - two wall-law follow-ups from the same wave. D1: the both-flexible
+// divider branch floors the LEFT pane at ITS contract floor (320 for a flexible chat
+// pane), symmetric with the right side - the drag may never park a flexible pane at
+// 128. D2: a reveal the window cannot seat refuses cleanly BEFORE any state mutates
+// (same tree back, no churn, no clean-up for the watcher's give-way to race).
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { type DockComponentName } from "../app/composables/dockables.ts";
@@ -28,7 +27,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 
-// helpers ------------------------------------------------------------------
+// helpers ---------------------------------------------------------------
 
 class MemoryStorage {
   private m = new Map<string, string>();
@@ -64,8 +63,7 @@ function asSplit(n: DockNode): DockSplit {
   return n as DockSplit;
 }
 
-/** the default boot shape's test twin: row [sidebar(240), chat, inspector
-    (300)] through ensurePinnedEdges so the edge markers ride on it. */
+/** the default boot shape's test twin. */
 function shellTree(): DockSplit {
   const inspector: DockPane = {
     kind: "pane",
@@ -87,16 +85,12 @@ function paneByComponent(t: DockNode, c: DockComponentName): DockPane {
   return findPane(t, loc!.paneId)!;
 }
 
-/** the flexPair the dock.test.ts both-flexible pins use: row [chat(flex),
-    empty(flex)], fractions .5/.5, rendered 498/498 in a 996px content box. */
+/** the flexPair the dock.test.ts both-flexible pins use. */
 function flexPair(): DockSplit {
   const base = shellTree();
   return asSplit(splitPane(base, paneByComponent(base, "chat").id, "row", "after").children[1]);
 }
 
-/** Endo's edge case (screenshot 2): both shells closed, the main root grown
-    to 5 inner flexible panes. minDockPx = 5x320 + 4 dividers = 1616 - the
-    window seats THAT and nothing more. */
 function grownRoot(): { tree: DockNode; contentPx: number } {
   let t: DockNode = hideEdgePane(hideEdgePane(ensurePinnedEdges(shellTree()), "inspector"), "sidebar");
   for (let i = 0; i < 4; i++) {
@@ -108,7 +102,7 @@ function grownRoot(): { tree: DockNode; contentPx: number } {
   return { tree: t, contentPx };
 }
 
-// D1: the left pane's floor in the both-flexible branch -----------------------
+// D1: the left pane's floor in the both-flexible branch --------------------
 
 describe("both-flexible divider: the left pane floors at ITS contract floor (card t_8bcbe72e)", () => {
   it("a flexible chat pane on the LEFT stops at 320, never 128", () => {
@@ -122,7 +116,6 @@ describe("both-flexible divider: the left pane floors at ITS contract floor (car
   });
   it("a moderate sub-floor drag parks at 320 too (the t_f7201e02 tracking case)", () => {
     const inner = flexPair();
-    // 498 - 300 = 198: the old 128 floor would have parked here
     const out = dragSplitDivider(inner, 1, [498, 498], -300, 996);
     assert.ok(Math.abs(out.split.sizes[0] * 996 - 320) < 1e-6);
   });
@@ -137,18 +130,17 @@ describe("both-flexible divider: the left pane floors at ITS contract floor (car
     const inner = makeSplit("row", [nested, makePane(null)]);
     const out = dragSplitDivider(inner, 1, [498, 498], -900, 996);
     assert.ok(Math.abs(out.split.sizes[0] * 996 - 320) < 1e-6);
-    // card t_ae9ac5cf note: the flat absorb still rides on the nested
-    // split (the per-component honest floor lives on PANES; minDockPx
-    // recursion here would leak a row's horizontal sum into a vertical
-    // axis) - the nested split's own fractions are byte-identical
-    // the drag remaps only the outer split's pair; the nested split's own
-    // fractions are byte-identical
+    // note: the flat absorb still rides on the nested split (the per-component honest
+    // floor lives on PANES; minDockPx recursion here would leak a row's horizontal sum
+    // into a vertical axis) - the nested split's own fractions are byte-identical the
+    // drag remaps only the outer split's pair; the nested split's own fractions are
+    // byte-identical
     const outNested = asSplit(out.split.children[0]);
     assert.deepEqual(outNested.sizes, nested.sizes);
   });
 });
 
-// D2: the reveal refuses when the result cannot fit ----------------------------
+// D2: the reveal refuses when the result cannot fit -------------------------
 
 describe("revealEdgePane fit-check (card t_8bcbe72e)", () => {
   it("refuses when minDockPx(after) > contentPx: the SAME tree comes back", () => {
@@ -188,8 +180,7 @@ describe("revealEdgePane fit-check (card t_8bcbe72e)", () => {
     const res = tryRevealEdgePane(tree, "inspector", "after", 360, null, 4000);
     assert.equal(res.revealed, true);
     assert.equal(findEdgePane(res.tree, "inspector")!.fixed, 360);
-    // and the same call WITHOUT a measurement (contentPx omitted) behaves
-    // as today - the null guard is a pass-through
+    // and the same call WITHOUT a measurement (contentPx omitted) behaves as today.
     const blind = revealEdgePane(tree, "inspector", "after", 360);
     assert.notStrictEqual(blind, tree);
   });
@@ -205,7 +196,7 @@ describe("revealEdgePane fit-check (card t_8bcbe72e)", () => {
   });
 });
 
-// the store-level toggle: refusal before ANY state mutates --------------------
+// the store-level toggle: refusal before ANY state mutates -----------------
 
 describe("toggleEdge refusal - zero churn (card t_8bcbe72e)", () => {
   it("the toggle no-ops under overflow: no tree change, no record write, no hiddenEdges mutation", async () => {

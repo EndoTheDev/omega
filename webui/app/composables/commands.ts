@@ -1,46 +1,27 @@
-// omega webui: the / command palette and @ mention picker (card
-// t_07aed3f9). Slash commands run LOCALLY and
-// never hit the agent; the palette lists the webui's shell commands,
-// the extension command registry (ctx.Commands via GET /commands) and
-// skills as /<skill-name>. @-mention expansion itself is SERVER-SIDE
-// on the /chat submit path (core.ExpandAtMentions) - the picker here
-// only helps TYPE the tokens; it never reads or expands files.
-//
-// The pure helpers (token parsing, filtering, caret surgery) are
-// node-tested at the palette.test.ts boundary; the fetchers are the
-// production wire shapes.
+// omega webui: the / command palette and @ mention picker. Slash commands run LOCALLY
+// and never hit the agent; the palette lists the webui's shell commands, the extension
+// command registry (ctx.Commands via GET /commands) and skills as /<skill-name>.
+// @-mention expansion itself is SERVER-SIDE on the /chat submit path
+// (core.ExpandAtMentions) - the picker here only helps TYPE the tokens; it never reads
+// or expands files.
 
-// --- palette model ---
+// palette model
 
 export interface PaletteItem {
-  // the completed token: "/theme", "/greet-writer", "notes.txt",
-  // "session:", "sess-123"
   name: string;
-  // one-line what-it-does
   description: string;
-  // shell = webui-native local action; extension = a module's
-  // registered command (dispatched server-side, never the agent);
-  // skill = content injection on the next send; file/session =
-  // @-mention inserts; dir (t_7f09bd0c) is the @ path list's drill row -
+  // shell = webui-native local action; extension = a module's registered command
+  // (dispatched server-side, never the agent); skill = content injection on the next
+  // send; file/session = @-mention inserts; dir is the @ path list's drill row -
   // picking it never completes a token, it opens the folder's own list
   kind: "shell" | "extension" | "skill" | "file" | "dir" | "session";
 }
 
-// The one set the ChatTab + host use to route a "/" draft: these run
-// through the app's own handler (deps.runCommand); everything else is
-// a dispatch (module command or skill) to POST /commands/dispatch.
-// Declared after the table it mirrors.
+// The one set the ChatTab + host use to route a "/" draft.
 
-// The webui's shell set: /exit is deliberately absent (nothing
-// to quit), with webui-native equivalents for the rest. The open
-// first-pass ruling (card t_07aed3f9): theme, fork, retry, variant,
-// help at minimum - the full shell set.
+// The webui's shell set: /exit is deliberately absent (nothing to quit),.
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
-  // card t_210a0d19 rename law: /modules is the name, /extensions keeps its
-  // palette row as the alias - no muscle-memory break. Card t_81d0901b: both
-  // open the settings tab's MODULES section (the secondary-pane cockpit tab
-  // is gone; module toggles are configuration).
   { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
   { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
   { name: "/fork", description: "aim the next send to continue from the newest response", kind: "shell" },
@@ -57,8 +38,7 @@ export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   { name: "/variant", description: "show the response variants on the active path", kind: "shell" },
 ];
 
-// paletteCommands assembles the slash list: shell commands, then
-// extension commands (GET /commands rows), then skills as /<skill-name>.
+// paletteCommands assembles the slash list.
 export function paletteCommands(
   extensions: { name: string; description?: string }[],
   skills: { name: string; description: string }[],
@@ -78,14 +58,10 @@ export function paletteCommands(
   ];
 }
 
-// The one set the ChatTab + host use to route a "/" draft: these run
-// through the app's own handler (deps.runCommand); everything else is
-// a dispatch (module command or skill) to POST /commands/dispatch.
+// The one set the ChatTab + host use to route a "/" draft.
 export const SHELL_COMMAND_NAMES = new Set(WEBUI_SHELL_COMMANDS.map((c) => c.name));
 
-// filterCommands: a case-insensitive
-// substring over the name AND the description (a description match
-// finds a command when you remember what it does, not what it is).
+// filterCommands: a case-insensitive substring over the name AND the description.
 export function filterCommands(query: string, items: PaletteItem[]): PaletteItem[] {
   const q = query.trim().toLowerCase();
   if (!q) return items;
@@ -94,11 +70,9 @@ export function filterCommands(query: string, items: PaletteItem[]): PaletteItem
   );
 }
 
-// --- the @ mention token ---
+// the @ mention token
 
-// MentionQuery at a caret: active when a token like "@...": starts
-// with @ and runs from the caret back to a word boundary. The raw
-// token INCLUDES the @.
+// MentionQuery at a caret: active when a token like "@.".
 export interface MentionQuery {
   active: boolean;
   token: string;
@@ -111,8 +85,7 @@ export function mentionQueryAt(draft: string, caret: number): MentionQuery {
   return { active: true, token: upto.slice(start) };
 }
 
-// MentionPrefix classifies a mention token: "" = bare file search;
-// "session:" / "skill:" = the two injected-context lists.
+// MentionPrefix classifies a mention token.
 export type MentionPrefix = "" | "session:" | "skill:";
 
 export function mentionPrefixOf(token: string): MentionPrefix {
@@ -122,17 +95,13 @@ export function mentionPrefixOf(token: string): MentionPrefix {
   return "";
 }
 
-// pickList classifies the mention dropdown rows for a token: a bare
-// "@" or a non-prefix query lists files PLUS the two prefix rows; a
-// prefixed token lists only that prefix's rows.
+// pickList classifies the mention dropdown rows for a token.
 export function pickList(token: string): "files" | "sessions" | "skills" {
   return mentionPrefixOf(token).slice(0, -1) as "files" | "sessions" | "skills";
 }
 
-// replaceMentionToken writes a completed mention back into the draft
-// at the caret: the token span (from the query start to the caret)
-// becomes the insertion. Returns the new draft; the caller moves the
-// caret to start + insertion.length.
+// replaceMentionToken writes a completed mention back into the draft at the caret.
+// Returns the new draft; the caller moves the caret to start + insertion.length.
 export function replaceMentionToken(
   draft: string,
   caret: number,
@@ -150,13 +119,12 @@ export function replaceMentionToken(
   };
 }
 
-// --- the / slash token (t_d1a2951d: caret-based, like the @ token) ---
+// the / slash token
 
-// SlashQuery at a caret: active when the caret sits inside a token that
-// starts with "/" and runs back to a word boundary (whitespace, an open
-// paren, or the text start) - the draft's leading word is just the
-// boundary-free case, so a leading slash behaves exactly as before. The
-// raw token INCLUDES the slash.
+// SlashQuery at a caret: active when the caret sits inside a token that starts with "/"
+// and runs back to a word boundary (whitespace, an open paren, or the text start) - the
+// draft's leading word is just the boundary-free case, so a leading slash behaves
+// exactly.
 export interface SlashQuery {
   active: boolean;
   token: string;
@@ -169,11 +137,8 @@ export function slashTokenAt(draft: string, caret: number): SlashQuery {
   return { active: true, token: m[2] ?? "" };
 }
 
-// replaceSlashToken writes a completed command back into the draft at
-// the caret: the FULL slash word the caret sits inside (the query may be
-// its caret-truncated head) becomes the insertion, everything around it
-// stays. Returns the new draft; the caller moves the caret to
-// start + insertion.length. A caret outside any "/" word is a no-op.
+// replaceSlashToken writes a completed command back into the draft at the caret.
+// Returns the new draft; the caller moves the caret to start + insertion.length.
 export function replaceSlashToken(
   draft: string,
   caret: number,
@@ -197,17 +162,14 @@ export function replaceSlashToken(
   return { draft, caret };
 }
 
-// clampIndex is the only arithmetic the palette keyboard nav does:
-// ArrowDown/ArrowUp move active, wrapping at the ends. From no
-// selection (-1), ArrowDown highlights the first row, ArrowUp the
-// last; an empty list stays unselected.
+// clampIndex is the only arithmetic the palette keyboard nav does.
 export function clampIndex(active: number, delta: number, len: number): number {
   if (len <= 0) return -1;
   if (active < 0) return delta < 0 ? len - 1 : 0;
   return (active + delta + len) % len;
 }
 
-// --- the wire (production shapes; fetch happens at the components) ---
+// the wire (production shapes; fetch happens at the components)
 
 export interface PaletteExtensionCommand {
   name: string;
@@ -215,9 +177,7 @@ export interface PaletteExtensionCommand {
   args?: string[];
 }
 
-// CommandDispatchWire is POST /commands/dispatch's answer: kind
-// "command" carries the module's result text; kind "skill" carries the
-// content the next send arms as a system preamble.
+// CommandDispatchWire is POST /commands/dispatch's answer.
 export interface CommandDispatchWire {
   kind: "command" | "skill";
   text?: string;
@@ -237,11 +197,7 @@ export async function fetchPaletteSkills(): Promise<{ name: string; description:
   return r.json();
 }
 
-// dispatchCommand POSTs one extension command (or /<skill-name>). The
-// sessionId is the invoking tab's own session: a session-scoped command
-// (/export, /label, /branch) acts on the tab that ran it instead of
-// demanding the id in its args. It stays off the body when the tab has
-// no session yet, so the command's own args keep their legacy shape.
+// dispatchCommand POSTs one extension command (or /<skill-name>).
 export async function dispatchCommand(
   name: string,
   args = "",

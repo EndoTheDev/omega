@@ -1,8 +1,7 @@
-// omega webui: the MCP tab (card t_c7136c50). Registry membership +
-// pure row model + the source-wiring greps (the composition-test
-// convention): the node suite never compiles the SFC, it pins the
-// decisions - the panel fetches the module's own /mcp/servers, the
-// empty state is contract, the registry entry is an inspector view.
+// omega webui: the MCP tab. Registry membership + pure row model + the source-wiring
+// greps (the composition-test convention): the node suite never compiles the SFC, it
+// pins the decisions - the panel fetches the module's own /mcp/servers, the empty state
+// is contract, the registry entry is an inspector view.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -29,12 +28,11 @@ import {
 import { reloadMcpServers } from "../../harness/mcp/ui/reload.ts";
 import { setMcpServerEnabled } from "../../harness/mcp/ui/toggle.ts";
 
-// module UI source lives at the repo root (webui/test is three
-// levels under it)
+// module UI source lives at the repo root (webui/test is three levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (...p: string[]) => readFileSync(join(...p), "utf8");
 
-// --- the registry entry (the dock contract) -----------------------------
+// the registry entry (the dock contract) --------------------------
 
 test("mcp is a registered inspector component: singleton, pinned right, unclosable", () => {
   assert.ok((DOCK_COMPONENTS as readonly string[]).includes("mcp"), "the union carries it");
@@ -45,8 +43,6 @@ test("mcp is a registered inspector component: singleton, pinned right, unclosab
   assert.equal(d.closable, false, "unclosable like every inspector view");
   assert.ok(ICONS[d.icon], "the icon is an iconset name (the membership law)");
   assert.ok(MENU_DOCKABLES.includes("mcp"), "the '+' menu offers the tab");
-  // card t_180db2cb: notifications joined the inspector after mcp - mcp
-  // keeps its slot, the feed tab appended last (registry join order).
   assert.ok(
     INSPECTOR_TAB_COMPONENTS.includes("mcp"),
     "the inspector inventory carries it (joined at t_c7136c50; notifications joined after, t_180db2cb)",
@@ -56,7 +52,7 @@ test("mcp is a registered inspector component: singleton, pinned right, unclosab
   assert.equal(n, 1, "single registry entry owns the icon name");
 });
 
-// --- the pure row model (serverRows.ts) ---------------------------------
+// the pure row model (serverRows.ts) ------------------------------
 
 test("serverRows maps the wire: config order kept, non-array bodies stay empty", () => {
   assert.deepEqual(serverRows({}), [], "no body");
@@ -86,7 +82,7 @@ test("the empty state is named in the helpers' voice (never composed ad hoc in t
   assert.ok(MCP_EMPTY_HINT.includes("MCP_SERVERS"), "the hint names the env var");
 });
 
-// --- the panel source wiring (the composition-test convention) ----------
+// the panel source wiring (the composition-test convention) -------
 
 test("McpServers consumes the module route and the shared row model", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
@@ -96,9 +92,6 @@ test("McpServers consumes the module route and the shared row model", () => {
   assert.ok(src.includes("MCP_EMPTY_TEXT"), "the empty state text rides the constant");
   assert.ok(src.includes("MCP_EMPTY_HINT"), "the empty state hint rides the constant");
   assert.ok(!src.includes("composables/omega"), "no shell client dependency - module UI carries its own wiring");
-  // the one write path is the refresh button's reload (card t_d6e94e79),
-  // and it rides the helper - the SFC itself stays GET-only against the
-  // read route; PUT exists nowhere in the module UI
   assert.ok(src.includes("reloadMcpServers"), "the refresh rides the reload helper");
   assert.ok(src.includes("setMcpServerEnabled"), "the per-row toggle rides the toggle helper (card t_83f37525)");
   const reloadTs = read(root, "harness", "mcp", "ui", "reload.ts");
@@ -109,9 +102,7 @@ test("McpServers consumes the module route and the shared row model", () => {
   assert.ok(src.includes(".mcp-list.narrow {"), "its narrow rules ship in its own stylesheet");
 });
 
-// --- the reload behavior (card t_d6e94e79) -------------------------------
-// The behavior half runs at the helper level (the filesroot.test.ts
-// recipe): a fetch-log probe drives reloadMcpServers, no SFC compile.
+// the reload behavior ------------------------------- The behavior half runs.
 
 let savedFetch: typeof globalThis.fetch;
 
@@ -173,9 +164,8 @@ test("reloadMcpServers: a failed reload throws and never re-fetches", async () =
 
 test("the refresh button renders the FilesTab toolbar pattern", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
-  // card t_308e6d9b: the single header row IS the shared TabBand now -
-  // the toolbar role/aria-label are the band component's contract, the
-  // panel composes the band with its title.
+  // the single header row IS the shared TabBand now - the toolbar role/aria-label are
+  // the band component's contract, the panel composes the band with its title.
   const band = read(root, "webui", "app", "components", "ui", "TabBand.vue");
   assert.ok(band.includes('role="toolbar"') && band.includes("actions"), "the single header row is the toolbar (the shared band)");
   assert.match(src, /<TabBand[\s\S]{0,80}title="MCP">/, "the composes band carries the tab's title");
@@ -191,7 +181,7 @@ test("the dockable declaration matches the registry voice", () => {
   assert.equal(decl.icon, "mcp");
 });
 
-// --- the per-server toggle model (card t_83f37525) -----------------------
+// the per-server toggle model --------------------
 
 test("serverEnabled: the absent flag reads as on (old wires keep rendering)", () => {
   assert.equal(serverEnabled({ name: "x" }), true, "an undefined enabled flag is an enabled server");
@@ -222,9 +212,7 @@ test("statusDot: --ok rides a live connection, --err a recorded failure, dim oth
   assert.equal(s({ connected: true, error: "e" }), "err", "a recorded failure outranks the mount state");
 });
 
-// --- the toggle behavior (card t_83f37525) --------------------------------
-// The fetch-log recipe (the reload behavior tests above): the helper
-// drives the one round-trip, no SFC compile.
+// the toggle behavior -------------------------------- The fetch-log recipe.
 
 test("setMcpServerEnabled: consume the POST body - no follow-up GET (v0.14.1 review lens)", async () => {
   const calls: { url: string; method: string; body?: string }[] = [];
@@ -270,13 +258,11 @@ test("setMcpServerEnabled: a refused write throws and never re-fetches", async (
   }
 });
 
-// --- the visual rebuild (card t_83f37525) ---------------------------------
-// The composition-test convention: the node suite never compiles the
-// SFC, it pins the decisions. The clipping bug was the old list
-// rendering tool names as fixed-width (22px) columns that wrapped mid-
-// word with per-line clipping; the new shape is wrapped chips that
-// ellipse per chip and NEVER clip vertically. These greps are the law
-// that shape stays dead.
+// the visual rebuild --------------------------------- The composition-test convention:
+// the node suite never compiles the SFC, it pins the decisions. The clipping bug was
+// the old list rendering tool names as fixed-width (22px) columns that wrapped mid-
+// word with per-line clipping; the new shape is wrapped chips that ellipse per chip and
+// NEVER clip vertically.
 
 test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
@@ -285,10 +271,6 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
   assert.match(src, /\.mcp-tool\s*\{[^}]*text-overflow:\s*ellipsis/, "each chip ellipses its own text instead of overflowing");
   assert.match(src, /\.mcp-tool\s*\{[^}]*max-width:\s*100%/, "a chip never exceeds its row (the pane-edge law)");
   assert.match(src, /\.mcp-tools\s*\{[^}]*flex-wrap:\s*wrap/, "the tool container wraps to new lines - no horizontal crush");
-  // card t_561dc4e0: the row main no longer wraps its cluster - the row
-  // law's head is the two-zone flex (name/subtitle stack left, ONE
-  // control right) where NOTHING wraps: the name and the subtitle
-  // ellipsize in the shared anatomy, the chips render below the row.
   assert.match(src, /class="mcp-row-main reg-row-head"/, "the row head rides the shared reg-row-head anatomy");
   const anatomy = read(root, "webui", "app", "assets", "css", "registry-row.css");
   assert.match(anatomy, /\.reg-row-name\s*\{[^}]*text-overflow:\s*ellipsis/, "the shared anatomy ellipsizes the name - nothing clips vertically");
@@ -297,15 +279,11 @@ test("the clipping shape stays dead: no fixed-width tool columns, chips ellipse"
 
 test("the from-mcp.yaml caption is dead, the toggle is the shared pill (card t_d93864e7)", () => {
   const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
-  // the tab IS the mcp tab: a config-file provenance label is noise
   assert.ok(!src.includes("mcp-source"), "no source caption element left");
   assert.ok(!src.includes("sourceLabel"), "no dead source helper rides the component");
-  // the row toggle is the shared pill - the look lives in ui/ once
   assert.match(src, /<TogglePill/, "the row toggle is the shared TogglePill");
   assert.ok(!src.includes(".mcp-toggle"), "no local toggle CSS block - one component, zero copies");
-  // the two-step mechanic is DEAD (card t_5051d523: one click commits -
-  // the arm step made every row need a double click); the write path
-  // stays local to the module
+  // the two-step mechanic is DEAD; the write path stays local to the module
   assert.ok(!src.includes("armed.value"), "no arm step: the first click commits");
   assert.ok(!src.includes("confirm-label"), "no confirm relabel on the shared pill");
   assert.ok(src.includes("/mcp/toggle"), "POST /mcp/toggle stays in the module");
@@ -318,18 +296,13 @@ test("the row speaks the design tokens: status dot, transport pill, no bare mono
   assert.match(src, /\.mcp-dot-off\s*\{[^}]*var\(--text-dim\)/, "the neutral dot rides the dim text token");
   assert.match(src, /class="mcp-pill"/, "the transport renders as a badge, not a bare string");
   assert.match(src, /\.mcp-pill\s*\{[^}]*var\(--mono\)/, "the pill speaks the mono token for its small print");
-  // card t_561dc4e0: the name lead typography is the shared
-  // .reg-row-name (the row law's line 1) - the template rides the
-  // anatomy class, the shared file carries the semibold.
+  // the name lead typography is the shared.reg-row-name (the row law's line 1).
   assert.match(src, /class="mcp-name reg-row-name"/, "the server name rides the shared row-law name line");
   const anatomy = read(root, "webui", "app", "assets", "css", "registry-row.css");
   assert.match(anatomy, /\.reg-row-name\s*\{[^}]*font-weight:\s*600/, "the shared anatomy carries the semibold name line");
   assert.match(src, /serverEnabled\(s\)/, "the disabled row renders muted-but-visible in the template");
   assert.match(src, /\.mcp-off \.mcp-name/, "its muted styling ships in the stylesheet");
-  // card t_561dc4e0: the state cluster rides the row law's subtitle
-  // line (it never wraps off the row), so the old narrow reflow rule
-  // died - narrow keeps the condensed scroll body + the anatomy's
-  // collapsed-row padding.
+  // the state cluster rides the row law's subtitle line (it never wraps off the row).
   assert.match(src, /\.mcp-list\.narrow \.mcp-body \{/, "the narrow condensed body ships in its own stylesheet");
   assert.match(anatomy, /\.narrow \.reg-row/, "the shared anatomy carries the narrow row rhythm");
 });

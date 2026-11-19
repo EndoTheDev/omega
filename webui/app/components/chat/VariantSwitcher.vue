@@ -1,9 +1,5 @@
 <template>
-  <!-- ONE variant switcher chip (t_a62eeb43 markup, extracted
-       t_0df4efd8): « n/n » with prev/next arrows. It mounts on the
-       branch's anchor item - the active head bubble's actions row, or
-       the head block's own row when a multi-row replay's head is a
-       thinking / tool call row without a stored text bubble. -->
+  <!-- ONE variant switcher chip: « n/n » with prev/next arrows. -->
   <div class="variant-switcher">
     <button
       class="v-arrow"
@@ -27,10 +23,7 @@
   import { variantLabel, type VariantBlock } from "../../composables/omega";
 
   const props = defineProps<{
-    // this item's branch block - resolved by ChatTab (variantAnchors)
     variant: VariantBlock;
-    // the anchor item's store id when it is itself a sibling (the head
-    // bubble); absent anchors fall back to the block's active index
     itemId?: string;
   }>();
   const emit = defineEmits<{

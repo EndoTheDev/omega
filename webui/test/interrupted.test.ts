@@ -1,8 +1,4 @@
-// webui unit tests for transport-death detection in streamChat, the
-// server-side cancel path (agent_end "cancelled" reads as interrupted),
-// and the stop affordance through the chat panel's action pipe
-// (chat-last 2a: no transcript markers, no REST stop client side).
-// Run: node --test webui/test/ (node >= 23 runs TS natively)
+// webui unit tests for transport-death detection in streamChat, the server-side.
 import { describe, it, afterEach } from "node:test";
 import assert from "node:assert/strict";
 
@@ -236,11 +232,9 @@ describe("last complete user message", () => {
   });
 });
 
-// keyed v-for identity (card t_bc62c9ba round 1): index keys reused bubble
-// COMPONENTS across the transcript's two identity-breaking swaps, leaking
-// elapsed labels between sessions and resuming a dead attempt's timer on
-// a retried tool call. Identity keys fix both - tested from the key
-// source's side, which is the whole of the contract.
+// keyed v-for identity: index keys reused bubble COMPONENTS across.
+// Identity keys fix both - tested from the key source's side, which is the whole of the
+// contract.
 describe("createItemKeySource", () => {
   it("the same object always gets the same key (kept items keep their bubble)", () => {
     const keyOf = createItemKeySource();

@@ -7,10 +7,7 @@ import (
 	"testing"
 )
 
-// The canvas wire contract is the v1 schema's law: transport work
-// (SSE/REST translation, arc 3b) reads these exact keys, so the JSON
-// names are pinned like the rest of the wire vocabulary. No backwards
-// compatibility - if a key changes, this test changes with it.
+// The canvas wire contract is the v1 schema's law.
 
 func TestPanelJSONShape(t *testing.T) {
 	p := Panel{
@@ -72,8 +69,7 @@ func TestActionCallJSONShape(t *testing.T) {
 }
 
 func TestViewModelDeltaRidesEventSpine(t *testing.T) {
-	// The sealed-event law: the delta is an Event on the same spine,
-	// dispatched by type switch like every other kind.
+	// The sealed-event law: the delta is an Event on the same spine, dispatched by type.
 	var _ Event = ViewModelDelta{Type: "view_model_delta", Panel: Panel{ID: "board"}}
 }
 
@@ -107,10 +103,7 @@ func TestCanvas404Sentinels(t *testing.T) {
 	}
 }
 
-// The chat panel vocabulary's wire law (chat-last 1/3): both frontends
-// render the chat panel from these exact keys - payload session/running/
-// rows, row id/role/status/blocks, block type/content. No backwards
-// compatibility - if a key changes, this test changes with it.
+// The chat panel vocabulary's wire law (chat-last 1/3).
 func TestChatPanelJSONShape(t *testing.T) {
 	p := Panel{
 		ID:   "chat",

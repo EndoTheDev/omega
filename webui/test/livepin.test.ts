@@ -1,8 +1,4 @@
-// omega webui: unit tests for the stacked live-run layout split (card
-// t_c40164cf) - the pinned question header and the scrolling agent body
-// both derive from the same transcript via liveRunSlice. Pure
-// functions only: the branch rendering itself is presentation over
-// these shapes. Run: node --test webui/test/ (node >= 23 runs TS)
+// omega webui: unit tests for the stacked live-run layout split.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -104,9 +100,7 @@ describe("liveRunSlice", () => {
 });
 
 describe("live body tail-follow (long body)", () => {
-  // the .live-body is its own scroll container with the same follow
-  // math as .messages - a long run exceeds the viewport and the pill
-  // / near-bottom gate decides following
+  // the.live-body is its own scroll container with the same follow math as.messages.
   it("a run longer than the pane: pinned false, pill shows", () => {
     const scrollTop = 0;
     const clientHeight = 400;
@@ -129,22 +123,15 @@ describe("live body tail-follow (long body)", () => {
 });
 
 describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
-  // a thinking block folding at answer start (or an expanded tool card
-  // collapsing) can SHRINK the scroller enough that the browser clamps
-  // scrollTop to the new bottom - the scroll event then fires at the
-  // tail with the reader two viewports up in the folded content. That
-  // arrival at bottom is a layout event, not a scroll decision: it must
-  // NOT re-arm the tail-follow.
+  // a thinking block folding at answer start can SHRINK the scroller enough.
+  // That arrival at bottom is a layout event, not a scroll decision: it must NOT re-arm
+  // the tail-follow.
   it("a pinned view stays governed by the plain near-bottom check", () => {
-    // at the tail: stays pinned
     assert.equal(resumesFollow(true, 4000, 3600, 400, 4000), true);
-    // the user scrolled up: unpins
     assert.equal(resumesFollow(true, 4000, 2000, 400, 4000), false);
   });
 
   it("an unpinned view scrolled back to the bottom on GROWN content re-arms the follow", () => {
-    // content grew since the last scroll event (thinking kept streaming
-    // while the user read); scrolling down to the tail is a real gesture
     assert.equal(
       resumesFollow(
         false,
@@ -155,13 +142,10 @@ describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
       ),
       true,
     );
-    // same height (steady state, no shrink since) also re-arms
     assert.equal(resumesFollow(false, 4000, 3600, 400, 4000), true);
   });
 
   it("an unpinned view arriving at the bottom of SHRUNK content holds the follow off", () => {
-    // the fold shrank the scroller from 4000 to 1600; the clamp delivered
-    // the reader to scrollTop 1200 = the new bottom. Layout event.
     assert.equal(
       resumesFollow(false, 4000, 1200, 400, 1600),
       false,
@@ -170,7 +154,6 @@ describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
   });
 
   it("the guard only holds the tail-arrivals, not scrolls elsewhere in shrunk content", () => {
-    // still far from the bottom after the fold: stays unpinned either way
     assert.equal(resumesFollow(false, 4000, 0, 400, 1600), false);
   });
 
@@ -180,10 +163,9 @@ describe("resumesFollow (shrink-clamp guard, t_bef3f45e)", () => {
 });
 
 describe("scrollFlushTick (hidden-document tail-follow, card t_467a0386)", () => {
-  // the observed repro shape: a run streamed with the document hidden
-  // (user alt-tabbed away) never followed the tail - rAF callbacks are
-  // frozen for a hidden document's whole lifetime. The tick planner
-  // picks the flush that works in each state.
+  // the observed repro shape: a run streamed with the document hidden (user alt-tabbed
+  // away) never followed the tail - rAF callbacks are frozen for a hidden document's
+  // whole lifetime.
   it("a visible document keeps the rAF flush", () => {
     assert.equal(scrollFlushTick(false), "raf");
   });

@@ -1,13 +1,9 @@
 package store
 
-// FK-enforcement proof for the pooled-connection path. :memory: hides
-// the pragma bug (SetMaxOpenConns(1) means exactly one connection);
-// a file DSN keeps the real pool, so the test asserts what the live
-// gate probe showed: the pragma is per-connection, and it must hold on
-// EVERY pooled connection. The pre-fix shape (a one-shot
-// `PRAGMA foreign_keys = ON` after open) let foreign keys stay off on
-// every other pooled connection - orphaned message rows in, missed
-// ON DELETE CASCADE on session delete.
+// FK-enforcement proof for the pooled-connection path.:memory: hides the pragma bug
+// (SetMaxOpenConns(1) means exactly one connection); a file DSN keeps the real pool, so
+// the test asserts what the live gate probe showed: the pragma is per-connection, and
+// it must hold on EVERY pooled connection.
 
 import (
 	"context"
@@ -31,9 +27,8 @@ func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
 		t.Fatalf("create session: %v", err)
 	}
 
-	// 16 concurrent appends force the pool well past one connection
-	// (the live-probe shape: 8 concurrent writers, 7 of them with
-	// foreign_keys off).
+	// 16 concurrent appends force the pool well past one connection (the live-probe shape:
+	// 8 concurrent writers, 7 of them with foreign_keys off).
 	var wg sync.WaitGroup
 	errs := make(chan error, 16)
 	for i := 0; i < 16; i++ {
@@ -51,8 +46,7 @@ func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
 		}
 	}
 
-	// Every pooled connection must enforce FK: an insert into messages
-	// under a nonexistent session_id is refused.
+	// Every pooled connection must enforce FK.
 	if err := s.AppendMessage(ctx, "fk-gone", core.NewUser("orphan")); err == nil {
 		t.Fatal("append under a nonexistent session succeeded - foreign key enforcement is OFF on the pool")
 	}
@@ -65,8 +59,7 @@ func TestForeignKeyCascadeOnPooledConnections(t *testing.T) {
 		t.Fatalf("messages before delete = %d, want 16", len(msgs))
 	}
 
-	// DeleteSession relies on the ON DELETE CASCADE: no message rows
-	// may survive it.
+	// DeleteSession relies on the ON DELETE CASCADE: no message rows may survive it.
 	if err := s.DeleteSession(ctx, "fk-s1"); err != nil {
 		t.Fatalf("delete session: %v", err)
 	}

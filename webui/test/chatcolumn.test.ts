@@ -1,21 +1,4 @@
-// omega webui: the transcript column tracks the composer (card t_5063675a,
-// Endo's in-app comment on chat a330a233: "adjust the width of the user
-// message bubble to follow the width of the chat composer - do the same
-// with all the other blocks ... also adjust the height of those blocks so
-// that the gaps between them are smaller").
-//
-// ONE column edge: the transcript's side inset IS the composer's side
-// margin, at both breakpoints. Every block (user bubble, thinking, tool
-// rows) is 100% of that column already, so the pair of numbers is the whole
-// geometry - drifting one re-opens the 8px mismatch this card closed.
-//
-// Inside a turn the meta strips (thinking / tool runs) sit TIGHT, and the
-// t_84e4653c grouping law still holds: the between-turn gap stays the
-// dominant one. Flat 'chat' (the chronological appearance) keeps its
-// uniform 12px rhythm - this law is the STACKED column's.
-//
-// Render-free CSS pin: reads main.css and asserts the numbers. Run:
-// node --test webui/test/ (node >= 23 runs TS natively)
+// omega webui: the transcript column tracks the composer.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,8 +16,7 @@ const rule = (selector: string): string => {
   return m![1];
 };
 
-// the mobile block is the LAST @media (max-width: 768px) of the sheet - the
-// responsive overrides live there, the earlier one is the bar/drawer set
+// the mobile block is the LAST @media.
 const mobileBlock = (): string => {
   const at = css.lastIndexOf("@media (max-width: 768px)");
   assert.ok(at > 0, "the mobile media block is missing from main.css");
@@ -73,9 +55,6 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
   });
 
   it("the meta strips sit tight inside a turn", () => {
-    // the thinking / tool strips are the rows whose gaps Endo asked to shrink
-    // - the number is taste, the ceiling is not: an airy inside-turn gap is
-    // the bug this card fixes
     const gap = rule(".msg-block").match(/gap:\s*(\d+)px/)![1];
     assert.ok(Number(gap) <= 8, `inside-turn gap is ${gap}px - the meta strips are not tight`);
   });
@@ -87,10 +66,6 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
       within < between,
       `inside-turn ${within}px must stay below the ${between}px turn boundary or the blocks stop grouping`,
     );
-    // and the contrast has to be visible, not a hairline apart. Endo's tuned
-    // pair (4px within / 8px between, chat-spacing round 3) is a 2x step; the
-    // older 3x clause was authored while the within-turn gap was 0, where any
-    // boundary at all cleared it.
     assert.ok(between >= within * 2, "the turn boundary must read as a boundary, not a nudge");
     assert.ok(between - within >= 4, "the turn boundary needs at least a 4px step over the within-turn gap");
   });
@@ -104,19 +79,6 @@ describe("the transcript column tracks the composer (t_5063675a)", () => {
   });
 });
 
-// The 2026-11-15 compactness sweep (Endo, in-app on chat efd2b0f1, 946px
-// lane: "the assistance response is a little too wide ... just a little.
-// make it less wide ... and the gaps between thinking and tool calls
-// blocks could also be smaller/compacter"). Round 1 shipped the 92% inset;
-// t_f146ad97 was HIS OWN tuned numbers out of the chat-spacing tuner;
-// t_f70de6e6 is HIS round-2 retune of the same dials (gap 0, strips 24px,
-// sides 4/8, answer 8px inset, turn gap 32px) and t_dd0bd19e is HIS
-// round-3 retune (gap 4, strips 32px, sides 4/8, answer 4px inset, turn
-// gap 8) - the numbers are law, the tests follow them.
-//
-// Two things carry the sweep: the strip rows tighten inside the turn block
-// (while the panels that reuse those rows keep their click floor) and the
-// between-turn gap dominates so each dense turn reads as one block.
 describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t_f146ad97)", () => {
   const pct = (body: string, prop: string) =>
     Number(body.match(new RegExp(`${prop}:\\s*(\\d+)%`))![1]);
@@ -139,7 +101,6 @@ describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t
     const user = rule(".messages.stacked .msg.user .bubble");
     assert.match(user, /width:\s*100%;/, "user rows are documents, not pills");
     assert.equal(pct(user, "max-width"), 100);
-    // these are single-line rules; the answer's inset is the only exception
     for (const line of [
       ".messages.stacked .toolcall { max-width: 100%; }",
       ".messages.stacked .thinking { max-width: 100%; }",
@@ -161,11 +122,10 @@ describe("the tuned chat spacing keeps the transcript a document (t_b25df7b0 + t
   });
 });
 
-// HIS tuned numbers (t_f146ad97, retuned by t_f70de6e6): the six
-// declarations Endo dialled in the chat-spacing tuner, pinned exactly. A
-// taste number that only ever drifts silently is the bug this suite exists
-// to catch - changing one of these is a new spec from him, so the change
-// has to touch this test on purpose.
+// HIS tuned numbers: the six declarations Endo dialled in the chat-spacing tuner,
+// pinned exactly. A taste number that only ever drifts silently is the bug this suite
+// exists to catch - changing one of these is a new spec from him, so the change has to
+// touch this test on purpose.
 describe("Endo's tuned chat spacing - the six declarations (t_dd0bd19e round 3)", () => {
   it("the within-turn rhythm, strip height and chip insets are exactly as dialled", () => {
     assert.match(rule(".msg-block"), /gap:\s*4px/, "inside-turn gap is 4px - the strips keep one log with a breath");

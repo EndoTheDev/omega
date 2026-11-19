@@ -1,14 +1,4 @@
-// omega webui: the agents panel's EDIT WRITE - the pure diff behind
-// PUT /agents/{name} (card t_df015e66).
-//
-// The save sends only what changed against the effective seed, so an
-// untouched inherited knob keeps inheriting. The sharp edge: a
-// `<input type="number">` under v-model hands the draft a NUMBER, and
-// the first live run threw `max_turns.trim is not a function` on save -
-// a silent dead save button (Vue catches the throw in the event handler,
-// so nothing surfaced). The repro is pinned here.
-//
-// Run: node --test test/agentsedit.test.ts
+// omega webui: the agents panel's EDIT WRITE - the pure diff behind PUT /agents/{name}.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -110,6 +100,5 @@ test("the inherit flags travel as one block when any kind flips", () => {
   d.inherit.skills = true;
   const body = editRequest(d, saved, chips);
   assert.deepEqual(body, { inherit: { skills: true, soul: false, user: false, memory: false } });
-  // a flag already on in the saved row is not a change
   assert.equal(editRequest(d, { ...saved, inherits: ["skills"] }, chips), null);
 });

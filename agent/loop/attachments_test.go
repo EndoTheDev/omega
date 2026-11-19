@@ -26,9 +26,7 @@ func attachmentFixture(t *testing.T, name string, content []byte) core.Attachmen
 	return core.Attachment{Kind: kind, Name: name, Size: int64(len(content)), Path: path}
 }
 
-// TestAttachmentContextRendersReference: a non-text attachment surfaces
-// as a structured entry (name, type, size, path) with no content, and
-// points the agent at its own read tool.
+// TestAttachmentContextRendersReference: a non-text attachment surfaces.
 func TestAttachmentContextRendersReference(t *testing.T) {
 	att := attachmentFixture(t, "invoice.pdf", []byte("%PDF-1.7\n\x00\x01binary-ish"))
 	msgs := []core.Message{core.User{Content: "what is this?", Attachments: []core.Attachment{att}}}
@@ -56,9 +54,7 @@ func TestAttachmentContextRendersReference(t *testing.T) {
 	}
 }
 
-// TestAttachmentContextInlinesSmallText: a small csv is inlined - the
-// one exception to reference-only, so the agent answers without a tool
-// round trip.
+// TestAttachmentContextInlinesSmallText: a small csv is inlined.
 func TestAttachmentContextInlinesSmallText(t *testing.T) {
 	att := attachmentFixture(t, "report.csv", []byte("name,qty\nbolt,3\nnut,7\n"))
 	msgs := []core.Message{core.User{Content: "what columns?", Attachments: []core.Attachment{att}}}
@@ -76,9 +72,7 @@ func TestAttachmentContextInlinesSmallText(t *testing.T) {
 	}
 }
 
-// TestAttachmentContextKeepsBigAndBinaryOut: the inline exception is
-// narrow - over-threshold text and non-UTF-8 bodies stay
-// reference-only, with the reason named.
+// TestAttachmentContextKeepsBigAndBinaryOut: the inline exception is narrow.
 func TestAttachmentContextKeepsBigAndBinaryOut(t *testing.T) {
 	big := strings.Repeat("a,b\n", inlineAttachmentMaxBytes/4+16)
 	bigAtt := attachmentFixture(t, "big.csv", []byte(big))
@@ -100,8 +94,7 @@ func TestAttachmentContextKeepsBigAndBinaryOut(t *testing.T) {
 	}
 }
 
-// TestAttachmentContextDoesNotMutate: the persisted message stays
-// reference-only; only the provider-facing copy carries the block.
+// TestAttachmentContextDoesNotMutate: the persisted message stays reference-only.
 func TestAttachmentContextDoesNotMutate(t *testing.T) {
 	att := attachmentFixture(t, "notes.md", []byte("# hi\n"))
 	orig := core.User{Content: "read this", Attachments: []core.Attachment{att}}
@@ -122,8 +115,7 @@ func TestAttachmentContextDoesNotMutate(t *testing.T) {
 	}
 }
 
-// TestAttachmentContextNoAttachments: a run with no attachments hands
-// the very same slice through - zero allocation, zero behavior change.
+// TestAttachmentContextNoAttachments: a run with no attachments hands the very same.
 func TestAttachmentContextNoAttachments(t *testing.T) {
 	msgs := []core.Message{core.NewSystem("sys"), core.NewUser("hi")}
 	out := AttachmentContext(msgs)
@@ -148,9 +140,8 @@ func TestAttachmentContextNoAttachments(t *testing.T) {
 	}
 }
 
-// TestLoopSurfacesAttachmentsToProvider pins the wiring: the provider
-// the loop drives sees the rendered entry, and the messages the caller
-// handed in do not grow it.
+// TestLoopSurfacesAttachmentsToProvider pins the wiring: the provider the loop drives
+// sees the rendered entry, and the messages the caller handed in do not grow it.
 func TestLoopSurfacesAttachmentsToProvider(t *testing.T) {
 	att := attachmentFixture(t, "report.csv", []byte("a,b\n1,2\n"))
 	provider := agent.NewFakeProvider("test",

@@ -1,10 +1,6 @@
 package api
 
-// Tests for the push channel's transport (card t_7624bab1): a real
-// websocket dial against the served handler, the typed frame envelope,
-// the subscribe message, the non-upgrade refusals, and reconnect (drop,
-// detach, dial again, frames resume - the handler-level half of the
-// client's backoff).
+// Tests for the push channel's transport.
 
 import (
 	"encoding/json"
@@ -50,22 +46,16 @@ func readFrame(t *testing.T, conn *websocket.Conn) agentapi.SocketMessage {
 	return msg
 }
 
-// TestSocketPushesTypedFrames: the connection attaches to the hub, a
-// subscribe message narrows the set, and a published frame arrives typed
-// with its topic, session, event and payload.
+// TestSocketPushesTypedFrames: the connection attaches to the hub, a subscribe.
 func TestSocketPushesTypedFrames(t *testing.T) {
 	s := newTestServer()
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
 	conn := dialSocket(t, ts)
-	// the frame only lands if the connection attached before it was
-	// published - so publish after a first round trip the server answers
 	if err := conn.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"chat"}}); err != nil {
 		t.Fatalf("subscribe: %v", err)
 	}
-	// the subscribe message is processed by the read loop; the hub's
-	// default set is every topic, so a chat frame arrives either way
 	s.Sockets().PublishEvent(agentapi.TopicChat, "sess-1", "response_chunk", []byte(`{"type":"response_chunk","content":"hi"}`))
 
 	msg := readFrame(t, conn)
@@ -83,8 +73,7 @@ func TestSocketPushesTypedFrames(t *testing.T) {
 	}
 }
 
-// TestSocketHealthAndChipTopics: the other two hooks reach a live
-// connection over the real wire - the heartbeat and the chip fill.
+// TestSocketHealthAndChipTopics: the other two hooks reach a live connection.
 func TestSocketHealthAndChipTopics(t *testing.T) {
 	s := newTestServer()
 	s.version = "v0.14.1-test"
@@ -111,9 +100,7 @@ func TestSocketHealthAndChipTopics(t *testing.T) {
 	}
 }
 
-// TestSocketReconnect: a dropped connection detaches from the hub, and a
-// fresh dial attaches again and receives frames - the socket's reconnect
-// half (catch-up itself is the client's refetch, ruling 4).
+// TestSocketReconnect: a dropped connection detaches from the hub, and a fresh dial.
 func TestSocketReconnect(t *testing.T) {
 	s := newTestServer()
 	ts := httptest.NewServer(s.Handler())
@@ -139,8 +126,7 @@ func TestSocketReconnect(t *testing.T) {
 	}
 }
 
-// waitSubscribers polls the hub until it holds count connections (the
-// attach/detach happen on the server's own goroutines).
+// waitSubscribers polls the hub until it holds count connections.
 func waitSubscribers(t *testing.T, s *Server, count int) bool {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -179,8 +165,8 @@ func TestSocketRequiresUpgrade(t *testing.T) {
 	}
 }
 
-// waitWants polls the hub until its wanted() answer for the topic equals
-// want (subscribe messages are processed on the read loop's goroutine).
+// waitWants polls the hub until its wanted answer for the topic equals want (subscribe
+// messages are processed on the read loop's goroutine).
 func waitWants(t *testing.T, s *Server, topic string, want bool) bool {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -193,18 +179,15 @@ func waitWants(t *testing.T, s *Server, topic string, want bool) bool {
 	return false
 }
 
-// TestSocketLogsTopicGated: `logs` is the sixth topic and the ONLY
-// subscription-gated one - a connection that never asked for it gets
-// nothing when a log delta is published, and a connection that asked
-// gets the typed delta. The gate is what keeps a high-frequency tail
-// from fanning out to every open pane.
+// TestSocketLogsTopicGated: `logs` is the sixth topic and the ONLY subscription-gated
+// one - a connection that never asked for it gets nothing when a log delta is
+// published, and a connection that asked gets the typed delta.
 func TestSocketLogsTopicGated(t *testing.T) {
 	s := newTestServer()
 	ts := httptest.NewServer(s.Handler())
 	defer ts.Close()
 
-	// the silent half: narrowed to health, so a logs publish must not
-	// reach it
+	// the silent half: narrowed to health, so a logs publish must not reach it
 	quiet := dialSocket(t, ts)
 	if err := quiet.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"health"}}); err != nil {
 		t.Fatalf("subscribe health: %v", err)
@@ -213,7 +196,6 @@ func TestSocketLogsTopicGated(t *testing.T) {
 		t.Fatal("the health-only connection still holds the logs topic")
 	}
 
-	// the listening half: asks for logs explicitly
 	live := dialSocket(t, ts)
 	if err := live.WriteJSON(map[string]any{"type": "subscribe", "topics": []string{"logs"}}); err != nil {
 		t.Fatalf("subscribe logs: %v", err)
@@ -236,9 +218,7 @@ func TestSocketLogsTopicGated(t *testing.T) {
 		t.Fatalf("delta = %v, want the two appended lines verbatim", delta.Lines)
 	}
 
-	// the quiet connection saw none of it (a read error is the ONLY
-	// correct outcome: gorilla marks a connection failed after a read
-	// timeout, so this is the last thing asked of it)
+	// the quiet connection saw none of it.
 	_ = quiet.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 	if _, raw, err := quiet.ReadMessage(); err == nil {
 		t.Fatalf("a health-only connection received a logs frame: %s", raw)

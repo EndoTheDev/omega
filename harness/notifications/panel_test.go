@@ -8,8 +8,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// newTestCapsule builds a memory-backed store wrapped in the capsule
-// seam exactly the way Mount does.
+// newTestCapsule builds a memory-backed store wrapped in the capsule seam exactly.
 func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 	t.Helper()
 	s, err := Open(":memory:")
@@ -21,10 +20,7 @@ func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 	return s, c, &emittingStore{store: s, capsule: c}
 }
 
-// TestCapsulePanelsShape: the provider declares exactly two panels -
-// the list with actions registered module-qualified, and the toast -
-// and the list payload carries the unread count plus per-row mark
-// bindings on unread rows only.
+// TestCapsulePanelsShape: the provider declares exactly two panels.
 func TestCapsulePanelsShape(t *testing.T) {
 	_, _, e := newTestCapsule(t)
 	if _, err := e.Emit(core.Notice{Kind: "cron", SourceID: "n1", Title: "cron n1 finished", Verdict: "failed"}); err != nil {
@@ -54,7 +50,6 @@ func TestCapsulePanelsShape(t *testing.T) {
 	if list.Kind != "list" || toast.Kind != "toast" {
 		t.Fatalf("kinds wrong: %q %q", list.Kind, toast.Kind)
 	}
-	// actions are module-qualified (settled Q4b)
 	for _, a := range list.Actions {
 		if a.Module != "notifications" {
 			t.Fatalf("action %q carries module %q", a.ID, a.Module)
@@ -81,7 +76,6 @@ func TestCapsulePanelsShape(t *testing.T) {
 	if _, ok := lp.Rows[0].RowAction.Args.(map[string]any)["id"]; !ok {
 		t.Fatalf("action binding carries no id: %+v", lp.Rows[0].RowAction)
 	}
-	// toast carries the newest record verbatim (a record-based push)
 	tr, ok := toast.Payload.(row)
 	if !ok || tr.SourceID != "t1" || tr.Verdict != "ok" {
 		t.Fatalf("toast payload wrong: %+v", toast.Payload)
@@ -91,10 +85,9 @@ func TestCapsulePanelsShape(t *testing.T) {
 	}
 }
 
-// TestEmitPushesToastAndList: the mounted seam implementation pushes
-// both panels on every emit - the emitter wiring lives in the module
-// (settled answer 3). Before registration installs the sink the pushes
-// stay silent (no nil dereference), after it they land.
+// TestEmitPushesToastAndList: the mounted seam implementation pushes both panels.
+// Before registration installs the sink the pushes stay silent (no nil dereference),
+// after it they land.
 func TestEmitPushesToastAndList(t *testing.T) {
 	_, c, e := newTestCapsule(t)
 	var updates []core.Panel
@@ -125,9 +118,7 @@ func TestEmitPushesToastAndList(t *testing.T) {
 	}
 }
 
-// TestHandleActionMarksRead: the action pipe mutates the store and
-// refreshes the list panel through the sink; a row binding drives the
-// same call the renderers make.
+// TestHandleActionMarksRead: the action pipe mutates the store and refreshes the list.
 func TestHandleActionMarksRead(t *testing.T) {
 	_, c, e := newTestCapsule(t)
 	got, err := e.Emit(core.Notice{Kind: "task", SourceID: "t9", Title: "task t9 done"})
@@ -158,7 +149,6 @@ func TestHandleActionMarksRead(t *testing.T) {
 		t.Fatalf("mark did not land: unread=%d err=%v rows=%+v", unread, err, notes)
 	}
 
-	// no args: the action refuses instead of guessing
 	if _, err := e.capsule.HandleAction(core.ActionCall{Module: "notifications", Action: actionRead}); err == nil {
 		t.Fatalf("mark_read without id must fail")
 	}
@@ -175,9 +165,7 @@ func TestHandleActionMarksRead(t *testing.T) {
 	}
 }
 
-// TestEmitAfterMarkCarriesNewestRecord: a toast push carries the
-// emitted record verbatim, not a re-read of the store - two emits in a
-// row push two distinct toasts.
+// TestEmitAfterMarkCarriesNewestRecord: a toast push carries the emitted record.
 func TestEmitAfterMarkCarriesNewestRecord(t *testing.T) {
 	_, c, e := newTestCapsule(t)
 	var toasts []row

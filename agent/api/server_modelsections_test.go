@@ -1,8 +1,6 @@
 package api
 
-// TestSetDefaultWorkspaceRefusal lives in
-// server_defaultworkspace_test.go (TestSetDefaultWorkspaceGuards) -
-// the setter's subject file. This file only carries the catalog pin.
+// TestSetDefaultWorkspaceRefusal lives in server_defaultworkspace_test.go.
 
 import (
 	"context"
@@ -17,8 +15,7 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// timedProvider is a minimal Provider whose /models listing can be
-// delayed - the dead instance in the grouped-catalog pin.
+// timedProvider is a minimal Provider whose /models listing can be delayed.
 type timedProvider struct {
 	modelName string
 	models    []string
@@ -46,9 +43,7 @@ func (p *timedProvider) Stream(context.Context, []core.Message, []llm.ToolSchema
 	return ch
 }
 
-// TestModelsSectionsDeadInstance: one unreachable instance must not
-// stall GET /models (part 1) - the answer comes back with the live
-// sections' models and the dead section's Error named.
+// TestModelsSectionsDeadInstance: one unreachable instance must not stall GET /models.
 func TestModelsSectionsDeadInstance(t *testing.T) {
 	old := modelSectionsTimeout
 	modelSectionsTimeout = 100 * time.Millisecond

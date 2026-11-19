@@ -1,10 +1,6 @@
 package memory
 
-// dotted_e2e_test.go: the split's acceptance witness (t_d8fbad57,
-// phase 2). A scripted provider drives every dotted memory tool
-// through the REAL agent loop - the same wire a model rides - and
-// the assertions read the store files. No server, no REST: the
-// loop's tool dispatch on the dotted names is the surface under test.
+// dotted_e2e_test.go: the split's acceptance witness.
 
 import (
 	"context"
@@ -28,16 +24,13 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		File:                 filepath.Join(dir, "memory.md"),
 		UserProfileFile:      filepath.Join(dir, "user.md"),
 	})
-	// Seeded entries give each scripted call its own known target:
-	// the loop executes tool calls concurrently, so no call may depend
-	// on another call's landing first.
+	// Seeded entries give each scripted call its own known target: the loop executes tool
+	// calls concurrently, so no call may depend on another call's landing first.
 	mem.Add("memory", "alpha")
 	mem.Add("memory", "beta")
 	p := &memoryToolProvider{mem: mem}
 
 	prov := agent.NewFakeProviderScripts("test",
-		// Turn 1: the model exercises every dotted tool back to back -
-		// one call per new tool name.
 		[]core.ProviderStreamEvent{
 			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{
 				ID: "c1", Name: "memory.add", Arguments: map[string]any{
@@ -63,7 +56,6 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 			}},
 			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
 		},
-		// Turn 2: respond and stop.
 		[]core.ProviderStreamEvent{
 			core.ResponseChunk{Type: "response_chunk", Content: "done"},
 			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -97,8 +89,7 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 4", results)
 	}
 
-	// the store is the truth: the add landed, the replace won over
-	// alpha, the batch landed its user row, the remove took beta out
+	// the store is the truth: the add landed, the replace won over alpha, the batch.
 	entries, _ := mem.List("memory")
 	if len(entries) != 2 {
 		t.Fatalf("memory store = %v, want the add + the replaced entry", entries)

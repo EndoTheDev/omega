@@ -1,8 +1,4 @@
-// omega webui: the general browser tab (card t_95c91f9c) - the registry
-// contract (main-pane singleton, closable, menu-listed), the pure logic
-// (URL normalization, the in-pane history, the refused-embed fallback
-// rule), and the structural wiring (the outlet, the capsule route the
-// tab drives). Run: node --test test/browser.test.ts
+// omega webui: the general browser tab - the registry contract.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -31,7 +27,7 @@ import {
 const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
-// --- the registry contract -----------------------------------------------------
+// the registry contract --------------------------------------------------
 
 describe("the browser dockable (t_95c91f9c)", () => {
   it("is in the registry: a main-pane singleton, closable", () => {
@@ -67,7 +63,7 @@ describe("the browser dockable (t_95c91f9c)", () => {
   });
 });
 
-// --- the pure logic -------------------------------------------------------------
+// the pure logic ----------------------------------------------------------
 
 describe("browserLogic: url normalization", () => {
   it("prefixes the https law on schemeless input", () => {
@@ -95,7 +91,6 @@ describe("browserLogic: the in-pane history", () => {
     h = pushNav(h, "https://b.test");
     assert.deepEqual(h, { urls: ["https://a.test", "https://b.test"], idx: 1 });
 
-    // back then a fresh commit rewrites the forward tail
     const back = stepNav(h, -1)!;
     assert.deepEqual(back, { urls: ["https://a.test", "https://b.test"], idx: 0 });
     h = pushNav(back, "https://c.test");
@@ -132,10 +127,6 @@ describe("browserLogic: the refused-embed fallback", () => {
   });
 
   it("the fallback rule is probe-gated, the timer stays the slow path", () => {
-    // the component's wiring, pinned structurally: beginEmbed arms the
-    // window AND fires the probe; only a definitive negative flips the
-    // fallback; a refused load event may NOT heal it (probeRefused) and
-    // may NOT persist
     const src = read("../harness/browser/ui/BrowserTab.vue");
     assert.ok(src.includes("FALLBACK_AFTER_MS"), "the constant is used");
     assert.ok(src.includes("onFrameLoad"), "the load handler exists");
@@ -149,7 +140,7 @@ describe("browserLogic: the refused-embed fallback", () => {
     );
     assert.ok(src.includes("refused.value = false"), "a late decision clears the fallback");
     assert.ok(src.includes("window.open"), "open in a new tab exists");
-    // card t_a92450ea: the ONE copy path - copyText, awaited
+    // the ONE copy path - copyText, awaited
     assert.ok(src.includes("copyText(address.value)"), "copy URL exists");
   });
 
@@ -171,7 +162,7 @@ describe("browserLogic: the probe verdict", () => {
   });
 });
 
-// --- the structural wiring -------------------------------------------------------
+// the structural wiring ----------------------------------------------------
 
 describe("browser wiring", () => {
   it("the outlet template mounts the manifest's browser view", () => {

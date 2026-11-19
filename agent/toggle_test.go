@@ -1,9 +1,6 @@
 package agent
 
-// The E2 toggle-surface proofs: introspection (Modules), the Q7 one-
-// path cycle (disable through the journal, enable through the scoped
-// proxy), the Q3 dependents cascade and the missing-edge rejection,
-// the tier law at toggle time, and the Q12 refusal ledger.
+// The E2 toggle-surface proofs.
 
 import (
 	"context"
@@ -27,8 +24,6 @@ func statOf(t *testing.T, reg *Registry, name string) core.ModuleStatus {
 }
 
 func TestToggleRoundTripCensus(t *testing.T) {
-	// Q7, surfaced: disable -> enable cycles through the same mount
-	// machinery and the census comes back to its baseline each turn.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&toggleCapsule{name: "base"}, &toggleCapsule{name: "mod"}}, ctx, nil, nil)
 	if err != nil {
@@ -59,8 +54,6 @@ func TestToggleRoundTripCensus(t *testing.T) {
 }
 
 func TestToggleIntrospection(t *testing.T) {
-	// The settings list law: core provides the vocabulary, the
-	// registry the values - name, state, edges, tier.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&toggleCapsule{name: "kanban", provides: []string{"kanban"}}, &classicNoProof{name: "store"}}, ctx, nil, []string{"kanban"})
 	if err != nil {
@@ -80,7 +73,6 @@ func TestToggleIntrospection(t *testing.T) {
 	if store.State != "mounted" {
 		t.Fatalf("store state %q, want mounted", store.State)
 	}
-	// Toggle on flips the state through the introspection.
 	if err := reg.Toggle(ctx, "kanban", true, core.StartDeps{}); err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +82,6 @@ func TestToggleIntrospection(t *testing.T) {
 }
 
 func TestToggleCascadeDependents(t *testing.T) {
-	// Q3, surfaced: disabling a lone provider takes its dependents
-	// down in the same toggle, and the introspection lists them.
 	base := &toggleCapsule{name: "notifications", provides: []string{"notifications"}}
 	dep := &dependentToggle{name: "cron", requires: []string{"notifications"}}
 	ctx := &core.Context{}
@@ -144,17 +134,12 @@ func (c *dependentToggleMount) MountWithAPI(ctx *core.Context, api *ExtensionAPI
 }
 
 func TestToggleCascadeUnwindsDependentSurface(t *testing.T) {
-	// The cascade is not just bookkeeping: the dependent's census
-	// surface (its tool, command, handle) disappears with it, and the
-	// census comes back to the pre-cascade baseline on re-enable.
 	ctx := &core.Context{}
 	base := &toggleCapsule{name: "notifications", provides: []string{"notifications"}}
 	reg, err := MountAllAPI([]Plugin{Plugin(&dependentToggleMount{name: "cron", requires: []string{"notifications"}}), base}, ctx, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// cron mounted after notifications (topo: dependent later), so its
-	// census surface is on top of the base's.
 	full := core.Census(ctx)
 	if err := reg.Toggle(ctx, "notifications", false, core.StartDeps{}); err != nil {
 		t.Fatal(err)
@@ -163,8 +148,7 @@ func TestToggleCascadeUnwindsDependentSurface(t *testing.T) {
 	if after.Equal(full) {
 		t.Fatal("the cascade left the dependents' surface up")
 	}
-	// Exactly the dependent's surface went: its tool, command and
-	// handle are gone, the base's census stays.
+	// Exactly the dependent's surface went.
 	for _, tool := range after.Tools {
 		if tool == "cron.probe" {
 			t.Fatal("the dependent's tool survived the cascade")
@@ -207,8 +191,6 @@ func (c *dependentToggle) Mount(*core.Context) error {
 func (c *dependentToggle) MountWithAPI(*core.Context, *ExtensionAPI) error { return nil }
 
 func TestToggleEnableMissingEdgeRejected(t *testing.T) {
-	// Q3 at toggle time: enabling the dependent first is rejected
-	// naming the disabled provider; enabling the provider first works.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{Plugin(&dependentToggle{name: "cron", requires: []string{"notifications"}}), &toggleCapsule{name: "notifications", provides: []string{"notifications"}}}, ctx, nil, []string{"notifications", "cron"})
 	if err != nil {
@@ -235,8 +217,6 @@ func TestToggleEnableMissingEdgeRejected(t *testing.T) {
 }
 
 func TestToggleTierLaw(t *testing.T) {
-	// Disabling a machine-critical module is rejected at toggle time
-	// with the same tier text boot uses.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&toggleCapsule{name: "base"}, &classicNoProof{name: "store"}}, ctx, nil, nil)
 	if err != nil {
@@ -249,17 +229,12 @@ func TestToggleTierLaw(t *testing.T) {
 	if !reg.isActive("store") {
 		t.Fatal("the rejected module must stay mounted")
 	}
-	// The unknown name fails loud too.
 	if err := reg.Toggle(ctx, "kaban", false, core.StartDeps{}); err == nil || !strings.Contains(err.Error(), "no such module") {
 		t.Fatalf("unknown module must fail loud: %v", err)
 	}
 }
 
 func TestToggleRemountPanicRollsBackAndRejects(t *testing.T) {
-	// Q11 at toggle time: a module that panics on remount is rejected
-	// with the ModulePanicError text, the census holds its baseline
-	// and the server keeps running. The panicker reached the catalog
-	// through the boot skip - disabled, not mounted.
 	ctx := &core.Context{}
 	reg, err := MountAllAPI([]Plugin{&toggleCapsule{name: "panicker", panicMount: true}}, ctx, nil, []string{"panicker"})
 	if err != nil {
@@ -281,9 +256,7 @@ func TestToggleRemountPanicRollsBackAndRejects(t *testing.T) {
 	}
 }
 
-// emitterProbeCapsule mounts the notifications seam and an emitter
-// hook that counts its deliveries - the emit-on-remount law's test
-// subject.
+// emitterProbeCapsule mounts the notifications seam and an emitter hook that counts.
 type emitterProbeCapsule struct {
 	name   string
 	counts *int
@@ -310,10 +283,9 @@ func (c *emitterProbeCapsule) MountWithAPI(_ *core.Context, api *ExtensionAPI) e
 }
 
 func TestRemountReplaysEmitter(t *testing.T) {
-	// The emit-on-remount law: the boot deliver runs once, at
-	// MountAllAPI's end; a remount's fresh hooks register past it. The
-	// toggle cycle must replay them - or the module's finished-things
-	// handoff stays nil until the next restart.
+	// The emit-on-remount law: the boot deliver runs once, at MountAllAPI's end. The
+	// toggle cycle must replay them - or the module's finished-things handoff stays nil
+	// until the next restart.
 	counts := 0
 	var seen any
 	ctx := &core.Context{}
@@ -341,8 +313,6 @@ func TestRemountReplaysEmitter(t *testing.T) {
 	if after := core.Census(ctx); !after.Equal(full) {
 		t.Fatalf("the replay drifted the census: %v", after.Diff(full))
 	}
-	// The undo is per-lifetime: the second disable removes the second
-	// hook and the count stops where the replay left it.
 	if err := reg.Toggle(ctx, "mod", false, core.StartDeps{}); err != nil {
 		t.Fatal(err)
 	}

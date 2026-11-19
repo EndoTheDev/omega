@@ -23,10 +23,7 @@ import (
 // refactors - the goldens must stay byte-stable across them.
 var updateGolden = os.Getenv("OMEGA_UPDATE_GOLDEN") == "1"
 
-// envLine matches the environment stamp lines that vary by host:
-// the date stamp, and the OS/Shell pair (windows answers windows +
-// cmd.exe, everything else linux + bash). All three are scrubbed
-// before comparison so the goldens stay portable across hosts.
+// envLine matches the environment stamp lines that vary by host.
 var envLine = regexp.MustCompile(`(?m)^(Date|OS|Shell): .*$`)
 
 // scrubEnv replaces the host-varying environment lines with placeholders.
@@ -43,8 +40,7 @@ func scrubEnv(prompt string) string {
 	})
 }
 
-// wireContext mounts the production extension set the same way
-// cmd/omega does: memory, skills, tools, prompt, with their configs.
+// wireContext mounts the production extension set the same way cmd/omega does.
 // Extensions then come from ctx.Infos, exactly like the real loop.
 func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Context {
 	t.Helper()
@@ -60,9 +56,6 @@ func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Cont
 		memory.NewPlugin(),
 		skills.NewPlugin(),
 		tools.NewPlugin(),
-		// card t_48eeb015: the tool capsules ride their own plugins now
-		// (the registry lists ext rows by owner) - the same mount shape
-		// cmd/omega wires.
 		files.NewPlugin(),
 		terminal.NewShellPlugin(),
 		NewPlugin(),
@@ -121,9 +114,7 @@ func minimalOpts(ctx *core.Context) core.PromptBuildOptions {
 	}
 }
 
-// compareGolden renders a scenario and checks it against its golden
-// file under testdata/. Host-varying environment lines are scrubbed
-// first (scrubEnv).
+// compareGolden renders a scenario and checks it against its golden file.
 func compareGolden(t *testing.T, name string, prompt string) {
 	t.Helper()
 	scrubbed := scrubEnv(prompt)
@@ -146,8 +137,7 @@ func compareGolden(t *testing.T, name string, prompt string) {
 	}
 }
 
-// TestPromptGoldenFull pins the fully rendered prompt with every
-// extension section populated and every prompt input set.
+// TestPromptGoldenFull pins the fully rendered prompt with every extension section.
 func TestPromptGoldenFull(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "skills")
@@ -170,8 +160,7 @@ func TestPromptGoldenFull(t *testing.T) {
 	compareGolden(t, "golden_prompt_full", prompt)
 }
 
-// TestPromptGoldenMinimal pins the prompt with sections populated but
-// no project context, custom, or append input.
+// TestPromptGoldenMinimal pins the prompt with sections populated but no project.
 func TestPromptGoldenMinimal(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "skills")
@@ -194,8 +183,7 @@ func TestPromptGoldenMinimal(t *testing.T) {
 	compareGolden(t, "golden_prompt_minimal", prompt)
 }
 
-// TestPromptGoldenEmptyStores pins the prompt when skills and memory
-// are mounted but hold nothing: no skills section, no memory block.
+// TestPromptGoldenEmptyStores pins the prompt when skills and memory are mounted.
 func TestPromptGoldenEmptyStores(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "skills") // exists, but empty
@@ -219,9 +207,6 @@ func TestPromptGoldenEmptyStores(t *testing.T) {
 	if strings.Contains(prompt, "## Available Skills") {
 		t.Error("prompt has Available Skills section with empty skills dir")
 	}
-	// Card t_4f2c7b2e: the Tools section renders the sub-verb delta only,
-	// so the wired set (no tool declares Actions) contributes nothing -
-	// the plain tool descriptions ride the JSON schema, not the prompt.
 	if strings.Contains(prompt, "## Tools") {
 		t.Error("prompt carries a Tools section although no wired tool declares Actions")
 	}

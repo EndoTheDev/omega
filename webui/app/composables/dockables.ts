@@ -1,69 +1,20 @@
-// omega webui: THE DOCKABLE CONTRACT (card t_30ee04fb). One registry for
-// everything a dock pane can host: id, title, icon, and the INSTANCE
-// POLICY. "singleton" components exist at most once - opening one while
-// an instance is alive FOCUSES that instance instead of creating a
-// second; "multi" components (chat) mint a real tab every open. Global
-// chrome (MenuBar, StatusBar) is NOT in this registry: they are the
-// window, not content - never dockable.
-//
-// PURE on purpose: no Vue, no fs. The dock (dock.ts) re-exports the
-// component universe from here, the menus render the inventory, and the
+// omega webui: THE DOCKABLE CONTRACT. Global chrome (MenuBar, StatusBar) is NOT in this
+// registry: they are the window, not content - never dockable. The dock (dock.ts)
+// re-exports the component universe from here, the menus render the inventory, and the
 // unit suite pins every contract rule.
-//
-// Module-owned components join through the composition manifest
-// (t_d984b493): a module may ship ui/dockable.json beside its panels -
-// the same declaration shape, read at build time by compose.ts and
-// carried on the generated panel list. dockablesFromPanels() lifts
-// those into registry-shaped entries; module entries stay OUT of the
-// openable DockComponentName union until an outlet slot exists.
 
 import type { PaneZone } from "./panes.ts";
 
-// component names a dock pane may host. Single source: the registry
-// below IS this list (dock.ts re-exports for its consumers).
-//
-// card t_4ae27e0d (the pane-model reset): "inspector" is no longer a
-// component - the right sidebar's views are REAL dock tabs living in one
-// sidebar-pinned pane. The module ids mirror the shipped module names
-// verbatim (cron / skills / tools / kanban) so the app's
-// outlet templates and the composition lookup agree without an alias map.
-// card t_49d0b308: settings moved into the inspector; card t_00e4a784
-// (Endo ruling 2026-11-09) MOVED IT BACK OUT - settings is an on-demand
-// main-area tab now, opened by the menubar gear.
-// card t_617c2ad0 (the capsule-ui migration): the TAB capsules - the
-// modules whose dockable is ONE tab view, not an inspector panel body.
-// The shell keeps the composition decision (which modules the dock
-// hosts as tabs, in this order - the registry order below): the capsule
-// ships the component in harness/<name>/ui/ and the build's module-tabs
-// scan (nuxt.config.ts) generates the import manifest
-// (module-tabs.generated.ts); app.vue's outlets bind the component
-// from that manifest, never a hardcoded import. Removing the capsule
-// drops its manifest entry and the outlet hosts nothing (the panel
-// capsules' empty-body shape) - the deletability proof.
+// component names a dock pane may host. The shell keeps the composition decision (which
+// modules the dock hosts as tabs, in this order - the registry order below): the
+// capsule ships the component in harness/<name>/ui/ and the build's module-tabs scan
+// (nuxt.config.ts) generates the import manifest (module-tabs.generated.ts); app.vue's
+// outlets bind the component from that manifest, never a hardcoded import.
 export const TAB_MODULES = [
-  // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
-  // integrated terminal - VS Code-style, no restrictions (no
-  // confirm-gate, no opt-in; the owner's box behind the tailnet). Its
-  // default home is the bottom panel - the t_67fc1905 reservation.
+  // the integrated terminal - VS Code-style, no restrictions.
   "terminal",
-  // card t_95c91f9c (Endo ruling 2026-11-01): the general web browser
-  // pane - URL bar + iframe embed, ANY origin allowed (no allowlist, no
-  // origin gate; the tailnet-only restriction was rejected).
   "browser",
-  // card t_180db2cb (Endo ruling 2026-10-29): the notifications tab -
-  // the durable feed/history in the inspector; the transient toasts
-  // are the shell's own (they serve ANY emitter, components/shell/).
   "notifications",
-  // card t_e703180e (the observability arc's face half): the LOGS tab -
-  // the structured run-event stream (primary) over the raw log tail
-  // (secondary, behind a chip), session-scoped, errors-only filter.
-  // card t_01c53e78 (Endo ruling 2026-11-13): this tab IS the one logs
-  // surface - the old raw-tail http_channel pane answered the same
-  // question and died with its component; the survivor carries the name
-  // "Logs". The view is the observability capsule's own
-  // (harness/observability/ui/ObservabilityTab.vue); disabling the
-  // capsule leaves the tab rendering its 404 sentence, and deleting it
-  // drops this manifest entry (the deletability proof).
   "observability",
 ] as const;
 export const DOCK_COMPONENTS = [
@@ -79,71 +30,40 @@ export const DOCK_COMPONENTS = [
   "kanban",
   "insights",
   "mcp",
-  // card t_9855a20e: the never-zero placeholder ("newtab", card
-  // t_d04a1c80) LEFT this list - see LEGACY_DOCK_COMPONENTS.
-  // card t_55a3fc4b (Endo ruling 2026-11-01, the v0.15 arc): the
-  // integrated terminal joins - VS Code-style, no restrictions (no
-  // confirm-gate, no opt-in; the owner's box behind the tailnet). One
-  // terminal per pane (the singleton invariant reads one per host);
-  // more terminals = more panes/splits. Its default home is the bottom
-  // panel - the home the dock registry's comments reserved for it since
-  // card t_67fc1905 - and it moves freely like every non-locked tab.
-  // card t_95c91f9c (Endo ruling 2026-11-01): the general web browser
-  // pane - URL bar + iframe embed, ANY origin allowed (no allowlist, no
-  // origin gate; the tailnet-only restriction was rejected). Known
-  // ceiling, built honestly around it: sites that send X-Frame-Options
-  // refuse the embed, and the tab answers with a clean fallback panel
-  // (open in a new tab + copy-URL), never a silent blank frame. No
-  // proxy, no header stripping in v1.
-  // card t_180db2cb (Endo ruling 2026-10-29): "notifications should move
-  // from top right to its own tab (secondary pane)". The top-right bell
-  // entry point is GONE entirely (deletability law - no bell chrome, no
-  // popover); the durable feed/history lives in this inspector tab, the
-  // transient toasts stay shell-owned (components/shell/), and
-  // the unread badge rides THIS tab's icon chip in the dock.
-  // The tab capsules' views ride the module-tabs manifest - the
-  // components below these ids live in harness/<name>/ui/ now.
+  // the never-zero placeholder LEFT this list - see LEGACY_DOCK_COMPONENTS. One
+  // terminal per pane (the singleton invariant reads one per host); more terminals =
+  // more panes/splits. Known ceiling, built honestly around it: sites that send
+  // X-Frame-Options refuse the embed, and the tab answers with a clean fallback panel
+  // (open in a new tab + copy-URL), never a silent blank frame.
   ...TAB_MODULES,
-  // card t_c7222095 (deletability law): "continuous" left the dock
-  // registry with its tab - the roster folded into the Agents tab
-  // (one agent = one row: config + wake state + report preview). A
-  // persisted pre-merge layout that still carries a continuous chip
-  // drops it with the usual repair note, like "canvas" above.
 ] as const;
 export type DockComponentName = (typeof DOCK_COMPONENTS)[number];
 
-// pre-reset trees persist tabs {component: "inspector"}; deserialize
-// still accepts the legacy id (createDock modernizes it to the inspector
-// group on load) but nothing may open one again.
-// card t_9855a20e: "newtab" is LEGACY too. It was the never-zero
-// placeholder (card t_d04a1c80) a close seated in a pane's last-tab slot;
-// Endo's 2026-11-14 ruling retired the approach - the blank "New Tab"
-// body WAS the empty bad looking space, and the law it carried is now THE
-// LOCKED LAST TAB (dock.ts closeTab refuses; DockPane renders the lone
-// tab's X disabled + dimmed since t_b72a4ee3). Records persisted while the
-// placeholder lived still parse here, and the loader's repairPaneSeats
-// converts such a seat into a fresh new-chat tab on boot.
+// pre-reset trees persist tabs {component. It was the never-zero placeholder a close
+// seated in a pane's last-tab slot; retired the approach - the blank "New
+// Tab" body WAS the empty bad looking space, and the law it carried is now THE LOCKED
+// LAST TAB.
 export const LEGACY_DOCK_COMPONENTS = ["inspector", "newtab"] as const;
 
 export type DockInstancePolicy = "singleton" | "multi";
 
-// --- THE CLASS LAW (canvas C1, the seat map) ---------------------------------
+// THE CLASS LAW (canvas C1, the seat map) ------------------------------
 //
 // Every view has ONE class and ONE default home. The class IS its home's
 // zone - there is no separate "area" truth to drift from it: `area` on a
 // registry entry is DERIVED from the class (DOCKABLES composes it), so a
 // component cannot be classed one place and seated another.
 //
-//   primary-sidebar   sessions, agents, crons        -> the left shell
-//   secondary-sidebar files, skills, tools, mcp,    -> the right shell
+// primary-sidebar sessions, agents, crons -> the left shell
+// secondary-sidebar files, skills, tools, mcp, -> the right shell
 //                     kanban, insights, notifications
-//   main              chat, viewer (file preview),  -> the main column
+// main chat, viewer (file preview), -> the main column
 //                     browser, settings (the gear's
 //                     on-demand tab, never a sidebar view)
-//   bottom            logs (observability),         -> the bottom panel
+// bottom logs (observability), -> the bottom panel
 //                     terminal
 //
-// THE ZONE LAW (ruled 2026-11-17, uniform visit grammar): a view may OCCUPY
+// THE ZONE LAW: a view may OCCUPY
 // exactly the zones its class allows - zonesOfClass below is the one
 // matrix, and the dock's drag legality reads it (seatAllowsIn). Main
 // members never leave the main pane; bottom members visit the two sidebars
@@ -153,10 +73,9 @@ export type DockInstancePolicy = "singleton" | "multi";
 // returns it home. No permanent move-out via drag exists.
 export type ViewClass = "primary-sidebar" | "secondary-sidebar" | "main" | "bottom";
 
-/** the four seats, in the pane vocabulary the layout record persists
-    (panes.ts PaneZone; `left` = primary, `right` = secondary). The dock's
-    historical name for the same four values - kept because every persisted
-    record and every pane marker speaks it. */
+/**
+ * the four seats, in the pane vocabulary the layout record persists.
+ */
 export type DockArea = PaneZone;
 
 /** THE CLASS <-> ZONE MAP (the one adapter; nothing else may spell it) */
@@ -173,23 +92,17 @@ export function areaOfClass(c: ViewClass): DockArea {
   }
 }
 
-/** THE ZONE LAW as one matrix: the zones a view of class `c` may OCCUPY.
-    Order is the seat map's (primary, secondary, main, bottom) so a reader
-    compares sets by eye. */
+/** THE ZONE LAW as one matrix: the zones a view of class `c` may OCCUPY. */
 export function zonesOfClass(c: ViewClass): readonly DockArea[] {
   switch (c) {
     case "main":
-      // main members NEVER leave the main pane - not to a sidebar, not to
-      // the bottom panel (a heavyweight pane in a narrow column is rejected
-      // mechanism (e), not a layout we support)
+      // main members NEVER leave the main pane.
       return ["main"];
     case "bottom":
       // bottom members may visit BOTH sidebars, never the main pane
       return ["left", "right", "bottom"];
     case "primary-sidebar":
     case "secondary-sidebar":
-      // sidebar views move freely between the two sidebars, visit the main
-      // pane as a temporary promote, and visit the bottom pane
       return ["left", "right", "main", "bottom"];
     default:
       // runtime data outside the union (a stale entry, a fixture) occupies
@@ -198,74 +111,47 @@ export function zonesOfClass(c: ViewClass): readonly DockArea[] {
   }
 }
 
-// card t_502b8e81: `icon` is a semantic NAME in the webui iconset
-// (composables/icons.ts ICONS - lucide-vue-next behind the Icon.vue
-// wrapper). The names stay PURE strings here: the iconset test pins every
-// registry entry as a key of ICONS, and the Icon wrapper throws at render
-// time on a name this registry never declared.
+// `icon` is a semantic NAME in the webui iconset (composables/icons.ts ICONS. The names
+// stay PURE strings here: the iconset test pins every registry entry as a key of ICONS,
+// and the Icon wrapper throws at render time on a name this registry never declared.
 
-// the honest floors (card t_ae9ac5cf). The chat family keeps the 320px
-// wall (a pane that might show a chat must keep chat room); every tool
-// component floors at the shared 128px pane minimum - Endo's screenshot
-// proved a 250px tool pane renders fine, so a tool-only tab never counts
-// 320 against the "no room" math. These also back paneFloorOf/minDockPx
-// (dock.ts) - one floor law for the reveal check AND the drag clamps.
+// the honest floors. The chat family keeps the 320px wall (a pane that might show a
+// chat must keep chat room); every tool component floors at the shared 128px pane
+// minimum - Endo's screenshot proved a 250px tool pane renders fine, so a tool-only tab
+// never counts 320 against the "no room" math.
 export const MIN_PANE_PX = 128;
 export const CHAT_FLOOR_PX = 320;
 
-/** the registry entry. `title` is the display voice for the tab/menu chip */
-// (Title Case for shell tabs - Files, Agents, Insights - the
-// module dockable.json titles follow the same voice); the open flows add
-// their own verb (chat's multi policy reads "new chat" in the menus).
-// Module-tab titles are resolved at runtime from each module's
-// ui/dockable.json (the app's DOCK_TAB_TITLE resolver) - the registry
-// title is only the fallback. card t_556ee727: identifiers, routes and
-// file paths stay lowercase everywhere - the casing lives in this label
-// alone.
-// card t_81d0901b: the module lifecycle surface is NOT a dockable any
-// more - module toggles are configuration, so they live in the settings
-// tab's MODULES section (components/settings/ModulesSection.vue).
+/** the registry entry. */
+// (Title Case for shell tabs.
 export interface DockableComponent {
   id: DockComponentName;
   title: string;
-  /** the iconset name - see the iconset comment above the registry */
   icon: string;
   policy: DockInstancePolicy;
-  /** THE CLASS LAW: what the view IS. Its home follows from it (area). */
   class: ViewClass;
-  /** the view's default home zone - DERIVED from `class` by DOCKABLES
-      (areaOfClass), never declared twice. Every persisted record and pane
-      marker speaks this vocabulary. */
+  /**
+   * the view's default home zone - DERIVED from `class` by DOCKABLES (areaOfClass),
+   * never declared twice.
+   */
   area: DockArea;
-  /** card t_67fc1905: the hosts that keep this component alive BEYOND its
-      `area` home. Most components are single-host ([area] by omission);
-      the machinery stays for a future multi-home domain (the terminal
-      tab). Two instances may coexist across hosts;
-      the singleton "at most once" invariant reads one per host. */
+  /**
+   * the hosts that keep this component alive BEYOND its `area` home.
+   * Two instances may coexist across hosts; the singleton "at most once" invariant
+   * reads one per host.
+   */
   homes?: readonly DockArea[];
-  /** card t_67fc1905: where a FRESH built host seats this component -
-      its default home. null/omitted = `area`. The bottom host's builder
-      reads this: every component with defaultHome "bottom" joins the
-      fresh bottom panel's tab strip (the terminal and Logs, one place to
-      grow). */
   defaultHome?: DockArea;
-  /** tab shows a hover-X. Pinned components (left/right) are unclosable:
-      their pane hosts them forever; main tabs close (hover-X). */
   closable: boolean;
-  /** card t_ae9ac5cf: the component's honest px floor - a pane whose
-      WORST hosted tab is this component may never be starved below it
-      (the reveal's "no room" math and the divider drags read the same
-      floor). chat = CHAT_FLOOR_PX; the tool family = MIN_PANE_PX. */
+  /**
+   * the component's honest px floor - a pane whose WORST hosted tab is this component
+   * may never be starved below it (the reveal's "no room" math and the divider drags
+   * read the same floor).
+   */
   minPx: number;
 }
 
-// THE pinned identity (card t_4ae27e0d): sidebar = the sessions pane
-// (singleton, pinned left, unclosable); the inspector group = sidebar-
-// pinned right with every view tab unclosable. card t_49d0b308: chat is
-// the only closable component left - settings moved into the inspector
-// group and the kanban board is born there. card t_00e4a784: settings
-// LEFT the inspector again (the menubar gear opens it as a closable
-// main tab), so the closable class is chat + viewer + browser + settings.
+// THE pinned identity: sidebar = the sessions pane.
 export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "area">)[] = [
   {
     id: "sidebar",
@@ -284,18 +170,10 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: true,
   },
   {
-    // card t_36ceb99b (Endo's in-app comments batch 2): the content
-    // viewer - clicking a SKILL row or a FILE tree row opens a main-pane
-    // tab hosting the content. multi policy (one tab per opened
-    // file/skill, like chat), closable like chat; it never appears in
-    // the '+' menus (an EMPTY viewer tab is meaningless - content is the
-    // tab, there is no empty viewer), so its only entry point is a row
-    // click. The per-tab payload (ViewerRef: file path or skill name)
-    // rides the tab; the tab chip's icon follows the CONTENT type
-    // (DockPane's tabIcon reads it) - file rows keep the extension
-    // glyphs, skill rows the skills book. Deletability: remove the
-    // viewer registry entry + ViewerTab.vue + the small openers and the
-    // feature is gone (no vocabulary left elsewhere).
+    // (Endo's in-app comments batch 2). multi policy (one tab per opened file/skill,
+    // like chat), closable like chat; it never appears in the '+' menus (an EMPTY
+    // viewer tab is meaningless - content is the tab, there is no empty viewer), so its
+    // only entry point is a row click.
     id: "viewer",
     title: "viewer",
     icon: "file-text",
@@ -316,8 +194,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     title: "cron",
     icon: "cron",
     policy: "singleton",
-    // canvas C1 seat map: cron is a PRIMARY-sidebar view (the scheduler is
-    // a companion of sessions and agents, not an inspector tab)
     class: "primary-sidebar",
     closable: false,
   },
@@ -338,28 +214,18 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_c7222095: the agents panel - now the MERGED agent surface
-    // (config roster + the continuous wake state). Card t_72ecca67's
-    // "continuous" dockable FOLDED in here per the deletability law: one
-    // agent is one row - the config facts, the runtime badge, the report
-    // preview and the wake/sleep strip live in the same tab.
     id: "agents",
     title: "Agents",
     icon: "agents",
     policy: "singleton",
-    // canvas C1 seat map: the agent roster is a PRIMARY-sidebar view - it
-    // is the roster of who is working, the left shell's own subject
     class: "primary-sidebar",
     closable: false,
   },
   {
-    // card t_00e4a784 (Endo ruling 2026-11-09): settings is an ON-DEMAND
-    // main-area tab - the menubar gear (seated beside the right-sidebar
-    // toggle) opens it, closable like chat: VSCode's settings tab. It is
-    // NOT a permanent inspector tab anymore; the inspector strip and its
-    // boot repair never seat it (retireInspectorSettings drops a legacy
-    // seat on load), which is the whole point of the ruling. The '+'
-    // menu still carries no entry - the gear is the entry point.
+    // settings is an ON-DEMAND main-area tab. It is NOT a permanent inspector tab
+    // anymore; the inspector strip and its boot repair never seat it
+    // (retireInspectorSettings drops a legacy seat on load), which is the whole point
+    // of the rule.
     id: "settings",
     title: "Settings",
     icon: "settings",
@@ -376,14 +242,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_d7fd3ad3 (Endo's eyeball round 2): insights' real home is the
-    // SECONDARY sidebar - a default-visible inspector tab, label "Insights"
-    // (the kanban inspector tab is the pattern). This supersedes the
-    // main-area width-pressure ruling (t_e1e61680): the dashboard's grid
-    // stacks in the ~300px column, and the loader (restoreSeatSet)
-    // seats it in the right shell on every boot. Singleton + unclosable
-    // like every inspector view; the main '+' menu entry stays (the
-    // singleton opener FOCUSES the sidebar instance - clean coexistence).
     id: "insights",
     title: "Insights",
     icon: "insights",
@@ -392,14 +250,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_c7136c50: the MCP tab - the configured MCP servers as the
-    // bridge sees them (name, transport, mount-time connection state,
-    // per-server failure, discovered server-qualified tools), listed
-    // from GET /mcp/servers. The panel body is the module's own
-    // (harness/mcp/ui, the composition mount); the registry entry only
-    // opens the inspector tab - no mcp vocabulary beyond that. Read-
-    // only: enable/disable stays config.yaml domain. Unclosable like
-    // every inspector view.
     id: "mcp",
     title: "MCP",
     icon: "mcp",
@@ -408,17 +258,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_55a3fc4b (Endo ruling 2026-11-01): the integrated
-    // terminal - a pty per hosting pane, streamed over SSE from the
-    // terminal module's routes (POST /terminal/sessions claims, GET
-    // .../stream replays+streams, POST .../input types, DELETE kills).
-    // NO restrictions (the owner's explicit ruling): the tab opens
-    // with no gate, like the Files tab. Home is the bottom panel (the
-    // t_67fc1905 reservation cashed in); the shell keeps running
-    // server-side while another tab is active - the detached session
-    // reattaches with its 256KiB replay on remount. Unclosable (the
-    // pinned-bottom shape the Logs tab has): the tab is the module's
-    // whole face, removing it means removing the module.
     id: "terminal",
     title: "Terminal",
     icon: "terminal",
@@ -427,17 +266,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_e703180e (the observability arc's face half): the Logs tab -
-    // the STRUCTURED run-event stream as the primary view, the raw log
-    // tail as a secondary view inside the same tab (Endo's ruling 1: the
-    // tail is not a peer tab), session scope defaulting to the open
-    // session, an errors-only chip, no free-text search in v1. Home is
-    // the bottom panel - the logs home, where a wide, short stream reads
-    // best - seated by the same default-home mapping the terminal rides.
-    // card t_01c53e78 (Endo ruling 2026-11-13): the tab is NAMED "Logs" -
-    // the raw-tail http_channel pane that used to own that name answered
-    // the same question and retired; one pane survives. Unclosable (the
-    // pinned-bottom shape): the tab is the capsule's whole face.
     id: "observability",
     title: "Logs",
     icon: "activity",
@@ -446,15 +274,10 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: false,
   },
   {
-    // card t_95c91f9c: the general web browser - a MAIN-pane content tab
-    // like chat and the viewer. Singleton (one browser in the shell: the
-    // menu opener FOCUSES it - two live iframes are two sites one pane
-    // should own), closable like chat. The panel body is the browser
-    // capsule's own harness/browser/ui/BrowserTab.vue (card t_617c2ad0,
-    // the tabs manifest carries the import) over harness/browser's
-    // GET/PUT /browser/last (the resume URL); sites that refuse
-    // embedding get the tab's fallback panel, never a silent blank
-    // frame.
+    // the general web browser - a MAIN-pane content tab like chat and the viewer. The
+    // panel body is the browser capsule's own harness/browser/ui/BrowserTab.vue over
+    // harness/browser's GET/PUT /browser/last (the resume URL); sites that refuse
+    // embedding get the tab's fallback panel, never a silent blank frame.
     id: "browser",
     title: "Browser",
     icon: "browser",
@@ -463,19 +286,6 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
     closable: true,
   },
   {
-    // card t_180db2cb: the notifications tab - the DURABLE feed/history
-    // of finished things (kanban tasks, cron fires, chat runs), rehomed
-    // from the top-right bell popover into the secondary pane (Endo's
-    // two rulings, 2026-10-29: (1) the bell icon dies entirely - the
-    // notifications dockable's icon chip carries the unread badge;
-    // (2) transient toasts STAY for live events). The panel body is the
-    // capsule's own (harness/notifications/ui/NotificationsPanel.vue,
-    // card t_617c2ad0 - the tabs manifest carries the import) over GET
-    // /notifications + POST /notifications/read (data source unchanged).
-    // Opening/focusing the tab marks the feed read (the badge clears on
-    // open). Unclosable like every inspector view.
-    // The glyph is the inbox (lucide Inbox) - the bell vocabulary left
-    // the iconset with the chrome that carried it.
     id: "notifications",
     title: "Notifications",
     icon: "inbox",
@@ -485,10 +295,8 @@ export const DOCKABLE_INVENTORY: readonly (Omit<DockableComponent, "minPx" | "ar
   },
 ];
 
-// the per-component floors (card t_ae9ac5cf): chat is the only component
-// that needs the 320px wall; every other tab renders honestly at 128.
-// Expressed as one map so a new registry entry joins the floor law in
-// exactly one place - the composed DOCKABLES below attaches it.
+// the per-component floors. Expressed as one map so a new registry entry joins the
+// floor law in exactly one place - the composed DOCKABLES below attaches it.
 const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   sidebar: MIN_PANE_PX,
   chat: CHAT_FLOOR_PX,
@@ -508,32 +316,22 @@ const DOCKABLE_MIN_PX: Record<DockComponentName, number> = {
   observability: MIN_PANE_PX,
 };
 
-// THE registry, floors AND homes attached (card t_ae9ac5cf, canvas C1):
-// every entry carries its honest `minPx` (paneFloorOf reads it through
-// dockableMinPx) and its `area` DERIVED from its class - the inventory
-// literal above declares the class law alone, and the two maps below
-// attach the consequences, so one edit joins a floor or a home to a
-// component and NO entry can carry a home that contradicts its class.
+// THE registry, floors AND homes attached.
 export const DOCKABLES: readonly DockableComponent[] = DOCKABLE_INVENTORY.map(
   (d) => ({ ...d, area: areaOfClass(d.class), minPx: DOCKABLE_MIN_PX[d.id] }),
 );
 
-/** card t_36ceb99b: WHAT a viewer tab shows. `kind` "file" reads the
-    name as a working-directory relative path (GET /files/read), "skill"
-    as a skill folder name (GET /skills/content), "dir" as a folder path
-    (GET /files/browse - the folder listing, card t_c3fe4ea6). The tab's
-    identity for focus-reuse: the same ref focuses the existing tab,
-    never mints a duplicate. PURE plain data - the dock serializes it
-    with the tree. */
+/**
+ * WHAT a viewer tab shows.
+ * The tab's identity for focus-reuse: the same ref focuses the existing tab, never
+ * mints a duplicate.
+ */
 export interface ViewerRef {
   kind: "file" | "skill" | "dir";
-  /** file: a relative path from the workspace root; skill: the folder
-      name; dir: the relative folder path (no trailing slash) */
   name: string;
 }
 
-/** validate a persisted viewer payload (the strict reader's law): kind
-    one of the three, name a non-empty string; anything else is invalid */
+/** validate a persisted viewer payload (the strict reader's law). */
 export function validViewerRef(
   raw: unknown,
 ): raw is ViewerRef {
@@ -546,8 +344,7 @@ export function validViewerRef(
   );
 }
 
-/** a viewer tab's chip title: the base name (a file's or a folder's last
-    path segment, VS Code's read; a skill's name has no segments). Pure. */
+/** a viewer tab's chip title. */
 export function viewerTabTitle(v: ViewerRef): string {
   if (v.kind === "skill") return v.name;
   const base = v.name.split("/").pop() ?? "";
@@ -560,125 +357,89 @@ export function dockableOf(id: DockComponentName): DockableComponent {
   if (!d) throw new Error(`dockable registry: unknown component "${id}"`);
   return d;
 }
-/** lenient lookup for RUNTIME data (persisted trees can carry pre-reset
-    ids like "inspector" until the modernizer runs): unknown ids get the
-    safe identity - pinned + unclosable, so no dock op manipulates them */
+/** lenient lookup for RUNTIME data (persisted trees can carry pre-reset ids like. */
 function safeEntry(id: string): DockableComponent | null {
   if (!(DOCK_COMPONENTS as readonly string[]).includes(id)) return null;
   return dockableOf(id as DockComponentName);
 }
 
-/** card t_ae9ac5cf: the component's honest floor, lenient like
-    safeEntry: a tab id outside the registry (persisted legacy ids)
-    counts as a tool tab - 128 keeps the pane usable and never invokes
-    the chat wall for data the registry never declared. */
+/**
+ * the component's honest floor, lenient like safeEntry: a tab id outside the registry
+ * (persisted legacy ids) counts as a tool tab - 128 keeps the pane usable and never
+ * invokes the chat wall for data the registry never declared.
+ */
 export function dockableMinPx(id: string): number {
   return safeEntry(id)?.minPx ?? MIN_PANE_PX;
 }
 
-/** the tab chip's iconset name - lenient like safeEntry: a tab carrying
-    an id outside the openable registry renders no icon, never throws */
+/**
+ * the tab chip's iconset name - lenient like safeEntry: a tab carrying an id outside
+ * the openable registry renders no icon, never throws / /
+ */
 export function dockableIcon(id: string): string | null {
   return safeEntry(id)?.icon ?? null;
 }
 
-/** card t_d6b657a7: THE LOCKED TAB - sessions is the one component whose
-    chip may never leave the left sidebar's own bar (draggable inside it,
-    refused everywhere else). Unknown ids count as locked (the safe
-    refusal). canvas C1: the lock is the seat map's STRICTEST case, not a
-    competing law - `sidebar` is a primary-sidebar view, and this standing
-    lock narrows it from "visits all four zones" to "its own home" (see
-    seatAllowsIn). */
+/**
+ * THE LOCKED TAB - sessions is the one component whose chip may never leave the left.
+ */
 export function isLockedTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d === null ? true : d.id === "sidebar";
 }
 
-// --- THE SEAT MAP (canvas C1) ------------------------------------------------
-// One question, one answer: may a view of `component` occupy a pane in
-// `zone`? Every legality read in the dock goes through seatAllowsIn -
-// moveTab, the drop predictor, the pane's live drag hit-test and the
-// opener refusals. A new view joins by its registry entry's class; a new
-// zone rule joins by zonesOfClass. Nothing else may spell a zone check.
+// THE SEAT MAP (canvas C1) ------------------------------------------------ One.
 
-/** the class a view belongs to (throws on an unknown id - panes only host
-    registry ids) */
+/** the class a view belongs to (throws on an unknown id. */
 export function viewClassOf(id: DockComponentName): ViewClass {
   return dockableOf(id).class;
 }
 
-/** lenient class read for RUNTIME data (persisted tabs can carry legacy
-    ids like "inspector"): null rather than a throw - the boot repairs
-    classify what they can and leave the rest alone */
+/** lenient class read for RUNTIME data (persisted tabs can carry legacy ids like. */
 export function dockableClass(id: string): ViewClass | null {
   return safeEntry(id)?.class ?? null;
 }
 
-/** the zones a view may occupy: its class's matrix, narrowed to its own
-    home when the view is locked (sessions). Unknown ids may occupy
-    nothing - the safe refusal. */
+/** the zones a view may occupy. */
 export function zonesOf(id: string): readonly DockArea[] {
   const d = safeEntry(id);
   if (!d) return [];
   return isLockedTab(d.id) ? [d.area] : zonesOfClass(d.class);
 }
 
-/** THE ZONE GATE: may this view occupy a pane in `zone`? The one legality
-    predicate the dock's drag law, the drop predictor and the openers read.
-    Unknown ids refuse (a persisted legacy seat has no class to defend). */
+/** THE ZONE GATE: may this view occupy a pane in `zone`? */
 export function seatAllowsIn(id: string, zone: DockArea): boolean {
   return zonesOf(id).includes(zone);
 }
 
-/** the members of a class whose HOME is `zone`, in registry order - the
-    loader seats a shell's default strip from this (one law for the left
-    shell and the right). */
+/** the members of a class whose HOME is `zone`, in registry order. */
 export function classMembers(zone: DockArea): readonly DockComponentName[] {
   return DOCKABLES.filter((d) => d.area === zone).map((d) => d.id);
 }
 
-/** tab-bar X policy: closable components only (chat, viewer, browser,
-    settings). Unknown ids get no X. card t_9855a20e: this is the
-    COMPONENT half of the X law; the PANE half (a pane's lone tab renders
-    no X - THE LOCKED LAST TAB) lives where the tab count is known
-    (DockPane's tabClosable + dock.ts closeTab, which refuses the close).
-    card t_b72a4ee3: the pane half no longer REMOVES the affordance - a lone
-    tab's X renders disabled + dimmed over this same component test, and
-    dock.ts lastTabLocked is the one condition guard and surface share. */
+/** tab-bar X policy: closable components only (chat, viewer, browser, settings). */
 export function isClosableTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d !== null && d.closable;
 }
 
-/** tab-title fallback (card 2's COMPONENT_TITLES, now derived from the
-    registry - the chat session label and the module dockable.json titles
-    override it at runtime) */
+/** tab-title fallback */
 export const COMPONENT_TITLES: Record<DockComponentName, string> =
   Object.fromEntries(DOCKABLES.map((d) => [d.id, d.title])) as Record<
     DockComponentName,
     string
   >;
 
-/** card t_4ae27e0d: the MAIN-area dockables (openable into the main pane
-    class; chat's multi policy reads "new chat"). Kept for dock
-    consumers - the MENUS use MENU_DOCKABLES below since t_d6b657a7. */
+/** the MAIN-area dockables (openable into the main pane class. */
 export const MAIN_DOCKABLES: readonly DockComponentName[] =
   DOCKABLES.filter((d) => d.area === "main").map((d) => d.id);
 
-/** card t_d6b657a7: the '+' / empty-pane MENU inventory - the refill
-    source for ANY pane, pinned or main (free content). Sessions is
-    excluded: locked (the loader owns it, it can never be menu-opened).
-    Settings is excluded too, but NOT for lack of an entry point: card
-    t_00e4a784 gave it the menubar gear (the VSCode read), so the '+'
-    inventory keeps its quiet main-tab voice.
-    card t_d04a1c80 (DOCK-EMPTY-ACTIONS removal): this inventory's last
-    renderer (the empty-pane component menu) is deleted; the list stays
-    as the registry's openable truth for the 0.17.3 canvas menus. */
+/**
+ * the '+' / empty-pane MENU inventory.
+ * Sessions is excluded: locked (the loader owns it, it can never be menu-opened).
+ */
 export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
   .filter(
-    // viewer joins the exclusions (t_36ceb99b): an empty viewer tab is
-    // meaningless - content IS the tab; its only entry point is a row
-    // click handing the content over
     (d) =>
       d.id !== "sidebar" &&
       d.id !== "settings" &&
@@ -686,75 +447,57 @@ export const MENU_DOCKABLES: readonly DockComponentName[] = DOCKABLES
   )
   .map((d) => d.id);
 
-/** the secondary sidebar's singleton set (the inspector pane's view tabs):
-    the load-time modernizer and the default-shell builder both read this
-    list, so a new secondary-sidebar view joins it in ONE place - its
-    registry class. canvas C1: the set IS the class's members, derived
-    (classMembers), so a seat-map edit cannot leave this list behind. */
+/**
+ * the secondary sidebar's singleton set (the inspector pane's view tabs).
+ * canvas C1: the set IS the class's members, derived (classMembers), so a seat-map edit
+ * cannot leave this list behind.
+ */
 export const INSPECTOR_TAB_COMPONENTS: readonly DockComponentName[] =
   classMembers("right");
 
-/** the primary sidebar's singleton set (canvas C1): sessions and its
-    class companions. The loader seats a fresh left shell from it and the
-    restore repair reads it for the same reason the right shell reads
-    INSPECTOR_TAB_COMPONENTS. */
+/**
+ * the primary sidebar's singleton set (canvas C1): sessions and its class companions.
+ */
 export const PRIMARY_TAB_COMPONENTS: readonly DockComponentName[] =
   classMembers("left");
 
-// --- the host homes (card t_67fc1905): the registry decides the default
-// home per host. A built host (the bottom panel today) seeds its fresh
-// tab strip from every component whose defaultHome names it. ----
+// the host homes: the registry decides the default home per host.
 
-/** the components a fresh `host` pane seats as its default tabs.
-    "bottom" today: the terminal and the Logs tab. Registered in ONE
-    place (the registry). */
+/** the components a fresh `host` pane seats as its default tabs. */
 export function defaultHostTabs(host: DockArea): DockComponentName[] {
   return DOCKABLES
     .filter((d) => (d.defaultHome ?? d.area) === host)
     .map((d) => d.id);
 }
 
-/** which hosts may keep an instance of `id` alive (the singleton
-    invariant reads ONE PER HOST where a component declares `homes`) */
+/**
+ * which hosts may keep an instance of `id` alive.
+ */
 export function hostsOf(id: DockComponentName): readonly DockArea[] {
   const d = dockableOf(id);
   return d.homes ?? [d.area];
 }
 
-// --- the composition-manifest side (module-owned components) -----------------
+// the composition-manifest side (module-owned components) --------------
 
-// What ui/dockable.json may declare. Same shape as DockableComponent,
-// minus the id (the module name is the id) and with everything optional
-// (registry defaults fill it in). compose.ts validates + reads it at
-// build time; the generated panel list carries it to the runtime.
+// What ui/dockable.json may declare.
 export interface DockableSpec {
   title?: string;
-  /** the iconset name (composables/icons.ts ICONS); omitted = "module" */
   icon?: string;
   policy?: DockInstancePolicy;
 }
 
-// default icon name for modules that declare no icon of their own
-// (the iconset "module" entry - Box)
+// default icon name for modules that declare no icon of their own.
 const MODULE_ICON = "module";
 
 export interface DockableComponentLike {
-  // module name - NOT a DockComponentName: module dockables gain the
-  // openable union when their outlet slot ships
   id: string;
   title: string;
   icon: string;
   policy: DockInstancePolicy;
 }
 
-/**
- * Lifts the composition manifest's dockable metadata into
- * registry-shaped entries. Panels without a declaration (and a null
- * spec) are just not dockable yet; ids colliding with the shell
- * inventory are dropped - a module named like a shell component may
- * not shadow it. Module entries are metadata-only until their outlet
- * exists, so nothing here touches the openable component union.
- */
+/** Lifts the composition manifest's dockable metadata into registry-shaped entries. */
 export function dockablesFromPanels(
   panels: readonly { module: string; dockable?: DockableSpec | null }[],
 ): DockableComponentLike[] {
@@ -772,28 +515,17 @@ export function dockablesFromPanels(
   return out;
 }
 
-// --- THE MODULE GATE (card t_103e30a6) --------------------------------------
-//
-// A dockable is MODULE-OWNED when its pane body ships from a module's ui/
-// dir instead of the shell's: the composition manifests already carry that
-// fact (harness/<name>/ui/<File>.vue under either modulePanels or
-// moduleTabs), so the owned set is DERIVED from the manifests - never a
-// second hardcoded list that could drift from them. Toggling that module
-// off dismounts it on the server at runtime (agent/dismount.go); the
-// architecture bar then says its surfaces are GONE, so the gate hides the
-// chip while the module is off and the dock parks the tab (see dock.ts
-// parkGatedTabs) rather than deleting it.
-//
-// Components whose id is NOT a module id (chat, viewer, sidebar, agents,
-// insights, settings) can never be gated however the runtime reports them:
-// those panes are the shell's own.
+// THE MODULE GATE -------------------------------------- A dockable is MODULE-OWNED
+// when its pane body ships from a module's ui/ dir instead of the shell's: the
+// composition manifests already carry that fact (harness/<name>/ui/<File>.vue under
+// either modulePanels or moduleTabs), so the owned set is DERIVED from the manifests -
+// never a second hardcoded list that could drift from them. Components whose id is NOT
+// a module id (chat, viewer, sidebar, agents, insights, settings) can never be gated
+// however the runtime reports them: those panes are the shell's own.
 
-/** the two facts the gate needs: which ids a module owns, which modules
-    the runtime reports disabled (GET /modules). */
+/** the two facts the gate needs. */
 export interface ModuleGate {
-  /** the composition manifests' module ids (the module-owned dockables) */
   owned: ReadonlySet<string>;
-  /** the modules the runtime currently reports disabled */
   off: ReadonlySet<string>;
 }
 
@@ -803,12 +535,7 @@ export const EMPTY_MODULE_GATE: ModuleGate = {
   off: new Set<string>(),
 };
 
-/**
- * Derives the module-owned id set from the COMPOSITION MANIFESTS
- * (modulePanels + moduleTabs, both generated by nuxt.config.ts from the
- * capsules' ui/ dirs). Takes any number of manifests so a new manifest
- * joins the gate by being passed here, not by editing a list.
- */
+/** Derives the module-owned id set from the COMPOSITION MANIFESTS (modulePanels +. */
 export function compositionModuleIds(
   ...manifests: readonly (readonly { module: string }[])[]
 ): Set<string> {
@@ -822,10 +549,10 @@ export function compositionModuleIds(
 }
 
 /**
- * THE ONE GATE PREDICATE: a component is hidden iff a module OWNS it and
- * that module is off. Both halves are required - a shell-owned pane whose
- * name happens to sit in the off set stays visible (the runtime never owned
- * it), and a module-owned pane whose module runs stays visible.
+ * THE ONE GATE PREDICATE: a component is hidden iff a module OWNS it and that module.
+ * Both halves are required - a shell-owned pane whose name happens to sit in the off
+ * set stays visible (the runtime never owned it), and a module-owned pane whose module
+ * runs stays visible.
  */
 export function moduleGated(dockableId: string, gate: ModuleGate): boolean {
   return gate.owned.has(dockableId) && gate.off.has(dockableId);

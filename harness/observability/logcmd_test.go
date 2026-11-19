@@ -1,10 +1,8 @@
 package observability
 
-// The /logs command's name law (card t_d923b50a): the handler answers
-// /logs and rejects every other name with an error. The command seam's
-// chain-on-miss wrapper falls through only on an error, so a nil error
-// for a foreign name swallows every command registered below this
-// capsule in the chain.
+// The /logs command's name law. The command seam's chain-on-miss wrapper falls through
+// only on an error, so a nil error for a foreign name swallows every command registered
+// below this capsule in the chain.
 
 import (
 	"context"
@@ -22,8 +20,6 @@ func TestLogsCommandAnswersOnlyItsOwnName(t *testing.T) {
 		t.Fatalf("logger: %v", err)
 	}
 	if fl, ok := logger.(*FileLogger); ok {
-		// windows keeps the handle open: release it or TempDir's
-		// RemoveAll cleanup reds on the live file
 		t.Cleanup(func() { _ = fl.Close() })
 	}
 	ctx := &core.Context{}

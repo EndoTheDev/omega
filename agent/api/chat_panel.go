@@ -1,23 +1,11 @@
 package api
 
-// The chat canvas surface (chat-last 1/3, card t_ec45b670): the
-// conversation itself rides the canvas contract. The capsule here is
-// the PanelProvider http_channel mounts - one 'chat' panel whose
-// view-model rows are the render-ready message vocabulary (core's
-// ChatRow/ChatBlock, mapped one row per transcript item), snapshot at
-// load and deltas after: run starts and structural stream events push
-// immediately, streaming token chunks batch onto the cadence ticker.
-// The /chat REST + SSE API surface stays exactly where it is (settled
-// Q6a); the canvas is additive for renderers.
-//
-// Push law (the kanban capsule's law): mutations through the module's
-// own faces (the launchRun loop, the action pipe) push through the
-// sink the canvas runtime installed at registration; a nil or failed
-// push never fails a run - the store is already updated, the snapshot
-// is the catch-up. The panel covers ONE conversation: the focus
-// session ref. A run's start takes the panel over (a newer run's
-// begin, a stale run's events no longer paint it); with no live run
-// the most recent conversation holds it.
+// The chat canvas surface: the conversation itself rides the canvas contract. The /chat
+// REST + SSE API surface stays exactly where it is (settled Q6a); the canvas is
+// additive for renderers. Push law (the kanban capsule's law): mutations through the
+// module's own faces (the launchRun loop, the action pipe) push through the sink the
+// canvas runtime installed at registration; a nil or failed push never fails a run -
+// the store is already updated, the snapshot is the catch-up.
 
 import (
 	"context"
@@ -30,8 +18,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Panel, action and cadence constants of the capsule. Module-qualified
-// on the wire (core.PanelAction.Module carries "http_channel").
+// Panel, action and cadence constants of the capsule.
 const (
 	ChatPanelID         = "chat"
 	ChatActionStop      = "stop"
@@ -41,35 +28,19 @@ const (
 	chatDefaultBatch    = 250 * time.Millisecond
 )
 
-// ChatCapsule is the chat module's canvas surface: it is the
-// PanelProvider the plugin appends to Context.PanelProviders during
-// Mount and the core.PanelUpdateSink the canvas runtime wires at
-// registration. The server pointer is late-bound: the Server does not
-// exist at Mount time; the channel's Start sets it before newCanvas
-// runs (a nil server means the panel degrades to its bare descriptor
-// and the actions answer "chat channel not started" - the same
-// degradation every optional seam applies).
+// ChatCapsule is the chat module's canvas surface. The server pointer is late-bound:
+// the Server does not exist at Mount time; the channel's Start sets it before newCanvas
+// runs (a nil server means the panel degrades to its bare descriptor and the actions
+// answer "chat channel not started" - the same degradation every optional seam
+// applies).
 type ChatCapsule struct {
-	// srv is the late-bound server pin. Atomic because multi-bind
-	// starts channels in goroutines (cmdServe) and each bind's wire
-	// re-pins the shared capsule while the other mirrors may already
-	// serve requests (t_1c9793a8).
+	// srv is the late-bound server pin. Atomic because multi-bind starts channels in
+	// goroutines (cmdServe) and each bind's wire re-pins the shared capsule while the
+	// other mirrors may already serve requests.
 	srv atomic.Pointer[Server]
-	// batch is the streaming-token flush cadence. Zero disables
-	// batching: every token event flushes (tests pin the batch law
-	// with both settings).
 	batch time.Duration
 
 	mu sync.Mutex
-	// paintMu serializes one session's panel build+push (t_877f4bce):
-	// a batcher tick past takeDirty builds for ms-scale (the store
-	// read) with no run-liveness check, and endRun can fire inside that
-	// window - the batcher's running=true push would then land after
-	// endRun's running=false exit push and the canvas would hold a
-	// panel claiming the session streams forever (the webui reattach
-	// busy-gate blocks the composer until an unrelated push heals it).
-	// The batcher tick and the exit flush both hold it across
-	// takeDirty + build + push, so the exit push is always last.
 	paintMu sync.Mutex
 	update  func(core.Panel) error
 	focusID string                   // the session the panel currently covers
@@ -88,14 +59,9 @@ func NewChatCapsule() *ChatCapsule {
 	}
 }
 
-// registerAt appends the capsule to the context's panel providers once
-// - the Start-time registration (chat-last 2b ruling: gated on the
-// channel actually starting; idempotent, so multi-bind servers share
-// one registration). Under the capsule mutex: multi-bind starts
-// channels in goroutines, so two wires register concurrently and the
-// append must serialize against the other bind's read (t_1c9793a8).
-// PinServer publishes the served server for readers that pull the pin.
-// Push is the panel push seam (the multi-bind wiring test uses it).
+// registerAt appends the capsule to the context's panel providers once. Under the
+// capsule mutex: multi-bind starts channels in goroutines, so two wires register
+// concurrently and the append must serialize against the other bind's read.
 func (c *ChatCapsule) registerAt(ctx *core.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -107,24 +73,19 @@ func (c *ChatCapsule) registerAt(ctx *core.Context) {
 	ctx.PanelProviders = append(ctx.PanelProviders, c)
 }
 
-// PinServer publishes the served server for readers that pull the pin
-// (the wire publishes last; the shell test drives it directly).
+// PinServer publishes the served server for readers that pull the pin.
 func (c *ChatCapsule) PinServer(s *Server) { c.srv.Store(s) }
 
 // SetPanelUpdate installs the canvas closure (core.PanelUpdateSink).
-// Re-registration (a second canvas over the same providers) re-installs
-// it - last one wins, one frontend is live per process.
 func (c *ChatCapsule) SetPanelUpdate(update func(core.Panel) error) {
 	c.mu.Lock()
 	c.update = update
 	c.mu.Unlock()
 }
 
-// push routes one panel through the installed closure. A missing sink
-// or a failed push is not a run failure: the rows are already in the
-// store, the snapshot is the catch-up. A rejection IS loud: the only
-// current rejection is an undeclared panel id (canvas runtime), a
-// wiring bug the silent-swallow law must not hide.
+// push routes one panel through the installed closure. A rejection IS loud: the only
+// current rejection is an undeclared panel id (canvas runtime), a wiring bug the
+// silent-swallow law must not hide.
 func (c *ChatCapsule) push(p core.Panel) {
 	c.mu.Lock()
 	up := c.update
@@ -139,13 +100,10 @@ func (c *ChatCapsule) push(p core.Panel) {
 	}
 }
 
-// Push routes one panel push through the installed closure - the same
-// face beginRun, endRun and the variant re-push ride (the multi-bind
-// wiring test drives it directly).
+// Push routes one panel push through the installed closure.
 func (c *ChatCapsule) Push(p core.Panel) { c.push(p) }
 
-// chatActions is the module's action vocabulary, declared on the panel
-// at mount - the canvas runtime routes by these ids.
+// chatActions is the module's action vocabulary, declared on the panel at mount.
 func chatActions() []core.PanelAction {
 	return []core.PanelAction{
 		{ID: ChatActionStop, Label: "stop", Module: ChatModuleNamespace},
@@ -153,10 +111,9 @@ func chatActions() []core.PanelAction {
 	}
 }
 
-// Panels declares the snapshot: the single chat panel over the focus
-// session. A server that never started (or home with no sessions yet)
-// still declares the panel - the kind and actions stay on the wire,
-// the payload stays empty until a conversation exists.
+// Panels declares the snapshot: the single chat panel over the focus session. A server
+// that never started (or home with no sessions yet) still declares the panel - the kind
+// and actions stay on the wire, the payload stays empty until a conversation exists.
 func (c *ChatCapsule) Panels() []core.Panel {
 	if c.srv.Load() == nil {
 		return []core.Panel{{ID: ChatPanelID, Title: "Chat", Kind: core.PanelKindChat, Actions: chatActions()}}
@@ -165,11 +122,7 @@ func (c *ChatCapsule) Panels() []core.Panel {
 	return []core.Panel{c.buildPanel(session, running)}
 }
 
-// focus returns the panel's session ref and its live flag: the session
-// streaming right now (the RunHub is the live activity's truth), else
-// the most recent durable conversation (not running), else nothing.
-// (The focusID mutation side of this is beginRun; the read is
-// stateless over the hub + store.)
+// focus returns the panel's session ref and its live flag.
 func (c *ChatCapsule) focus() (string, bool) {
 	if id, ok := c.srv.Load().runs.firstActive(); ok {
 		return id, true
@@ -193,8 +146,7 @@ func (c *ChatCapsule) focus() (string, bool) {
 	return newest, false
 }
 
-// buildPanel composes the panel descriptor for one session: rows from
-// the sessionItems composition, the live-run flag from the RunHub.
+// buildPanel composes the panel descriptor for one session.
 func (c *ChatCapsule) buildPanel(session string, running bool) core.Panel {
 	return core.Panel{
 		ID:      ChatPanelID,
@@ -205,9 +157,7 @@ func (c *ChatCapsule) buildPanel(session string, running bool) core.Panel {
 	}
 }
 
-// payloadFor composes the view-model: the session ref, the running
-// flag, and the session's newest rows (capped to chatPanelRows - the
-// store keeps the history, the panel is small by law).
+// payloadFor composes the view-model.
 func (c *ChatCapsule) payloadFor(session string, running bool) core.ChatPayload {
 	p := core.ChatPayload{Session: session, Running: running}
 	if session == "" {
@@ -221,14 +171,7 @@ func (c *ChatCapsule) payloadFor(session string, running bool) core.ChatPayload 
 	return p
 }
 
-// branchPath cuts the active path for a branch-pinned live run
-// (t_19c100dd, Endo ruling: retry renders in place): rows up to and
-// including the branch row (the replayed user turn / the fork target)
-// stay, OLD rows after it - the sibling response being re-run - leave,
-// and rows with id > floor (the run's own segments, persisted
-// mid-stream by the loop's sink) stay so multi-segment runs keep their
-// closed tool turns while they stream. A branch id off the path pins
-// nothing (dangling safety): the path renders whole. Pure.
+// branchPath cuts the active path for a branch-pinned live run.
 func branchPath(path []core.StoredMessage, branch string, floor int64) []core.StoredMessage {
 	if branch == "" {
 		return path
@@ -256,17 +199,11 @@ func branchPath(path []core.StoredMessage, branch string, floor int64) []core.St
 	return out
 }
 
-// sessionItems collects the transcript items the panel renders for one
-// session. Durable sessions compose persisted history plus the live
-// run's OPEN items (the RunHub's open tail); store-less sessions
-// (ephemeral) compose from the registry's items plus the run's full
-// tail - nothing they own was ever persisted. A store fault answers
-// nil: the surface degrades, the REST routes surface the fault.
-// Tails compose only while the run streams: the final exit flush
-// (running=false) renders the persisted truth alone. A branch-pinned
-// run (retry, fork-of-user) cuts the old sibling's rows off the path
-// first, so the open tail streams into the response's slot - one slot,
-// N variants, never stacked.
+// sessionItems collects the transcript items the panel renders for one session. A store
+// fault answers nil: the surface degrades, the REST routes surface the fault. A
+// branch-pinned run (retry, fork-of-user) cuts the old sibling's rows off the path
+// first, so the open tail streams into the response's slot - one slot, N variants,
+// never stacked.
 func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptItem {
 	if isEphemeralID(session) {
 		items := c.srv.Load().eph.snapshotItems(session)
@@ -298,40 +235,16 @@ func (c *ChatCapsule) sessionItems(session string, running bool) []transcriptIte
 	if !live || len(open) == 0 {
 		return persisted
 	}
-	// the open segment is a snapshot: its running tool line ages with it
-	// (a call emits no events until its result, t_6bad9f6f)
 	return composeItems(persisted, freshenRunningCalls(open, time.Since(builtAt)))
 }
 
-// composeItems merges the persisted items and the open-record items
-// into one wire-ordered item stream: persisted first, then the open
-// items the store does not already carry. The overlap exists because
-// the loop's TurnSink persists every closed segment the moment it
-// closes while the accumulator only empties a record at the NEXT
-// segment split - so an open record can carry items (thinking, the
-// answer text, its calls, answered results) that are already persisted
-// rows. Signature law: a text/thinking open item whose content matches
-// any persisted content item of its kind is dropped, and a
-// tool_call/tool_result open item whose call id matches a persisted
-// one is dropped - the persisted row is the truth. A streaming prefix
-// matches nothing persisted until the turn lands, so live tokens keep
-// flowing; the next flush after persistence renders them once. Reused
-// tool call ids across a re-run (some providers mint colliding ids)
-// can hide the re-run's rows until their content diverges - a v1
-// cosmetics race, the persisted truth is never wrong.
-//
-// A RUNNING twin still donates its anchor (card t_6bad9f6f). The loop
-// persists the assistant row (calls included) BEFORE the calls
-// execute, so mid-call both copies of the call exist and the persisted
-// row is the one the renderer keeps - served bare it carries no
-// running bit and no elapsed, and a remounted pane restarted the
-// call's meter at zero. The persisted row adopts the open twin's
-// running state and elapsed-so-far instead.
+// composeItems merges the persisted items and the open-record items into one. Reused
+// tool call ids across a re-run (some providers mint colliding ids) can hide the
+// re-run's rows until their content diverges - a v1 cosmetics race, the persisted truth
+// is never wrong.
 func composeItems(persisted, open []transcriptItem) []transcriptItem {
 	seen := map[string]int{}
-	// copied: the caller's slices stay untouched (adoption below writes
-	// into the composed rows, and both inputs are read by other goroutines
-	// - the panel's persisted build races nothing, the rule just holds)
+	// copied: the caller's slices stay untouched.
 	out := make([]transcriptItem, len(persisted), len(persisted)+len(open))
 	copy(out, persisted)
 	for i, it := range out {
@@ -347,10 +260,9 @@ func composeItems(persisted, open []transcriptItem) []transcriptItem {
 		}
 		if i, dup := seen[sig]; dup {
 			if out[i].Kind == "tool_call" && it.StartedAt != "" {
-				// the persisted twin adopts the open row's start
-				// stamp too: the row the renderer keeps is the one
-				// that must carry the clock (round 3 - the stamp is
-				// the only anchor that survives a cached payload)
+				// the persisted twin adopts the open row's start stamp too: the row the renderer
+				// keeps is the one that must carry the clock (round 3 - the stamp is the only
+				// anchor that survives a cached payload)
 				out[i].StartedAt = it.StartedAt
 			}
 			if it.Running && out[i].Kind == "tool_call" {
@@ -365,9 +277,8 @@ func composeItems(persisted, open []transcriptItem) []transcriptItem {
 	return out
 }
 
-// itemSignature is the compose dedupe key: content text for the
-// assistant prose items, call id for the tool items. user items are
-// never open items, so they get no signature.
+// itemSignature is the compose dedupe key. user items are never open items, so they get
+// no signature.
 func itemSignature(it transcriptItem) (string, bool) {
 	switch it.Kind {
 	case "message":
@@ -387,11 +298,7 @@ func itemSignature(it transcriptItem) (string, bool) {
 	return "", false
 }
 
-// beginRun is the run-start hook (launchRun): the panel takes over the
-// session being streamed, running flips on and the first delta travels
-// immediately. A run with no session id (the legacy store-less /chat
-// path) owns no panel. The cadence ticker is this session's batcher:
-// one per streaming session.
+// beginRun is the run-start hook (launchRun).
 func (c *ChatCapsule) beginRun(session string) {
 	if c.srv.Load() == nil || session == "" {
 		return
@@ -406,31 +313,21 @@ func (c *ChatCapsule) beginRun(session string) {
 	}
 	c.mu.Unlock()
 	if live {
-		// A previous run's batcher should be gone (endRun cleaned up
-		// or the 409 law would have refused the slot) - belt and
-		// braces: reuse the watch, no second ticker.
+		// A previous run's batcher should be gone.
 	} else if c.batch > 0 {
 		go c.batchLoop(watch, session)
 	}
 	c.push(c.buildPanel(session, true))
 }
 
-// batchLoop is the streaming cadence: while the run holds the panel,
-// tick the cadence and push the rebuilt rows when token chunks marked
-// them dirty. Each tick holds paintMu across takeDirty + build + push
-// (t_877f4bce - see ChatCapsule.paintMu): a tick that is past takeDirty
-// must never push a running=true panel after endRun's exit flush.
-// Exits when endRun closes the watch.
-//
-// An OPEN TOOL CALL answers dirty on its own (t_6bad9f6f): a tool run
-// emits no event between the call opening and its result, so the token
-// batch never re-arms, the panel would keep the call-open anchor
-// (elapsed_ms ~0) for the whole call, and a tab-switch remount would
-// restart the visible meter at zero. Re-pushing at the cadence keeps
-// the payload's anchor on the call's true elapsed-so-far
-// (freshenRunningCalls), which is what a remount counts on from. That
-// arm is lifecycle-gated (tick, watching): it must never paint for a
-// session the panel no longer owns.
+// batchLoop is the streaming cadence. Each tick holds paintMu across takeDirty + build
+// + push: a tick that is past takeDirty must never push a running=true panel after
+// endRun's exit flush. An OPEN TOOL CALL answers dirty on its own: a tool run emits no
+// event between the call opening and its result, so the token batch never re-arms, the
+// panel would keep the call-open anchor (elapsed_ms ~0) for the whole call, and a
+// tab-switch remount would restart the visible meter at zero. That arm is
+// lifecycle-gated (tick, watching): it must never paint for a session the panel no
+// longer owns.
 func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	ticker := time.NewTicker(c.batch)
 	defer ticker.Stop()
@@ -444,22 +341,9 @@ func (c *ChatCapsule) batchLoop(watch <-chan struct{}, session string) {
 	}
 }
 
-// tick is one cadence: rebuild and push when the session has a pending
-// token batch or an open tool call. paintMu is held across the decision
-// and the push (t_877f4bce - see ChatCapsule.paintMu), so a tick can
-// never land a running=true panel after endRun's exit flush.
-//
-// Both dirty sources are gated on the panel's lifecycle, not just on
-// the hub (t_6bad9f6f review round 1): the token arm's dirtied flag is
-// only reachable through runEvent, which early-returns for a session
-// that lost focus, and the call arm is gated the same way - watching()
-// requires this session to still be the focus AND to still hold its
-// batcher watch. Without it an unfocused session mid-call repainted the
-// single ChatPanelID every tick (stomping the focus session's payload),
-// and a tick that got past the select before endRun could push
-// running=true after the exit flush once the hub slot outlived the
-// watch (endRun runs before the run's finish, LIFO). endRun deletes the
-// watch before flushing, so the post-flush window answers quiet.
+// tick is one cadence: rebuild and push when the session has a pending token batch.
+// paintMu is held across the decision and the push, so a tick can never land a
+// running=true panel after endRun's exit flush.
 func (c *ChatCapsule) tick(session string) {
 	c.paintMu.Lock()
 	defer c.paintMu.Unlock()
@@ -468,23 +352,14 @@ func (c *ChatCapsule) tick(session string) {
 	}
 }
 
-// watching reports whether the session still owns the panel's batcher:
-// it is the focus session and its watch is registered. Read under c.mu;
-// endRun deletes the watch (before its exit flush) and beginRun moves
-// the focus, so both sides of the gate close as the run's ownership
-// ends.
+// watching reports whether the session still owns the panel's batcher.
 func (c *ChatCapsule) watching(session string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.focusID == session && c.watch[session] != nil
 }
 
-// hasRunningCall reports whether the session's live run carries a tool
-// call its results have not answered yet - the batcher's second dirty
-// source. Reads the open snapshot (a call's running bit is set at the
-// call event and cleared by the result, so the snapshot is current
-// between them) and answers false once the run's slot is gone, which is
-// what keeps a post-endRun tick from pushing.
+// hasRunningCall reports whether the session's live run carries a tool call.
 func (c *ChatCapsule) hasRunningCall(session string) bool {
 	srv := c.srv.Load()
 	if srv == nil {
@@ -513,12 +388,8 @@ func (c *ChatCapsule) takeDirty(session string) bool {
 	return true
 }
 
-// runEvent is the streaming hook (the launchRun loop, one call per
-// agent event). Token chunks only mark the panel dirty - the cadence
-// ticker (or the next structural event) carries them; structural
-// events push immediately, because the row shape changed (a call
-// opened, a result answered, the assistant message landed in the
-// store). A stale run's events never paint a newer run's panel.
+// runEvent is the streaming hook (the launchRun loop, one call per agent event). A
+// stale run's events never paint a newer run's panel.
 func (c *ChatCapsule) runEvent(session string, event core.Event) {
 	if c.srv.Load() == nil || session == "" {
 		return
@@ -553,9 +424,7 @@ func (c *ChatCapsule) dirtied(session string) {
 	c.mu.Unlock()
 }
 
-// flushNowUnlocked composes and pushes immediately ("now" refers to
-// the caller's decision; the "unlocked" refers to batching, not to
-// c.mu, which push and build take inside).
+// flushNowUnlocked composes and pushes immediately.
 func (c *ChatCapsule) flushNowUnlocked(session string) {
 	c.mu.Lock()
 	c.dirty[session] = false
@@ -563,11 +432,7 @@ func (c *ChatCapsule) flushNowUnlocked(session string) {
 	c.push(c.buildPanel(session, true))
 }
 
-// endRun is the run-exit hook (called after the run's persistence
-// epilogue, while the hub still holds the slot): the final delta
-// carries the rows in their completed state, running off. Only the
-// focused session's exit paints it - the 409 law may already have
-// registered a newer run for the session. The batcher exits here too.
+// endRun is the run-exit hook.
 func (c *ChatCapsule) endRun(session string) {
 	if c.srv.Load() == nil || session == "" {
 		return
@@ -586,21 +451,17 @@ func (c *ChatCapsule) endRun(session string) {
 	if !focused {
 		return
 	}
-	// The exit flush is the session's last push and must land last
-	// (t_877f4bce - see ChatCapsule.paintMu): held across build+push,
-	// a batcher tick blocked mid-build (or already past takeDirty)
-	// serializes behind it or ahead of it, never a stale running=true
-	// panel after the run is gone.
+	// The exit flush is the session's last push and must land last: held across
+	// build+push, a batcher tick blocked mid-build (or already past takeDirty) serializes
+	// behind it or ahead of it, never a stale running=true panel after the run is gone.
 	c.paintMu.Lock()
 	defer c.paintMu.Unlock()
 	c.push(c.buildPanel(session, false))
 }
 
-// HandleAction routes one action call through the pipe (core.
-// PanelProvider): the runtime checked module + action id already.
-// Both actions take the session ref as their argument and both serve
-// the same faces the REST routes serve - the pipe routes the existing
-// chat verbs, no new behavior (render, do not redesign).
+// HandleAction routes one action call through the pipe (core. Both actions take the
+// session ref as their argument and both serve the same faces the REST routes serve -
+// the pipe routes the existing chat verbs, no new behavior (render, do not redesign).
 func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 	if c.srv.Load() == nil {
 		return nil, fmt.Errorf("chat channel not started")
@@ -618,11 +479,7 @@ func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 	}
 	switch call.Action {
 	case ChatActionStop:
-		// The same face POST /sessions/{id}/stop serves: the user hard
-		// stop - latch the session, cancel the live run's context, and
-		// abandon the work that run left running. The loop unwinds
-		// through its normal path and the run's exit hook paints the
-		// completed state.
+		// The same face POST /sessions/{id}/stop serves.
 		ok, cancellable := c.srv.Load().stopRun(args.Session)
 		if !ok {
 			return nil, fmt.Errorf("session not active")
@@ -632,10 +489,6 @@ func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 		}
 		return map[string]any{"session": args.Session, "status": "cancelling"}, nil
 	case ChatActionRetry:
-		// The same face /chat's retry body serves: the replay of the
-		// session's LAST user turn as a sibling variant, detached -
-		// the panel's deltas and the reattach stream are the
-		// surfaces; no response body to stream.
 		req := chatRequest{SessionID: args.Session, Retry: true}
 		cr, err := c.srv.Load().prepareRun(context.Background(), &req, nil)
 		if err != nil {
@@ -648,14 +501,10 @@ func (c *ChatCapsule) HandleAction(call core.ActionCall) (any, error) {
 	}
 }
 
-// chatRows maps transcript items into the chat view-model rows - one
-// row per item in v1. Pure.
+// chatRows maps transcript items into the chat view-model rows.
 func chatRows(items []transcriptItem) []core.ChatRow {
 	rows := make([]core.ChatRow, 0, len(items))
 	for _, it := range items {
-		// the row's wall clock rides it (card t_3a857a2d): the SAME stamp
-		// the transcript wire serves, so a live canvas turn and its
-		// restored twin compute one turn total
 		row := core.ChatRow{ID: it.ID, Time: it.Time, Status: core.ChatStatusComplete}
 		if it.Running {
 			row.Status = core.ChatStatusStreaming
@@ -666,22 +515,15 @@ func chatRows(items []transcriptItem) []core.ChatRow {
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Images: it.Images, Attachments: it.Attachments}}
 		case "message":
 			row.Role = core.ChatRoleAssistant
-			// the segment's duration rides the block (card t_95385aba):
-			// response_ms on a completed row freezes the label after a
-			// remount, elapsed_ms on a RUNNING row anchors the live
-			// meter at the answer's elapsed-so-far - the transcript
-			// wire's own two shapes, mirrored
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockText, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ResponseMs: it.ResponseMs}}
 		case "thinking":
 			row.Role = core.ChatRoleAssistant
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockThinking, Content: it.Content, Running: it.Running, ElapsedMs: it.ElapsedMs, ThinkingMs: it.ThinkingMs}}
 		case "tool_call":
 			row.Role = core.ChatRoleAssistant
-			// an unanswered call rides its open wall clock (card
-			// t_6bad9f6f round 3): the reader derives the row's
-			// meter from it, so a payload that outlives its build
-			// (the yield window pushes no delta) can never hand a
-			// remounted pane a stale anchor
+			// an unanswered call rides its open wall clock: the reader derives the row's meter
+			// from it, so a payload that outlives its build (the yield window pushes no delta)
+			// can never hand a remounted pane a stale anchor
 			row.Blocks = []core.ChatBlock{{Type: core.ChatBlockToolCall, Running: it.Running, ToolCall: it.ToolCall, ElapsedMs: it.ElapsedMs, StartedAt: it.StartedAt}}
 		case "tool_result":
 			row.Role = core.ChatRoleTool

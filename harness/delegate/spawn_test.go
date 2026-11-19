@@ -11,10 +11,7 @@ import (
 	"testing"
 )
 
-// writeStub writes a platform-appropriate stub script that echoes the
-// given line, echoes the OMEGA_SUBAGENT value it observed, and exits
-// with the given code. The subagent line lets tests assert the host
-// actually set the recursion guard env var on the child process.
+// writeStub writes a platform-appropriate stub script that echoes the given line.
 func writeStub(t *testing.T, name, out string, code int) string {
 	t.Helper()
 	bin := t.TempDir() + "/" + name
@@ -32,9 +29,7 @@ func writeStub(t *testing.T, name, out string, code int) string {
 	return bin
 }
 
-// TestRunDelegateTaskMissingBinary verifies runDelegateTask fails cleanly
-// when no omega binary can be found: OMEGA_BIN unset and no ../omega or
-// ../omega.exe next to the test executable.
+// TestRunDelegateTaskMissingBinary verifies runDelegateTask fails cleanly when no.
 func TestRunDelegateTaskMissingBinary(t *testing.T) {
 	t.Setenv("OMEGA_BIN", "")
 	d := NewDelegate()
@@ -47,11 +42,9 @@ func TestRunDelegateTaskMissingBinary(t *testing.T) {
 	}
 }
 
-// TestRunDelegateTaskExplicitBinary verifies the full spawn path: the
-// task's tool RESULT is the child's own final answer (async agent loop
-// phase 2, card t_0805d438) - the call returns what omega run printed,
-// and the user-shaped inject is gone. The subagent=1 assertion pins the
-// recursion guard: the host must set OMEGA_SUBAGENT=1 on the child env.
+// TestRunDelegateTaskExplicitBinary verifies the full spawn path. The subagent=1
+// assertion pins the recursion guard: the host must set OMEGA_SUBAGENT=1 on the child
+// env.
 func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	bin := writeStub(t, "stub-omega", "stub-result", 0)
 	t.Setenv("OMEGA_BIN", bin)
@@ -64,13 +57,11 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runDelegateTask: %v", err)
 	}
-	// Normalize CRLF stub output to LF for assertion.
 	text := strings.ReplaceAll(out, "\r\n", "\n")
 	if got := strings.TrimSpace(text); got != "stub-result\nsubagent=1" {
 		t.Fatalf("tool result = %q, want the child's final answer", got)
 	}
 
-	// A done task: the status surface marks it done.
 	status, err := d.runDelegateStatus(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("runDelegateStatus: %v", err)
@@ -86,10 +77,9 @@ func TestRunDelegateTaskExplicitBinary(t *testing.T) {
 	}
 }
 
-// DELEGATE-STATUS SHAPE (scope addition A4, card t_0805d438): every row
-// carries id, status, the session reference and a prompt DIGEST - never
-// the full prompt - and a done row re-enters the task's final answer as
-// the queryable home.
+// DELEGATE-STATUS SHAPE: every row carries id, status, the session reference and a
+// prompt DIGEST - never the full prompt - and a done row re-enters the task's final
+// answer as the queryable home.
 func TestDelegateStatusPayloadShape(t *testing.T) {
 	longPrompt := strings.Repeat("the very long prompt the model sent ", 20)
 	running := &delegateTask{id: "task-1", prompt: longPrompt, session: "sess-running"}
@@ -148,15 +138,14 @@ func TestRunDelegateTaskFailingBinary(t *testing.T) {
 	if strings.Contains(out, "boom") {
 		t.Fatalf("failure line leaked child output: %q", out)
 	}
-	// The status surface carries the failure report for a done task.
 	status, _ := d.runDelegateStatus(context.Background(), nil)
 	if !strings.Contains(status, "answer: error: delegate task task-1 failed") {
 		t.Fatalf("failed task's answer line wrong: %q", status)
 	}
 }
 
-// writeEnvStub echoes the child env pin + argv marker: the spawn-shape
-// witness for the caller-store pin (card t_93b4e521).
+// writeEnvStub echoes the child env pin + argv marker: the spawn-shape witness for the
+// caller-store pin.
 func writeEnvStub(t *testing.T, name string) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), name)
@@ -174,11 +163,9 @@ func writeEnvStub(t *testing.T, name string) string {
 	return bin
 }
 
-// TestSpawnPinsCallerStore pins the spawn env shape (card t_93b4e521):
-// with a store mounted, the child carries OMEGA_DB_PATH = the caller's
-// store file, so its `run --session <id>` opens the database the host
-// pre-created the session in. A delegate with no store path pins
-// nothing (the pre-fix shape).
+// TestSpawnPinsCallerStore pins the spawn env shape: with a store mounted, the child
+// carries OMEGA_DB_PATH = the caller's store file, so its `run --session <id>` opens
+// the database the host pre-created the session.
 func TestSpawnPinsCallerStore(t *testing.T) {
 	bin := writeEnvStub(t, "stub-env-omega")
 	t.Setenv("OMEGA_BIN", bin)
@@ -199,7 +186,6 @@ func TestSpawnPinsCallerStore(t *testing.T) {
 		t.Fatalf("child argv lost --session: %q", text)
 	}
 
-	// No store path routed (a host without a store section): no pin.
 	d2 := NewDelegate()
 	out2, err := d2.runDelegateTask(context.Background(), map[string]any{"prompt": "do a thing", "timeout": 30})
 	if err != nil {
@@ -240,11 +226,9 @@ func writeStderrStub(t *testing.T, name string, lines []string, code int) string
 	return bin
 }
 
-// TestFailureResultCarriesStderrTail pins the fail-loud law (card
-// t_93b4e521): a child that dies at startup leaves its reason on
-// stderr, and that tail IS the tool result. "exit status 1" alone made
-// the prod failure undiagnosable; the child's stdout still stays out
-// (the answer lane, never the diagnostic lane).
+// TestFailureResultCarriesStderrTail pins the fail-loud law. "exit status 1" alone made
+// the prod failure undiagnosable; the child's stdout still stays out (the answer lane,
+// never the diagnostic lane).
 func TestFailureResultCarriesStderrTail(t *testing.T) {
 	diag := "omega: run: --session abc123: session not found"
 	bin := writeStderrStub(t, "stub-stderr-omega", []string{diag}, 1)
@@ -264,9 +248,8 @@ func TestFailureResultCarriesStderrTail(t *testing.T) {
 	}
 }
 
-// TestFailureStderrTailTruncates pins the tail bound: an over-long
-// stderr keeps its LAST 2000 bytes (the failing lines) behind a named
-// cut, never the head.
+// TestFailureStderrTailTruncates pins the tail bound: an over-long stderr keeps its
+// LAST 2000 bytes (the failing lines) behind a named cut, never the head.
 func TestFailureStderrTailTruncates(t *testing.T) {
 	lines := []string{"FIRST-LINE-SHOULD-BE-CUT"}
 	for i := 0; i < 300; i++ {
@@ -296,9 +279,7 @@ func TestFailureStderrTailTruncates(t *testing.T) {
 	}
 }
 
-// TestFindOmegaBinary verifies binary resolution: env override wins,
-// missing env falls through to the executable-relative search which
-// finds nothing in a test environment.
+// TestFindOmegaBinary verifies binary resolution.
 func TestFindOmegaBinary(t *testing.T) {
 	t.Setenv("OMEGA_BIN", "")
 	d := NewDelegate()
