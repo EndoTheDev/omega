@@ -95,23 +95,3 @@ func jsonMarshal(v string) []byte {
 	b, _ := json.Marshal(v)
 	return b
 }
-
-func mustQuery(v string) string {
-	p := filepath.ToSlash(filepath.Clean(v))
-	const hex = "0123456789ABCDEF"
-	var b strings.Builder
-	for i := 0; i < len(p); i++ {
-		c := p[i]
-		switch {
-		case c == '/':
-			b.WriteByte('/')
-		case ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || ('0' <= c && c <= '9'):
-			b.WriteByte(c)
-		default:
-			b.WriteByte('%')
-			b.WriteByte(hex[c>>4])
-			b.WriteByte(hex[c&15])
-		}
-	}
-	return b.String()
-}

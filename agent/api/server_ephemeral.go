@@ -47,10 +47,6 @@ type ephRegistry struct {
 	records map[string]*ephemeralSession
 }
 
-func newEphRegistry() *ephRegistry {
-	return &ephRegistry{records: map[string]*ephemeralSession{}}
-}
-
 // ephemeralPrefix is the id namespace of no-persist sessions. The
 // namespace constant is the agent package's (agent.EphemeralIDPrefix) -
 // the id creators in the roster capsule enforce the same namespace, and

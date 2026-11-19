@@ -2,7 +2,6 @@ package approval
 
 import (
 	"regexp"
-	"strings"
 )
 
 // Egress hygiene (design Q7 + the reference's boundary): two passes
@@ -81,18 +80,4 @@ func sanitize(text string) (string, bool) {
 	stripped := stripSchemaFragments(text)
 	out := redactCredentials(stripped)
 	return out, out != text
-}
-
-// hasSecretVocabulary is the cheap signal the AUDIT redaction bit
-// rides (not a rule): does the command name credential material at
-// all? The reviewer still makes the reads_secrets call - this only
-// reports redaction honestly.
-func hasSecretVocabulary(text string) bool {
-	low := strings.ToLower(text)
-	for _, k := range []string{".env", "id_rsa", "id_ed25519", "private key", "credentials", "keyring", "secret", "passwor", "token", "auth.json", ".aws", ".gnupg", ".ssh"} {
-		if strings.Contains(low, k) {
-			return true
-		}
-	}
-	return false
 }

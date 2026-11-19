@@ -361,10 +361,9 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	cmd := exec.CommandContext(taskCtx, omegaBin, childArgs...)
 	cmd.Env = append(os.Environ(), childEnv(agentName, model, d.storeDBPath)...)
 	cmd.Env = append(cmd.Env, workerStamp(taskID, omegaBin)...)
-	// Process-group kill, same as the shell tool: without it the
-	// timeout kills only the omega child while shells it spawned
-	// survive as orphans holding locks (the bug class shellKillSetup
-	// was created to fix).
+	// Process-group kill, same as the shell registry's children: without
+	// it the timeout kills only the omega child while shells it spawned
+	// survive as orphans holding locks.
 	agent.SetupProcessGroupKill(cmd)
 
 	task := &delegateTask{id: taskID, prompt: prompt, session: session, cmd: cmd}

@@ -31,34 +31,6 @@ func echoTool() core.Tool {
 	}
 }
 
-type plugSectioner struct{}
-
-func (plugSectioner) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
-	return nil
-}
-
-type plugChannel struct{}
-
-func (plugChannel) Start(ctx context.Context, deps core.ChannelDeps) error { return nil }
-func (plugChannel) Stop() error                                            { return nil }
-
-type plugLogger struct{ hits []string }
-
-func (l *plugLogger) Printf(format string, args ...any) { l.hits = append(l.hits, "info") }
-func (l *plugLogger) Warnf(format string, args ...any)  { l.hits = append(l.hits, "warn") }
-func (l *plugLogger) Errorf(format string, args ...any) { l.hits = append(l.hits, "err") }
-func (l *plugLogger) Close() error                      { return nil }
-
-type plugLoop struct{}
-
-func (plugLoop) Run(ctx context.Context, opts LoopOptions) error { return nil }
-
-type plugCompactor struct{}
-
-func (plugCompactor) Compact(ctx context.Context, messages []core.Message) ([]core.Message, error) {
-	return messages, nil
-}
-
 type plugNotifier struct{}
 
 func (plugNotifier) Emit(n core.Notice) (core.Notice, error) { return n, nil }
@@ -76,16 +48,6 @@ func (plugNotifier) Subscribe() (<-chan core.Notice, func()) {
 // satisfaction, local declaration, no core noun.
 type noticeEmit interface {
 	Emit(n core.Notice) (core.Notice, error)
-}
-
-// notifierPlugin mounts the notifications seam (the notifications edge).
-type notifierPlugin struct{ n noticeEmit }
-
-func (p *notifierPlugin) Name() string       { return "notifier" }
-func (p *notifierPlugin) Provides() []string { return []string{"notifications"} }
-func (p *notifierPlugin) Requires() []string { return nil }
-func (p *notifierPlugin) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
-	return api.Offer("notifications", p.n)
 }
 
 // fakeStore satisfies the full StoreProvider seam with no-ops - parity

@@ -205,13 +205,8 @@ func readCronFile(path string) (data []byte, existed bool, err error) {
 	return data, true, nil
 }
 
-// LoadConfig reads and parses the crons.yaml at path. A missing file
-// is an empty config (no jobs), matching the mcp.yaml load behavior.
-func LoadConfig(path string) (*Config, error) {
-	return loadConfig(path, false)
-}
-
-// loadConfig is LoadConfig with the reload law switchable: strict turns
+// loadConfig reads and parses the crons.yaml at path. The reload law is
+// switchable: strict turns
 // a zero-byte or whitespace-only EXISTING file into a read error instead
 // of an empty job set (loadAllConfigsForReload below, card t_8be45d55).
 // A missing file stays an empty config in both modes.

@@ -161,6 +161,3 @@ func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandR
 	}
 	return core.CommandResult{}, core.CommandMiss(name)
 }
-
-// NewPlugin returns a provider Plugin instance.
-func NewPlugin() *Plugin { return &Plugin{} }

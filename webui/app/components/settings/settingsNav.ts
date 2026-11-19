@@ -87,7 +87,7 @@ export const SURFACE_BACKEND = "backend";
 export const SURFACE_CURATED = "curated";
 export const SURFACE_MODULES = "modules";
 
-export interface SettingSurface {
+interface SettingSurface {
   id: string;
   /** the group header's text; empty for a class that carries no header */
   label: string;
@@ -402,12 +402,12 @@ export function buildNav(groups: SettingGroup[]): NavCategory[] {
 
 // --- selection algebra ----------------------------------------------------
 
-export interface Selection {
+interface Selection {
   category: string;
   subgroup: string | null;
 }
 
-export interface ResolvedSelection {
+interface ResolvedSelection {
   category: NavCategory;
   subgroup: NavSubgroup | null;
 }
@@ -518,7 +518,7 @@ export interface DocSection {
   blocks: DocBlock[];
 }
 
-export interface ContentInput {
+interface ContentInput {
   /** knob keys the live query matched - null/undefined means no query is
       live (an EMPTY set is a query that matched nothing: the difference
       decides between "everything" and "the empty state") */
@@ -709,7 +709,7 @@ export function matchingCategoryIds(
 
 // --- the selected-section scroll clamp (card t_a6b794b5) ------------------
 
-export interface ClampGeometry {
+interface ClampGeometry {
   /** the section's top, in the scrollport's own scroll coordinates */
   top: number;
   /** the section's rendered height */

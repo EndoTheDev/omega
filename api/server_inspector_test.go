@@ -356,14 +356,6 @@ func TestLogsMissingFileIs404(t *testing.T) {
 	}
 }
 
-// nopTestLogger mirrors observability.NopLogger: LoggerProvider only.
-type nopTestLogger struct{}
-
-func (nopTestLogger) Printf(string, ...any) {}
-func (nopTestLogger) Warnf(string, ...any)  {}
-func (nopTestLogger) Errorf(string, ...any) {}
-func (nopTestLogger) Close() error          { return nil }
-
 // --- helpers ---
 
 type logPayload struct {

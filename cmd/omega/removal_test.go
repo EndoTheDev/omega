@@ -1625,20 +1625,6 @@ func terminalMuxOf(ctx *core.Context) *http.ServeMux {
 	return mux
 }
 
-// sameStrings is the order-sensitive slice equality the Provides()
-// posture assertion uses.
-func sameStrings(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
 // TestTerminalRemovalProof is the terminal capsule's removal proof (the v0.15
 // arc's terminal proof, card t_55a3fc4b, folded by the 0.17.3 modules
 // fold, card t_ee3a968b: the agent's tool family and the webui's

@@ -50,7 +50,6 @@ type mockProvider struct {
 	seenModels *[]string
 }
 type testLoop struct{}
-type testToolProvider struct{ tools map[string]core.Tool }
 
 func newMockProvider(modelName string, scripts ...[]core.ProviderStreamEvent) *mockProvider {
 	calls := 0
@@ -126,12 +125,6 @@ func (m *mockProvider) servedModelNames() []string {
 	defer m.mu.Unlock()
 	return append([]string(nil), *m.seenModels...)
 }
-func (m *mockProvider) streamCalls() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return *m.calls
-}
-func (p testToolProvider) Tools() map[string]core.Tool { return p.tools }
 func (testLoop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sink := agent.RunTurnSink(ctx)
 	// Persistence outlives the run ctx - same WithoutCancel law the
