@@ -261,6 +261,19 @@ concurrently:
 
 - The default behavior is refuse: a second suite exits 3 with the holder
   pid, having created no evidence.
+- Ownership is not a pid. Pids are recycled, so the recorded holder is
+  checked against its own command line (`/proc/<pid>/cmdline`, and the
+  holder's cwd for a suite invoked as `./run.sh` from the suite home): a dead
+  pid, or a number now worn by something that is not a journey suite, is a
+  stale record and is reaped, while a genuine holder is still refused. An
+  owner that cannot be identified at all - an unreadable or not-yet-written
+  record, the window between `mkdir` and the pid write - is HELD: refusing a
+  suite is a nuisance, reaping a live suite's lock lets two suites interleave,
+  which is the failure the lock exists to prevent. The recycled-pid wedge hit
+  live on 2026-11-17 was the opposite shape (every later suite refused while
+  none was running). `JOURNEY_LOCK_IMPL` (`auto`/`flock`/`mkdir`) pins the
+  implementation, so the witness exercises the MSYS shape on a host that does
+  have flock. `bash scripts/journeys/runlock_test.sh` is its witness.
 - A worker verify that may overlap the train pass or the nightly runs
   `JOURNEY_LOCK_WAIT=600 scripts/journeys/run.sh ...` and queues behind
   the live suite instead of colliding with it.

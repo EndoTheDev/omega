@@ -24,7 +24,9 @@ browser infra dead, `3` another suite holds the run lock.
 Environment: `JOURNEY_BASE_URL`, `JOURNEY_SESSION` (browser session
 name - distinct per concurrent worker), `JOURNEY_TIMEOUT` (wall cap per
 recipe), `JOURNEY_JSON=1` (machine summary on the last line),
-`JOURNEY_LOCK_WAIT` (seconds to queue instead of refusing).
+`JOURNEY_LOCK_WAIT` (seconds to queue instead of refusing),
+`JOURNEY_LOCK_IMPL` (`auto`|`flock`|`mkdir` - pin the run-lock
+implementation; `auto` uses flock where the host has it).
 
 ## Layout
 
