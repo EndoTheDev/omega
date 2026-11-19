@@ -26,7 +26,9 @@
 #   G1  THE RUN LOCK. A suite body holds it for its whole run, so while we
 #       hold it (or read a pid file that says the caller holds it) no other
 #       run.sh can be between recipes. Closing a session a live suite is
-#       mid-use of is impossible by construction, not by luck.
+#       mid-use of is impossible by construction, not by luck. The recorded
+#       pid is NOT trusted on its own - a number is not an identity (card
+#       t_b000c0e3, same rule run.sh now applies); see lock_holder_is_suite.
 #   G2  NO ATTACHED CLIENT. A client command holds an ESTABLISHED connection
 #       on the session's control port for as long as it runs and drops it
 #       when it exits (proven: `wait 15000` held one, the moment it ended
@@ -59,6 +61,9 @@
 #   JOURNEY_DAEMON_IDLE_MIN    idle window in minutes (default 10)
 #   JOURNEY_SESSION            the gate suite's session name (exempt from G3)
 #   JOURNEY_GATE_PID           the pid whose run lock the caller holds (gate mode)
+#   JOURNEY_LOCK_IMPL          auto|flock|mkdir (default auto) - pins the lock
+#                              shape; same knob run.sh carries, so this witness
+#                              can exercise the mkdir ownership rule anywhere
 #
 # Exit: 0 nothing closed, 1 daemons closed (visible in cron/CI logs).
 
@@ -114,6 +119,93 @@ lock_holder_pid() {
   return 1
 }
 
+# OWNERSHIP IS NOT A PID (card t_b000c0e3). The mkdir lock can only ask
+# `kill -0`, and a pid is a number, not an identity: a dead suite's dir whose
+# number the host has since handed to an unrelated live process made this
+# sweep stand down forever ("a journey suite holds the run lock (pid N)") while
+# no suite ran - so the idle-daemon fix stopped working outside a suite, i.e.
+# until the next suite's gate. The record is now checked against the holder's
+# own command line, the same rule run.sh applies (lock_holder_is_suite there):
+#   dead pid, or a number worn by something that is not a journey suite -> the
+#   dir is stale and gets reaped; an owner we cannot identify (unreadable or
+#   empty record, a host with no /proc to ask) is HELD, never reaped - reaping
+#   a LIVE suite's lock would let two suites interleave, the exact failure the
+#   lock exists to prevent.
+# The ~20 lines are duplicated from run.sh on purpose: the scripts in this
+# lane are standalone (run.sh does not source a shared file either), and a
+# shared sourced file would have to live outside this card's file surface.
+
+# lock_holder_args <pid>: the holder's argv on one line, empty when the pid
+# exposes none. /proc is the honest read (Linux always, MSYS for the processes
+# its own runtime started); `ps -o args=` is the fallback. MSYS's ps has no -o
+# and reports only the executable path, so a ps answer there confirms "some
+# process", never "a suite" - the safe direction.
+lock_holder_args() {
+  local args=""
+  args="$(tr '\0' ' ' < "/proc/$1/cmdline" 2>/dev/null | tr -d '\r\n')"
+  if [ -z "$args" ]; then
+    args="$(ps -p "$1" -o args= 2>/dev/null | tr -d '\r\n' | sed 's/^ *//; s/ *$//')"
+  fi
+  printf '%s' "$args"
+}
+
+# lock_holder_is_suite <pid> -> 0 a live journey suite, 1 nothing that can be
+# one (dead, or a recycled number), 2 alive but unverifiable.
+# A suite is bash running run.sh, so its argv names .../journeys/run.sh.
+# Invoked as ./run.sh from the suite home the argv carries only the bare
+# script name, so the holder's cwd is read as the second signal - reaping a
+# LIVE suite's lock would let two suites interleave, so one signal alone is
+# not enough to convict.
+lock_holder_is_suite() {
+  local pid="$1" args cwd
+  case "$pid" in ''|*[!0-9]*) return 2 ;; esac   # empty/junk record: unproven
+  kill -0 "$pid" 2>/dev/null || return 1
+  args="$(lock_holder_args "$pid")"
+  if [ -z "$args" ]; then
+    # Alive but undescribed. A host WITH /proc that does not know this pid is
+    # naming a process outside the shell runtime (a native Windows process on
+    # MSYS) - never a bash suite, so the number was recycled. Everything else
+    # (a pid /proc will not describe, or a host with no /proc to ask) cannot
+    # be answered in either direction and stays unproven: hold, never reap.
+    if [ -d /proc ] && [ ! -d "/proc/$pid" ]; then return 1; fi
+    return 2
+  fi
+  case "$args" in
+    *journeys/run.sh*|*journeys\\run.sh*) return 0 ;;
+  esac
+  case "$args" in
+    *run.sh*)
+      cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null || true)"
+      cwd="${cwd//\\//}"
+      case "$cwd" in */scripts/journeys|*/scripts/journeys/) return 0 ;; esac ;;
+  esac
+  return 1
+}
+
+# lock_holder_reapable <recorded pid> -> 0 that record names no live journey
+# suite, so the dir it left is stale. Unproven is NOT reapable.
+lock_holder_reapable() {
+  lock_holder_is_suite "$1"
+  case "$?" in
+    0|2) return 1 ;;
+  esac
+  return 0
+}
+
+JOURNEY_LOCK_IMPL="${JOURNEY_LOCK_IMPL:-auto}"
+case "$JOURNEY_LOCK_IMPL" in
+  auto)
+    if command -v flock >/dev/null 2>&1; then JOURNEY_LOCK_IMPL=flock; else JOURNEY_LOCK_IMPL=mkdir ; fi ;;
+  flock|mkdir) ;;
+  *)
+    printf 'sweep-daemons: JOURNEY_LOCK_IMPL must be auto, flock or mkdir (got %s)\n' "$JOURNEY_LOCK_IMPL" >&2
+    exit 2 ;;
+esac
+if [ "$JOURNEY_LOCK_IMPL" = flock ] && ! command -v flock >/dev/null 2>&1; then
+  printf 'sweep-daemons: JOURNEY_LOCK_IMPL=flock, but this host has no flock(1)\n' >&2
+  exit 2
+fi
+
 release_lock() {
   [ "$LOCK_TAKEN" = 1 ] || return 0
   rm -rf "$JOURNEY_LOCK.d" 2>/dev/null
@@ -122,7 +214,7 @@ release_lock() {
 trap release_lock EXIT
 
 take_lock() { # 0 = we hold the run lock now
-  if command -v flock >/dev/null 2>&1; then
+  if [ "$JOURNEY_LOCK_IMPL" = flock ]; then
     exec 9>>"$JOURNEY_LOCK" || return 1
     if flock -n 9; then
       printf '%s\n' "$$" > "${JOURNEY_LOCK}.pid" 2>/dev/null
@@ -137,21 +229,21 @@ take_lock() { # 0 = we hold the run lock now
     LOCK_TAKEN=1
     return 0
   fi
-  # a dir whose owner is dead is stale (SIGKILLed suite) - reap it, same rule
-  # run.sh applies
+  # The dir exists, so someone's record says a suite holds it - but the record
+  # is all we have. A dead pid, or a live pid worn by something that is not a
+  # journey suite (a recycled number), means the dir is stale: reap it and take
+  # the lock. An unidentifiable record is HELD (lock_holder_reapable's law).
   local holder
   holder="$(tr -d '\r\n' < "$JOURNEY_LOCK.d/pid" 2>/dev/null || echo '')"
-  case "$holder" in
-    [0-9]*)
-      if ! kill -0 "$holder" 2>/dev/null; then
-        rm -rf "$JOURNEY_LOCK.d" 2>/dev/null
-        if mkdir "$JOURNEY_LOCK.d" 2>/dev/null; then
-          printf '%s\n' "$$" > "$JOURNEY_LOCK.d/pid"
-          LOCK_TAKEN=1
-          return 0
-        fi
-      fi ;;
-  esac
+  if lock_holder_reapable "$holder"; then
+    say "sweep-daemons: reaping a stale run lock - pid ${holder:-?} is not a live journey suite"
+    rm -rf "$JOURNEY_LOCK.d" 2>/dev/null
+    if mkdir "$JOURNEY_LOCK.d" 2>/dev/null; then
+      printf '%s\n' "$$" > "$JOURNEY_LOCK.d/pid"
+      LOCK_TAKEN=1
+      return 0
+    fi
+  fi
   return 1
 }
 
