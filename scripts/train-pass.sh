@@ -498,16 +498,76 @@ if journeys_will_run; then
 fi
 
 # ---- free the branch ---------------------------------------------------
+#
+# A card's workspace_path is a WORKTREE only while this checkout registers it.
+# On winbtw `git worktree remove -f` against a tree some live session holds as
+# its cwd deletes every file but cannot unlink the top directory, and what is
+# left is a HUSK: an empty, UNREGISTERED dir (no .git file, no
+# .git/worktrees/<id> entry). Every command that then assumed "a dir at
+# workspace_path is a worktree" lies - `git -C <husk> status` falls through to
+# THIS checkout (the husk's parent), so the dirty guard read the main repo and
+# the free step died `fatal: not a working tree` on every pass, forever
+# (proven live on t_7acaa267, 2026-11-19, including the tick's fallback sweep).
+# The free step therefore asks the repo's own worktree list first, and treats
+# a husk as the plain directory it is.
+
+# wt_norm <path>: one spelling for both sides. The board carries the
+# dispatcher's spelling (winbtw: D:\Code\...), `git worktree list` prints
+# git's own (D:/Code/...), and an MSYS caller may hand /d/Code/... - so fold
+# separators, MSYS's drive form, trailing slashes and (windows being
+# case-blind) case before anything is compared.
+wt_norm() {
+  local p="$1"
+  p="${p//\\//}"
+  if command -v cygpath >/dev/null 2>&1; then
+    p="$(cygpath -m "$p" 2>/dev/null || printf '%s' "$p")"
+  fi
+  while [ "$p" != "/" ] && [ "${p%/}" != "$p" ]; do p="${p%/}"; done
+  case "$p" in
+    [A-Za-z]:*) p="$(printf '%s' "$p" | tr 'A-Z' 'a-z')" ;;
+  esac
+  printf '%s' "$p"
+}
+
+# wt_registered <path>: this checkout carries that path on its worktree list.
+wt_registered() {
+  local want have line
+  want="$(wt_norm "$1")"
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) have="$(wt_norm "${line#worktree }")" ;;
+      *) continue ;;
+    esac
+    if [ "$have" = "$want" ]; then return 0; fi
+  done < <(git worktree list --porcelain 2>/dev/null)
+  return 1
+}
 
 ws="$(task_field "$tid" "workspace_path" || true)"
+wskind="$(task_field "$tid" "workspace_kind" || true)"
 if [ -n "$ws" ] && [ -d "$ws" ]; then
-  if [ -n "$(git -C "$ws" status --porcelain 2>/dev/null)" ]; then
-    echo "FATAL: train-pass: done card $tid has $ws dirty - uncommitted work in a closed card;" >&2
-    echo "       the train never destroys unclaimed state. A human looks at it." >&2
-    exit 2
+  if wt_registered "$ws"; then
+    if [ -n "$(git -C "$ws" status --porcelain 2>/dev/null)" ]; then
+      echo "FATAL: train-pass: done card $tid has $ws dirty - uncommitted work in a closed card;" >&2
+      echo "       the train never destroys unclaimed state. A human looks at it." >&2
+      exit 2
+    fi
+    git worktree remove -f "$ws" >/dev/null 2>&1 || die "could not free the card worktree $ws (rm the worktree by hand)"
+    note "freed card worktree $ws"
+  elif [ "$wskind" = "worktree" ]; then
+    # Not a worktree of this checkout: the husk a held-cwd removal leaves
+    # behind, or an unregistered leftover. Nothing here is work this checkout
+    # claims - the card's commits are on branch $bra - so remove the plain
+    # directory and land. Only a HOLDER can refuse it (winbtw: "Device or
+    # resource busy" while a session's cwd is inside), and that die names it
+    # instead of sending a human to a worktree removal git cannot perform.
+    if ! rm -rf "$ws" 2>/dev/null; then
+      die "could not remove the leftover directory $ws - it is no worktree of this checkout (the card's commits are on $bra, nothing was rebased or merged), but a live process still holds it: a session spawned with its cwd at the workspace path is the usual one. End that session, then rerun the pass."
+    fi
+    note "removed unregistered leftover dir $ws (not a worktree of this checkout)"
+  else
+    note "card workspace $ws is not a worktree of this checkout and the card does not declare one (workspace_kind=${wskind:-unset}) - left untouched"
   fi
-  git worktree remove -f "$ws" >/dev/null 2>&1 || die "could not free the card worktree $ws (rm the worktree by hand)"
-  note "freed card worktree $ws"
 fi
 
 # ---- rebase + merge ----------------------------------------------------

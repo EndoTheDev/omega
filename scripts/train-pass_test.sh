@@ -167,6 +167,12 @@ new_repo() {
   git init -q "$REPO"
   git -C "$REPO" config user.email t@t
   git -C "$REPO" config user.name t
+  # The live checkout ignores .worktrees/ (.gitignore:42), and the fixture must
+  # too: without it every leg that puts a worktree or a husk at the card's
+  # workspace path shows up as an untracked ".worktrees/" and the pass refuses
+  # at its CLEAN-TREE precondition - before the free step under test ever runs
+  # (S4b was green on that refusal, not on its dirty-worktree guard).
+  printf '.worktrees/\n' >"$REPO/.gitignore"
   echo "shared unchanged" >"$REPO/shared.txt"
   echo "base" >"$REPO/base.txt"
   git -C "$REPO" add -A
@@ -247,6 +253,23 @@ case "${STUB_LANE_HEALTH:-}" in
 esac
 CURL
   chmod +x "$STUBBIN/curl"
+}
+
+# a rm stub that refuses the husk the way a HOLDER does (winbtw: "Device or
+# resource busy" while a live session has the dir as its cwd). Every other
+# call falls through to the real rm, so the landing is untouched.
+held_stub() {
+  HELDBIN="$(posix_path "$HARNESS")/heldbin"
+  mkdir -p "$HELDBIN"
+  HELD_REAL_RM="$(command -v rm)"
+  cat >"$HELDBIN/rm" <<'RM'
+#!/usr/bin/env bash
+case "$*" in
+  *t_held*) echo "rm: cannot remove 't_held': Device or resource busy" >&2; exit 1 ;;
+esac
+exec "$HELD_REAL_RM" "$@"
+RM
+  chmod +x "$HELDBIN/rm"
 }
 
 # a committed card branch: card_branch <task_id> <completed_at>
@@ -354,12 +377,109 @@ grep -q "queue empty" "$HARNESS/run.out" || badf "S4a: empty queue message missi
 mk_harness
 new_board
 new_repo
-mkdir -p "$REPO/.worktrees/t_dirty"
-git -C "$REPO" worktree add -q --detach "$REPO/.worktrees/t_dirty" dev
+# A REGISTERED worktree on the card's branch with uncommitted work in it: the
+# free step must refuse, not delete. (Before the fixture carried .worktrees/ in
+# its .gitignore this leg never reached the free step - the untracked dir
+# tripped the clean-tree precondition first, so the guard was never exercised.)
+card_branch t_dirty 70
+git -C "$REPO" worktree add -q "$REPO/.worktrees/t_dirty" wt/t_dirty
 echo "uncommitted" >"$REPO/.worktrees/t_dirty/leftover.txt"
-card_row t_dirty wt/t_dirty 70 "$REPO/.worktrees/t_dirty"
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$REPO/.worktrees/t_dirty' WHERE id='t_dirty';"
 run --no-push
 if [ "$rc" != 2 ]; then badf "S4b: dirty card worktree must abort (rc 2), got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "uncommitted work in a closed card" "$HARNESS/run.out" ||
+  badf "S4b: the refusal must be the DIRTY-WORKTREE guard (rc 2 alone is also the clean-tree precondition): $(cat "$HARNESS/run.out")"
+[ -f "$REPO/.worktrees/t_dirty/leftover.txt" ] || badf "S4b: the dirty worktree must survive - a human looks at it"
+[ -f "$REPO/.worktrees/t_dirty/.git" ] || badf "S4b: a registered worktree keeps its .git file"
+
+echo "== S4c: a HUSK (empty, unregistered dir at the workspace path) is freed and the card LANDS"
+ok
+
+mk_harness
+new_board
+new_repo
+# The husk a held-cwd removal leaves behind: an EMPTY dir at the workspace
+# path, no .git file, no .git/worktrees/<id> registration (git deleted the
+# contents, the top directory survived the handle). The board carries the
+# dispatcher's spelling - winbtw writes backslashes, git prints forward
+# slashes - so the fold in the free step is exercised, not bypassed.
+husk="$REPO/.worktrees/t_husk"
+if command -v cygpath >/dev/null 2>&1; then
+  husk_spelling="$(cygpath -w "$husk" 2>/dev/null || printf '%s' "$husk")"
+else
+  husk_spelling="$REPO/.worktrees//t_husk/"
+fi
+card_branch t_husk 720
+mkdir -p "$husk"
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$husk_spelling' WHERE id='t_husk';"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S4c: a husk must not wedge the pass (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -d "$husk" ] && badf "S4c: the husk must be gone after the pass"
+grep -q "removed unregistered leftover dir" "$HARNESS/run.out" ||
+  badf "S4c: the free step must name the leftover it removed: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_husk" "$HARNESS/run.out" || badf "S4c: no landing: $(cat "$HARNESS/run.out")"
+[ -f "$REPO/t_husk.txt" ] || badf "S4c: the card's work must land on dev"
+[ "$(status_of t_husk)" = "done" ] || badf "S4c: card stays done"
+
+echo "== S4d: a husk a HOLDER keeps unremovable dies loud naming the path"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_held 730
+mkdir -p "$REPO/.worktrees/t_held"
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$REPO/.worktrees/t_held' WHERE id='t_held';"
+held_stub
+pre="$(git -C "$REPO" rev-parse dev)"
+rc=0
+( cd "$REPO" && PATH="$HELDBIN:$PATH" HELD_REAL_RM="$HELD_REAL_RM" \
+    "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+if [ "$rc" != 2 ]; then badf "S4d: an unremovable husk must refuse (rc 2), got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q "could not remove the leftover directory" "$HARNESS/run.out" ||
+  badf "S4d: the die must name the leftover path: $(cat "$HARNESS/run.out")"
+grep -q "live process still holds it" "$HARNESS/run.out" ||
+  badf "S4d: the die must name the probable holder: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S4d: nothing may land while the husk is held"
+[ "$(status_of t_held)" = "done" ] || badf "S4d: a free-step refusal never demotes the card"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_held || badf "S4d: the card branch must survive"
+
+echo "== S4e: a REGISTERED clean worktree is freed by git, not treated as a leftover"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_reg 745
+git -C "$REPO" worktree add -q "$REPO/.worktrees/t_reg" wt/t_reg
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$REPO/.worktrees/t_reg' WHERE id='t_reg';"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S4e: a clean registered worktree must be freed and land (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -e "$REPO/.worktrees/t_reg" ] && badf "S4e: the registered worktree must be gone"
+grep -q "freed card worktree" "$HARNESS/run.out" ||
+  badf "S4e: a registered worktree is freed THROUGH git (wt_registered must not misfile it as a leftover): $(cat "$HARNESS/run.out")"
+grep -q "removed unregistered leftover dir" "$HARNESS/run.out" &&
+  badf "S4e: a registered worktree must never take the leftover path"
+git -C "$REPO" worktree list --porcelain | grep -q "t_reg" && badf "S4e: the registration must be gone too"
+grep -q "DONE t_reg" "$HARNESS/run.out" || badf "S4e: no landing: $(cat "$HARNESS/run.out")"
+
+echo "== S4f: a 'dir' workspace is never removed by the free step"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_dirkind 740
+mkdir -p "$REPO/shared-ws"
+echo "shared payload" >"$REPO/shared-ws/keep.txt"
+git -C "$REPO" add -A && git -C "$REPO" commit -qm "test(fixture): shared workspace dir"
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_kind='dir', workspace_path='$REPO/shared-ws' WHERE id='t_dirkind';"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S4f: a dir workspace must not refuse the pass (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -f "$REPO/shared-ws/keep.txt" ] || badf "S4f: a shared dir workspace must survive the free step"
+grep -q "left untouched" "$HARNESS/run.out" ||
+  badf "S4f: the free step must say it left the dir workspace alone: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_dirkind" "$HARNESS/run.out" || badf "S4f: no landing: $(cat "$HARNESS/run.out")"
 echo "== S5: marker walk (train-bisect)"
 ok
 
