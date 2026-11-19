@@ -62,9 +62,6 @@ func (s *Server) runCompact(ctx context.Context, sessionID string) (string, erro
 	}
 	out, err := s.compactSession(ctx, sessionID)
 	if err != nil {
-		if errors.Is(err, errNoFoldFace) {
-			return "", errors.New("this store cannot hold a context boundary")
-		}
 		return "", err
 	}
 	if !out.Folded {
@@ -150,7 +147,13 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 		if runFold {
 			line, fErr := s.runCompact(ctx, req.SessionID)
 			if fErr != nil {
-				http.Error(w, "command failed: "+fErr.Error(), http.StatusInternalServerError)
+				// A store with no boundary surface is a missing capability, the same 501 the
+				// sibling handlers answer; every other fold failure is a 500.
+				status := http.StatusInternalServerError
+				if errors.Is(fErr, errNoFoldFace) {
+					status = http.StatusNotImplemented
+				}
+				http.Error(w, "command failed: "+fErr.Error(), status)
 				return
 			}
 			text = line

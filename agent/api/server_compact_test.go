@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -237,6 +238,30 @@ func TestCompactSurfacesTheCompactorError(t *testing.T) {
 	}
 	if row.ContextStart != "" {
 		t.Fatalf("a failed fold wrote a boundary (%q)", row.ContextStart)
+	}
+}
+
+// boundarylessStore serves sessions but holds no context boundary: a store without the
+// session-context surface. The capability is MISSING, so the fold answers 501 like the
+// sibling handlers, never a 500 that reads as a failure of the request.
+type boundarylessStore struct{ agent.StoreProvider }
+
+// TestCompactWithoutABoundarySurface pins that answer: the command cannot run on this
+// store at all, so it says so with the same status its sibling handlers use.
+func TestCompactWithoutABoundarySurface(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	seedSession(t, s, st, "s-6", "one", "two", "three")
+	s.store = boundarylessStore{StoreProvider: st}
+	mountCompactor(t, s, &foldCompactor{out: []core.Message{
+		core.NewSystem(core.ContextFoldPrefix + "sum" + core.ContextFoldSuffix),
+	}})
+
+	code, _, body := compactCall(t, s, "s-6")
+	if code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want 501 (%s)", code, body)
+	}
+	if want := "command failed: session store has no session-context surface"; !strings.Contains(body, want) {
+		t.Fatalf("body = %q, want it to name %q", body, want)
 	}
 }
 

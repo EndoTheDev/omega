@@ -140,6 +140,55 @@ func TestFoldNowIgnoresBudget(t *testing.T) {
 	}
 }
 
+// TestFoldNowFoldsTheHead pins what the manual fold hands the summarizer: the boundary a
+// session store holds is a summary plus ONE tail, so every row before the tail must be
+// folded - a keep-first head kept nowhere is context lost while the reply counts it.
+func TestFoldNowFoldsTheHead(t *testing.T) {
+	provider := agent.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "manual summary"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	c := &Compactor{
+		provider: provider,
+		config:   agent.CompactionConfig{Enabled: true, KeepFirst: 2, KeepLast: 2},
+	}
+	msgs := []core.Message{
+		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
+		core.NewAssistant("four"), core.NewUser("five"), core.NewUser("six"),
+	}
+	out, err := c.FoldNow(context.Background(), msgs)
+	if err != nil {
+		t.Fatalf("FoldNow: %v", err)
+	}
+	if len(out) != 3 {
+		t.Fatalf("manual fold = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
+	}
+	prompt := summarizerPrompt(t, provider)
+	for _, want := range []string{"- [user] one", "- [assistant] two", "- [user] three", "- [assistant] four"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the fold left %q out of the summary\nprompt:\n%s", want, prompt)
+		}
+	}
+	for _, banned := range []string{"- [user] five", "- [user] six"} {
+		if strings.Contains(prompt, banned) {
+			t.Errorf("%q is kept verbatim, so it must not be summarized\nprompt:\n%s", banned, prompt)
+		}
+	}
+}
+
+// summarizerPrompt returns the single user prompt the compactor handed its provider.
+func summarizerPrompt(t *testing.T, provider *agent.FakeProvider) string {
+	t.Helper()
+	if len(provider.LastMessages) != 1 {
+		t.Fatalf("expected 1 message to the summarizer, got %d", len(provider.LastMessages))
+	}
+	user, ok := provider.LastMessages[0].(core.User)
+	if !ok {
+		t.Fatalf("expected user message to the summarizer, got %T", provider.LastMessages[0])
+	}
+	return user.Content
+}
+
 // TestFoldNowFloor pins the refusal: a conversation whose whole length is the keep-first/
 // keep-last floor has no middle, so there is no summary to be had and no fold to write.
 func TestFoldNowFloor(t *testing.T) {
@@ -208,14 +257,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 	}
 
 	// summarize sends the provider exactly one user message.
-	if len(provider.LastMessages) != 1 {
-		t.Fatalf("expected 1 message to the summarizer, got %d", len(provider.LastMessages))
-	}
-	user, ok := provider.LastMessages[0].(core.User)
-	if !ok {
-		t.Fatalf("expected user message to the summarizer, got %T", provider.LastMessages[0])
-	}
-	prompt := user.Content
+	prompt := summarizerPrompt(t, provider)
 
 	idx := strings.Index(prompt, "- [user]")
 	if idx < 0 {
