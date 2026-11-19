@@ -22,7 +22,9 @@ set -uo pipefail
 #     doc) and a shallow clone exit 2 (unmeasurable, not a finding);
 #   - the step-summary markdown lands in $GITHUB_STEP_SUMMARY;
 #   - the repo's OWN table is live: every tracked .md has a row (a new doc
-#     without a row fails here instead of going silently unmeasured).
+#     without a row fails here instead of going silently unmeasured), and the
+#     notes script's default output dir is ignored (a generated release
+#     artifact must not be committed, where it would read as a doc).
 
 SUT="$(cd "$(dirname "$0")" && pwd)/docs-health.sh"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -343,6 +345,16 @@ has 'DOCS WARNING: 1 due, 0 broken links' H18
 last="$(printf '%s\n' "$OUT" | grep -E '^(DOCS OK|DOCS WARNING)' | tail -1)"
 [ "$last" = 'DOCS WARNING: 1 due, 0 broken links' ] && ok \
 	|| bad "H18: the contract line must come last, got [$last]"
+
+# --- H19: generated release output stays ignored --------------------------
+# dist/ is the notes script's default output dir (override in its header). A
+# committed artifact reads as a doc to H17, and a local run of the script
+# leaves the files in the tree, so the ignore rule is part of the table being
+# live - not a convenience.
+for artifact in dist/release-notes.md dist/release-notes-body.md dist/discord-release.json; do
+	( cd "$REPO" && git check-ignore -q "$artifact" ) && ok \
+		|| bad "H19: generated release artifact not gitignored: $artifact (running the notes script would dirty the checkout)"
+done
 
 echo
 echo "docs-health_test: $pass ok, $fail fail"

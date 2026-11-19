@@ -63,3 +63,9 @@ bin/*.example
 # stray root build artifact (go build ./cmd/omega without -o)
 /omega
 .nuxt/
+
+# release-notes.sh default output (NOTES_OUT_DIR=dist): generated release
+# artifacts. CI regenerates them at tag time (.github/workflows/release.yml),
+# so a committed copy only goes stale and dirties the checkout on every local
+# run (card t_ab24b59d untracked the v0.17.3 residues)
+/dist/
