@@ -85,7 +85,15 @@ func (ar *agentRoutes) readAgentSessions(ctx context.Context, name string) ([]co
 	return as.ListAgentSessions(cctx, name)
 }
 
-// writeAgentSession creates a session in the store that will OWN it.
+// writeAgentSession creates a session in the store that will OWN it:
+// the daemon's store for main, the agent home's own data/omega.db for an
+// agent (created on first write - a session needs a home). The release
+// func closes the agent store; main's is a no-op.
+//
+// A session created through this door is the caller's OWN conversation,
+// never a machinery-owned one: `listed` stays 1 on both branches, and
+// nothing here reaches for the canonical (listed = 0) door
+// (store.CreateCanonicalChat). Pin: TestAgentSessionCreateKeepsBothListsHonest.
 func (ar *agentRoutes) writeAgentSession(ctx context.Context, name, id string) error {
 	st := ar.mountedStore()
 	if st == nil {

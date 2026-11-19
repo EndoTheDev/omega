@@ -283,6 +283,59 @@ func TestAgentSessionsEndpoint(t *testing.T) {
 	}
 }
 
+// TestAgentSessionCreateKeepsBothListsHonest pins the visibility ruling
+// on POST /agents/{name}/sessions: a session created AS the default agent
+// is the maintainer's own conversation and keeps its sidebar row; a
+// session created AS a named agent lands in that home's own store, which
+// the sidebar never reads. No row from this door is machinery-owned - the
+// canonical chat has its own door. The pin reds if the default branch ever
+// seeds the canonical (listed = 0) bit: that erases a conversation from
+// the list the human started it in.
+func TestAgentSessionCreateKeepsBothListsHonest(t *testing.T) {
+	srv, st, _ := newAgentsFixture(t)
+	ctx := context.Background()
+
+	if res, err := postAny(t, srv.URL+"/agents/"+agent.DefaultAgentName+"/sessions",
+		map[string]any{"id": "main-owned"}); err != nil || res != http.StatusCreated {
+		t.Fatalf("create default-agent session: status %d err %v", res, err)
+	}
+	rows, err := st.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("list main sessions: %v", err)
+	}
+	var found *core.Session
+	for i := range rows {
+		if rows[i].ID == "main-owned" {
+			found = &rows[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("the default-agent create left the human's own list: %+v", rows)
+	}
+	if found.MachineOwned {
+		t.Error("the default-agent create is machine-owned - it would vanish from the maintainer's own sessions list")
+	}
+	if found.Agent != agent.DefaultAgentName {
+		t.Errorf("agent = %q, want the %q binding", found.Agent, agent.DefaultAgentName)
+	}
+
+	// The named-agent branch stays out of the main list: that row is the
+	// roster's inspection material, never a sidebar row.
+	if res, err := postAny(t, srv.URL+"/agents/scout/sessions",
+		map[string]any{"id": "scout-owned"}); err != nil || res != http.StatusCreated {
+		t.Fatalf("create scout session: status %d err %v", res, err)
+	}
+	rows, err = st.ListSessions(ctx)
+	if err != nil {
+		t.Fatalf("list main sessions: %v", err)
+	}
+	for _, sess := range rows {
+		if sess.ID == "scout-owned" {
+			t.Fatalf("a named agent's session entered the human's list: %+v", sess)
+		}
+	}
+}
+
 // TestAgentSessionsEmptyListEmitsArray pins the list contract: a freshly scaffolded
 // agent has zero sessions, the store returns a nil slice, and the endpoint must still
 // answer literal [] with 200 - the webui session read crashes on a null.length body.
