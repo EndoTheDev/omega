@@ -741,8 +741,9 @@
   // a repaired layout surfaces ONCE at boot - one toast for the whole record, never one
   // per repair and never a silent default-tree fallback. It rides the local emit funnel
   // (canvas.ts emitLocalToast: same subscriber set and fingerprint dedupe as the canvas
-  // feed), and read stays true so it never counts unread in the bell. onMounted puts the
-  // emit after the NotificationCenter subscription (children mount first).
+  // feed), and read stays true so it never counts unread in the notifications
+  // feed. onMounted puts the emit after the NotificationCenter subscription
+  // (children mount first).
   onMounted(() => {
     const repairs = dock.bootRepairs;
     if (repairs.length === 0) return;
@@ -1052,7 +1053,7 @@
     openChatTab(id);
   }
 
-  // the bell's open intent routes by source kind. Chat content never changes on the
+  // the notification open intent routes by source kind. Chat content never changes on the
   // click.
   function openNotification(n: OmegaNotification | unknown) {
     // a pending APPROVAL rides this router too.

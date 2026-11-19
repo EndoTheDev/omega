@@ -5,7 +5,7 @@
 // the fetch wrappers: fetchVerdicts / postVerdict URL + body contract
 //   under fetch interception, incl. the 409 race reason surfacing;
 // source pins: ChatItem routes the verdict item to VerdictCard and the
-//   bell consumes fetchVerdicts (source checks, components are not
+//   notifications feed consumes fetchVerdicts (source checks, components are not
 //   importable in node).
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";

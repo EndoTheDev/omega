@@ -8,7 +8,7 @@
 #     pane (opens the hidden inspector if needed, activates the kanban
 #     tab), selects the board the task lives on in the board switcher,
 #     and NEVER touches the main pane (chat content unchanged, no
-#     /board route on the bell's path)
+#     /board route on the notification's path)
 #   3 aligned bottom: with the bottom panel open (the default aligned
 #     width mode) the pinned sidebars keep their full height - both run
 #     down to the band's bottom edge beside it (no dead space); "full"
