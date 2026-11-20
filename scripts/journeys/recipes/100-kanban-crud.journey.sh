@@ -63,17 +63,43 @@ col_ids() {
 # every caller reads it right after a press that writes, and the wire lands when
 # the write lands - a one-shot read turns a landed save into a red that blames
 # the server (measured: the row was in GET /tasks one second after the red).
+#
+# It also COUNTS what it read, the way poll_http does (mechanism: an answer is
+# not a row). curl exits 0 on a 404/500 too, so a lane that answers
+# `list tasks: no such board "x"` - or an empty list - reads here as "the row
+# never arrived", and the red then blames the product. On give-up the counts and
+# the last body go to the log, so the red carries its own wire evidence.
 task_by_title() {
-  local t i=0 out
+  local t i=0 out code body url answered=0 silent=0 last_body="" status
+  url="${JOURNEY_BASE_URL}/tasks?board=${BOARD}"
   t="$(journey_budget "${2:-10}")"
   while [ "$i" -lt $((t * 2)) ]; do
-    out=$(curl -s "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
-      | tr -d '\r' | grep -oE '\{"id":"t_[0-9a-f]+","title":"[^"]*"[^}]*\}' \
-      | grep -F "\"$1\"" | grep -oE 't_[0-9a-f]+' | head -1)
-    [ -n "$out" ] && { printf '%s' "$out"; return 0; }
+    body="$(curl -s -w '\n%{http_code}' "$url" 2>/dev/null)"
+    code="$(printf '%s' "$body" | tail -1)"
+    last_body="$(printf '%s' "$body" | sed '$d' | head -c 200)"
+    case "$code" in
+      2*)
+        answered=$((answered + 1))
+        out=$(printf '%s' "$body" | sed '$d' | tr -d '\r' \
+          | grep -oE '\{"id":"t_[0-9a-f]+","title":"[^"]*"[^}]*\}' \
+          | grep -F "\"$1\"" | grep -oE 't_[0-9a-f]+' | head -1)
+        [ -n "$out" ] && { printf '%s' "$out"; return 0; }
+        status="answered"
+        ;;
+      000|"")
+        silent=$((silent + 1))
+        status="never answered"
+        ;;
+      *)
+        answered=$((answered + 1))
+        status="answered ${code}"
+        ;;
+    esac
     sleep 0.5
     i=$((i + 1))
   done
+  printf '%s [journey] task_by_title: %s reads answered and never carried %q, %s never answered (last read: %s body: %s)\n' \
+    "$(date +%H:%M:%S)" "$answered" "$1" "$silent" "$status" "$last_body" >&2
   return 0
 }
 
