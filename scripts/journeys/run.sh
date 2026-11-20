@@ -869,7 +869,11 @@ for recipe in $want; do
     # error from an earlier run used to red every later
     # assert_no_console_errors while the pages themselves were silent.
     console_scope_begin
+    rm -f "$(journey_death_mark)" 2>/dev/null
     . "$recipe"
+    # a die inside a command substitution stopped only that subshell; the mark
+    # it left is this recipe's real verdict (mechanism: the substitution boundary)
+    journey_dead_check
   ) >> "$log" 2>&1 9>&- &
   # >> not > on the log above: the WATCHDOG writes this same file (the cap's
   # verdict lines), and a truncating fd there keeps offset 0, so the recipe's own

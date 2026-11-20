@@ -130,6 +130,11 @@ if [ "${args[0]:-}" = "eval" ] && [ -f "${STUB_HANG:?}" ]; then
   rm -f "$STUB_HANG"
   sleep 60
 fi
+# the offline toggles are observable: every call's argv lands in the log the
+# witness reads (the clean room's restore is one of them)
+if [ -n "${STUB_AB_LOG:-}" ]; then
+  printf '%s\n' "${args[*]}" >> "$STUB_AB_LOG"
+fi
 case "${args[0]:-}" in
   console) : ;;
   eval) printf '%s\n' "${STUB_EVAL_ANSWER:-false}" ;;
@@ -352,6 +357,25 @@ R
 #!/bin/bash
 step "chrome port=$JOURNEY_CHROME_PORT"
 R
+  # a die inside a command substitution stops only the substitution: the recipe
+  # must not run on past it
+  cat > "$1/recipes/909-death-in-subshell.sh" <<'R'
+#!/bin/bash
+out=$(step "inside the substitution"; die "the helper died inside a command substitution")
+step "after the substitution - the recipe ran past a dead step"
+R
+  # a recipe that leaves the tab offline and then dies
+  cat > "$1/recipes/910-offline-death.sh" <<'R'
+#!/bin/bash
+ab set offline on >/dev/null 2>&1
+step "the tab is offline"
+die "died while the tab was offline"
+R
+  # ... and the next recipe in the suite, which must start online again
+  cat > "$1/recipes/911-after-offline.sh" <<'R'
+#!/bin/bash
+step "the next recipe runs"
+R
 }
 
 # drive <tree> [VAR=value...] -- <recipe> [<recipe>...]: the REAL run.sh against
@@ -402,7 +426,10 @@ SHARED="$TMP/shared"
 MUTREAP="$TMP/mutreap"
 PFREE="$TMP/pfree"
 POLD="$TMP/pold"
-mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED" "$MUTREAP" "$PFREE" "$POLD"
+NOGUARD="$TMP/noguard"
+NOONLINE="$TMP/noonline"
+mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED" "$MUTREAP" "$PFREE" "$POLD" \
+  "$NOGUARD" "$NOONLINE"
 make_tree "$FIXED"
 make_tree "$BROKEN"
 make_tree "$LEAKY"
@@ -412,6 +439,8 @@ make_tree "$SHARED"
 make_tree "$MUTREAP"
 make_tree "$PFREE"
 make_tree "$POLD"
+make_tree "$NOGUARD"
+make_tree "$NOONLINE"
 
 # a second listener that answers the CDP version probe on its own port - the
 # "browser another run already launched" the port picker must not adopt
@@ -522,6 +551,29 @@ src = open(path, encoding="utf-8").read()
 old = 'if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ] && chrome_listening; then'
 assert old in src, "the adopt guard is not shaped as the mutation expects"
 open(path, "w", encoding="utf-8", newline="").write(src.replace(old, "if false; then", 1))
+PY
+# the mutation: no death record - a die inside $( ) kills only the substitution
+# and the recipe runs on
+python3 - "$NATIVE_TMP/noguard/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = 'journey_dead_check() {\n'
+assert old in src, "the death guard is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(
+    src.replace(old, 'journey_dead_check() {\n  return 0\n', 1))
+PY
+# the mutation: the pre-fix clean room - nothing puts the tab back online
+python3 - "$NATIVE_TMP/noonline/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = 'journey_online() {\n'
+assert old in src, "the online restore is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(
+    src.replace(old, 'journey_online() {\n  return 0\n', 1))
 PY
 
 # --- P0: the fixture is the CLI under test, not a real one -------------------
@@ -819,6 +871,58 @@ if drive "$POLD" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 -- 908-chrome-port 
 else
   bad "P13 the pre-fix port run failed: $(tail -3 "$TMP/p13b.log")"
 fi
+
+# --- P14: a die inside a command substitution is still the recipe's red ------
+# `SID=$(new_journey_session x | tail -1)` runs the helper in a subshell, so a
+# die() there stops only the substitution and the recipe runs on with an empty
+# id - every later step then reds on the empty value, one screen away from the
+# real fault. The death record makes the killing red the recipe's own.
+rm -f "$LANESTATE"/*.log 2>/dev/null
+if drive "$FIXED" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 -- 909-death-in-subshell \
+     > "$TMP/p14.log" 2>&1; then
+  bad "P14 the recipe ran on past a die inside a command substitution"
+else
+  ok "P14 a dead step inside a subshell reds the recipe"
+fi
+P14LOG="$(evid_dir "$TMP/p14.log")/909-death-in-subshell.log"
+grep -q "the helper died inside a command substitution" "$P14LOG" 2>/dev/null \
+  && ok "P14 the red names the step that died, not its downstream symptom" \
+  || bad "P14 the red lost the killing message: $(tail -3 "$P14LOG" 2>/dev/null)"
+grep -q "after the substitution" "$P14LOG" 2>/dev/null \
+  && bad "P14 the recipe stepped into the cascade anyway" \
+  || ok "P14 the recipe stopped before the cascade"
+if drive "$NOGUARD" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 -- 909-death-in-subshell \
+     > "$TMP/p14b.log" 2>&1; then
+  grep -q "after the substitution" "$(evid_dir "$TMP/p14b.log")/909-death-in-subshell.log" 2>/dev/null \
+    && ok "P14 without the record the recipe runs on with an empty value (the pre-fix shape)" \
+    || bad "P14 the pre-fix shape did not reach the cascade"
+else
+  bad "P14 the pre-fix tree red'd for another reason: $(tail -3 "$TMP/p14b.log")"
+fi
+
+# --- P15: a recipe that dies while the tab is offline leaves the suite online -
+# 111 puts the tab offline to cut the socket. A red before its own restore left
+# every later recipe on a dead page: "cannot open", or a click that answers from
+# the stale DOM while its write can never leave it (the no-op toggle).
+ABLOG="$TMP/ab.log"
+rm -f "$ABLOG"
+drive "$FIXED" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 STUB_AB_LOG="$ABLOG" \
+  -- 910-offline-death 911-after-offline > "$TMP/p15.log" 2>&1
+if grep -q "^set offline on" "$ABLOG" 2>/dev/null && grep -q "^set offline off" "$ABLOG" 2>/dev/null; then
+  ok "P15 the suite puts the tab back online after a recipe died offline"
+else
+  bad "P15 nothing restored the tab: $(cat "$ABLOG" 2>/dev/null | head -5)"
+fi
+grep -q "the next recipe runs" "$(evid_dir "$TMP/p15.log")/911-after-offline.log" 2>/dev/null \
+  && ok "P15 the sibling recipe after it still runs" \
+  || bad "P15 the sibling recipe never ran: $(tail -3 "$TMP/p15.log")"
+ABLOG2="$TMP/ab2.log"
+rm -f "$ABLOG2"
+drive "$NOONLINE" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 STUB_AB_LOG="$ABLOG2" \
+  -- 910-offline-death 911-after-offline > "$TMP/p15b.log" 2>&1
+grep -q "^set offline off" "$ABLOG2" 2>/dev/null \
+  && bad "P15 the pre-fix tree restored the network - the pin proves nothing" \
+  || ok "P15 without the clean room the tab stays offline for every later recipe (the pre-fix shape)"
 
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || exit 1

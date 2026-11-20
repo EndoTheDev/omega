@@ -154,6 +154,7 @@ fi
 # global - a session name keeps pages, navigation and the console log
 # bucket private to THIS suite (lib.sh lives in run.sh's export).
 ab() {
+  journey_dead_check
   local rc
   if [ "$AB_TIMEOUT" = "0" ]; then
     "$AB" --session "$JOURNEY_SESSION_NAME" "$@"
@@ -198,7 +199,7 @@ journey_budget() {
 }
 
 # step <desc>: progress line
-step() { printf '%s [journey] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
+step() { journey_dead_check; printf '%s [journey] %s\n' "$(date +%H:%M:%S)" "$*" >&2; }
 
 # console_scope_begin: start a CLEAN console record for the recipe about to
 # run. agent-browser keeps the console buffer with the DAEMON SESSION, not
@@ -218,9 +219,30 @@ console_scope_begin() {
   ab console --clear >/dev/null 2>&1 || true
 }
 
+# --- the death record (mechanism: the command-substitution boundary) --------
+# `SID=$(new_journey_session x | tail -1)` runs the helper in a SUBSHELL: a die()
+# there stops only the substitution, and the recipe runs on holding an empty
+# id - every later step then red on the empty value, and the log reads as a
+# product fault one screen away from the real one. die() records its message and
+# the primitives read it, so the red that killed the subshell is the red the
+# recipe ends on.
+journey_death_mark() { printf '%s' "$JOURNEY_WORKTMP/omega-jrn-dead-$JOURNEY_RUN_ID"; }
+JOURNEY_DYING=0
+journey_dead_check() {
+  local mark why
+  [ "$JOURNEY_DYING" = "0" ] || return 0
+  mark="$(journey_death_mark)"
+  [ -f "$mark" ] || return 0
+  why="$(head -1 "$mark" 2>/dev/null)"
+  rm -f "$mark" 2>/dev/null
+  die "${why:-a step died inside a command substitution}"
+}
+
 # die <msg>: red journey. Prints, captures evidence, exits non-zero.
 die() {
+  JOURNEY_DYING=1
   printf '%s [journey RED] %s\n' "$(date +%H:%M:%S)" "$*" >&2
+  printf '%s\n' "$*" >"$(journey_death_mark)" 2>/dev/null || true
   ab screenshot 2>/dev/null | tail -1 >&2
   journey_exit_cleanup || true
   exit 1
@@ -462,10 +484,26 @@ poll_http() {
   return 1
 }
 
+# journey_online: put the tab back on the network. OFFLINE is CLIENT state a
+# recipe toggles on purpose (111 cuts the socket that way to prove the push
+# channel), and a red before its own restore left every later recipe in the
+# suite on a dead page: "cannot open", or - worse - a click that still answers
+# from the stale DOM while its write can never leave the page (the no-op toggle
+# shape). Bounded hard: this runs on exit paths, where the CLI itself may be
+# what wedged.
+journey_online() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 15 "$AB" --session "$JOURNEY_SESSION_NAME" set offline off >/dev/null 2>&1 || true
+  else
+    "$AB" --session "$JOURNEY_SESSION_NAME" set offline off >/dev/null 2>&1 || true
+  fi
+}
+
 # journey_clean_room: reset the CLIENT state a journey can mutate, so nothing
 # it did becomes the next journey's baseline. This is the cross-journey law
 # (t_81d0901b: 77-mobile-drawer closed both sidebars and opened a settings tab,
 # then 70-dock-panes-dnd read "7 tabs missing" on a bundle that was fine).
+#   - the network, back online (a recipe that died while the tab was offline)
 #   - the viewport, back to desktop (a recipe that died at 420px)
 #   - localStorage: the dock tree (every pane, its slot and its closed edges),
 #     the settings anchor, the theme and every other omega.* knob a recipe
@@ -475,6 +513,7 @@ poll_http() {
 # spawn a chrome on its way out.
 JOURNEY_PAGE_OPENED=${JOURNEY_PAGE_OPENED:-0}
 journey_clean_room() {
+  journey_online
   [ "$JOURNEY_PAGE_OPENED" = "1" ] || return 0
   ab set viewport 1280 800 >/dev/null 2>&1 || true
   jsq '(()=>{try{localStorage.clear();sessionStorage.clear();return 1}catch(e){return 0}})()' \
@@ -503,6 +542,7 @@ journey_exit_cleanup() {
 # Then the boot marker is the load boundary - networkidle is not one
 # (t_a071ee45).
 open_app() {
+  journey_online
   ab set viewport 1280 800 >/dev/null 2>&1 || true
   ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || \
     { JOURNEY_CDP_ATTACHED=0; ab open "$JOURNEY_BASE_URL/" >/dev/null 2>&1 || die "cannot open $JOURNEY_BASE_URL"; }
