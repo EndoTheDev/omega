@@ -40,7 +40,9 @@ set -euo pipefail
 #     commits. Nuxt's volatile build metadata (buildId uuid, epoch
 #     timestamps in the html + builds/meta jsons) is stripped before
 #     comparing, so regenerating unchanged source skips instead of
-#     churning build ids into history.
+#     churning build ids into history. A skip then RESTORES $STATIC from
+#     HEAD - the rebuild's volatile delta and its buildId-named files
+#     revert - so the skip leaves the checkout clean by construction.
 #   - fail-loud: any build failure aborts the merge pass loudly.
 #     api/static/ is NEVER hand-resolved; it is regenerated, or the merge
 #     fails. (The root build.sh conflict-marker gate stays as belt
@@ -115,6 +117,22 @@ canonical_hash_head() {
 lint_static() {
 	if grep -rqE '<<<<<<<|Stashed changes' "$STATIC"; then
 		echo "FATAL: embed-lane: conflict markers in the regenerated $STATIC" >&2
+		exit 1
+	fi
+}
+
+# restore_static: the skip path's cleanup - $STATIC back to the tree HEAD
+# owns. A rebuild rewrites volatile metadata and can emit buildId-named
+# files HEAD does not carry (the gate strips both before comparing), so a
+# skip that only declines to commit leaves a dirty checkout behind - which
+# the merge train's clean-tree precondition refuses.
+restore_static() {
+	if ! git checkout HEAD -- "$STATIC"; then
+		echo "FATAL: embed-lane: hash-gate skip could not restore $STATIC from HEAD." >&2
+		exit 1
+	fi
+	if ! git clean -qfd -- "$STATIC"; then
+		echo "FATAL: embed-lane: hash-gate skip could not clear rebuilt output under $STATIC." >&2
 		exit 1
 	fi
 }
@@ -203,6 +221,7 @@ regen_bundle() {
 lane_commit() {
 	if [ "$(canonical_hash_disk)" = "$(canonical_hash_head)" ]; then
 		echo "==> embed-lane: hash gate: bundle content unchanged since the last lane commit - skip"
+		restore_static
 		return 1
 	fi
 	git add -A -- "$STATIC"

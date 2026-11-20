@@ -28,6 +28,16 @@ not_contains() {
 	! grep -q "$1" "$2"
 }
 
+# dirty_tree: everything git reports for the fixture checkout, minus the
+# suite's own scratch files (run() and a few legs write logs into $TMP
+# because the lane resolves its repo from cwd). The card incident was a
+# CHECKOUT-dirty tree wedging the merge train, so the pin is the whole
+# tree, not just api/static.
+dirty_tree() {
+	git -C "$TMP" status --porcelain |
+		grep -vE '^\?\? (run\.out|run\.err|head\.msg|lane-diff\.txt|merge-b\.err)$' || true
+}
+
 STAMP="s0" # bundle stamp the mock writes (bump to force a new bundle)
 
 # fixture_error <msg>: the named cause plus the stake. The fixture repo is
@@ -183,6 +193,11 @@ check "hash gate: exit 0 on skip" test "$rc" -eq 0
 check "hash gate: build ran" test -f "$TMP.mock/canary-mock-ran"
 check "hash gate: no extra commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_sha"
 check "hash gate: skip logged" contains "hash gate" "$TMP/run.out"
+# The skip must RESTORE the tree, not merely decline to commit: the
+# rebuild rewrote $STATIC (fresh epoch timestamps) even though its
+# content matched HEAD, and that delta left on disk is what wedged a
+# factory-merge on its clean-tree precondition.
+check "hash gate: skip leaves the checkout clean" test -z "$(dirty_tree)"
 
 # nuxt-volatile-only regen (new buildId uuid + fresh timestamps, same
 # content) must also skip - metadata churn is not a bundle change
@@ -190,6 +205,13 @@ MOCK_BUILDID=22222222-2222-2222-2222-222222222222 run --base "$BASE" "card t_tes
 check "volatile-only regen: exit 0 on skip" test "$rc" -eq 0
 check "volatile-only regen: no extra commit" test "$(git -C "$TMP" rev-parse HEAD)" = "$lane_sha"
 check "volatile-only regen: skip logged" contains "hash gate" "$TMP/run.out"
+check "volatile-only regen: skip leaves the checkout clean" test -z "$(dirty_tree)"
+# ... including the buildId-NAMED output the gate normalizes away: HEAD's
+# meta file is back on disk and the rebuild's twin is gone.
+check "volatile-only regen: committed buildId file restored" \
+	test -f "$TMP/api/static/_nuxt/builds/meta/11111111-1111-1111-1111-111111111111.json"
+check "volatile-only regen: rebuilt buildId file not left behind" \
+	test ! -e "$TMP/api/static/_nuxt/builds/meta/22222222-2222-2222-2222-222222222222.json"
 
 # harness/*/ui (module-shipped UI) also counts as webui source
 STAMP="s2"
