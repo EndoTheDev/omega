@@ -59,11 +59,22 @@ col_ids() {
     | tr '\n' ' ' | sed 's/ *$//'
 }
 
-# task_by_title <title>: the id whose title matches (GET /tasks scan).
+# task_by_title <title>: the id whose title matches (GET /tasks scan). It POLLS:
+# every caller reads it right after a press that writes, and the wire lands when
+# the write lands - a one-shot read turns a landed save into a red that blames
+# the server (measured: the row was in GET /tasks one second after the red).
 task_by_title() {
-  curl -s "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
-    | tr -d '\r' | grep -oE '\{"id":"t_[0-9a-f]+","title":"[^"]*"[^}]*\}' \
-    | grep -F "\"$1\"" | grep -oE 't_[0-9a-f]+' | head -1
+  local t i=0 out
+  t="$(journey_budget "${2:-10}")"
+  while [ "$i" -lt $((t * 2)) ]; do
+    out=$(curl -s "${JOURNEY_BASE_URL}/tasks?board=${BOARD}" \
+      | tr -d '\r' | grep -oE '\{"id":"t_[0-9a-f]+","title":"[^"]*"[^}]*\}' \
+      | grep -F "\"$1\"" | grep -oE 't_[0-9a-f]+' | head -1)
+    [ -n "$out" ] && { printf '%s' "$out"; return 0; }
+    sleep 0.5
+    i=$((i + 1))
+  done
+  return 0
 }
 
 # js_click <selector>: one DOM click on the first match (selectors use
@@ -129,6 +140,12 @@ wait_text "$TITLE" 10
 A=$(task_by_title "$TITLE")
 # the card renders from the create's own answer; the WIRE is a separate write
 [ -n "$A" ] || die "created card never reached GET /tasks (title: $TITLE)"
+# the order lands with the same write, so it polls the same way
+_i=0
+while [ "$_i" -lt 40 ] && [ "$(col_ids todo | awk '{print $1}')" != "$A" ]; do
+  sleep 0.5
+  _i=$((_i + 1))
+done
 [ "$(col_ids todo | awk '{print $1}')" = "$A" ] || die "created card did not land at the top of todo (ids: $(col_ids todo))"
 
 # the card wears the P2 chip and the body preview
@@ -152,7 +169,9 @@ wait_js '(()=>{return !!document.querySelector(".drawer-edit-form .drawer-edit-i
 ab fill '.drawer-edit-form .drawer-edit-input' "$NEW_TITLE" >/dev/null
 js_click '.drawer-edit-form .drawer-save'
 wait_text "$NEW_TITLE" 10
-[ -n "$(task_by_title "$NEW_TITLE")" ] || die "title save did not round-trip (GET /tasks)"
+# the save's wire answer is a separate write - poll it, never a one-shot read
+poll_http "$JOURNEY_BASE_URL/tasks?board=$BOARD" "$NEW_TITLE" 10 \
+  || die "title save did not round-trip (GET /tasks)"
 step "ok: title edit round-trips to the server"
 
 # body edit: click the pre -> textarea -> save
@@ -162,20 +181,20 @@ wait_js '(()=>{return !!document.querySelector(".drawer-body-input")})()' 8
 ab fill '.drawer-body-input' "$EDITBODY" >/dev/null
 js_click '.drawer-body-actions .drawer-save'
 wait_js '(()=>{const t=[...document.querySelectorAll(".card .card-preview")].some(x=>(x.textContent||"").includes("edited body"));return t})()' 10
-curl -s "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}" | grep -q "edited body" || die "body save did not round-trip"
+poll_http "$JOURNEY_BASE_URL/tasks/$A?board=$BOARD" "edited body" 10 || die "body save did not round-trip"
 step "ok: body edit round-trips to the server"
 
 # priority edit: the drawer's listbox -> P3, chip + server agree
 pick_listbox '.drawer-priority' "P3"
 wait_js "$(printf '(()=>{const c=[...document.querySelectorAll(".card")].find(x=>x.dataset.id==="%s");if(!c)return false;return ((c.querySelector(".card-prio")||{}).textContent||"").trim()==="P3"})()' "$A")" 10
-curl -s "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}" | grep -q '"priority":3' || die "priority save did not round-trip"
+poll_http "$JOURNEY_BASE_URL/tasks/$A?board=$BOARD" '"priority":3' 10 || die "priority save did not round-trip"
 step "ok: priority edit round-trips (P3 on the server)"
 
 # ---- c: COMMENT + the event trail ------------------------------------------
 ab fill '.comment-input' "the $TAG round-trip note" >/dev/null
 js_click '.comment-send'
 wait_text "the $TAG round-trip note" 10
-curl -s "${JOURNEY_BASE_URL}/tasks/${A}?board=${BOARD}" | grep -q "round-trip note" || die "comment did not reach GET /tasks/{id}"
+poll_http "$JOURNEY_BASE_URL/tasks/$A?board=$BOARD" "round-trip note" 10 || die "comment did not reach GET /tasks/{id}"
 # events: created + edited + comment kinds all render in the trail
 wait_js '(()=>{const k=[...document.querySelectorAll(".event-row .event-kind")].map(x=>(x.textContent||"").trim());return k.includes("created")&&k.includes("edited")&&k.includes("comment")})()' 10
 step "ok: comment posted, event trail renders created/edited/comment"
