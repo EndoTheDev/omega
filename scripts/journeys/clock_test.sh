@@ -1090,13 +1090,17 @@ import sys
 
 path = sys.argv[1]
 src = open(path, encoding="utf-8").read()
-old = 'JOURNEY_CURL="$(type -P curl 2>/dev/null)"'
+old = '''case "${JOURNEY_CURL:-}" in
+  /*) ;;
+  *) JOURNEY_CURL="$(type -P curl 2>/dev/null)" ;;
+esac
+export JOURNEY_CURL'''
 assert old in src, "the shim's binary resolution is not shaped as the mutation expects"
 open(path, "w", encoding="utf-8", newline="").write(
     src.replace(old, 'JOURNEY_CURL="$(command -v curl 2>/dev/null)"', 1))
 PY
 second_source() { # $1 = tree -> the shim's target after two sources
-  bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; printf "%s" "${JOURNEY_CURL:-}"' _ "$1" 2>/dev/null
+  bash -c 'unset JOURNEY_CURL; . "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; printf "%s" "${JOURNEY_CURL:-}"' _ "$1" 2>/dev/null
 }
 p18_fixed="$(second_source "$FIXED")"
 case "$p18_fixed" in
@@ -1107,17 +1111,37 @@ p18_mut="$(second_source "$MUTSHIM")"
 [ "$p18_mut" = "curl" ] \
   && ok "P18 the pre-fix resolution captures the shim itself ($p18_mut)" \
   || bad "P18 the mutation did not reproduce the self-capture (got [$p18_mut])"
-p18_dead="$(bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
+p18_dead="$(bash -c 'unset JOURNEY_CURL; . "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
   _ "$MUTSHIM" "$PORT" 2>/dev/null)"
 case "$p18_dead" in
   139|127|134) ok "P18 the self-captured shim dies on its first read (rc=$p18_dead)" ;;
-  *) bad "P18 the pre-fix shim answered a read (rc=${p18_dead:-<none>}) - the pin proves nothing" ;;
+  "") ok "P18 the self-captured shim dies on its first read (the shell never reached the next line)" ;;
+  *) bad "P18 the pre-fix shim answered a read (rc=$p18_dead) - the pin proves nothing" ;;
 esac
-p18_live="$(bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
+p18_live="$(bash -c 'unset JOURNEY_CURL; . "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
   _ "$FIXED" "$PORT" 2>/dev/null)"
 [ "$p18_live" = "0" ] \
   && ok "P18 the fixed shim answers the same read after two sources" \
   || bad "P18 the fixed shim failed the read (rc=${p18_live:-<none>})"
+
+# --- P19: a dead run's seeded theme does not become the next run's active one -
+# The residue contract reaps sessions, cards and roster homes; a theme file a
+# crash left behind was reaped by nothing, and the lane keeps it ACTIVE - so the
+# theme journey read the dead run's id back after a pick that landed. The sweep
+# runs inside the run lock, so a file present at start is a dead run's.
+mkdir -p "$TMP/home/themes"
+printf 'base: light\n' > "$TMP/home/themes/jrn-theme-dead1.yaml"
+if OMEGA_HOME="$NATIVE_TMP/home" drive "$FIXED" JOURNEY_TIMEOUT=60 -- 900-call > "$TMP/p19.log" 2>&1; then
+  ok "P19 the run that reaps a dead theme still runs"
+else
+  bad "P19 the run failed on the residue sweep: $(tail -3 "$TMP/p19.log")"
+fi
+[ ! -f "$TMP/home/themes/jrn-theme-dead1.yaml" ] \
+  && ok "P19 the dead run's seeded theme is gone after the run" \
+  || bad "P19 the dead run's theme file survived the suite start"
+grep -q 'reaped a dead run theme jrn-theme-dead1.yaml' "$TMP/p19.log" \
+  && ok "P19 the reap names the file it removed" \
+  || bad "P19 the reap was silent: $(grep -i theme "$TMP/p19.log" | head -2)"
 
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || exit 1

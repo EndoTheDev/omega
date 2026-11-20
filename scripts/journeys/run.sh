@@ -264,6 +264,23 @@ EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
 # dead worker debug sessions) before anything here can attach to them
 bash "$JROOT/sweep-chromes.sh" -q 2>/dev/null || true
 
+# a dead run's SEEDED THEME is residue too (mechanism: the active theme outlives
+# the run). The residue contract reaps jrn- sessions, board cards and roster
+# homes; a theme file the crash left behind is not reaped by anything, and the
+# lane keeps it ACTIVE - so the next run's theme journey reads the dead run's id
+# back out of the pane after a pick that landed, and reds on it. This runs inside
+# the run lock, so every jrn-theme-* file present belongs to a run that is gone.
+if [ -n "${OMEGA_HOME:-}" ] && [ -d "$OMEGA_HOME/themes" ]; then
+  for f in "$OMEGA_HOME"/themes/jrn-theme-*; do
+    case "$f" in
+      */themes/jrn-theme-*)
+        [ -f "$f" ] || continue
+        rm -f "$f" && printf 'journeys: reaped a dead run theme %s\n' "${f##*/}"
+        ;;
+    esac
+  done
+fi
+
 # --- args --------------------------------------------------------------------
 # --base <url> IS the documented way to point the suite at a lane other than
 # the dev default, and it must be parsed HERE: the subset filter below keeps
