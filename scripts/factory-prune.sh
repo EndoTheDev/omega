@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# factory-prune.sh - remove the worktree and branch of cards that MERGED.
+# factory-prune.sh - remove the worktree, branch and origin marker of cards
+# that MERGED.
 # Usage: factory-prune.sh <card-id> [<card-id> ...]
 #
 # ORDER LAW (card t_d4ae3e2b): the merge verdict comes from
@@ -41,6 +42,19 @@
 #
 # Merge ref: origin/dev when it exists, else the local dev. Neither present
 # is a loud refusal (a prune without a merge reference verifies nothing).
+#
+# MARKER REF: a landed card also carries refs/train/<seq>-<id> at its merge
+# commit. The ORIGIN copy dies with the card - it keeps the landing's ancestry
+# reachable from the remote long after the card, and a card landed before a
+# history rewrite shipped the whole pre-rewrite tree through its marker, so
+# consumed markers defeated the rewrite for as long as they survived. The
+# LOCAL ref stays: train-pass allocates the next seq from the local refs and
+# train-bisect walks them, so deleting it here would reset the seq chain to
+# 0001. Deletion is by PROOF, like every other removal here: a marker dies
+# when this run established the card is consumed, or - on the already-pruned
+# path, which is the retry door for a refused push - when the marker's own
+# commit is in the merge ref. A marker this clone cannot vouch for is named,
+# never guessed away.
 
 set -uo pipefail
 
@@ -128,6 +142,82 @@ sweep_husks() {
     return 0
 }
 
+# ---- marker refs (refs/train/<seq>-<id>) ---------------------------------
+# The glob is a SUFFIX match, so a marker for t_abc can never be read as one
+# for t_abcd.
+have_origin() { git remote 2>/dev/null | grep -qx origin; }
+
+# origin_markers_of <id>: "<ref> <sha>" per marker on origin. A FAILED read is
+# not an empty one: an ls-remote that could not answer must never look like
+# "no markers", because a silent skip leaves exactly the leak this deletes.
+origin_markers_of() {
+    have_origin || return 0
+    local out
+    out="$(git ls-remote --refs origin "refs/train/*-$1" 2>/dev/null)" || return 1
+    [ -n "$out" ] && printf '%s\n' "$out"
+    return 0
+}
+
+local_markers_of() {
+    git for-each-ref --format='%(refname)' "refs/train/*-$1" 2>/dev/null
+}
+
+# drop_markers <id> <proved>
+#   proved 1 - this run proved the card consumed (its worktree and branch are
+#     gone). The origin's whole marker set goes, including a marker this clone
+#     no longer carries locally.
+#   proved 0 - no furniture left to prove anything with, so only a marker
+#     whose own commit is in the merge ref dies: the retry door for a push
+#     refused while the card was pruned. A marker with no local twin is proved
+#     by the sha the remote advertises; anything else is named and kept.
+drop_markers() {
+    local id=$1 proved=${2:-0} pairs locals ref target sha wanted="" origin_refs=""
+    if ! pairs="$(origin_markers_of "$id")"; then
+        echo "NOTE $id marker-origin-unreadable (ls-remote origin could not answer; a later prune retries it)"
+        held=1
+        return 0
+    fi
+    while read -r sha ref; do
+        [ -n "$ref" ] && origin_refs="$origin_refs $ref"
+    done <<<"$pairs"
+    if [ "$proved" -eq 1 ]; then
+        wanted="$origin_refs"
+    else
+        locals="$(local_markers_of "$id")"
+        for ref in $locals; do
+            target="$(git rev-parse --quiet --verify "$ref^{commit}" 2>/dev/null || true)"
+            if [ -z "$target" ] || ! merged_into_ref "$target"; then
+                echo "NOTE $id marker-kept-unverified $ref (target is not in $MERGE_REF)"
+                continue
+            fi
+            case " $origin_refs " in
+                *" $ref "*) wanted="$wanted $ref" ;;
+            esac
+        done
+        while read -r sha ref; do
+            [ -n "$ref" ] || continue
+            case " $(printf '%s' "$locals" | tr '\n' ' ') " in
+                *" $ref "*) continue ;;
+            esac
+            if git rev-parse --quiet --verify "$sha^{commit}" >/dev/null 2>&1 \
+                && merged_into_ref "$sha"; then
+                wanted="$wanted $ref"
+            else
+                echo "NOTE $id marker-kept-unverified $ref (no local ref; the remote sha is not in $MERGE_REF)"
+            fi
+        done <<<"$pairs"
+    fi
+    for ref in $wanted; do
+        if git push -q origin ":refs/train/${ref#refs/train/}" >/dev/null 2>&1; then
+            echo "PRUNED-MARKER $ref (origin copy gone; the local ref keeps the seq chain)"
+        else
+            echo "NOTE $id marker-origin-kept $ref (push refused; a later prune retries it)"
+            held=1
+        fi
+    done
+    return 0
+}
+
 # The husk sweep runs FIRST: the per-card loop can only report on what the
 # worktree list names, and this is the pass that clears what it cannot.
 sweep_husks
@@ -157,6 +247,7 @@ for id in "$@"; do
             continue
         fi
     else
+        drop_markers "$id" 0
         echo "CLEAN $id nothing-to-prune"
         continue
     fi
@@ -204,6 +295,11 @@ for id in "$@"; do
             held=1
         fi
     fi
+
+    # ---- marker last ------------------------------------------------------
+    # The card is consumed whichever way the furniture went (the merge verdict
+    # above is the proof), and the marker's origin copy is what outlives it.
+    drop_markers "$id" 1
 done
 
 exit "$held"

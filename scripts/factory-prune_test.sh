@@ -20,6 +20,13 @@
 #     leaves) is swept, and the card's own verdict still prints;
 #   - a registered worktree is never a husk, and a non-empty unregistered dir
 #     is named for a human instead of deleted;
+#   - a consumed card's refs/train marker dies on ORIGIN (and the local ref
+#     stays: the seq chain and train-bisect read it), a neighbouring card's
+#     marker is never swept, and a live card's marker is untouched;
+#   - a marker surviving a refused push is reaped by the next prune, a marker
+#     whose commit this clone cannot prove is in the merge ref is named and
+#     kept (with or without a local ref), and an origin that will not answer
+#     is named rather than read as "no markers";
 #   - a repo with no merge ref refuses loudly instead of guessing.
 #
 # Fixtures are a throwaway repo + bare remote under mktemp -d, never the real
@@ -90,6 +97,18 @@ run_prune_from() {
     shift
     ( cd "$where" && bash "$SCRIPT" "$@" 2>&1 )
 }
+
+# marker <id> <seq> [<rev>]: the card's train marker, local AND pushed - the
+# shape train-pass writes (refs/train/<seq>-<id> at the merge commit). The
+# globs below are the same suffix match the script uses.
+marker() {
+    local id=$1 seq=$2 rev=${3:-HEAD}
+    git rev-parse --verify -q "$rev" >/dev/null 2>&1 || return 1
+    git update-ref "refs/train/$seq-$id" "$(git rev-parse "$rev")" || return 1
+    git push -q origin "refs/train/$seq-$id:refs/train/$seq-$id"
+}
+origin_marker() { git ls-remote --refs origin "refs/train/*-$1" 2>/dev/null | cut -f2; }
+local_marker() { git for-each-ref --format='%(refname)' "refs/train/*-$1" 2>/dev/null; }
 
 # -- T1: the live shape - merged card, worktree still present --------------
 # This is the case that reported KEPT-BRANCH not-merged seven times live.
@@ -209,6 +228,124 @@ has "$out" "NOTE t_orphan unregistered-dir-kept" && ok \
     || bad "T12a: an unregistered dir holding files was not named (out: $out)"
 hasnt "$out" "PRUNED-HUSK t_orphan" && ok || bad "T12b: a dir holding files was deleted as a husk (out: $out)"
 [ -f .worktrees/t_orphan/notes.txt ] && ok || bad "T12c: the unclaimed file was destroyed"
+
+# -- T14: a consumed card's marker dies on ORIGIN, the local ref stays -----
+# A marker ref keeps the landing's ancestry reachable from the remote long
+# after the card merged (and, for a pre-rewrite landing, kept the whole
+# pre-rewrite tree alive). The local ref must survive: train-pass allocates
+# the next seq from it and train-bisect walks it.
+card t_mark merged && marker t_mark 0001 wt/t_mark && ok \
+    || bad "T14a: could not build the marked-card fixture"
+marker t_mark2 0003 dev && ok || bad "T14b: could not build the neighbour-marker fixture"
+out=$(run_prune t_mark); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T14c: a marked prune exited $rc (out: $out)"
+has "$out" "PRUNED-MARKER refs/train/0001-t_mark" && ok \
+    || bad "T14d: the consumed card's marker was not deleted on origin (out: $out)"
+[ -z "$(origin_marker t_mark)" ] && ok \
+    || bad "T14e: the marker survived on origin ($(origin_marker t_mark))"
+[ "$(local_marker t_mark)" = "refs/train/0001-t_mark" ] && ok \
+    || bad "T14f: the local marker went with it - the seq chain would reset to 0001"
+[ -n "$(origin_marker t_mark2)" ] && ok \
+    || bad "T14g: a neighbouring card's marker was swept (suffix glob too loose)"
+ml=$(printf '%s\n' "$out" | grep -n 'PRUNED-MARKER refs/train/0001-t_mark' | cut -d: -f1)
+bl=$(printf '%s\n' "$out" | grep -n 'PRUNED-BRANCH wt/t_mark' | cut -d: -f1)
+[ -n "$ml" ] && [ -n "$bl" ] && [ "$bl" -lt "$ml" ] && ok \
+    || bad "T14h: the marker line did not follow the branch line (out: $out)"
+
+# -- T15: a LIVE (unmerged) card's marker is untouched ---------------------
+card t_marklive unmerged && marker t_marklive 0004 wt/t_marklive && ok \
+    || bad "T15a: could not build the live marked-card fixture"
+out=$(run_prune t_marklive); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T15b: a live marked prune exited $rc (out: $out)"
+has "$out" "KEPT-BRANCH wt/t_marklive not-merged" && ok \
+    || bad "T15c: the live card was not kept as not-merged (out: $out)"
+hasnt "$out" "PRUNED-MARKER" && ok || bad "T15d: an unmerged card's marker was deleted (out: $out)"
+[ -n "$(origin_marker t_marklive)" ] && ok || bad "T15e: an unmerged card lost its marker on origin"
+[ -n "$(local_marker t_marklive)" ] && ok || bad "T15f: an unmerged card lost its local marker"
+
+# -- T16: the retry door - a refused push is reaped by the next prune ------
+# The card's furniture is already gone, so the CLEAN path has no merge verdict
+# of its own: it deletes a marker only when the marker's commit is in the
+# merge ref. That is exactly the case a refused push leaves behind.
+git push -q origin "refs/train/0001-t_mark:refs/train/0001-t_mark" && ok \
+    || bad "T16a: could not re-create the surviving origin marker"
+out=$(run_prune t_mark); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T16b: the retry prune exited $rc (out: $out)"
+has "$out" "CLEAN t_mark nothing-to-prune" && ok \
+    || bad "T16c: the already-pruned card printed no CLEAN line (out: $out)"
+has "$out" "PRUNED-MARKER refs/train/0001-t_mark" && ok \
+    || bad "T16d: the retry did not reap the surviving marker (out: $out)"
+[ -z "$(origin_marker t_mark)" ] && ok || bad "T16e: the marker survived the retry"
+
+# -- T17: a marker this clone cannot vouch for is NAMED, never guessed away -
+# The card's branch tip is not in the merge ref, so its marker may be the only
+# record of unmerged work. Furniture gone by hand, marker kept.
+card t_pre unmerged && marker t_pre 0005 wt/t_pre && ok \
+    || bad "T17a: could not build the unvouched-marker fixture"
+git worktree remove .worktrees/t_pre >/dev/null 2>&1 && git branch -D wt/t_pre >/dev/null 2>&1 && ok \
+    || bad "T17b: could not clear the furniture for the unvouched fixture"
+out=$(run_prune t_pre); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T17c: an unvouched-marker prune exited $rc (out: $out)"
+has "$out" "NOTE t_pre marker-kept-unverified refs/train/0005-t_pre" && ok \
+    || bad "T17d: an unproven marker was not named (out: $out)"
+hasnt "$out" "PRUNED-MARKER" && ok || bad "T17e: an unproven marker was deleted (out: $out)"
+[ -n "$(origin_marker t_pre)" ] && ok || bad "T17f: an unproven marker was deleted on origin"
+
+# -- T18: an origin-only marker (local ref gone) still dies with the card --
+# A pruner in another clone, or a hand cleanup, can leave the remote copy
+# without a local twin. The consumed card's whole origin set goes.
+card t_onlyorigin merged && marker t_onlyorigin 0006 wt/t_onlyorigin && ok \
+    || bad "T18a: could not build the origin-only-marker fixture"
+git update-ref -d refs/train/0006-t_onlyorigin && ok || bad "T18b: could not drop the local marker"
+out=$(run_prune t_onlyorigin); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T18c: an origin-only-marker prune exited $rc (out: $out)"
+has "$out" "PRUNED-MARKER refs/train/0006-t_onlyorigin" && ok \
+    || bad "T18d: the origin-only marker was not reaped (out: $out)"
+[ -z "$(origin_marker t_onlyorigin)" ] && ok \
+    || bad "T18e: the origin-only marker survived ($(origin_marker t_onlyorigin))"
+
+# -- T19: an origin-only marker is proved by the sha the remote advertises -
+# Furniture gone and the local ref gone too: the remote's own sha is the only
+# record, and it IS in the merge ref, so the origin copy goes.
+marker t_provable 0008 dev && ok || bad "T19a: could not build the provable origin-only fixture"
+git update-ref -d refs/train/0008-t_provable && ok || bad "T19b: could not drop the local marker"
+out=$(run_prune t_provable); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T19c: a provable origin-only prune exited $rc (out: $out)"
+has "$out" "PRUNED-MARKER refs/train/0008-t_provable" && ok \
+    || bad "T19d: a provable origin-only marker was not reaped (out: $out)"
+[ -z "$(origin_marker t_provable)" ] && ok \
+    || bad "T19e: a provable origin-only marker survived ($(origin_marker t_provable))"
+
+# -- T20: an origin-only marker the sha cannot prove is NAMED, never guess --
+# The marker sits on unmerged work and nobody carries a local ref for it, so
+# the prune says so instead of deleting the only record of that commit.
+card t_oonly unmerged && marker t_oonly 0007 wt/t_oonly && ok \
+    || bad "T20a: could not build the unprovable origin-only fixture"
+git update-ref -d refs/train/0007-t_oonly \
+    && git worktree remove .worktrees/t_oonly >/dev/null 2>&1 \
+    && git branch -D wt/t_oonly >/dev/null 2>&1 && ok \
+    || bad "T20b: could not clear the local ref and furniture"
+out=$(run_prune t_oonly); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T20c: an unprovable origin-only prune exited $rc (out: $out)"
+has "$out" "NOTE t_oonly marker-kept-unverified refs/train/0007-t_oonly" && ok \
+    || bad "T20d: an unprovable origin-only marker was not named (out: $out)"
+hasnt "$out" "PRUNED-MARKER" && ok || bad "T20e: an unprovable origin-only marker was deleted (out: $out)"
+[ -n "$(origin_marker t_oonly)" ] && ok || bad "T20f: an unprovable origin-only marker was deleted on origin"
+
+# -- T21: an unreadable origin is SAID, not read as "no markers" -----------
+# A silent skip would leave exactly the leak the marker deletion closes, and
+# the run would exit clean over it. The furniture still goes: it is local.
+card t_nonet merged && ok || bad "T21a: could not build the unreadable-origin fixture"
+real_origin="$(git remote get-url origin)"
+git remote set-url origin "$(mixpath "$FIX/no-such-remote.git")" && ok \
+    || bad "T21b: could not break the origin url"
+out=$(run_prune t_nonet); rc=$?
+git remote set-url origin "$real_origin" && ok || bad "T21c: could not restore the origin url"
+[ "$rc" -eq 1 ] && ok || bad "T21d: an unreadable origin exited $rc, not 1 (out: $out)"
+has "$out" "NOTE t_nonet marker-origin-unreadable" && ok \
+    || bad "T21e: an unreadable origin was not named (out: $out)"
+has "$out" "PRUNED-BRANCH wt/t_nonet" && ok \
+    || bad "T21f: a local furniture prune was dropped over an unreadable remote (out: $out)"
 
 # -- T13: the shared fold agrees with git in every spelling ---------------
 # The board writes D:\..., git prints D:/..., an MSYS caller hands /d/... .
