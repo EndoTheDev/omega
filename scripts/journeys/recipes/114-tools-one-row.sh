@@ -72,8 +72,19 @@ FILES_NAMES="files.read files.write files.edit files.batch files.grep files.glob
 
 # files_fold: the files.* names the fold currently carries, space
 # separated (empty = clean). GET /disabled is the fold's rendered truth.
+# A read that FAILED is not a clean fold: an empty body from a dropped call
+# would skip the pre-flight's clear, leave the row rendered in its off state,
+# and the toggle click would then find no "disable files" button at all (the
+# no-op-toggle red, one step earlier than the toggle).
 files_fold() {
-  curl -s "$JOURNEY_BASE_URL/disabled" | python3 -c '
+  local body code
+  body=$(curl -s -w '\n%{http_code}' "$JOURNEY_BASE_URL/disabled")
+  code="$(printf '%s' "$body" | tail -1)"
+  case "$code" in
+    200) ;;
+    *) die "GET /disabled did not answer (code=${code:-<none>}) - the fold state is unknown, not clean" ;;
+  esac
+  printf '%s' "$body" | sed '$d' | python3 -c '
 import json, sys
 try:
     fold = (json.load(sys.stdin) or {}).get("tools", []) or []

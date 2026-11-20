@@ -106,7 +106,7 @@ journey_curl_url() {
 }
 if [ -n "$JOURNEY_CURL" ]; then
   curl() {
-    local a own=0 stream=0 mut=0 url rc why
+    local a own=0 stream=0 mut=0 url rc why retry
     for a in "$@"; do
       case "$a" in
         -m|--max-time|-m[0-9]*|--max-time=*) own=1 ;;
@@ -121,21 +121,26 @@ if [ -n "$JOURNEY_CURL" ]; then
     url="$(journey_curl_url "$@")"
     "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
     rc=$?
-    # A READ is safe to repeat: the deadline and the transport class (could not
-    # connect, empty reply, recv failure) leave the wire as it was, and an empty
-    # answer otherwise makes a green read as red for no reason. A WRITE is
-    # retried by the helper that owns its key, never here - these creates carry
-    # no id the shim could recognise, and a blind second POST makes a duplicate.
+    # A READ is safe to repeat: the deadline, the transport class (could not
+    # connect, empty reply, recv failure) and a curl that DIED on a signal
+    # (rc >= 128; the winbtw ucrt64 build segfaults under suite load) all leave
+    # the wire as it was, and an empty answer otherwise makes a green read as
+    # red for no reason. A WRITE is retried by the helper that owns its key,
+    # never here - these creates carry no id the shim could recognise, and a
+    # blind second POST makes a duplicate.
     if [ "$mut" = "0" ]; then
+      retry=0
       case "$rc" in
-        7|28|52|56)
-          case "$rc" in 28) why="in ${JOURNEY_HTTP_TIMEOUT}s" ;; *) why="rc=$rc" ;; esac
-          printf '%s [journey] lane answered nothing %s, retrying once: %s\n' \
-            "$(date +%H:%M:%S)" "$why" "${url:-?}" >&2
-          "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
-          rc=$?
-          ;;
+        7|28|52|56) retry=1 ;;
+        *) [ "$rc" -ge 128 ] 2>/dev/null && retry=1 ;;
       esac
+      if [ "$retry" = "1" ]; then
+        case "$rc" in 28) why="in ${JOURNEY_HTTP_TIMEOUT}s" ;; *) why="rc=$rc" ;; esac
+        printf '%s [journey] lane answered nothing %s, retrying once: %s\n' \
+          "$(date +%H:%M:%S)" "$why" "${url:-?}" >&2
+        "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
+        rc=$?
+      fi
     fi
     # -s swallows curl's own words, so a failure that is NOT a deadline used to
     # read as an empty answer the caller then blamed on the product. Every
