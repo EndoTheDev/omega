@@ -547,6 +547,22 @@ fi
 # directory it is. The fold it compares with lives in the shared helper, so
 # factory-prune.sh's sweep answers the same question the same way.
 
+# The free step's precondition is the DIRTY guard above, not the removal: the
+# work is committed on the branch, so freeing the tree is cleanup. A live
+# process holding it as its cwd makes the final rmdir impossible on winbtw -
+# git has already unlinked every file and dropped the registration, then fails
+# on the top directory (rc 255, "failed to delete ... Permission denied"). That
+# is the review seat's own shape (the reviewer session is spawned with cwd =
+# the card worktree), so vetoing it defers every review-seat landing to the
+# tick's sweep, and factory-prune.sh's sweep_husks already reaps a
+# registration-less empty dir. Teeth: a registration still standing, or a
+# leftover with entries in it, is state this pass cannot vouch for.
+dir_is_empty() {  # <dir>: empty AND listable (a failed listing proves nothing)
+  local out
+  out="$(find "$1" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" || return 1
+  [ -z "$out" ]
+}
+
 ws="$(task_field "$tid" "workspace_path" || true)"
 wskind="$(task_field "$tid" "workspace_kind" || true)"
 if [ -n "$ws" ] && [ -d "$ws" ]; then
@@ -556,8 +572,15 @@ if [ -n "$ws" ] && [ -d "$ws" ]; then
       echo "       the train never destroys unclaimed state. A human looks at it." >&2
       exit 2
     fi
-    git worktree remove -f "$ws" >/dev/null 2>&1 || die "could not free the card worktree $ws (rm the worktree by hand)"
-    note "freed card worktree $ws"
+    if ! git worktree remove -f "$ws" >/dev/null 2>&1; then
+      if ! wt_registered "$ws" && dir_is_empty "$ws"; then
+        note "card worktree $ws is held by a live session: git dropped the registration and every file, the empty husk stays for the pruner sweep - landing"
+      else
+        die "could not free the card worktree $ws (rm the worktree by hand)"
+      fi
+    else
+      note "freed card worktree $ws"
+    fi
   elif [ "$wskind" = "worktree" ]; then
     # Not a worktree of this checkout: the husk a held-cwd removal leaves
     # behind, or an unregistered leftover. Nothing here is work this checkout

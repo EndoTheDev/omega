@@ -539,6 +539,86 @@ if [ "$rc" != 0 ]; then badf "S4f: a dir workspace must not refuse the pass (rc 
 grep -q "left untouched" "$HARNESS/run.out" ||
   badf "S4f: the free step must say it left the dir workspace alone: $(cat "$HARNESS/run.out")"
 grep -q "DONE t_dirkind" "$HARNESS/run.out" || badf "S4f: no landing: $(cat "$HARNESS/run.out")"
+# a git stub that reproduces winbtw's held-cwd removal: `worktree remove -f`
+# unlinks every file and drops the registration, then fails on the top
+# directory a live process holds as its cwd (rc 255, "Permission denied"). The
+# leftover is the EMPTY, unregistered husk; HOLD_LEFTOVER=dirty seeds an entry
+# in it, the state that must still refuse. Every other invocation is real git.
+hold_git_stub() {
+  HOLDBIN="$(posix_path "$HARNESS")/holdbin"
+  mkdir -p "$HOLDBIN"
+  HOLDBIN_REAL_GIT="$(command -v git)"
+  HOLDBIN_REAL_RM="$(command -v rm)"
+  cat >"$HOLDBIN/git" <<'GITSTUB'
+#!/usr/bin/env bash
+if [ "${1:-}" = "worktree" ] && [ "${2:-}" = "remove" ]; then
+  ws="${!#}"
+  "$HOLD_REAL_RM" -rf "$ws" && mkdir -p "$ws"
+  case "${HOLD_LEFTOVER:-}" in
+    dirty) echo "held open by a live process" >"$ws/held.txt" ;;
+  esac
+  "$HOLD_REAL_GIT" worktree prune >/dev/null 2>&1
+  echo "error: failed to delete '$ws': Permission denied" >&2
+  exit 255
+fi
+exec "$HOLD_REAL_GIT" "$@"
+GITSTUB
+  chmod +x "$HOLDBIN/git"
+}
+
+echo "== S4g: a REGISTERED worktree held by a live session frees and LANDS (review-seat shape)"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_hold 750
+git -C "$REPO" worktree add -q "$REPO/.worktrees/t_hold" wt/t_hold
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$REPO/.worktrees/t_hold' WHERE id='t_hold';"
+hold_git_stub
+rc=0
+( cd "$REPO" && PATH="$HOLDBIN:$PATH" HOLD_REAL_GIT="$HOLDBIN_REAL_GIT" \
+    HOLD_REAL_RM="$HOLDBIN_REAL_RM" "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+if [ "$rc" != 0 ]; then
+  badf "S4g: a held card worktree must not veto the landing (rc 0), got $rc: $(cat "$HARNESS/run.out")"
+fi
+grep -q "held by a live session" "$HARNESS/run.out" ||
+  badf "S4g: the free step must name the holder instead of dying: $(cat "$HARNESS/run.out")"
+grep -q "freed card worktree" "$HARNESS/run.out" &&
+  badf "S4g: the pass must not claim it removed a directory it left standing"
+grep -q "DONE t_hold" "$HARNESS/run.out" || badf "S4g: no landing: $(cat "$HARNESS/run.out")"
+[ -f "$REPO/t_hold.txt" ] || badf "S4g: the card's committed work must land on dev"
+[ "$(status_of t_hold)" = "done" ] || badf "S4g: card stays done"
+[ -d "$REPO/.worktrees/t_hold" ] || badf "S4g: the empty husk belongs to the pruner sweep, not this pass"
+git -C "$REPO" worktree list --porcelain | grep -q t_hold &&
+  badf "S4g: the registration must be gone after the free step"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_hold &&
+  badf "S4g: the landed branch must be swept"
+
+echo "== S4h: a held worktree whose leftover still carries entries is refused (the guard keeps its teeth)"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_holddirty 760
+git -C "$REPO" worktree add -q "$REPO/.worktrees/t_holddirty" wt/t_holddirty
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET workspace_path='$REPO/.worktrees/t_holddirty' WHERE id='t_holddirty';"
+hold_git_stub
+pre="$(git -C "$REPO" rev-parse dev)"
+rc=0
+( cd "$REPO" && PATH="$HOLDBIN:$PATH" HOLD_REAL_GIT="$HOLDBIN_REAL_GIT" \
+    HOLD_REAL_RM="$HOLDBIN_REAL_RM" HOLD_LEFTOVER=dirty "$TRAIN" --no-push >"$HARNESS/run.out" 2>&1 ) || rc=$?
+if [ "$rc" != 2 ]; then
+  badf "S4h: a leftover with entries must refuse (rc 2), got $rc: $(cat "$HARNESS/run.out")"
+fi
+grep -q "could not free the card worktree" "$HARNESS/run.out" ||
+  badf "S4h: the die must be the free-step refusal: $(cat "$HARNESS/run.out")"
+[ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S4h: nothing may land over an unproven leftover"
+[ "$(status_of t_holddirty)" = "done" ] || badf "S4h: a free-step refusal never demotes the card"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_holddirty ||
+  badf "S4h: the card branch must survive"
+
 echo "== S5: marker walk (train-bisect)"
 ok
 
