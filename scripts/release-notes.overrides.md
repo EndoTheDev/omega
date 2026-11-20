@@ -35,3 +35,14 @@ hook: The make-over: the web ui's biggest visual and interaction refresh yet.
 - under the hood, the build pipeline runs more work in parallel without collisions
 - folder references pin like file references, so a whole folder can ride along with a message
 - the files tree was rebuilt: hover guides show where a row sits and the tree scans faster
+
+## v0.17.5
+
+<!-- pre-tag draft, approved in chat 2026-11-20; re-true bullets + counts against the real census at tag time -->
+
+hook: The right-click release: everything in the web ui now opens a menu - right-click a tab, a pane, a session, a board card, and the actions are there. Plus the commands that lied to you are fixed.
+
+- right-click works on every surface: dock tabs, panes, both sidebars, sessions, and board cards each open a menu of what that element actually supports
+- /compact really compacts: it folds the session's context and reports what it folded - before, it did nothing and printed "done"
+- /new, /resume, /branch, and /label either do their action or say they cannot - the fabricated success text is gone
+- the token counter in the status bar shows the same number whether the session is live or restored - one meaning, pinned by a test
