@@ -105,7 +105,19 @@ case "$JOURNEY_HTTP_READ_TRIES" in ''|*[!0-9]*) JOURNEY_HTTP_READ_TRIES=4 ;; esa
 JOURNEY_HTTP_TIMEOUT_TRIES="${JOURNEY_HTTP_TIMEOUT_TRIES:-2}"
 case "$JOURNEY_HTTP_TIMEOUT_TRIES" in ''|*[!0-9]*) JOURNEY_HTTP_TIMEOUT_TRIES=2 ;; esac
 [ "$JOURNEY_HTTP_TIMEOUT_TRIES" -ge 1 ] || JOURNEY_HTTP_TIMEOUT_TRIES=1
-JOURNEY_CURL="$(command -v curl 2>/dev/null)"
+# THE BINARY, NOT THE FUNCTION (mechanism: the shim execs itself). Every recipe
+# sources lib.sh a second time (run.sh sources it, then the recipe does), and on
+# that second pass `command -v curl` answers "curl" - the shim FUNCTION defined
+# below - so the shim exec'd itself. bash burns the stack on the recursion and
+# every wire read dies as rc 139/127 with an empty body, which reads exactly like
+# a row that never landed: four recipes red on the first read in one suite run.
+# type -P looks for a FILE and ignores functions; the resolved path is exported
+# so a re-source in any subshell keeps the same answer.
+case "${JOURNEY_CURL:-}" in
+  /*) ;;
+  *) JOURNEY_CURL="$(type -P curl 2>/dev/null)" ;;
+esac
+export JOURNEY_CURL
 journey_curl_url() {
   local a url=""
   for a in "$@"; do

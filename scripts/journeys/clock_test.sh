@@ -1076,6 +1076,49 @@ grep -q "never showed never-a-row" "$P17CLOG" 2>/dev/null \
   && bad "P17 the pre-fix poll carried the verdict - the pin proves nothing" \
   || ok "P17 without the verdict line a give-up says nothing about the wire (the pre-fix shape)"
 
+# --- P18: the shim reaches the BINARY, not itself, on a second source --------
+# Every recipe sources lib.sh AFTER run.sh already did. On that second pass the
+# shim function is defined, so `command -v curl` answers "curl" - itself - and a
+# shim that resolves its target that way execs the shim: bash overflows the stack
+# and every wire read dies rc 139/127 with an empty body, which reads exactly
+# like a row that never landed (measured: four recipes red on their first read in
+# one suite run, each blaming the product for a write that had committed).
+MUTSHIM="$TMP/mutshim"
+make_tree "$MUTSHIM"
+python3 - "$NATIVE_TMP/mutshim/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = 'JOURNEY_CURL="$(type -P curl 2>/dev/null)"'
+assert old in src, "the shim's binary resolution is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(
+    src.replace(old, 'JOURNEY_CURL="$(command -v curl 2>/dev/null)"', 1))
+PY
+second_source() { # $1 = tree -> the shim's target after two sources
+  bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; printf "%s" "${JOURNEY_CURL:-}"' _ "$1" 2>/dev/null
+}
+p18_fixed="$(second_source "$FIXED")"
+case "$p18_fixed" in
+  /*) ok "P18 a second source keeps the curl BINARY ($p18_fixed)" ;;
+  *) bad "P18 the second source captured [$p18_fixed] - the shim would exec itself" ;;
+esac
+p18_mut="$(second_source "$MUTSHIM")"
+[ "$p18_mut" = "curl" ] \
+  && ok "P18 the pre-fix resolution captures the shim itself ($p18_mut)" \
+  || bad "P18 the mutation did not reproduce the self-capture (got [$p18_mut])"
+p18_dead="$(bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
+  _ "$MUTSHIM" "$PORT" 2>/dev/null)"
+case "$p18_dead" in
+  139|127|134) ok "P18 the self-captured shim dies on its first read (rc=$p18_dead)" ;;
+  *) bad "P18 the pre-fix shim answered a read (rc=${p18_dead:-<none>}) - the pin proves nothing" ;;
+esac
+p18_live="$(bash -c '. "$1/lib.sh" >/dev/null 2>&1; . "$1/lib.sh" >/dev/null 2>&1; curl -s "http://127.0.0.1:$2/health" >/dev/null 2>&1; printf "%s" "$?"' \
+  _ "$FIXED" "$PORT" 2>/dev/null)"
+[ "$p18_live" = "0" ] \
+  && ok "P18 the fixed shim answers the same read after two sources" \
+  || bad "P18 the fixed shim failed the read (rc=${p18_live:-<none>})"
+
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || exit 1
 exit 0
