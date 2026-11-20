@@ -299,8 +299,70 @@ done
 # --- env -------------------------------------------------------------------
 JOURNEY_BASE_URL="${JOURNEY_BASE_FLAG:-${JOURNEY_BASE_URL:-http://127.0.0.1:8098}}"
 JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"
-JOURNEY_TIMEOUT="${JOURNEY_TIMEOUT:-300}"
 JOURNEY_JSON="${JOURNEY_JSON:-0}"
+
+# --- the suite clock (mechanism: budgets written on an idle host) ------------
+# Every budget in this suite was measured solo, on an idle machine. The suite
+# flakes under load because those numbers describe the idle host: measured
+# 2026-11-20 on 12 burners beside this host, journey 114 went 23s -> 296s (its
+# wall cap is 300s) and journey 113 was killed at 25 of ~40 steps by that cap
+# after 76s idle - the "silent hang" and "toggle no-op" reds in the train are
+# this one class. So the host's own load average against its core count becomes
+# ONE scale for the whole run (100% = idle, capped at 400%), applied to the
+# per-recipe wall cap here and, through the exported JOURNEY_CLOCK_PCT, to the
+# browser call deadline and the event-wait floor in lib.sh. It is printed on
+# every run, green or red, so a slow suite states its own budget instead of
+# leaving the next reader to guess.
+#
+# The load can ARRIVE mid-suite (the merge train starts an SPA build beside a
+# running suite), so the scale is re-sampled before every recipe and only ever
+# ratchets UP: nothing already promised to a running recipe is taken back, and
+# a recipe that starts on a heavier host gets the heavier budget.
+JOURNEY_LOADAVG="${JOURNEY_LOADAVG:-/proc/loadavg}"
+JOURNEY_CORES="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+case "$JOURNEY_CORES" in ''|*[!0-9]*) JOURNEY_CORES=1 ;; esac
+[ "$JOURNEY_CORES" -ge 1 ] || JOURNEY_CORES=1
+JOURNEY_LOAD1=""
+CLOCK_PCT=""
+# clock_sample -> 0 when the host reports a load average (CLOCK_PCT set), 1 on
+# a host without one. A global, not stdout: the caller needs JOURNEY_LOAD1 too.
+clock_sample() {
+  local l
+  l="$(cut -d' ' -f1 "$JOURNEY_LOADAVG" 2>/dev/null | tr -d '\r')"
+  case "$l" in ''|*[!0-9.]*) return 1 ;; esac
+  JOURNEY_LOAD1="$l"
+  CLOCK_PCT="$(awk -v l="$l" -v c="$JOURNEY_CORES" \
+    'BEGIN { p = (l / c) * 100; if (p < 100) p = 100; if (p > 400) p = 400; printf "%d", p }')"
+  case "$CLOCK_PCT" in ''|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+# clock_set <pct>: the ONE scale. The wall cap follows it unless the caller
+# pinned JOURNEY_TIMEOUT; lib.sh's two budgets follow the exported percentage.
+JOURNEY_TIMEOUT_PINNED=0
+[ -n "${JOURNEY_TIMEOUT:-}" ] && JOURNEY_TIMEOUT_PINNED=1
+clock_set() {
+  JOURNEY_CLOCK_PCT="$1"
+  case "$JOURNEY_CLOCK_PCT" in ''|*[!0-9]*) JOURNEY_CLOCK_PCT=100 ;; esac
+  [ "$JOURNEY_CLOCK_PCT" -ge 100 ] || JOURNEY_CLOCK_PCT=100
+  export JOURNEY_CLOCK_PCT
+  if [ "$JOURNEY_TIMEOUT_PINNED" = "0" ]; then
+    JOURNEY_TIMEOUT=$((300 * JOURNEY_CLOCK_PCT / 100))
+    export JOURNEY_TIMEOUT
+  fi
+}
+JOURNEY_CLOCK_PINNED=0
+if [ -n "${JOURNEY_CLOCK_PCT:-}" ]; then
+  JOURNEY_CLOCK_PINNED=1
+  clock_set "$JOURNEY_CLOCK_PCT"
+elif clock_sample; then
+  clock_set "$CLOCK_PCT"
+else
+  clock_set 100
+fi
+# the run's own identity: lib.sh keeps this run's tag record apart from every
+# other run on the host (JRN_TAGFILE).
+JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
+export JOURNEY_RUN_ID
 # the browser session name rides EVERY command (lib.sh ab) and the CDP
 # connect: two concurrent suite runs share one agent-browser daemon, and
 # the daemon's default connection is global - without a session-scoped
@@ -364,6 +426,18 @@ if [ "$ab_version" != "$JOURNEY_AB_VERSION" ]; then
     journey_lock_release
     exit 2
   fi
+fi
+
+# --- the timing budget, stated on every run --------------------------------
+if [ -n "$JOURNEY_LOAD1" ]; then
+  printf 'journeys: timing budget %s%% (host load %s on %s cpu) - wall cap %ss per recipe\n' \
+    "$JOURNEY_CLOCK_PCT" "$JOURNEY_LOAD1" "$JOURNEY_CORES" "$JOURNEY_TIMEOUT"
+else
+  printf 'journeys: timing budget %s%% (no load average on this host) - wall cap %ss per recipe\n' \
+    "$JOURNEY_CLOCK_PCT" "$JOURNEY_TIMEOUT"
+fi
+if ! command -v timeout >/dev/null 2>&1; then
+  printf 'journeys: no timeout(1) on this host - a wedged agent-browser call is bounded only by the wall cap\n' >&2
 fi
 
 # --- chrome launch (Pi lane) -------------------------------------------------
@@ -641,7 +715,16 @@ for recipe in $want; do
     continue
   fi
   log="$EVID/$name.log"
+  # the scale is re-sampled here, before the recipe gets its budgets: the load
+  # this suite was sized for can change while it runs (see the clock block).
+  if [ "$JOURNEY_CLOCK_PINNED" = "0" ] && clock_sample \
+     && [ "$CLOCK_PCT" -gt "$JOURNEY_CLOCK_PCT" ]; then
+    clock_set "$CLOCK_PCT"
+    printf 'journeys: timing budget %s%% (host load %s on %s cpu) - wall cap %ss per recipe\n' \
+      "$JOURNEY_CLOCK_PCT" "$JOURNEY_LOAD1" "$JOURNEY_CORES" "$JOURNEY_TIMEOUT"
+  fi
   printf 'journeys: %-30s running\n' "$name"
+  recipe_started=$SECONDS
   # 9>&- on both background jobs: the recipe subshell and the watchdog
   # compound fork children (ab CLI, sleep) that may be orphaned after
   # the suite exits - none of them may keep the run-lock description
@@ -661,9 +744,36 @@ for recipe in $want; do
     # assert_no_console_errors while the pages themselves were silent.
     console_scope_begin
     . "$recipe"
-  ) > "$log" 2>&1 9>&- &
+  ) >> "$log" 2>&1 9>&- &
+  # >> not > on the log above: the WATCHDOG writes this same file (the cap's
+  # verdict lines), and a truncating fd there keeps offset 0, so the recipe's own
+  # later writes land on top of what the watchdog already appended - the cap line
+  # then reads as never written. The evidence dir is fresh per run, so append is
+  # the same thing as truncate for the first writer.
   rpid=$!
-  (sleep "$JOURNEY_TIMEOUT" && {
+  # The cap's own clock (mechanism: the watchdog's sleep outlives its subshell).
+  # Killing this subshell on the green path leaves its `sleep` alive, orphaned -
+  # and that sleep inherited run.sh's stdout, so a caller that PIPES the suite
+  # (`run.sh ... | tee log`, `$(run.sh ...)`) gets no EOF until the cap expires:
+  # the suite reports "suite done" and then the caller hangs for up to
+  # JOURNEY_TIMEOUT seconds. That is the pre-flight's workaround in
+  # gate-preflight.sh, and the clock multiplies it (a 400% host holds the pipe
+  # for 1200s). So the sleep is OUR child, named, and TERM to the subshell takes
+  # it along - plus the whole subshell's fds go to /dev/null, the belt that no
+  # fork of it can hold a caller's pipe even if the kill is missed.
+  (
+    wd_sleep=""
+    trap '[ -n "$wd_sleep" ] && kill "$wd_sleep" 2>/dev/null; exit 0' TERM
+    sleep "$JOURNEY_TIMEOUT" &
+    wd_sleep=$!
+    wait "$wd_sleep" 2>/dev/null || exit 0
+    {
+    # The verdict goes FIRST (mechanism: the cap line raced the kill). Main
+    # kills this subshell as soon as the recipe is gone, and the recipe's own
+    # EXIT trap (residue cleanup) can take a second - so a cap line written
+    # after the kill poll is written after main's TERM, and the log then says
+    # only "RED" with no cap anywhere in it.
+    printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
     # TERM first: a recipe between steps (or one carrying a trap) leaves on it.
     kill "$rpid" 2>/dev/null
     # ... but a subshell blocked inside a foreground child - an agent-browser
@@ -686,14 +796,14 @@ for recipe in $want; do
       kill -9 "$rpid" 2>/dev/null
       printf 'journeys: %s survived TERM (blocked child) - SIGKILLed\n' "$name" >> "$log"
     fi
-    printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
-  }) 9>&- &
+    } >/dev/null 2>&1
+  ) 9>&- &
   watchdog=$!
   if wait "$rpid"; then
-    printf 'journeys: %-30s green\n' "$name"
+    printf 'journeys: %-30s green (%ss of %ss)\n' "$name" "$((SECONDS - recipe_started))" "$JOURNEY_TIMEOUT"
     green=$((green + 1))
   else
-    printf 'journeys: %-30s RED\n' "$name"
+    printf 'journeys: %-30s RED (%ss of %ss)\n' "$name" "$((SECONDS - recipe_started))" "$JOURNEY_TIMEOUT"
     printf '  evidence: %s\n' "$log"
     grep -E 'journey RED|timed out' "$log" | head -3 | sed 's/^/  | /' >&2
     tail -3 "$log" | sed 's/^/  | /' >&2

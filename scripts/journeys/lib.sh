@@ -44,13 +44,82 @@ else
 fi
 export JOURNEY_WORKTMP
 
+# --- the suite clock (mechanism: budgets written on an idle host) ------------
+# Every budget below was measured solo, on an idle machine. Under a loaded host
+# (a merge train running SPA builds and go builds beside the suite) the same
+# recipe takes multiples of that: measured 2026-11-20 on 12 burners, journey 114
+# went 23s -> 296s against its 300s wall cap and journey 113 was killed at 25 of
+# ~40 steps by that cap after 76s idle. So the suite carries ONE scale, computed
+# once by run.sh from the host's own load average against its core count
+# (JOURNEY_CLOCK_PCT: 100 = idle, 400 = saturated) and applied here to the two
+# budgets that cannot be argued from an event: the browser call deadline and the
+# floor every event wait gets. A standalone recipe run has no run.sh, so the
+# default is an idle host.
+JOURNEY_CLOCK_PCT="${JOURNEY_CLOCK_PCT:-100}"
+case "$JOURNEY_CLOCK_PCT" in ''|*[!0-9]*) JOURNEY_CLOCK_PCT=100 ;; esac
+[ "$JOURNEY_CLOCK_PCT" -ge 100 ] || JOURNEY_CLOCK_PCT=100
+
+# --- the call deadline (mechanism: the CLI has no deadline of its own) --------
+# agent-browser blocks on its daemon socket forever: one lost response parks the
+# call, and the recipe with it, until run.sh's wall cap kills the whole recipe -
+# the log then stops mid-step and nothing names the call that never came back
+# (the silent-hang shape). Every call is bounded. On expiry the session is
+# dropped, re-attached when this run attached it, and the call retried once; a
+# second expiry is loud and named. timeout(1) is coreutils on every lane; a host
+# without it keeps the old unbounded call and run.sh says so at suite start.
+JOURNEY_AB_CALL_TIMEOUT="${JOURNEY_AB_CALL_TIMEOUT:-$((120 * JOURNEY_CLOCK_PCT / 100))}"
+case "$JOURNEY_AB_CALL_TIMEOUT" in ''|*[!0-9]*) JOURNEY_AB_CALL_TIMEOUT=120 ;; esac
+AB_TIMEOUT=0
+command -v timeout >/dev/null 2>&1 && AB_TIMEOUT=1
+JOURNEY_SESSION_NAME="${JOURNEY_SESSION:-omega-journey}"
+
 # ab <args...>: one agent-browser call, ALWAYS in this run's browser
 # session: the daemon multiplexes concurrent clients (another card's
 # journey run rides the same daemon) and the default connection is
 # global - a session name keeps pages, navigation and the console log
 # bucket private to THIS suite (lib.sh lives in run.sh's export).
 ab() {
-  "$AB" --session "${JOURNEY_SESSION:-omega-journey}" "$@"
+  local rc
+  if [ "$AB_TIMEOUT" = "0" ]; then
+    "$AB" --session "$JOURNEY_SESSION_NAME" "$@"
+    return
+  fi
+  timeout "$JOURNEY_AB_CALL_TIMEOUT" "$AB" --session "$JOURNEY_SESSION_NAME" "$@"
+  rc=$?
+  [ "$rc" = "124" ] || return "$rc"
+  printf '%s [journey] agent-browser: %ss with no answer (%s) - dropping the session, retrying\n' \
+    "$(date +%H:%M:%S)" "$JOURNEY_AB_CALL_TIMEOUT" "${1:-call}" >&2
+  timeout 20 "$AB" --session "$JOURNEY_SESSION_NAME" close >/dev/null 2>&1 || true
+  if [ "${JOURNEY_CDP_ATTACHED:-0}" = "1" ]; then
+    timeout "$JOURNEY_AB_CALL_TIMEOUT" "$AB" --session "$JOURNEY_SESSION_NAME" \
+      connect "$JOURNEY_CHROME_PORT" >/dev/null 2>&1 || true
+  fi
+  timeout "$JOURNEY_AB_CALL_TIMEOUT" "$AB" --session "$JOURNEY_SESSION_NAME" "$@"
+  rc=$?
+  if [ "$rc" = "124" ]; then
+    printf '%s [journey] agent-browser: %s never answered twice at %ss - the CLI or its browser is wedged\n' \
+      "$(date +%H:%M:%S)" "${1:-call}" "$JOURNEY_AB_CALL_TIMEOUT" >&2
+  fi
+  return "$rc"
+}
+
+# journey_budget <s>: an event wait's budget, floored at the round-trip floor.
+# The corpus's 10s numbers grade a click that WRITES (a registry toggle, a
+# save): the row's new state only arrives after the page's fetch, the server's
+# own store write and the re-render off the response agree. That round trip is
+# the wait class the host's load moves by seconds - measured 11s on a loaded
+# host against the 10s journey 114 allowed, which is how a landed write read as
+# a no-op toggle. A DOM settle is one render and does not move like that, which
+# is why the floor belongs to the event waits and not to wait_settled. A longer
+# budget costs nothing on a green run: the poll returns the moment the
+# predicate holds.
+JOURNEY_RTT_WAIT="${JOURNEY_RTT_WAIT:-$((30 * JOURNEY_CLOCK_PCT / 100))}"
+case "$JOURNEY_RTT_WAIT" in ''|*[!0-9]*) JOURNEY_RTT_WAIT=30 ;; esac
+journey_budget() {
+  local t="$1"
+  case "$t" in ''|*[!0-9]*) t=0 ;; esac
+  [ "$t" -lt "$JOURNEY_RTT_WAIT" ] && t="$JOURNEY_RTT_WAIT"
+  printf '%s' "$t"
 }
 
 # step <desc>: progress line
@@ -108,8 +177,12 @@ jsq() { ab eval "$1"; }
 
 # wait_js <expr> <timeout_s>: poll a JS truthy condition (25s CLI cap is
 # not enough for stream completion). Prints nothing, dies on timeout.
+# The budget is FLOORED at $JOURNEY_RTT_WAIT (journey_budget above): the
+# numbers in the corpus were measured solo, and the loaded host is the case
+# this suite keeps flaking on.
 wait_js() {
-  local expr="$1" t="${2:-15}" i=0 out
+  local expr="$1" t i=0 out
+  t="$(journey_budget "${2:-15}")"
   while [ "$i" -lt $((t * 2)) ]; do
     out=$(jsq "$expr" 2>&1)
     if [ "$out" = "true" ]; then return 0; fi
@@ -140,7 +213,8 @@ wait_text() { ab wait --text "$1" >/dev/null 2>&1 || die "text never rendered: $
 # `wait_js ... || true` cannot catch an exit), so any fallback path must
 # use poll_js.
 poll_js() {
-  local expr="$1" t="${2:-15}" i=0 out
+  local expr="$1" t i=0 out
+  t="$(journey_budget "${2:-15}")"
   while [ "$i" -lt $((t * 2)) ]; do
     out=$(jsq "$expr" 2>&1)
     if [ "$out" = "true" ]; then return 0; fi
@@ -290,6 +364,8 @@ journey_clean_room() {
 journey_exit_cleanup() {
   journey_clean_room
   cleanup_journey_residue
+  [ -n "${JRN_TAGFILE:-}" ] && rm -f "$JRN_TAGFILE" 2>/dev/null
+  return 0
 }
 
 # open_app: fresh SPA load in the journey session + console hook. The
@@ -395,7 +471,16 @@ assert_no_console_errors() {
 
 # journey session lifecycle -------------------------------------------------
 
-JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
+# JRN_TAGFILE: the per-RUN tag record (mechanism: one host-global file).
+# The tag names this run's sessions inside their ids, and a recipe reads it
+# back after the $(...) subshell that created the session. It used to be one
+# path under $TMPDIR for the whole host, so a worker's targeted recipe run and a
+# suite (or two targeted runs) overwrote each other's tag mid-journey: the
+# second writer's tag came back to the first, whose label and search then looked
+# for a session it never created. JOURNEY_RUN_ID makes the path private to the
+# run - run.sh exports its own pid, a standalone recipe run gets its own.
+JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
+JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag-$JOURNEY_RUN_ID}"
 
 # new_journey_session <name>: POST /sessions with a unique id; prints
 # the id; writes the unique run tag to $JRN_TAGFILE (function runs in a
