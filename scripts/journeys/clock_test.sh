@@ -58,6 +58,23 @@ set -uo pipefail
 #      one page, one console buffer and one localStorage. P11 proves two runs
 #      differ and carries the pre-fix shape.
 #
+# The sibling pass closed the two state-sharing mechanisms that survive a run's
+# own budgets, both of them "one lane, two live runs":
+#
+#   h  A LIVE SIBLING IS NOT RESIDUE. Every recipe's exit path reaps jrn-*
+#      artifacts, and it reaped EVERY one on the lane - so a suite deleted a
+#      concurrent sibling's session, board card and roster home mid-journey, and
+#      the sibling red on state it had just planted. The planting run now rides
+#      the name, run.sh publishes a live marker, and a foreign artifact is reaped
+#      only once its run is gone. P12 drives own / crashed / live-sibling through
+#      a delete-logging lane and proves the pre-fix shape deletes the live one.
+#   i  THE CDP PORT BELONGS TO THE RUN TOO. One default port per host, and every
+#      run adopted whatever answered there: two suites in one renderer and one
+#      localStorage, and the owner's exit killed the browser under the sibling.
+#      An unpinned run takes a free port of its own (pinned = the caller NAMED
+#      one). P13 holds a chrome-shaped listener on a port and proves the run
+#      steps off it, and that the pre-fix shape drives it.
+#
 # Fixtures are a copy of the journeys tree, a stub agent-browser and a stub
 # lane - no real browser, no real lane, nothing shared with a live run. The stub
 # dir rides PATH in POSIX form: an MSYS shell splits a C:/ PATH entry at the
@@ -85,6 +102,7 @@ fi
 LANE_PID=""
 cleanup() {
   [ -n "$LANE_PID" ] && kill "$LANE_PID" 2>/dev/null
+  [ -n "${CHROME_STATE_PID:-}" ] && kill "$CHROME_STATE_PID" 2>/dev/null
   case "${TMP:-}" in
     *clock-test.*) [ "${CLOCK_TEST_KEEP:-0}" = "0" ] && rm -rf "$TMP" 2>/dev/null ;;
   esac
@@ -146,8 +164,31 @@ s.close()')"
 cat > "$TMP/lane.py" <<'PY'
 import http.server
 import json
+import os
 import sys
 import time
+
+STATE = sys.argv[2] if len(sys.argv) > 2 else ""
+
+
+def _state(name, default="{}"):
+    if not STATE:
+        return default
+    try:
+        with open(os.path.join(STATE, name), encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return default
+
+
+def _log(name, line):
+    if not STATE:
+        return
+    try:
+        with open(os.path.join(STATE, name), "a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+    except OSError:
+        pass
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -160,6 +201,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/health"):
             self._send(b'{"status":"ok"}')
+        elif self.path.startswith("/json/version"):
+            self._send(b'{"Browser":"Chrome/999.0.0.0"}')
         elif self.path.startswith("/hang"):
             # a lane that ACCEPTS and never answers (the REST deadline's target)
             time.sleep(120)
@@ -169,6 +212,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 # the caller gave up on its own deadline - the answer it never
                 # waited for is not a server error
                 pass
+        elif self.path.startswith("/sessions"):
+            self._send(_state("sessions.json").encode())
+        elif self.path.startswith("/tasks"):
+            self._send(_state("tasks.json").encode())
         else:
             self._send(b"{}")
 
@@ -185,6 +232,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._send(b"{}")
 
     def do_DELETE(self):
+        tail = self.path.rstrip("/").rsplit("/", 1)[-1]
+        if self.path.startswith("/sessions/"):
+            _log("deleted-sessions.log", tail)
+        elif self.path.startswith("/tasks/"):
+            _log("deleted-tasks.log", tail)
         self._send(b"{}")
 
     def log_message(self, *args):
@@ -193,7 +245,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
-python3 "$NATIVE_TMP/lane.py" "$PORT" &
+LANESTATE="$NATIVE_TMP/lanestate"
+mkdir -p "$LANESTATE"
+python3 "$NATIVE_TMP/lane.py" "$PORT" "$LANESTATE" &
 LANE_PID=$!
 for _ in $(seq 1 40); do
   curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
@@ -255,6 +309,49 @@ R
 #!/bin/bash
 step "session=$JOURNEY_SESSION runid=$JOURNEY_RUN_ID"
 R
+  # the residue reaper owns its own run's work and a DEAD run's leftovers - a
+  # live sibling's artifacts are not residue
+  cat > "$1/recipes/907-residue-ownership.sh" <<'R'
+#!/bin/bash
+ST="${RESIDUE_STATE:?drive sets RESIDUE_STATE}"
+mkdir -p "$ST"
+rm -f "$ST/deleted-sessions.log" "$ST/deleted-tasks.log"
+sid=$(new_journey_session residue-probe)
+tag=$(journey_tag)
+(exit 0) & wait $!; dead=$!
+live=$$
+[ -f "$JOURNEY_WORKTMP/omega-jrn-live-$live" ] || : >"$JOURNEY_WORKTMP/omega-jrn-live-$live"
+live_sid="jrn-a1-${live}-live"
+dead_sid="jrn-a1-${dead}-dead"
+ours_task="jrn-${tag}-notify"
+live_task="jrn-a1-${live}-notify"
+dead_task="jrn-a1-${dead}-notify"
+python3 - "$ST" "$sid" "$live_sid" "$dead_sid" "$ours_task" "$live_task" "$dead_task" <<'PY'
+import json, os, sys
+st, sid, live_sid, dead_sid, ours_task, live_task, dead_task = sys.argv[1:8]
+json.dump({"sessions": [{"id": sid}, {"id": live_sid}, {"id": dead_sid}]},
+          open(os.path.join(st, "sessions.json"), "w"))
+json.dump({"tasks": [{"id": "t-our", "title": ours_task},
+                     {"id": "t-live", "title": live_task},
+                     {"id": "t-dead", "title": dead_task}]},
+          open(os.path.join(st, "tasks.json"), "w"))
+PY
+cleanup_journey_residue
+del_s() { grep -qx "$1" "$ST/deleted-sessions.log" 2>/dev/null; }
+del_t() { grep -qx "$1" "$ST/deleted-tasks.log" 2>/dev/null; }
+del_s "$sid" || die "the reaper skipped this run's OWN session"
+del_t "t-our" || die "the reaper skipped this run's OWN board card"
+del_s "$dead_sid" || die "the reaper skipped a CRASHED run's session - nothing would ever clear it"
+del_t "t-dead" || die "the reaper skipped a CRASHED run's board card"
+del_s "$live_sid" && die "the reaper deleted a LIVE sibling's session ($live_sid)"
+del_t "t-live" && die "the reaper deleted a LIVE sibling's board card ($live_task)"
+step "residue ownership: own+dead reaped, the live sibling left standing"
+R
+  # the CDP port this run ended up on
+  cat > "$1/recipes/908-chrome-port.sh" <<'R'
+#!/bin/bash
+step "chrome port=$JOURNEY_CHROME_PORT"
+R
 }
 
 # drive <tree> [VAR=value...] -- <recipe> [<recipe>...]: the REAL run.sh against
@@ -302,13 +399,30 @@ LEAKY="$TMP/leaky"
 NODL="$TMP/nodl"
 NOWS="$TMP/nows"
 SHARED="$TMP/shared"
-mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED"
+MUTREAP="$TMP/mutreap"
+PFREE="$TMP/pfree"
+POLD="$TMP/pold"
+mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED" "$MUTREAP" "$PFREE" "$POLD"
 make_tree "$FIXED"
 make_tree "$BROKEN"
 make_tree "$LEAKY"
 make_tree "$NODL"
 make_tree "$NOWS"
 make_tree "$SHARED"
+make_tree "$MUTREAP"
+make_tree "$PFREE"
+make_tree "$POLD"
+
+# a second listener that answers the CDP version probe on its own port - the
+# "browser another run already launched" the port picker must not adopt
+CPORT="$(python3 -c '
+import socket
+s = socket.socket()
+s.bind(("127.0.0.1", 0))
+print(s.getsockname()[1])
+s.close()')"
+python3 "$NATIVE_TMP/lane.py" "$CPORT" "$LANESTATE" &
+CHROME_STATE_PID=$!
 # the mutation: the pre-fix shape - a call with no deadline of its own
 python3 - "$NATIVE_TMP/broken/lib.sh" <<'PY'
 import sys
@@ -373,6 +487,41 @@ old = 'JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}"'
 assert old in src, "the session default is not shaped as the mutation expects"
 open(path, "w", encoding="utf-8", newline="").write(
     src.replace(old, 'JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"', 1))
+PY
+# the mutation: the pre-fix reaper - every jrn- artifact on the lane, live
+# sibling or not
+python3 - "$NATIVE_TMP/mutreap/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = '  journey_run_live "$own" && return 1\n'
+assert old in src, "the ownership test is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(src.replace(old, "  :\n", 1))
+PY
+# the mutation: the default CDP port is the test's own held port, so the
+# adoption rule is the only thing between the run and a browser it did not
+# launch (the picker's base is the same variable, by construction)
+python3 - "$NATIVE_TMP/pfree/run.sh" "$NATIVE_TMP/pold/run.sh" "$CPORT" <<'PY'
+import sys
+
+port = sys.argv[3]
+old = 'JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"'
+new = 'JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-%s}"' % port
+for path in sys.argv[1:3]:
+    src = open(path, encoding="utf-8").read()
+    assert old in src, "the port default is not shaped as the mutation expects"
+    open(path, "w", encoding="utf-8", newline="").write(src.replace(old, new, 1))
+PY
+# the mutation: the pre-fix adopt - whatever answers on the port is ours to drive
+python3 - "$NATIVE_TMP/pold/run.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = 'if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ] && chrome_listening; then'
+assert old in src, "the adopt guard is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(src.replace(old, "if false; then", 1))
 PY
 
 # --- P0: the fixture is the CLI under test, not a real one -------------------
@@ -598,6 +747,77 @@ if drive "$SHARED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 \
     || bad "P11 the pre-fix tree did not reproduce the shared name: [$SHAA]"
 else
   bad "P11 the pre-fix run failed: $(tail -3 "$TMP/p11c.log")"
+fi
+
+# --- P12: a live sibling run is not residue ----------------------------------
+# Every recipe's exit path runs the residue reaper. It used to delete EVERY jrn-
+# artifact on the lane, so a suite erased a concurrent sibling's session, board
+# card and roster home mid-journey and the sibling red on state it had just
+# planted. The stub lane keeps a session list and a task list, and logs the
+# deletes, so the three outcomes are observable: own reaped, crashed reaped,
+# live sibling NOT.
+rm -f "$LANESTATE"/*.json "$LANESTATE"/*.log 2>/dev/null
+if drive "$FIXED" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 RESIDUE_STATE="$LANESTATE" \
+     -- 907-residue-ownership > "$TMP/p12.log" 2>&1; then
+  ok "P12 the reaper owns this run's and a crashed run's artifacts, and leaves a live sibling's"
+else
+  bad "P12 the ownership probe failed: $(grep -E 'journey RED' "$TMP/p12.log" | head -2)"
+fi
+grep -q 'residue ownership: own+dead reaped' "$(evid_dir "$TMP/p12.log")/907-residue-ownership.log" 2>/dev/null \
+  && ok "P12 the probe ran its three-way assertion" \
+  || bad "P12 the probe never reached its verdict: $(tail -3 "$TMP/p12.log")"
+rm -f "$LANESTATE"/*.json "$LANESTATE"/*.log 2>/dev/null
+if drive "$MUTREAP" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 RESIDUE_STATE="$LANESTATE" \
+     -- 907-residue-ownership > "$TMP/p12b.log" 2>&1; then
+  bad "P12 the pre-fix reaper stayed green - the pin proves nothing"
+else
+  grep -q "the reaper deleted a LIVE sibling's session" "$TMP/p12b.log" \
+    && ok "P12 without the ownership test the reaper deletes a live sibling's session (the pre-fix shape)" \
+    || bad "P12 the pre-fix shape red'd for another reason: $(tail -3 "$TMP/p12b.log")"
+fi
+
+# --- P13: the browser belongs to the run, not to the port --------------------
+# A second listener answering the CDP probe stands in for a browser another run
+# launched. A run that did not launch it must not drive it (two suites in one
+# renderer, and the owner's exit kills it mid-recipe for the sibling).
+if curl -s -m 2 "http://127.0.0.1:$CPORT/json/version" | grep -q Chrome; then
+  ok "P13 the held chrome-shaped listener answers the CDP probe"
+else
+  bad "P13 the held listener never came up on $CPORT"
+fi
+PICK="$(bash -c ". '$FIXED/lib.sh' >/dev/null 2>&1; journey_pick_free_port '$CPORT'")"
+if [ -n "$PICK" ] && [ "$PICK" != "$CPORT" ]; then
+  ok "P13 the picker steps off a held port ($CPORT -> $PICK)"
+else
+  bad "P13 the picker kept a held port: [$PICK] (held $CPORT)"
+fi
+PICKFREE="$(bash -c ". '$FIXED/lib.sh' >/dev/null 2>&1; journey_pick_free_port 9340")"
+if [ -n "$PICKFREE" ] && ! curl -s -m 1 -o /dev/null "http://127.0.0.1:$PICKFREE" 2>/dev/null; then
+  ok "P13 a free port is taken as-is ($PICKFREE)"
+else
+  bad "P13 the picker did not land on a free port: [$PICKFREE]"
+fi
+if drive "$PFREE" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 -- 908-chrome-port > "$TMP/p13.log" 2>&1; then
+  P13PORT="$(sed -n 's/.*chrome port=\([0-9]*\).*/\1/p' \
+    "$(evid_dir "$TMP/p13.log")/908-chrome-port.log" 2>/dev/null | head -1)"
+  if [ -n "$P13PORT" ] && [ "$P13PORT" != "$CPORT" ]; then
+    ok "P13 the run took a port of its own instead of the browser already there ($CPORT -> $P13PORT)"
+  else
+    bad "P13 the run drove the browser it did not launch: port=[$P13PORT] held=$CPORT"
+  fi
+else
+  bad "P13 the port probe run failed: $(tail -3 "$TMP/p13.log")"
+fi
+if drive "$POLD" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 -- 908-chrome-port > "$TMP/p13b.log" 2>&1; then
+  P13OLD="$(sed -n 's/.*chrome port=\([0-9]*\).*/\1/p' \
+    "$(evid_dir "$TMP/p13b.log")/908-chrome-port.log" 2>/dev/null | head -1)"
+  if [ "$P13OLD" = "$CPORT" ]; then
+    ok "P13 the pre-fix shape adopts the browser already on the port ($P13OLD)"
+  else
+    bad "P13 the pre-fix shape did not reproduce the adopt: [$P13OLD] vs held $CPORT"
+  fi
+else
+  bad "P13 the pre-fix port run failed: $(tail -3 "$TMP/p13b.log")"
 fi
 
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
