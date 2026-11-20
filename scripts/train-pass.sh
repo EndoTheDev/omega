@@ -390,20 +390,31 @@ EOF
 # swept at the end of its own landing). TRAIN_CARD pins the queue to one
 # card - the review seat's single-card landing, where "the oldest queued
 # card" may well be somebody else's.
+#
+# The branch is branch_name, or wt/<task_id> when the dispatcher recorded
+# none: a scratch-spawned card lands with branch_name NULL while its worker
+# still commits to wt/<task_id>, and refusing those rows cost a hand repair
+# on the board. NULL is also how reconcile_card takes a third-strike card out
+# of the queue, so the fallback stays off a row carrying the reconciler's
+# exclusion event - it only resolves a branch that was never recorded at all.
+QUEUE_BRANCH="COALESCE(NULLIF(branch_name, ''), 'wt/' || id)"
+QUEUE_WHERE="status = 'done'
+       AND ( (branch_name IS NOT NULL AND branch_name != '')
+             OR NOT EXISTS (SELECT 1 FROM task_events e
+                             WHERE e.task_id = tasks.id
+                               AND e.payload LIKE '%queue-excluded%') )"
 if [ -n "$PIN" ]; then
   mapfile -t CANDIDATES < <(sqlite3 -readonly -separator ' ' "$KANBAN_DB" "
-    SELECT id, branch_name FROM tasks
-     WHERE status = 'done'
+    SELECT id, $QUEUE_BRANCH FROM tasks
+     WHERE $QUEUE_WHERE
        AND id = '$(sqlq "$PIN")'
-       AND branch_name IS NOT NULL AND branch_name != ''
      ORDER BY completed_at ASC, id ASC;")
   [ "${#CANDIDATES[@]}" -gt 0 ] \
-    || die "pinned card $PIN is not a queued landing (status must be 'done' with a branch_name)"
+    || die "pinned card $PIN is not a queued landing (needs status 'done' and a branch - branch_name, or wt/<card-id> when the row carries none - and no reconciler queue-exclusion)"
 else
   mapfile -t CANDIDATES < <(sqlite3 -readonly -separator ' ' "$KANBAN_DB" "
-    SELECT id, branch_name FROM tasks
-     WHERE status = 'done'
-       AND branch_name IS NOT NULL AND branch_name != ''
+    SELECT id, $QUEUE_BRANCH FROM tasks
+     WHERE $QUEUE_WHERE
      ORDER BY completed_at ASC, id ASC;")
 fi
 
@@ -411,7 +422,6 @@ fi
 pick=""
 for cand in "${CANDIDATES[@]}"; do
   c="${cand%% *}"; b="${cand#* }"
-  [ -n "$b" ] || continue
   if git show-ref --verify --quiet "refs/heads/$b" \
      && ! git merge-base --is-ancestor "$b" "$BASE" 2>/dev/null; then
     pick="$c|$b"
@@ -431,6 +441,14 @@ if [ -z "$pick" ]; then
 fi
 tid="${pick%%|*}"
 bra="${pick#*|}"
+
+# Heal the row, not only this pass: a landing that leaves branch_name NULL is
+# the same stale row a human repaired by hand before it could queue.
+if [ -z "$(task_field "$tid" branch_name || true)" ]; then
+  sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name = '$(sqlq "$bra")'
+     WHERE id = '$(sqlq "$tid")' AND (branch_name IS NULL OR branch_name = '');" >/dev/null
+  note "card $tid carries no branch_name - resolved its wt branch $bra (row repaired)"
+fi
 
 title="$(task_field "$tid" "title" || true)"
 who="$(task_field "$tid" "assignee" || true)"

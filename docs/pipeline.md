@@ -59,6 +59,13 @@ gate + soak automation.
    `refs/train/<seq>-<task_id>` at the merge commit. Green or red, the
    state machine is the same for every card.
 
+   The queued branch is the row's `branch_name`, or `wt/<task_id>` when the
+   row carries none - a scratch-spawned card lands with a NULL
+   `branch_name` while its worker still commits to `wt/<task_id>`, and the
+   pass repairs the row on the landing instead of needing a hand edit. A
+   card the reconciler took out of the queue carries its exclusion event
+   and is never resolved back in.
+
 ## The review-seat merge (merger shape A)
 
 Ruled 2026-11-17 (card t_5b61405b): the merge follows the review seat.
