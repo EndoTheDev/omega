@@ -92,6 +92,14 @@ bash scripts/factory-merge.sh <task_id>      # the review seat's entry
   `llm/`, `api/*.go`, `webui/app/`, `_test.go` excluded), and
   `EYEBALL` when UI is in range (the imagery receipt is owed). The lane
   rebuild stays with the tick: product bytes only, batching law untouched.
+- **The end state is a chain, not one commit.** A landing normally ends at
+  the train's two-parent merge commit. An SPA merge ends one commit past
+  it: the gate list's embed-lane rebuild commits the regenerated bundle on
+  top, whose parent is that merge commit. Both shapes pass the end-state
+  check, and the `MERGED` line names the merge sha plus
+  `(+ embed-lane bundle <sha>)` when the bundle commit is there. Any other
+  shape - no merge commit in the chain, or a merge that does not sit on the
+  pre-landing tip - is a real divergence: `FAILED`, exit 6.
 - **The tick's merge pass is the FALLBACK sweep.** It merges only what
   the review seat left behind - a deferred lock, a failed landing, a
   session that ended early - which is exactly what its queue (oldest done
