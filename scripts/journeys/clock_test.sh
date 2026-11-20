@@ -75,6 +75,21 @@ set -uo pipefail
 #      one). P13 holds a chrome-shaped listener on a port and proves the run
 #      steps off it, and that the pre-fix shape drives it.
 #
+# And the two the flake family actually runs THROUGH, both shared client state:
+#
+#   j  A DIE INSIDE A COMMAND SUBSTITUTION. `SID=$(new_journey_session x | tail
+#      -1)` runs the helper in a subshell: a die() there stops only the
+#      substitution, and the recipe runs on with an empty id, reding one screen
+#      away from the fault. die() records its message; every primitive and the
+#      recipe's own boundary read it. P14 drives the substitution death and the
+#      pre-fix cascade.
+#   k  THE OFFLINE TAB. 111 cuts the socket by putting the TAB offline. A red
+#      before its own restore left every later recipe on a dead page ("cannot
+#      open"), and one that still answers from the stale DOM has its writes
+#      never leave the page - the no-op toggle. The clean room owns client state,
+#      so it restores the network on every exit path. P15 holds the stub's argv
+#      log to the restore, and to the pre-fix tree that never issues it.
+#
 # Fixtures are a copy of the journeys tree, a stub agent-browser and a stub
 # lane - no real browser, no real lane, nothing shared with a live run. The stub
 # dir rides PATH in POSIX form: an MSYS shell splits a C:/ PATH entry at the
