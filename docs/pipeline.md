@@ -66,6 +66,18 @@ gate + soak automation.
    card the reconciler took out of the queue carries its exclusion event
    and is never resolved back in.
 
+   The marker's ORIGIN copy dies with the card: the prune deletes it
+   together with the worktree and the branch (`PRUNED-MARKER`). A consumed
+   marker keeps its landing's ancestry reachable from the remote for as
+   long as it survives - through a history rewrite it ships the whole
+   pre-rewrite tree - so nothing has to sweep stable boundaries. The LOCAL
+   ref stays: `train-pass` allocates the next seq from the local refs and
+   `train-bisect` walks them. A marker whose commit this clone cannot
+   prove is in the merge ref is named (`NOTE <id> marker-kept-unverified`),
+   and a remote that will not answer is named the same way
+   (`NOTE <id> marker-origin-unreadable`) with the prune exiting held - a
+   silent skip is never a reap.
+
 ## The review-seat merge (merger shape A)
 
 Ruled 2026-11-17 (card t_5b61405b): the merge follows the review seat.
