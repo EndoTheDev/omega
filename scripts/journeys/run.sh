@@ -253,11 +253,33 @@ else
 fi
 
 JROOT="$(cd "$(dirname "$0")" && pwd)"
+# lib_call <words>: run one lib.sh function in a throwaway shell. run.sh and the
+# recipes share ONE implementation of harness policy (the port picker lives in
+# lib.sh with the rest of it); run.sh itself never sources lib.sh, because the
+# curl shim there would retry the suite's own lane probes.
+lib_call() { bash -c ". '$JROOT/lib.sh' >/dev/null 2>&1; $*" 2>/dev/null; }
 EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
 
 # backstop: reap chromes orphaned by dead earlier runs (SIGKILLed run.sh,
 # dead worker debug sessions) before anything here can attach to them
 bash "$JROOT/sweep-chromes.sh" -q 2>/dev/null || true
+
+# a dead run's SEEDED THEME is residue too (mechanism: the active theme outlives
+# the run). The residue contract reaps jrn- sessions, board cards and roster
+# homes; a theme file the crash left behind is not reaped by anything, and the
+# lane keeps it ACTIVE - so the next run's theme journey reads the dead run's id
+# back out of the pane after a pick that landed, and reds on it. This runs inside
+# the run lock, so every jrn-theme-* file present belongs to a run that is gone.
+if [ -n "${OMEGA_HOME:-}" ] && [ -d "$OMEGA_HOME/themes" ]; then
+  for f in "$OMEGA_HOME"/themes/jrn-theme-*; do
+    case "$f" in
+      */themes/jrn-theme-*)
+        [ -f "$f" ] || continue
+        rm -f "$f" && printf 'journeys: reaped a dead run theme %s\n' "${f##*/}"
+        ;;
+    esac
+  done
+fi
 
 # --- args --------------------------------------------------------------------
 # --base <url> IS the documented way to point the suite at a lane other than
@@ -298,16 +320,176 @@ done
 
 # --- env -------------------------------------------------------------------
 JOURNEY_BASE_URL="${JOURNEY_BASE_FLAG:-${JOURNEY_BASE_URL:-http://127.0.0.1:8098}}"
+# whether the CALLER named the CDP port. A named port is adopted (a pre-launched
+# browser, a pinned lane); the default belongs to this run alone (see the attach
+# block: mechanism "one CDP port for the host").
+JOURNEY_CHROME_PORT_PINNED=0
+if [ -n "${JOURNEY_CHROME_PORT:-}" ]; then JOURNEY_CHROME_PORT_PINNED=1; fi
 JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"
-JOURNEY_TIMEOUT="${JOURNEY_TIMEOUT:-300}"
 JOURNEY_JSON="${JOURNEY_JSON:-0}"
+
+# --- the suite clock (mechanism: budgets written on an idle host) ------------
+# Every budget in this suite was measured solo, on an idle machine. The suite
+# flakes under load because those numbers describe the idle host: measured
+# 2026-11-20 on 12 burners beside this host, journey 114 went 23s -> 296s (its
+# wall cap is 300s) and journey 113 was killed at 25 of ~40 steps by that cap
+# after 76s idle - the "silent hang" and "toggle no-op" reds in the train are
+# this one class. So the host's own load average against its core count becomes
+# ONE scale for the whole run (100% = idle, capped at 400%), applied to the
+# per-recipe wall cap here and, through the exported JOURNEY_CLOCK_PCT, to the
+# browser call deadline and the event-wait floor in lib.sh. It is printed on
+# every run, green or red, so a slow suite states its own budget instead of
+# leaving the next reader to guess.
+#
+# The load can ARRIVE mid-suite (the merge train starts an SPA build beside a
+# running suite), so the scale is re-sampled before every recipe and only ever
+# ratchets UP: nothing already promised to a running recipe is taken back, and
+# a recipe that starts on a heavier host gets the heavier budget.
+JOURNEY_LOADAVG="${JOURNEY_LOADAVG:-/proc/loadavg}"
+JOURNEY_CORES="$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+case "$JOURNEY_CORES" in ''|*[!0-9]*) JOURNEY_CORES=1 ;; esac
+[ "$JOURNEY_CORES" -ge 1 ] || JOURNEY_CORES=1
+JOURNEY_LOAD1=""
+CLOCK_PCT=""
+# clock_sample -> 0 when the host reports a load average (CLOCK_PCT set), 1 on
+# a host without one. A global, not stdout: the caller needs JOURNEY_LOAD1 too.
+clock_sample() {
+  local l
+  l="$(cut -d' ' -f1 "$JOURNEY_LOADAVG" 2>/dev/null | tr -d '\r')"
+  case "$l" in ''|*[!0-9.]*) return 1 ;; esac
+  JOURNEY_LOAD1="$l"
+  CLOCK_PCT="$(awk -v l="$l" -v c="$JOURNEY_CORES" \
+    'BEGIN { p = (l / c) * 100; if (p < 100) p = 100; if (p > 400) p = 400; printf "%d", p }')"
+  case "$CLOCK_PCT" in ''|*[!0-9]*) return 1 ;; esac
+  return 0
+}
+# clock_set <pct>: the ONE scale. The wall cap follows it unless the caller
+# pinned JOURNEY_TIMEOUT; lib.sh's budgets follow the exported percentage.
+JOURNEY_TIMEOUT_PINNED=0
+[ -n "${JOURNEY_TIMEOUT:-}" ] && JOURNEY_TIMEOUT_PINNED=1
+clock_set() {
+  JOURNEY_CLOCK_PCT="$1"
+  case "$JOURNEY_CLOCK_PCT" in ''|*[!0-9]*) JOURNEY_CLOCK_PCT=100 ;; esac
+  [ "$JOURNEY_CLOCK_PCT" -ge 100 ] || JOURNEY_CLOCK_PCT=100
+  export JOURNEY_CLOCK_PCT
+  if [ "$JOURNEY_TIMEOUT_PINNED" = "0" ]; then
+    JOURNEY_TIMEOUT=$((300 * JOURNEY_CLOCK_PCT / 100))
+    export JOURNEY_TIMEOUT
+  fi
+}
+# --- the wall stretch (mechanism: a load average is not a slowdown) ----------
+# load1 counts RUNNABLE threads; it does not say what a second costs here.
+# Measured 2026-11-20 on the train host, the one this flake family came from:
+# load1 13.67 on 12 cpus read as 113%, while `sleep 0.2` took 0.34s - 171%. The
+# budgets are spent in WALL seconds, and the scheduler stretches those far more
+# than the queue length suggests, so the clock takes the LARGER of the two
+# signals. The probe is a few timed sleeps; it runs once at suite start (median
+# of three) and once before each recipe (one sample), and only a real STEP moves
+# the scale - one delayed sleep is noise, not a budget. A host whose date has no
+# nanoseconds, or JOURNEY_WALL_PROBE_MS=0, keeps the load-average signal alone.
+JOURNEY_WALL_PROBE_MS="${JOURNEY_WALL_PROBE_MS:-200}"
+case "$JOURNEY_WALL_PROBE_MS" in ''|*[!0-9]*) JOURNEY_WALL_PROBE_MS=200 ;; esac
+JOURNEY_CLOCK_STEP="${JOURNEY_CLOCK_STEP:-25}"
+case "$JOURNEY_CLOCK_STEP" in ''|*[!0-9]*) JOURNEY_CLOCK_STEP=25 ;; esac
+WALL_PCT=""
+WALL_SAMPLE_MS=""
+# wall_probe_once -> 0 with WALL_SAMPLE_MS = one timed sleep, in milliseconds.
+wall_probe_once() {
+  local t0 t1
+  t0="$(date +%s%N 2>/dev/null)"
+  case "${t0:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "${#t0}" -ge 16 ] || return 1
+  sleep "0.$(printf '%03d' "$JOURNEY_WALL_PROBE_MS")" 2>/dev/null || return 1
+  t1="$(date +%s%N 2>/dev/null)"
+  case "${t1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  WALL_SAMPLE_MS=$(( (t1 - t0) / 1000000 ))
+  [ "$WALL_SAMPLE_MS" -gt 0 ] || return 1
+  return 0
+}
+# wall_sample <n> -> 0 with WALL_PCT = the median stretch across n probes.
+wall_sample() {
+  local n="${1:-1}" i=0 ms pct samples=""
+  WALL_PCT=""
+  [ "$JOURNEY_WALL_PROBE_MS" -ge 50 ] || return 1
+  while [ "$i" -lt "$n" ]; do
+    wall_probe_once || return 1
+    samples="$samples$WALL_SAMPLE_MS
+"
+    i=$((i + 1))
+  done
+  ms="$(printf '%s' "$samples" | grep -E '^[0-9]+$' | sort -n | sed -n "$(( (n + 1) / 2 ))p")"
+  case "$ms" in ''|*[!0-9]*) return 1 ;; esac
+  pct=$(( ms * 100 / JOURNEY_WALL_PROBE_MS ))
+  [ "$pct" -lt 100 ] && pct=100
+  [ "$pct" -gt 400 ] && pct=400
+  WALL_PCT="$pct"
+  return 0
+}
+# clock_refresh <samples>: read both signals, move the scale when the reading is
+# a real step above it. Ratchets UP only - nothing already promised to a running
+# recipe is taken back. -> 0 when the scale moved.
+clock_refresh() {
+  local cand
+  # a global, not stdout: clock_sample sets CLOCK_PCT only on success, so a
+  # host with no load average must read the running scale instead of ""
+  if clock_sample; then cand="$CLOCK_PCT"; else cand="$JOURNEY_CLOCK_PCT"; fi
+  if wall_sample "${1:-1}" && [ "$WALL_PCT" -gt "$cand" ]; then cand="$WALL_PCT"; fi
+  case "$cand" in ''|*[!0-9]*) return 1 ;; esac
+  [ $((cand - JOURNEY_CLOCK_PCT)) -ge "$JOURNEY_CLOCK_STEP" ] || return 1
+  clock_set "$cand"
+  return 0
+}
+clock_report() {
+  local detail="no load average on this host"
+  [ -n "$JOURNEY_LOAD1" ] && detail="host load $JOURNEY_LOAD1 on $JOURNEY_CORES cpu"
+  [ -n "$WALL_PCT" ] && detail="$detail, wall stretch $WALL_PCT%"
+  printf 'journeys: timing budget %s%% (%s) - wall cap %ss per recipe\n' \
+    "$JOURNEY_CLOCK_PCT" "$detail" "$JOURNEY_TIMEOUT"
+}
+JOURNEY_CLOCK_PINNED=0
+if [ -n "${JOURNEY_CLOCK_PCT:-}" ]; then
+  JOURNEY_CLOCK_PINNED=1
+  clock_set "$JOURNEY_CLOCK_PCT"
+else
+  clock_set 100
+  clock_refresh 3 || true
+fi
+# the run's own identity: lib.sh keeps this run's tag record apart from every
+# other run on the host (JRN_TAGFILE).
+JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
+export JOURNEY_RUN_ID
+# the scratch path lib.sh uses, computed HERE so the run and every recipe agree
+# on it (the live marker below must sit where the reaper looks, and MSYS needs
+# the mixed C:/ form for native tools).
+if command -v cygpath >/dev/null 2>&1; then
+  JOURNEY_WORKTMP="$(cygpath -m "${TMPDIR:-/tmp}")"
+else
+  JOURNEY_WORKTMP="${TMPDIR:-/tmp}"
+fi
+export JOURNEY_WORKTMP
+# the run's LIVE MARKER (mechanism: one lane, sibling runs). A jrn- artifact is
+# reaped only when the run that planted it is gone; the marker is how a second
+# run tells a sibling's work from a crash's leftover. A SIGKILLed run leaves it
+# behind with a dead pid, which reads as gone - the next pre-clean reaps it.
+JRN_LIVE_FILE="$JOURNEY_WORKTMP/omega-jrn-live-$JOURNEY_RUN_ID"
+: >"$JRN_LIVE_FILE" 2>/dev/null || true
 # the browser session name rides EVERY command (lib.sh ab) and the CDP
-# connect: two concurrent suite runs share one agent-browser daemon, and
-# the daemon's default connection is global - without a session-scoped
-# connect the LAST connect wins and both runs drive one chrome (mis-read
-# DOM, foreign console noise, phantom reds). A fixed name keeps the
-# single-run behavior; concurrent workers export distinct names.
-JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"
+# connect: the daemon multiplexes concurrent clients, and the daemon's DEFAULT
+# connection is global - without a session-scoped connect the LAST connect wins
+# and both runs drive one chrome (mis-read DOM, foreign console noise, phantom
+# reds). The default used to be one name for the whole host, which made every
+# run on this machine a sibling of every other in the same daemon: a worker's
+# targeted recipe run, a crashed suite's leftover daemon, and the gate itself
+# shared one page, one console buffer and one localStorage. The name carries the
+# RUN now, so "which browser did this run drive" has exactly one answer; a
+# caller that wants to share a session (a repro driving an existing daemon)
+# still exports JOURNEY_SESSION and wins.
+JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}"
+export JOURNEY_SESSION
 
 # --- agent-browser version pin (card t_a1fe9f84) -----------------------------
 # agent-browser is a GATE DEPENDENCY, not an incidental tool: the
@@ -364,6 +546,13 @@ if [ "$ab_version" != "$JOURNEY_AB_VERSION" ]; then
     journey_lock_release
     exit 2
   fi
+fi
+
+# --- the timing budget, stated on every run --------------------------------
+clock_report
+printf 'journeys: browser session %s (cdp port %s)\n' "$JOURNEY_SESSION" "$JOURNEY_CHROME_PORT"
+if ! command -v timeout >/dev/null 2>&1; then
+  printf 'journeys: no timeout(1) on this host - a wedged agent-browser call is bounded only by the wall cap\n' >&2
 fi
 
 # --- chrome launch (Pi lane) -------------------------------------------------
@@ -458,7 +647,7 @@ stop_chrome() {
   CHROME_PID=""
 }
 
-trap 'journey_lock_release; stop_chrome' EXIT
+trap 'journey_lock_release; stop_chrome; rm -f "$JRN_LIVE_FILE" 2>/dev/null' EXIT
 
 # --- lane health -------------------------------------------------------------
 # -m 10 bounds the lane HTTP calls. A lane that ACCEPTS the connection but
@@ -488,6 +677,20 @@ trap 'exit 143' TERM
 chrome_listening() {
   curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome
 }
+# --- the port this run owns (mechanism: one CDP port for the host) -----------
+# A browser already answering on the DEFAULT port is not ours to drive: it is
+# another run's, or a crashed run's leftover. Adopting it puts two suites in one
+# renderer, one localStorage and one console buffer, and the owner's exit kills
+# the browser under the sibling mid-recipe. A caller that NAMED the port (a
+# pre-launched chrome, a pinned lane) keeps the adopt.
+if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ] && chrome_listening; then
+  free_port="$(lib_call "journey_pick_free_port $JOURNEY_CHROME_PORT")"
+  if [ -n "$free_port" ] && [ "$free_port" != "$JOURNEY_CHROME_PORT" ]; then
+    printf 'journeys: cdp port %s answers and this run did not launch it - taking %s\n' \
+      "$JOURNEY_CHROME_PORT" "$free_port"
+    JOURNEY_CHROME_PORT="$free_port"
+  fi
+fi
 if ! chrome_listening; then
   # a stale NON-chrome listener may hold the CDP port: clear it
   holder=$(ss -tlnp 2>/dev/null | grep ":${JOURNEY_CHROME_PORT} " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
@@ -501,7 +704,22 @@ if ! chrome_listening; then
   pi_chrome=""
   for cand in $pattern; do [ -x "$cand" ] && pi_chrome="$cand" && break; done
   if [ -n "$pi_chrome" ] || [ -n "${JOURNEY_CHROME_BIN:-}" ]; then
-    launch_chrome reset || { echo "journeys: headless chromium launch failed" >&2; exit 2; }
+    if ! launch_chrome reset; then
+      # a sibling can take the port between the probe above and the bind: one
+      # retry on the next free port, never for a port the caller named.
+      retry_port=""
+      if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ]; then
+        retry_port="$(lib_call "journey_pick_free_port $((JOURNEY_CHROME_PORT + 1))")"
+      fi
+      if [ -z "$retry_port" ]; then
+        echo "journeys: headless chromium launch failed on port $JOURNEY_CHROME_PORT" >&2
+        exit 2
+      fi
+      printf 'journeys: cdp port %s was taken during launch - taking %s\n' \
+        "$JOURNEY_CHROME_PORT" "$retry_port"
+      JOURNEY_CHROME_PORT="$retry_port"
+      launch_chrome reset || { echo "journeys: headless chromium launch failed on port $JOURNEY_CHROME_PORT" >&2; exit 2; }
+    fi
   fi
 fi
 if chrome_listening; then
@@ -598,6 +816,7 @@ proc_child_pids() {
 }
 
 export JOURNEY_BASE_URL JOURNEY_CHROME_PORT JOURNEY_TIMEOUT JOURNEY_JSON JOURNEY_CDP_ATTACHED
+export JOURNEY_LOADAVG
 export JROOT
 export AB
 
@@ -641,7 +860,14 @@ for recipe in $want; do
     continue
   fi
   log="$EVID/$name.log"
+  # the scale is re-sampled here, before the recipe gets its budgets: the load
+  # this suite was sized for can change while it runs (see the clock block), and
+  # so can the stretch a second costs on this host.
+  if [ "$JOURNEY_CLOCK_PINNED" = "0" ] && clock_refresh 1; then
+    clock_report
+  fi
   printf 'journeys: %-30s running\n' "$name"
+  recipe_started=$SECONDS
   # 9>&- on both background jobs: the recipe subshell and the watchdog
   # compound fork children (ab CLI, sleep) that may be orphaned after
   # the suite exits - none of them may keep the run-lock description
@@ -655,15 +881,49 @@ for recipe in $want; do
     # card t_fdd12843; lib.sh journey_exit_cleanup).
     trap 'journey_exit_cleanup' EXIT
     . "$JROOT/lib.sh"
+    # the death record is per RECIPE: what killed the previous recipe's subshell
+    # says nothing about this one, and the mark must be gone before the first
+    # primitive (whose own redirection would swallow the guard's message).
+    rm -f "$(journey_death_mark)" 2>/dev/null
     # scope the console record to THIS recipe (t_6654bc60): the daemon's
     # buffer outlives the page, the reload and the chrome, so a transient
     # error from an earlier run used to red every later
     # assert_no_console_errors while the pages themselves were silent.
     console_scope_begin
     . "$recipe"
-  ) > "$log" 2>&1 9>&- &
+    # a die inside a command substitution stopped only that subshell; the mark
+    # it left is this recipe's real verdict (mechanism: the substitution boundary)
+    journey_dead_check
+  ) >> "$log" 2>&1 9>&- &
+  # >> not > on the log above: the WATCHDOG writes this same file (the cap's
+  # verdict lines), and a truncating fd there keeps offset 0, so the recipe's own
+  # later writes land on top of what the watchdog already appended - the cap line
+  # then reads as never written. The evidence dir is fresh per run, so append is
+  # the same thing as truncate for the first writer.
   rpid=$!
-  (sleep "$JOURNEY_TIMEOUT" && {
+  # The cap's own clock (mechanism: the watchdog's sleep outlives its subshell).
+  # Killing this subshell on the green path leaves its `sleep` alive, orphaned -
+  # and that sleep inherited run.sh's stdout, so a caller that PIPES the suite
+  # (`run.sh ... | tee log`, `$(run.sh ...)`) gets no EOF until the cap expires:
+  # the suite reports "suite done" and then the caller hangs for up to
+  # JOURNEY_TIMEOUT seconds. That is the pre-flight's workaround in
+  # gate-preflight.sh, and the clock multiplies it (a 400% host holds the pipe
+  # for 1200s). So the sleep is OUR child, named, and TERM to the subshell takes
+  # it along - plus the whole subshell's fds go to /dev/null, the belt that no
+  # fork of it can hold a caller's pipe even if the kill is missed.
+  (
+    wd_sleep=""
+    trap '[ -n "$wd_sleep" ] && kill "$wd_sleep" 2>/dev/null; exit 0' TERM
+    sleep "$JOURNEY_TIMEOUT" &
+    wd_sleep=$!
+    wait "$wd_sleep" 2>/dev/null || exit 0
+    {
+    # The verdict goes FIRST (mechanism: the cap line raced the kill). Main
+    # kills this subshell as soon as the recipe is gone, and the recipe's own
+    # EXIT trap (residue cleanup) can take a second - so a cap line written
+    # after the kill poll is written after main's TERM, and the log then says
+    # only "RED" with no cap anywhere in it.
+    printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
     # TERM first: a recipe between steps (or one carrying a trap) leaves on it.
     kill "$rpid" 2>/dev/null
     # ... but a subshell blocked inside a foreground child - an agent-browser
@@ -686,14 +946,14 @@ for recipe in $want; do
       kill -9 "$rpid" 2>/dev/null
       printf 'journeys: %s survived TERM (blocked child) - SIGKILLed\n' "$name" >> "$log"
     fi
-    printf 'journeys: %s exceeded %ss wall cap\n' "$name" "$JOURNEY_TIMEOUT" >> "$log"
-  }) 9>&- &
+    } >/dev/null 2>&1
+  ) 9>&- &
   watchdog=$!
   if wait "$rpid"; then
-    printf 'journeys: %-30s green\n' "$name"
+    printf 'journeys: %-30s green (%ss of %ss)\n' "$name" "$((SECONDS - recipe_started))" "$JOURNEY_TIMEOUT"
     green=$((green + 1))
   else
-    printf 'journeys: %-30s RED\n' "$name"
+    printf 'journeys: %-30s RED (%ss of %ss)\n' "$name" "$((SECONDS - recipe_started))" "$JOURNEY_TIMEOUT"
     printf '  evidence: %s\n' "$log"
     grep -E 'journey RED|timed out' "$log" | head -3 | sed 's/^/  | /' >&2
     tail -3 "$log" | sed 's/^/  | /' >&2

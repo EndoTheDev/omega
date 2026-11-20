@@ -39,10 +39,15 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/console-scope-test.XXXXXX")"
 # native tools (python3 is a win32 build on MSYS hosts) cannot open a POSIX
 # /tmp path - it resolves to <drive>:\tmp. Keep bash-side paths POSIX (the
 # stub dir rides PATH, and a C:/ entry never resolves there) and hand native
-# consumers the cygpath -m mixed form.
+# consumers the cygpath -m mixed form. TMP is CONVERTED, not just copied: a
+# caller whose TMPDIR is already the drive form (a worker shell, a CI env with
+# a native path) would otherwise splice "C:/..." into PATH, the stub would
+# never resolve, and the REAL agent-browser would answer every call - the pin
+# then reads green about a CLI it never replaced.
 NATIVE_TMP="$TMP"
 if command -v cygpath >/dev/null 2>&1; then
   NATIVE_TMP="$(cygpath -m "$TMP")"
+  TMP="$(cygpath -u "$TMP")"
 fi
 LANE_PID=""
 cleanup() {
@@ -91,7 +96,10 @@ PY
 )"
 cat > "$TMP/lane.py" <<'PY'
 import http.server
+import os
 import sys
+import threading
+
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -120,9 +128,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+LIFETIME = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+if LIFETIME > 0:
+    threading.Timer(LIFETIME, lambda: os._exit(0)).start()
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
-python3 "$NATIVE_TMP/lane.py" "$PORT" &
+python3 "$NATIVE_TMP/lane.py" "$PORT" 1800 &
 LANE_PID=$!
 for _ in $(seq 1 40); do
   curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
@@ -186,6 +197,19 @@ src = open(path, encoding="utf-8").read()
 assert "    console_scope_begin\n" in src, "scope call not found in the copy"
 open(path, "w", encoding="utf-8", newline="").write(src.replace("    console_scope_begin\n", ""))
 PY
+
+# --- P0: the fixture is the CLI under test, not a real one --------------------
+# The stub rides PATH, so a PATH entry that never resolves hands every call to
+# the REAL agent-browser: the suite then greens about a CLI this test never
+# replaced (the same law as clock_test's P0). The marker is written through the
+# stub and must come back through `console`.
+STUB_CONSOLE="$TMP/p0.console"
+printf '%s\n' 'stub-identity-marker' > "$STUB_CONSOLE"
+p0_out="$(PATH="$TMP/bin:$PATH" STUB_CONSOLE="$STUB_CONSOLE" agent-browser console 2>&1)"
+case "$p0_out" in
+  *stub-identity-marker*) ok "P0 the suite drove the stub CLI" ;;
+  *) bad "P0 the stub CLI never answered (PATH=$TMP/bin, got: $(printf '%s' "$p0_out" | head -c 120))" ;;
+esac
 
 # --- P1: fixed tree - an old error cannot red the next recipe ----------------
 STUB_CONSOLE="$TMP/p1.console"

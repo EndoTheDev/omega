@@ -76,8 +76,10 @@ wait_js "(()=>{return [...document.querySelectorAll('.skills-list .reg-row-name'
   || die "the saved skill's row never rendered"
 step "ok: saved skill row renders ($SKILL)"
 
-wire=$(curl -s "$JOURNEY_BASE_URL/skills")
-printf '%s' "$wire" | grep -q "\"name\":\"$SKILL\"" || die "GET /skills lost the saved skill"
+# the row renders from the save's own answer; the WIRE is a separate write that
+# lands when it lands - poll it, never read it once (t_dd3abe4e)
+poll_http "$JOURNEY_BASE_URL/skills" "\"name\":\"$SKILL\"" \
+  || die "GET /skills lost the saved skill"
 content=$(curl -s "$JOURNEY_BASE_URL/skills/content?name=$SKILL")
 printf '%s' "$content" | grep -q "journey CRUD probe skill" || die "GET /skills/content lost the description"
 printf '%s' "$content" | grep -q "first body line" || die "GET /skills/content lost the body"

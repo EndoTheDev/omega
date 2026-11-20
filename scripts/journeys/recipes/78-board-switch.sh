@@ -46,6 +46,28 @@ step "pinning registry boards: $BOARD_A / $BOARD_B"
 ensure_board "$BOARD_A" || die "board ensure a"
 ensure_board "$BOARD_B" || die "board ensure b"
 
+# The boards are REUSED across runs, and this recipe archives only the ids IT
+# planted - so a crashed run's cards stay live on them and the exact-count
+# assertion below counts the dead run's rows (measured: 4 where 2 were planted,
+# after two aborted runs). Clear the boards first: the residue reap owns titles
+# starting jrn-, and these are not jrn- rows.
+board_card_ids() {
+  curl -s "${JOURNEY_BASE_URL}/tasks?board=$1&status=all" | python3 -c '
+import json, sys
+sys.stdout.reconfigure(newline="")
+try:
+    rows = json.load(sys.stdin).get("tasks") or []
+except Exception:
+    sys.exit(0)
+for t in rows:
+    if str(t.get("title") or "").startswith("card on "):
+        print(str(t.get("id") or ""))' 2>/dev/null || true
+}
+for _b in "$BOARD_A" "$BOARD_B"; do
+  # shellcheck disable=SC2046 # one id per word is the interface
+  archive_board_cards "$_b" $(board_card_ids "$_b")
+done
+
 # seed: two cards on a, one on b (via the ?board= picker)
 card_id() {
   curl -s -X POST "${JOURNEY_BASE_URL}/tasks?board=$1" \
