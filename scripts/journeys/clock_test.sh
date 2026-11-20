@@ -189,7 +189,7 @@ R
 #!/bin/bash
 sid=$(new_journey_session tag-probe)
 tag=$(journey_tag)
-step "tag record=$JRN_TAGFILE tag=$tag session=$sid"
+step "tag record=$JRN_TAGFILE tag=$tag runid=$JOURNEY_RUN_ID session=$sid"
 R
   # the host gets heavier between two recipes: the clock must follow it
   cat > "$1/recipes/904-raise-load.sh" <<'R'
@@ -352,6 +352,14 @@ fi
 case "$TAGA" in
   *omega-jrn-runtag-*) ok "P6 the record path carries the run id" ;;
   *) bad "P6 the record path lost the run id: $TAGA" ;;
+esac
+# the tag INSIDE the session id carries the run too: a bare timestamp named two
+# concurrent runs' sessions identically inside the same second.
+TAGV="$(sed -n 's/.*tag=\([^ ]*\) .*/\1/p' "$(evid_dir "$TMP/p6a.log")/903-run-tag.log" 2>/dev/null)"
+RUNV="$(sed -n 's/.*runid=\([^ ]*\) .*/\1/p' "$(evid_dir "$TMP/p6a.log")/903-run-tag.log" 2>/dev/null)"
+case "$TAGV" in
+  *-"$RUNV") ok "P6 the session tag ends with the run id ($TAGV)" ;;
+  *) bad "P6 the session tag carries no run id: tag=[$TAGV] runid=[$RUNV]" ;;
 esac
 ls "$TMP"/omega-jrn-runtag-* >/dev/null 2>&1 \
   && bad "P6 a tag record survived the run (the exit path stopped cleaning it)" \

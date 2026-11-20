@@ -487,7 +487,11 @@ JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag-$JOURNEY_RUN_ID}"
 # $(...) subshell, so state crosses back through the file).
 new_journey_session() {
   local name="$1" resp id runtag
-  runtag=$(date +%d%b%H%M%S)
+  # the tag carries the RUN (mechanism: a one-second session namespace). The
+  # bare timestamp made the id of a recipe in run A and the same recipe in run B
+  # identical whenever they started in the same second, so the second run drove
+  # the first run's session (and either run's cleanup deleted it mid-journey).
+  runtag="$(date +%d%b%H%M%S)-$JOURNEY_RUN_ID"
   printf '%s' "$runtag" > "$JRN_TAGFILE"
   id="jrn-${runtag}-${name}"
   resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
