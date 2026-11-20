@@ -104,7 +104,7 @@ journey_curl_url() {
 }
 if [ -n "$JOURNEY_CURL" ]; then
   curl() {
-    local a own=0 stream=0 mut=0 url rc
+    local a own=0 stream=0 mut=0 url rc why
     for a in "$@"; do
       case "$a" in
         -m|--max-time|-m[0-9]*|--max-time=*) own=1 ;;
@@ -119,15 +119,28 @@ if [ -n "$JOURNEY_CURL" ]; then
     url="$(journey_curl_url "$@")"
     "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
     rc=$?
-    if [ "$rc" = "28" ] && [ "$mut" = "0" ]; then
-      printf '%s [journey] lane answered nothing in %ss, retrying once: %s\n' \
-        "$(date +%H:%M:%S)" "$JOURNEY_HTTP_TIMEOUT" "${url:-?}" >&2
-      "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
-      rc=$?
+    # A READ is safe to repeat: the deadline and the transport class (could not
+    # connect, empty reply, recv failure) leave the wire as it was, and an empty
+    # answer otherwise makes a green read as red for no reason. A WRITE is
+    # retried by the helper that owns its key, never here - these creates carry
+    # no id the shim could recognise, and a blind second POST makes a duplicate.
+    if [ "$mut" = "0" ]; then
+      case "$rc" in
+        7|28|52|56)
+          case "$rc" in 28) why="in ${JOURNEY_HTTP_TIMEOUT}s" ;; *) why="rc=$rc" ;; esac
+          printf '%s [journey] lane answered nothing %s, retrying once: %s\n' \
+            "$(date +%H:%M:%S)" "$why" "${url:-?}" >&2
+          "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
+          rc=$?
+          ;;
+      esac
     fi
-    if [ "$rc" = "28" ]; then
-      printf '%s [journey] lane never answered (%ss): %s\n' \
-        "$(date +%H:%M:%S)" "$JOURNEY_HTTP_TIMEOUT" "${url:-?}" >&2
+    # -s swallows curl's own words, so a failure that is NOT a deadline used to
+    # read as an empty answer the caller then blamed on the product. Every
+    # non-zero exit names itself.
+    if [ "$rc" != "0" ]; then
+      printf '%s [journey] lane call failed rc=%s after %ss: %s\n' \
+        "$(date +%H:%M:%S)" "$rc" "$JOURNEY_HTTP_TIMEOUT" "${url:-?}" >&2
     fi
     return "$rc"
   }
@@ -399,6 +412,22 @@ poll_grep() {
   return 1
 }
 
+# poll_http <url> <pattern> [timeout_s]: poll a lane route's body for a pattern,
+# at the clock floor. A read right after a write is not a wait: the wire lands
+# when the write lands, and under load it lands late - a one-shot read turns
+# that into a red that names a stale page. Returns 1 on timeout (the caller
+# names the red), like poll_grep.
+poll_http() {
+  local url="$1" pat="$2" t i=0
+  t="$(journey_budget "${3:-10}")"
+  while [ "$i" -lt $((t * 2)) ]; do
+    curl -s "$url" 2>/dev/null | grep -q "$pat" && return 0
+    sleep 0.5
+    i=$((i + 1))
+  done
+  return 1
+}
+
 # journey_clean_room: reset the CLIENT state a journey can mutate, so nothing
 # it did becomes the next journey's baseline. This is the cross-journey law
 # (t_81d0901b: 77-mobile-drawer closed both sidebars and opened a settings tab,
@@ -555,7 +584,16 @@ new_journey_session() {
   id="jrn-${runtag}-${name}"
   resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
          -d "{\"id\": \"${id}\"}")
-  printf '%s' "$resp" | grep -q "$id" || die "POST /sessions failed: $resp"
+  # the id is the RUN's, so a second POST lands the same session - never a twin.
+  # A lane that drops the connection under load answers nothing at all, and the
+  # one-shot shape died on it with an empty message (the red said "failed: ").
+  if ! printf '%s' "$resp" | grep -q "$id"; then
+    printf '%s [journey] POST /sessions answered nothing - retrying (the id is this run-owned session)\n' \
+      "$(date +%H:%M:%S)" >&2
+    resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
+           -d "{\"id\": \"${id}\"}")
+  fi
+  printf '%s' "$resp" | grep -q "$id" || die "POST /sessions failed: ${resp:-<no answer>}"
   printf '%s\n' "$id"
 }
 

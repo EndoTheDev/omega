@@ -127,6 +127,7 @@ js_click "$COL .col-create-actions .col-add-btn"
 wait_text "$TITLE" 10
 
 A=$(task_by_title "$TITLE")
+# the card renders from the create's own answer; the WIRE is a separate write
 [ -n "$A" ] || die "created card never reached GET /tasks (title: $TITLE)"
 [ "$(col_ids todo | awk '{print $1}')" = "$A" ] || die "created card did not land at the top of todo (ids: $(col_ids todo))"
 
