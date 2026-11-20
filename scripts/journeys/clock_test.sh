@@ -227,9 +227,16 @@ import http.server
 import json
 import os
 import sys
+import threading
 import time
 
 STATE = sys.argv[2] if len(sys.argv) > 2 else ""
+# a fixture lane outlives its suite if the parent dies without a trap (a killed
+# suite, a worker crash): MSYS kill reaps the wrapper, not this native python,
+# and the orphan keeps its port and a core - measured leaking two lanes across
+# three clock runs on the winbtw host. TTL bounds the leak; the suite's own
+# cleanup still kills it on the normal path.
+LIFETIME = int(sys.argv[3]) if len(sys.argv) > 3 else 0
 
 
 def _state(name, default="{}"):
@@ -304,11 +311,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+if LIFETIME > 0:
+    threading.Timer(LIFETIME, lambda: os._exit(0)).start()
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
 LANESTATE="$NATIVE_TMP/lanestate"
 mkdir -p "$LANESTATE"
-python3 "$NATIVE_TMP/lane.py" "$PORT" "$LANESTATE" &
+python3 "$NATIVE_TMP/lane.py" "$PORT" "$LANESTATE" 1800 &
 LANE_PID=$!
 for _ in $(seq 1 40); do
   curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break
@@ -532,7 +541,7 @@ s = socket.socket()
 s.bind(("127.0.0.1", 0))
 print(s.getsockname()[1])
 s.close()')"
-python3 "$NATIVE_TMP/lane.py" "$CPORT" "$LANESTATE" &
+python3 "$NATIVE_TMP/lane.py" "$CPORT" "$LANESTATE" 1800 &
 CHROME_STATE_PID=$!
 # the mutation: the pre-fix shape - a call with no deadline of its own
 python3 - "$NATIVE_TMP/broken/lib.sh" <<'PY'

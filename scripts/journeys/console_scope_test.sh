@@ -96,7 +96,10 @@ PY
 )"
 cat > "$TMP/lane.py" <<'PY'
 import http.server
+import os
 import sys
+import threading
+
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -125,9 +128,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
+LIFETIME = int(sys.argv[2]) if len(sys.argv) > 2 else 0
+if LIFETIME > 0:
+    threading.Timer(LIFETIME, lambda: os._exit(0)).start()
 http.server.ThreadingHTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
 PY
-python3 "$NATIVE_TMP/lane.py" "$PORT" &
+python3 "$NATIVE_TMP/lane.py" "$PORT" 1800 &
 LANE_PID=$!
 for _ in $(seq 1 40); do
   curl -s -m 2 "http://127.0.0.1:$PORT/health" >/dev/null 2>&1 && break

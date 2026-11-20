@@ -70,11 +70,14 @@ col_ids() {
 # never arrived", and the red then blames the product. On give-up the counts and
 # the last body go to the log, so the red carries its own wire evidence.
 task_by_title() {
-  local t i=0 out code body url answered=0 silent=0 last_body="" status
+  local t i=0 out code body url answered=0 silent=0 last_body="" status rc=0
   url="${JOURNEY_BASE_URL}/tasks?board=${BOARD}"
   t="$(journey_budget "${2:-10}")"
   while [ "$i" -lt $((t * 2)) ]; do
-    body="$(curl -s -w '\n%{http_code}' "$url" 2>/dev/null)"
+    # stderr is NOT discarded: the curl shim names a transport failure on it,
+    # and that line is the only evidence a silent read ever carries
+    body="$(curl -s -w '\n%{http_code}' "$url")"
+    rc=$?
     code="$(printf '%s' "$body" | tail -1)"
     last_body="$(printf '%s' "$body" | sed '$d' | head -c 200)"
     case "$code" in
@@ -88,7 +91,7 @@ task_by_title() {
         ;;
       000|"")
         silent=$((silent + 1))
-        status="never answered"
+        status="never answered rc=${rc}"
         ;;
       *)
         answered=$((answered + 1))
