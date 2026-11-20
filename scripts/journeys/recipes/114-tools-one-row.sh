@@ -253,8 +253,17 @@ step "ok: (b)+(c) the files identities sit under the files row and nowhere else"
 # ONE click commits (card t_5051d523): the arm/confirm two-step that
 # needed a second click is dead, so the click writes and the row
 # re-renders off.
+# A click that ANSWERS is not a write that LANDED (mechanism: the lane drops a
+# write under load). The row's off state arrives after the page's POST has been
+# served and the fold has re-rendered, so grade the WIRE first and re-drive the
+# same press once when it never took: while the wire is still clean the button
+# still says "disable files", so the second press cannot fold the domain twice.
 clicked=$(toggle_click "disable files" "disable files - ")
 assert_eq "$clicked" "1" "the files row's toggle answered the click"
+if ! poll_http "$JOURNEY_BASE_URL/disabled" '"tools"' 15; then
+  step "the fold never took the click (GET /disabled still carries no tools) - pressing once more"
+  toggle_click "disable files" "disable files - " >/dev/null
+fi
 wait_js "$ROW_IS_OFF" 10 \
   || die "one click did not switch the files row - the one-way door: the row must STAY, dimmed and toggleable"
 assert_eq "$(files_rows)" "1" "the disabled domain keeps its ONE row (no vanish, no split)"
@@ -275,6 +284,12 @@ step "ok: (e) model registry drops the domain, management read keeps it, fold pe
 # --- (f) re-enable: the fold clears and the row renders on again ----------
 clicked=$(toggle_click "enable files" "__arm__")
 assert_eq "$clicked" "1" "the single re-enable click landed"
+# the mirror of (d): a press the lane dropped leaves the row off, so the button
+# is still there to press. Re-drive once, then grade.
+if ! poll_js "$ROW_IS_ON" 10; then
+  step "the enable never reached the row (the fold still stands) - pressing once more"
+  toggle_click "enable files" "__arm__" >/dev/null
+fi
 wait_js "$ROW_IS_ON" 10 \
   || die "one click did not re-enable (the files row never came back on)"
 assert_eq "$(files_fold)" "" "the fold cleared on the wire"

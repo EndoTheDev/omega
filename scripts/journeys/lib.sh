@@ -44,7 +44,9 @@ JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}
 # rewrites the scratch dir to a mixed C:/... form that bash reads,
 # writes and spawns natively; POSIX hosts have no cygpath and pass the
 # directory through unchanged (TMPDIR unset on the CI lane stays /tmp).
-if command -v cygpath >/dev/null 2>&1; then
+if [ -n "${JOURNEY_WORKTMP:-}" ]; then
+  : # run.sh computed it for the whole run; one value or the tag records split
+elif command -v cygpath >/dev/null 2>&1; then
   JOURNEY_WORKTMP="$(cygpath -m "${TMPDIR:-/tmp}")"
 else
   JOURNEY_WORKTMP="${TMPDIR:-/tmp}"
@@ -412,6 +414,38 @@ poll_grep() {
   return 1
 }
 
+# journey_port_free <port>: 0 when nothing listens on 127.0.0.1:<port>. curl's
+# "could not connect" is the answer; any other status means something answered.
+# `command` skips the shim above: a probe must not inherit the read retry.
+journey_port_free() {
+  local rc
+  command curl -s -m 1 -o /dev/null "http://127.0.0.1:$1" 2>/dev/null
+  rc=$?
+  [ "$rc" = "7" ] && return 0
+  return 1
+}
+
+# journey_pick_free_port <base> [span]: the first port at or above <base> that
+# nothing listens on (mechanism: one CDP port for the host). run.sh used one
+# default port for every run and ADOPTED whatever answered there, so a second
+# run attached to the first run's chrome: one renderer for two suites, one
+# localStorage and console buffer across runs, and the owner's exit killing the
+# browser mid-recipe for the sibling. Only a caller who NAMED the port (a
+# pre-launched browser, a pinned lane) gets the adopt.
+journey_pick_free_port() {
+  local base="${1:-9333}" span="${2:-200}" p=0 cand
+  case "$base" in ''|*[!0-9]*) base=9333 ;; esac
+  while [ "$p" -lt "$span" ]; do
+    cand=$((base + p))
+    if journey_port_free "$cand"; then
+      printf '%s' "$cand"
+      return 0
+    fi
+    p=$((p + 1))
+  done
+  return 1
+}
+
 # poll_http <url> <pattern> [timeout_s]: poll a lane route's body for a pattern,
 # at the clock floor. A read right after a write is not a wait: the wire lands
 # when the write lands, and under load it lands late - a one-shot read turns
@@ -570,6 +604,50 @@ assert_no_console_errors() {
 # path private to the run.
 JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag-$JOURNEY_RUN_ID}"
 
+# --- who owns a jrn- artifact (mechanism: one lane, sibling runs) -------------
+# Every runtime actor a journey plants carries the planting run in its name:
+# jrn-<tag>-<runid>-<what>, where the tag is ddMmmHHMMSS and runid is run.sh's
+# pid. The residue reaper used to delete EVERY jrn- artifact on the lane from
+# every recipe's exit path, so a suite erased a concurrent sibling's session,
+# board card and roster home mid-journey - the sibling then red on state it had
+# only just created, and the red named the product. A second live run is a
+# SIBLING, not residue: the run's own exit path owns its artifacts, and the
+# reaper reaps a foreign one only once the run that planted it is gone.
+
+# journey_run_live <runid>: 0 while that run's live marker names a live process.
+journey_run_live() {
+  local rid="$1"
+  case "$rid" in ''|*[!0-9]*) return 1 ;; esac
+  [ -f "$JOURNEY_WORKTMP/omega-jrn-live-$rid" ] || return 1
+  kill -0 "$rid" 2>/dev/null || return 1
+  return 0
+}
+
+# journey_artifact_owner <jrn-name>: the run id inside the name, empty when the
+# name carries none (a legacy or hand-written jrn- artifact).
+journey_artifact_owner() {
+  local rest
+  case "$1" in jrn-*) ;; *) return 0 ;; esac
+  rest="${1#jrn-}"
+  rest="${rest#*-}"
+  case "${rest%%-*}" in ''|*[!0-9]*) return 0 ;; esac
+  printf '%s' "${rest%%-*}"
+}
+
+# journey_reap_verdict <jrn-name>: 0 when this run may delete that artifact.
+journey_reap_verdict() {
+  local ours own
+  ours="$(journey_tag 2>/dev/null || true)"
+  if [ -n "$ours" ]; then
+    case "$1" in "jrn-$ours-"*) return 0 ;; esac
+  fi
+  own="$(journey_artifact_owner "$1")"
+  [ -z "$own" ] && return 0
+  journey_run_live "$own" && return 1
+  return 0
+}
+
+
 # new_journey_session <name>: POST /sessions with a unique id; prints
 # the id; writes the unique run tag to $JRN_TAGFILE (function runs in a
 # $(...) subshell, so state crosses back through the file).
@@ -608,17 +686,20 @@ label_journey_session() {
   step "labeled: ${label}"
 }
 
-# cleanup_journey_sessions: delete every journey session this run (and
-# any leftover from a crashed earlier run) via the API.
+# cleanup_journey_sessions: delete every journey session THIS run owns, plus any
+# leftover whose owning run is gone (a crashed run leaves its marker behind with
+# a dead pid, so its sessions are reaped by the next run's pre-clean). A live
+# sibling's session is left alone - see journey_reap_verdict.
 cleanup_journey_sessions() {
   local sids ids
   # this run's id (fast path)
   if [ -n "${JRN_ID:-}" ]; then
     curl -s -X DELETE "${JOURNEY_BASE_URL}/sessions/${JRN_ID}" >/dev/null 2>&1 || true
   fi
-  # leftovers from crashed runs (by id prefix)
+  # leftovers (by id prefix), minus a sibling run's live ones
   ids=$(curl -s "${JOURNEY_BASE_URL}/sessions" | grep -oE '"id": ?"jrn-[A-Za-z0-9-]+"' | grep -oE 'jrn-[A-Za-z0-9-]+' || true)
   for sids in $ids; do
+    journey_reap_verdict "$sids" || continue
     curl -s -X DELETE "${JOURNEY_BASE_URL}/sessions/${sids}" >/dev/null 2>&1 || true
   done
   step "cleanup: journey sessions deleted"
@@ -642,23 +723,27 @@ cleanup_journey_sessions() {
 # modules degrade silently: a lane without the kanban seam answers a
 # non-tasks payload and the task sweep reads zero rows.
 cleanup_journey_residue() {
-  local ids id d reaped=0
+  local ids id tit d reaped=0 tab
   cleanup_journey_sessions
   # board tasks: the FULL scan (the default list hides archived rows -
   # the exact tombstone accumulation this reaper exists to kill), one
-  # status=all pass, DELETE per row
+  # status=all pass, DELETE per row, a live sibling's rows left alone
   ids=$(curl -s "${JOURNEY_BASE_URL}/tasks?status=all" | python3 -c '
 import json,sys
 try:
     rows = json.load(sys.stdin).get("tasks") or []
 except Exception:
     sys.exit(0)
-print(" ".join(t["id"] for t in rows
-              if str(t.get("title") or "").startswith("jrn-")))' 2>/dev/null || true)
-  for id in $ids; do
+for t in rows:
+    if str(t.get("title") or "").startswith("jrn-"):
+        print(str(t.get("id") or "") + "\t" + str(t.get("title") or ""))' 2>/dev/null || true)
+  tab="$(printf '\t')"
+  while IFS="$tab" read -r id tit; do
+    [ -n "$id" ] || continue
+    journey_reap_verdict "${tit:-jrn-$id}" || continue
     curl -s -X DELETE "${JOURNEY_BASE_URL}/tasks/${id}" >/dev/null 2>&1 || true
     reaped=$((reaped + 1))
-  done
+  done <<< "$ids"
   # roster agent homes (only when the lane home is known). The DELETE
   # rides the product's own verb first (card t_5df01d0f): once an agent's
   # chat has been served the daemon holds that home's store open, and on
@@ -671,6 +756,7 @@ print(" ".join(t["id"] for t in rows
       case "$d" in
         */agents/jrn-*)
           [ -d "$d" ] || continue
+          journey_reap_verdict "${d##*/}" || continue
           curl -s -X DELETE "${JOURNEY_BASE_URL}/agents/${d##*/}" >/dev/null 2>&1 || true
           [ -d "$d" ] && { rm -rf "$d"; reaped=$((reaped + 1)); }
           ;;

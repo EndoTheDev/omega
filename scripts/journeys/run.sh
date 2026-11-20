@@ -253,6 +253,11 @@ else
 fi
 
 JROOT="$(cd "$(dirname "$0")" && pwd)"
+# lib_call <words>: run one lib.sh function in a throwaway shell. run.sh and the
+# recipes share ONE implementation of harness policy (the port picker lives in
+# lib.sh with the rest of it); run.sh itself never sources lib.sh, because the
+# curl shim there would retry the suite's own lane probes.
+lib_call() { bash -c ". '$JROOT/lib.sh' >/dev/null 2>&1; $*" 2>/dev/null; }
 EVID="$(mktemp -d "${TMPDIR:-/tmp}/omega-journeys-evidence.XXXXXX")"
 
 # backstop: reap chromes orphaned by dead earlier runs (SIGKILLed run.sh,
@@ -298,6 +303,11 @@ done
 
 # --- env -------------------------------------------------------------------
 JOURNEY_BASE_URL="${JOURNEY_BASE_FLAG:-${JOURNEY_BASE_URL:-http://127.0.0.1:8098}}"
+# whether the CALLER named the CDP port. A named port is adopted (a pre-launched
+# browser, a pinned lane); the default belongs to this run alone (see the attach
+# block: mechanism "one CDP port for the host").
+JOURNEY_CHROME_PORT_PINNED=0
+if [ -n "${JOURNEY_CHROME_PORT:-}" ]; then JOURNEY_CHROME_PORT_PINNED=1; fi
 JOURNEY_CHROME_PORT="${JOURNEY_CHROME_PORT:-9333}"
 JOURNEY_JSON="${JOURNEY_JSON:-0}"
 
@@ -435,6 +445,21 @@ fi
 # other run on the host (JRN_TAGFILE).
 JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
 export JOURNEY_RUN_ID
+# the scratch path lib.sh uses, computed HERE so the run and every recipe agree
+# on it (the live marker below must sit where the reaper looks, and MSYS needs
+# the mixed C:/ form for native tools).
+if command -v cygpath >/dev/null 2>&1; then
+  JOURNEY_WORKTMP="$(cygpath -m "${TMPDIR:-/tmp}")"
+else
+  JOURNEY_WORKTMP="${TMPDIR:-/tmp}"
+fi
+export JOURNEY_WORKTMP
+# the run's LIVE MARKER (mechanism: one lane, sibling runs). A jrn- artifact is
+# reaped only when the run that planted it is gone; the marker is how a second
+# run tells a sibling's work from a crash's leftover. A SIGKILLed run leaves it
+# behind with a dead pid, which reads as gone - the next pre-clean reaps it.
+JRN_LIVE_FILE="$JOURNEY_WORKTMP/omega-jrn-live-$JOURNEY_RUN_ID"
+: >"$JRN_LIVE_FILE" 2>/dev/null || true
 # the browser session name rides EVERY command (lib.sh ab) and the CDP
 # connect: the daemon multiplexes concurrent clients, and the daemon's DEFAULT
 # connection is global - without a session-scoped connect the LAST connect wins
@@ -605,7 +630,7 @@ stop_chrome() {
   CHROME_PID=""
 }
 
-trap 'journey_lock_release; stop_chrome' EXIT
+trap 'journey_lock_release; stop_chrome; rm -f "$JRN_LIVE_FILE" 2>/dev/null' EXIT
 
 # --- lane health -------------------------------------------------------------
 # -m 10 bounds the lane HTTP calls. A lane that ACCEPTS the connection but
@@ -635,6 +660,20 @@ trap 'exit 143' TERM
 chrome_listening() {
   curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome
 }
+# --- the port this run owns (mechanism: one CDP port for the host) -----------
+# A browser already answering on the DEFAULT port is not ours to drive: it is
+# another run's, or a crashed run's leftover. Adopting it puts two suites in one
+# renderer, one localStorage and one console buffer, and the owner's exit kills
+# the browser under the sibling mid-recipe. A caller that NAMED the port (a
+# pre-launched chrome, a pinned lane) keeps the adopt.
+if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ] && chrome_listening; then
+  free_port="$(lib_call "journey_pick_free_port $JOURNEY_CHROME_PORT")"
+  if [ -n "$free_port" ] && [ "$free_port" != "$JOURNEY_CHROME_PORT" ]; then
+    printf 'journeys: cdp port %s answers and this run did not launch it - taking %s\n' \
+      "$JOURNEY_CHROME_PORT" "$free_port"
+    JOURNEY_CHROME_PORT="$free_port"
+  fi
+fi
 if ! chrome_listening; then
   # a stale NON-chrome listener may hold the CDP port: clear it
   holder=$(ss -tlnp 2>/dev/null | grep ":${JOURNEY_CHROME_PORT} " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
@@ -648,7 +687,22 @@ if ! chrome_listening; then
   pi_chrome=""
   for cand in $pattern; do [ -x "$cand" ] && pi_chrome="$cand" && break; done
   if [ -n "$pi_chrome" ] || [ -n "${JOURNEY_CHROME_BIN:-}" ]; then
-    launch_chrome reset || { echo "journeys: headless chromium launch failed" >&2; exit 2; }
+    if ! launch_chrome reset; then
+      # a sibling can take the port between the probe above and the bind: one
+      # retry on the next free port, never for a port the caller named.
+      retry_port=""
+      if [ "$JOURNEY_CHROME_PORT_PINNED" = "0" ]; then
+        retry_port="$(lib_call "journey_pick_free_port $((JOURNEY_CHROME_PORT + 1))")"
+      fi
+      if [ -z "$retry_port" ]; then
+        echo "journeys: headless chromium launch failed on port $JOURNEY_CHROME_PORT" >&2
+        exit 2
+      fi
+      printf 'journeys: cdp port %s was taken during launch - taking %s\n' \
+        "$JOURNEY_CHROME_PORT" "$retry_port"
+      JOURNEY_CHROME_PORT="$retry_port"
+      launch_chrome reset || { echo "journeys: headless chromium launch failed on port $JOURNEY_CHROME_PORT" >&2; exit 2; }
+    fi
   fi
 fi
 if chrome_listening; then
