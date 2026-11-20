@@ -109,7 +109,11 @@ YAML
 step "ok: seeded agent home $SEED_DIR"
 
 # the payload is the tab strip's one source: prove the wire answers the
-# scope before blaming the pane for it
+# scope before blaming the pane for it. A one-shot read here is the same class
+# as a one-shot row read - the wire lands when it lands, and a call that never
+# answered used to red as "carries no scope" with an empty body after the colon.
+poll_http "$JOURNEY_BASE_URL/settings" "\"name\":\"$AGENT\"" 10 \
+  || die "GET /settings never carried the scope $AGENT (the poll names the wire it read)"
 wire=$(curl -s "$JOURNEY_BASE_URL/settings")
 printf '%s' "$wire" | grep -q "\"name\":\"$AGENT\"" || die "GET /settings carries no scope $AGENT: $(printf '%s' "$wire" | head -c 400)"
 step "ok: GET /settings carries the seeded scope"

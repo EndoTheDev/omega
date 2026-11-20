@@ -90,6 +90,20 @@ set -uo pipefail
 #      so it restores the network on every exit path. P15 holds the stub's argv
 #      log to the restore, and to the pre-fix tree that never issues it.
 #
+# And the two the LOAD injects, both on the transport:
+#
+#   l  A CRASHED TRANSPORT. The host's curl build segfaults under suite load
+#      (measured rc 139 in the corpus), and a read that dies mid-flight answers
+#      NOTHING - the same empty body a poll reads as a missing row. The shim
+#      retries the transport classes (7/52/56 and any signal death) up to
+#      JOURNEY_HTTP_READ_TRIES, so one crash costs a second, not a recipe. P16
+#      proves the recovery, and holds the one-attempt shape to the red.
+#   m  A POLL THAT NEVER GOT AN ANSWER. poll_http counts answers and silence
+#      apart and names BOTH when it gives up: a wire that never spoke is the
+#      host's red, an answer that never carried the row is the product's, and
+#      before this line the two red with the same words. P17 drives both
+#      branches and holds the silent give-up to the pre-fix tree.
+#
 # Fixtures are a copy of the journeys tree, a stub agent-browser and a stub
 # lane - no real browser, no real lane, nothing shared with a live run. The stub
 # dir rides PATH in POSIX form: an MSYS shell splits a C:/ PATH entry at the
@@ -171,6 +185,33 @@ fi
 exec "$REAL_SLEEP" "$@"
 STUB
 chmod +x "$TMP/bin/sleep"
+
+# stub curl: the host's curl build SEGFAULTS under suite load (measured rc 139
+# in the corpus - 102's POST /sessions retried onto the same crash). While
+# $STUB_CURL_DIE_FILE names a count above zero a call dies the way that build
+# does and eats one; every other call is the REAL curl, baked here because this
+# stub owns `command -v curl` for the whole fixture PATH.
+REAL_CURL="$(command -v curl)"
+cat > "$TMP/bin/curl" <<'STUB'
+#!/bin/bash
+if [ -n "${STUB_CURL_DIE_FILE:-}" ] && [ -f "$STUB_CURL_DIE_FILE" ]; then
+  n="$(cat "$STUB_CURL_DIE_FILE" 2>/dev/null)"
+  case "$n" in
+    ''|*[!0-9]*) ;;
+    0) ;;
+    *) printf '%s' "$((n - 1))" >"$STUB_CURL_DIE_FILE"; kill -SEGV $$ ;;
+  esac
+fi
+exec __REAL_CURL__ "$@"
+STUB
+python3 - "$TMP/bin/curl" "$REAL_CURL" <<'PY'
+import sys
+path, real = sys.argv[1], sys.argv[2]
+src = open(path, encoding="utf-8").read()
+assert "__REAL_CURL__" in src, "the stub's exec target is not where the fixture put it"
+open(path, "w", encoding="utf-8", newline="").write(src.replace("__REAL_CURL__", real, 1))
+PY
+chmod +x "$TMP/bin/curl"
 
 # stub lane: run.sh's health gate, the model probe, the residue sweep and
 # POST /sessions (which echoes the id it is handed, so a journey session can be
@@ -391,6 +432,30 @@ R
 #!/bin/bash
 step "the next recipe runs"
 R
+  # a READ that rides a crashing transport. The count file makes the next N curl
+  # calls die 139 (the host build under load) and then answer, so the shim's
+  # transport retry has something to recover TO.
+  cat > "$1/recipes/912-transport-crash.sh" <<'R'
+#!/bin/bash
+printf '%s' "${STUB_CURL_CRASH:-2}" > "$STUB_CURL_DIE_FILE"
+body=$(curl -s "$JOURNEY_BASE_URL/skills")
+[ -n "$body" ] || die "a read that rode a crashed transport came back empty"
+step "the read answered after the crashes: ${#body} bytes"
+R
+  # a poll over a transport that never answers: the give-up must name the wire
+  # it read, or the red is indistinguishable from a missing row
+  cat > "$1/recipes/913-poll-silence.sh" <<'R'
+#!/bin/bash
+printf '1000' > "$STUB_CURL_DIE_FILE"
+poll_http "$JOURNEY_BASE_URL/skills" "never-a-row" 2 || true
+step "poll silence probe done"
+R
+  # ... and the other branch: the lane ANSWERS, the row just is not there
+  cat > "$1/recipes/914-poll-mismatch.sh" <<'R'
+#!/bin/bash
+poll_http "$JOURNEY_BASE_URL/skills" "never-a-row" 2 || true
+step "poll mismatch probe done"
+R
 }
 
 # drive <tree> [VAR=value...] -- <recipe> [<recipe>...]: the REAL run.sh against
@@ -443,8 +508,9 @@ PFREE="$TMP/pfree"
 POLD="$TMP/pold"
 NOGUARD="$TMP/noguard"
 NOONLINE="$TMP/noonline"
+NOVERDICT="$TMP/noverdict"
 mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED" "$MUTREAP" "$PFREE" "$POLD" \
-  "$NOGUARD" "$NOONLINE"
+  "$NOGUARD" "$NOONLINE" "$NOVERDICT"
 make_tree "$FIXED"
 make_tree "$BROKEN"
 make_tree "$LEAKY"
@@ -456,6 +522,7 @@ make_tree "$PFREE"
 make_tree "$POLD"
 make_tree "$NOGUARD"
 make_tree "$NOONLINE"
+make_tree "$NOVERDICT"
 
 # a second listener that answers the CDP version probe on its own port - the
 # "browser another run already launched" the port picker must not adopt
@@ -589,6 +656,18 @@ old = 'journey_online() {\n'
 assert old in src, "the online restore is not shaped as the mutation expects"
 open(path, "w", encoding="utf-8", newline="").write(
     src.replace(old, 'journey_online() {\n  return 0\n', 1))
+PY
+# the mutation: a poll gives up silently - the pre-fix shape, where a transport
+# that never answered and a row that never arrived red with the same words
+python3 - "$NATIVE_TMP/noverdict/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = '  printf \'%s [journey] %s never showed %s in %s reads'
+assert old in src, "the poll verdict line is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(
+    src.replace(old, '  : \'%s [journey] %s never showed %s in %s reads', 1))
 PY
 
 # --- P0: the fixture is the CLI under test, not a real one -------------------
@@ -938,6 +1017,55 @@ drive "$NOONLINE" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 STUB_AB_LOG="$ABLO
 grep -q "^set offline off" "$ABLOG2" 2>/dev/null \
   && bad "P15 the pre-fix tree restored the network - the pin proves nothing" \
   || ok "P15 without the clean room the tab stays offline for every later recipe (the pre-fix shape)"
+
+# --- P16: a read that rides a crashing transport still answers -----------------
+# The host's curl build segfaults under suite load (rc 139, in the corpus). A read
+# that dies mid-flight answers NOTHING, which is the same empty body a poll reads
+# as a missing row - so the shim retries the transport class, and ONE attempt is
+# the pre-fix shape.
+if drive "$FIXED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 STUB_CURL_CRASH=2 \
+     STUB_CURL_DIE_FILE="$TMP/crash-fixed" -- 912-transport-crash > "$TMP/p16.log" 2>&1; then
+  ok "P16 a read survives two crashed transports"
+  grep -q "answered nothing rc=139" "$(evid_dir "$TMP/p16.log")/912-transport-crash.log" 2>/dev/null \
+    && ok "P16 the retry names the crash it survived (rc=139)" \
+    || bad "P16 the retry never named the transport fault: $(tail -3 "$(evid_dir "$TMP/p16.log")/912-transport-crash.log" 2>/dev/null)"
+else
+  bad "P16 the read gave up on the first crash: $(tail -3 "$TMP/p16.log")"
+fi
+if drive "$FIXED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 JOURNEY_HTTP_READ_TRIES=1 \
+     STUB_CURL_CRASH=2 STUB_CURL_DIE_FILE="$TMP/crash-prefix" -- 912-transport-crash > "$TMP/p16b.log" 2>&1; then
+  bad "P16 one attempt survived the crash - the pin proves nothing"
+else
+  ok "P16 on one attempt the same crash leaves the read empty (the pre-fix shape)"
+fi
+
+# --- P17: a poll that gave up names the WIRE it read ---------------------------
+# Two reds that used to read identically and mean opposite things: a transport
+# that never answered (the host) and an answer that never carried the row (the
+# product). The give-up line separates them by counting both.
+if drive "$FIXED" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 \
+     JOURNEY_CLOCK_PCT=100 JOURNEY_RTT_WAIT=1 STUB_CURL_DIE_FILE="$TMP/silence-fixed" -- 913-poll-silence > "$TMP/p17.log" 2>&1; then
+  ok "P17 the poll over a silent transport returned instead of parking"
+else
+  bad "P17 the poll leg never ran: $(tail -3 "$TMP/p17.log")"
+fi
+P17LOG="$(evid_dir "$TMP/p17.log")/913-poll-silence.log"
+grep -q "never showed never-a-row" "$P17LOG" 2>/dev/null \
+  && grep -Eq "\([0-9]+ answered and never matched, [1-9][0-9]* never answered\)" "$P17LOG" \
+  && ok "P17 a silent transport is counted as unanswered reads, not as a missing row" \
+  || bad "P17 the give-up line did not count the silence: $(tail -3 "$P17LOG" 2>/dev/null)"
+drive "$FIXED" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 \
+  JOURNEY_CLOCK_PCT=100 JOURNEY_RTT_WAIT=1 STUB_CURL_DIE_FILE="$TMP/mismatch-fixed" -- 914-poll-mismatch > "$TMP/p17b.log" 2>&1
+P17BLOG="$(evid_dir "$TMP/p17b.log")/914-poll-mismatch.log"
+grep -Eq "\([1-9][0-9]* answered and never matched, 0 never answered\)" "$P17BLOG" 2>/dev/null \
+  && ok "P17 a lane that answers without the row is counted as an answer, not a transport fault" \
+  || bad "P17 the mismatch branch was not separated: $(tail -3 "$P17BLOG" 2>/dev/null)"
+drive "$NOVERDICT" JOURNEY_TIMEOUT=120 JOURNEY_WALL_PROBE_MS=0 \
+  JOURNEY_CLOCK_PCT=100 JOURNEY_RTT_WAIT=1 STUB_CURL_DIE_FILE="$TMP/silence-prefix" -- 913-poll-silence > "$TMP/p17c.log" 2>&1
+P17CLOG="$(evid_dir "$TMP/p17c.log")/913-poll-silence.log"
+grep -q "never showed never-a-row" "$P17CLOG" 2>/dev/null \
+  && bad "P17 the pre-fix poll carried the verdict - the pin proves nothing" \
+  || ok "P17 without the verdict line a give-up says nothing about the wire (the pre-fix shape)"
 
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || exit 1

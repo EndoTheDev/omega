@@ -96,6 +96,15 @@ JOURNEY_SESSION_NAME="$JOURNEY_SESSION"
 # probe that answers empty makes a green read as red for no reason.
 JOURNEY_HTTP_TIMEOUT="${JOURNEY_HTTP_TIMEOUT:-$((20 * JOURNEY_CLOCK_PCT / 100))}"
 case "$JOURNEY_HTTP_TIMEOUT" in ''|*[!0-9]*) JOURNEY_HTTP_TIMEOUT=20 ;; esac
+# attempts for a read whose transport never reached an answer (see the shim).
+# A crashed curl is cheap to repeat and lands repeatedly under load; a deadline
+# is expensive, so it repeats once.
+JOURNEY_HTTP_READ_TRIES="${JOURNEY_HTTP_READ_TRIES:-4}"
+case "$JOURNEY_HTTP_READ_TRIES" in ''|*[!0-9]*) JOURNEY_HTTP_READ_TRIES=4 ;; esac
+[ "$JOURNEY_HTTP_READ_TRIES" -ge 1 ] || JOURNEY_HTTP_READ_TRIES=1
+JOURNEY_HTTP_TIMEOUT_TRIES="${JOURNEY_HTTP_TIMEOUT_TRIES:-2}"
+case "$JOURNEY_HTTP_TIMEOUT_TRIES" in ''|*[!0-9]*) JOURNEY_HTTP_TIMEOUT_TRIES=2 ;; esac
+[ "$JOURNEY_HTTP_TIMEOUT_TRIES" -ge 1 ] || JOURNEY_HTTP_TIMEOUT_TRIES=1
 JOURNEY_CURL="$(command -v curl 2>/dev/null)"
 journey_curl_url() {
   local a url=""
@@ -106,7 +115,7 @@ journey_curl_url() {
 }
 if [ -n "$JOURNEY_CURL" ]; then
   curl() {
-    local a own=0 stream=0 mut=0 url rc why retry
+    local a own=0 stream=0 mut=0 url rc why tries
     for a in "$@"; do
       case "$a" in
         -m|--max-time|-m[0-9]*|--max-time=*) own=1 ;;
@@ -128,19 +137,29 @@ if [ -n "$JOURNEY_CURL" ]; then
     # red for no reason. A WRITE is retried by the helper that owns its key,
     # never here - these creates carry no id the shim could recognise, and a
     # blind second POST makes a duplicate.
+    #
+    # The two classes get different budgets. A DEADLINE means the lane is slow
+    # and spending another whole deadline on it costs the recipe its clock, so
+    # it repeats once. A TRANSPORT fault (or a curl that crashed) never reached
+    # an answer at all, costs a second rather than a deadline, and was measured
+    # repeating several times in one run under suite load - so it gets
+    # JOURNEY_HTTP_READ_TRIES attempts before the read gives up.
     if [ "$mut" = "0" ]; then
-      retry=0
+      tries=1
       case "$rc" in
-        7|28|52|56) retry=1 ;;
-        *) [ "$rc" -ge 128 ] 2>/dev/null && retry=1 ;;
+        28) tries="$JOURNEY_HTTP_TIMEOUT_TRIES" ;;
+        7|52|56) tries="$JOURNEY_HTTP_READ_TRIES" ;;
+        *) [ "$rc" -ge 128 ] 2>/dev/null && tries="$JOURNEY_HTTP_READ_TRIES" ;;
       esac
-      if [ "$retry" = "1" ]; then
+      while [ "$rc" != "0" ] && [ "$tries" -gt 1 ]; do
+        tries=$((tries - 1))
         case "$rc" in 28) why="in ${JOURNEY_HTTP_TIMEOUT}s" ;; *) why="rc=$rc" ;; esac
-        printf '%s [journey] lane answered nothing %s, retrying once: %s\n' \
-          "$(date +%H:%M:%S)" "$why" "${url:-?}" >&2
+        printf '%s [journey] lane answered nothing %s, retrying (%s left): %s\n' \
+          "$(date +%H:%M:%S)" "$why" "$tries" "${url:-?}" >&2
+        sleep 1
         "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
         rc=$?
-      fi
+      done
     fi
     # -s swallows curl's own words, so a failure that is NOT a deadline used to
     # read as an empty answer the caller then blamed on the product. Every
@@ -478,14 +497,30 @@ journey_pick_free_port() {
 # when the write lands, and under load it lands late - a one-shot read turns
 # that into a red that names a stale page. Returns 1 on timeout (the caller
 # names the red), like poll_grep.
+#
+# The give-up NAMES THE WIRE it read: how many reads answered and never matched
+# against how many never answered at all (mechanism: a crashed transport is not
+# an answer). Those are opposite verdicts - an answer without the row is the
+# product's, silence is the host's - and before this line both red with the same
+# words, which is how a segfaulting curl read as a lost board card.
 poll_http() {
-  local url="$1" pat="$2" t i=0
+  local url="$1" pat="$2" t i=0 out code answered=0 silent=0
   t="$(journey_budget "${3:-10}")"
   while [ "$i" -lt $((t * 2)) ]; do
-    curl -s "$url" 2>/dev/null | grep -q "$pat" && return 0
+    out=$(curl -s -w '\n%{http_code}' "$url" 2>/dev/null)
+    code="$(printf '%s' "$out" | tail -1)"
+    case "$code" in
+      2*|3*)
+        answered=$((answered + 1))
+        printf '%s' "$out" | sed '$d' | grep -q "$pat" && return 0
+        ;;
+      *) silent=$((silent + 1)) ;;
+    esac
     sleep 0.5
     i=$((i + 1))
   done
+  printf '%s [journey] %s never showed %s in %s reads (%s answered and never matched, %s never answered)\n' \
+    "$(date +%H:%M:%S)" "$url" "$pat" "$i" "$answered" "$silent" >&2
   return 1
 }
 
@@ -711,20 +746,25 @@ new_journey_session() {
   # the id is the RUN's, so a second POST lands the same session - never a twin.
   # A lane that drops the connection under load answers nothing at all, and the
   # one-shot shape died on it with an empty message (the red said "failed: ").
-  if ! printf '%s' "$resp" | grep -q "$id"; then
-    printf '%s [journey] POST /sessions answered nothing (rc=%s) - retrying (the id is this run-owned session)\n' \
-      "$(date +%H:%M:%S)" "$rc" >&2
+  # The transport is what fails here, not the lane (curl rc 128+ dies on a signal
+  # under suite load), so it gets the same bounded budget a read does.
+  tries="$JOURNEY_HTTP_READ_TRIES"
+  while ! printf '%s' "$resp" | grep -q "$id" && [ "$tries" -gt 1 ]; do
+    tries=$((tries - 1))
+    printf '%s [journey] POST /sessions answered nothing (rc=%s) - retrying (%s left, the id is this run-owned session)\n' \
+      "$(date +%H:%M:%S)" "$rc" "$tries" >&2
+    sleep 1
     resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
            -d "{\"id\": \"${id}\"}")
     rc=$?
-  fi
+  done
   printf '%s' "$resp" | grep -q "$id" \
     || die "POST /sessions failed (rc=$rc): ${resp:-<no answer>}"
   printf '%s\n' "$id"
 }
 
 # journey_tag: read the run tag a previous subshell left
-journey_tag() { cat "$JRN_TAGFILE"; }
+journey_tag() { [ -f "$JRN_TAGFILE" ] && cat "$JRN_TAGFILE" 2>/dev/null; return 0; }
 
 # label_journey_session: friendlier sidebar row + stable search token
 label_journey_session() {
