@@ -24,11 +24,18 @@
 #                       (the Pi lane). Unset: agent-browser auto-launches
 #                       its own Chrome (the CI lane).
 #   JOURNEY_CHROME_PORT CDP port for a Pi-lane chrome (default 9333)
-#   JOURNEY_SESSION     agent-browser session name (default omega-journey)
+#   JOURNEY_SESSION     agent-browser session name (default
+#                       omega-journey-<run id>, private to the run)
+#   JOURNEY_HTTP_TIMEOUT deadline for one lane REST call (default 20s,
+#                       scaled by the clock)
+#   JOURNEY_CLOCK_PCT   the run's timing scale, exported by run.sh
 
 JOURNEY_BASE_URL=${JOURNEY_BASE_URL:-http://127.0.0.1:8098}
 JOURNEY_CHROME_PORT=${JOURNEY_CHROME_PORT:-9333}
-JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey}
+# the run's own identity: private tag record, private browser session.
+# run.sh exports it; a standalone recipe run gets its own shell pid.
+JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
+JOURNEY_SESSION=${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}
 
 # JOURNEY_WORKTMP: a scratch path EVERY tool in the recipe can read.
 # On MSYS hosts (windows git-bash) the native binaries recipes invoke
@@ -71,7 +78,60 @@ JOURNEY_AB_CALL_TIMEOUT="${JOURNEY_AB_CALL_TIMEOUT:-$((120 * JOURNEY_CLOCK_PCT /
 case "$JOURNEY_AB_CALL_TIMEOUT" in ''|*[!0-9]*) JOURNEY_AB_CALL_TIMEOUT=120 ;; esac
 AB_TIMEOUT=0
 command -v timeout >/dev/null 2>&1 && AB_TIMEOUT=1
-JOURNEY_SESSION_NAME="${JOURNEY_SESSION:-omega-journey}"
+JOURNEY_SESSION_NAME="$JOURNEY_SESSION"
+
+# --- the REST deadline (mechanism: the harness had none) ---------------------
+# 164 calls in the corpus (plus lib.sh's own session create/label/delete and the
+# residue sweep) ride curl with no answer deadline: curl bounds the CONNECT and
+# nothing else, so a lane that accepts the connection and never answers parks
+# the recipe until run.sh's wall cap - the silent-hang shape, which run.sh's
+# health probe was fixed for alone (t_91615fe6). One deadline for the whole
+# corpus, scaled by the clock like every other budget. A caller that passed its
+# own -m/--max-time keeps its number. A background STREAM read (-N/--no-buffer,
+# recipes 85/95/103) is exempt on purpose: its budget is the poll that reads the
+# file it writes, never the transfer. A read (no -X/-d/-F/-T) is retried once
+# after the deadline - every write in this corpus is idempotent by id, and a
+# probe that answers empty makes a green read as red for no reason.
+JOURNEY_HTTP_TIMEOUT="${JOURNEY_HTTP_TIMEOUT:-$((20 * JOURNEY_CLOCK_PCT / 100))}"
+case "$JOURNEY_HTTP_TIMEOUT" in ''|*[!0-9]*) JOURNEY_HTTP_TIMEOUT=20 ;; esac
+JOURNEY_CURL="$(command -v curl 2>/dev/null)"
+journey_curl_url() {
+  local a url=""
+  for a in "$@"; do
+    case "$a" in http://*|https://*) url="$a" ;; esac
+  done
+  printf '%s' "$url"
+}
+if [ -n "$JOURNEY_CURL" ]; then
+  curl() {
+    local a own=0 stream=0 mut=0 url rc
+    for a in "$@"; do
+      case "$a" in
+        -m|--max-time|-m[0-9]*|--max-time=*) own=1 ;;
+        -N|--no-buffer) stream=1 ;;
+        -X|--request|-d|--data*|-F|--form*|-T|--upload-file) mut=1 ;;
+      esac
+    done
+    if [ "$own" = "1" ] || [ "$stream" = "1" ]; then
+      "$JOURNEY_CURL" "$@"
+      return
+    fi
+    url="$(journey_curl_url "$@")"
+    "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
+    rc=$?
+    if [ "$rc" = "28" ] && [ "$mut" = "0" ]; then
+      printf '%s [journey] lane answered nothing in %ss, retrying once: %s\n' \
+        "$(date +%H:%M:%S)" "$JOURNEY_HTTP_TIMEOUT" "${url:-?}" >&2
+      "$JOURNEY_CURL" --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"
+      rc=$?
+    fi
+    if [ "$rc" = "28" ]; then
+      printf '%s [journey] lane never answered (%ss): %s\n' \
+        "$(date +%H:%M:%S)" "$JOURNEY_HTTP_TIMEOUT" "${url:-?}" >&2
+    fi
+    return "$rc"
+  }
+fi
 
 # ab <args...>: one agent-browser call, ALWAYS in this run's browser
 # session: the daemon multiplexes concurrent clients (another card's
@@ -477,9 +537,8 @@ assert_no_console_errors() {
 # path under $TMPDIR for the whole host, so a worker's targeted recipe run and a
 # suite (or two targeted runs) overwrote each other's tag mid-journey: the
 # second writer's tag came back to the first, whose label and search then looked
-# for a session it never created. JOURNEY_RUN_ID makes the path private to the
-# run - run.sh exports its own pid, a standalone recipe run gets its own.
-JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
+# for a session it never created. JOURNEY_RUN_ID (top of this file) makes the
+# path private to the run.
 JRN_TAGFILE="${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag-$JOURNEY_RUN_ID}"
 
 # new_journey_session <name>: POST /sessions with a unique id; prints

@@ -337,7 +337,7 @@ clock_sample() {
   return 0
 }
 # clock_set <pct>: the ONE scale. The wall cap follows it unless the caller
-# pinned JOURNEY_TIMEOUT; lib.sh's two budgets follow the exported percentage.
+# pinned JOURNEY_TIMEOUT; lib.sh's budgets follow the exported percentage.
 JOURNEY_TIMEOUT_PINNED=0
 [ -n "${JOURNEY_TIMEOUT:-}" ] && JOURNEY_TIMEOUT_PINNED=1
 clock_set() {
@@ -350,26 +350,104 @@ clock_set() {
     export JOURNEY_TIMEOUT
   fi
 }
+# --- the wall stretch (mechanism: a load average is not a slowdown) ----------
+# load1 counts RUNNABLE threads; it does not say what a second costs here.
+# Measured 2026-11-20 on the train host, the one this flake family came from:
+# load1 13.67 on 12 cpus read as 113%, while `sleep 0.2` took 0.34s - 171%. The
+# budgets are spent in WALL seconds, and the scheduler stretches those far more
+# than the queue length suggests, so the clock takes the LARGER of the two
+# signals. The probe is a few timed sleeps; it runs once at suite start (median
+# of three) and once before each recipe (one sample), and only a real STEP moves
+# the scale - one delayed sleep is noise, not a budget. A host whose date has no
+# nanoseconds, or JOURNEY_WALL_PROBE_MS=0, keeps the load-average signal alone.
+JOURNEY_WALL_PROBE_MS="${JOURNEY_WALL_PROBE_MS:-200}"
+case "$JOURNEY_WALL_PROBE_MS" in ''|*[!0-9]*) JOURNEY_WALL_PROBE_MS=200 ;; esac
+JOURNEY_CLOCK_STEP="${JOURNEY_CLOCK_STEP:-25}"
+case "$JOURNEY_CLOCK_STEP" in ''|*[!0-9]*) JOURNEY_CLOCK_STEP=25 ;; esac
+WALL_PCT=""
+WALL_SAMPLE_MS=""
+# wall_probe_once -> 0 with WALL_SAMPLE_MS = one timed sleep, in milliseconds.
+wall_probe_once() {
+  local t0 t1
+  t0="$(date +%s%N 2>/dev/null)"
+  case "${t0:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "${#t0}" -ge 16 ] || return 1
+  sleep "0.$(printf '%03d' "$JOURNEY_WALL_PROBE_MS")" 2>/dev/null || return 1
+  t1="$(date +%s%N 2>/dev/null)"
+  case "${t1:-}" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  WALL_SAMPLE_MS=$(( (t1 - t0) / 1000000 ))
+  [ "$WALL_SAMPLE_MS" -gt 0 ] || return 1
+  return 0
+}
+# wall_sample <n> -> 0 with WALL_PCT = the median stretch across n probes.
+wall_sample() {
+  local n="${1:-1}" i=0 ms pct samples=""
+  WALL_PCT=""
+  [ "$JOURNEY_WALL_PROBE_MS" -ge 50 ] || return 1
+  while [ "$i" -lt "$n" ]; do
+    wall_probe_once || return 1
+    samples="$samples$WALL_SAMPLE_MS
+"
+    i=$((i + 1))
+  done
+  ms="$(printf '%s' "$samples" | grep -E '^[0-9]+$' | sort -n | sed -n "$(( (n + 1) / 2 ))p")"
+  case "$ms" in ''|*[!0-9]*) return 1 ;; esac
+  pct=$(( ms * 100 / JOURNEY_WALL_PROBE_MS ))
+  [ "$pct" -lt 100 ] && pct=100
+  [ "$pct" -gt 400 ] && pct=400
+  WALL_PCT="$pct"
+  return 0
+}
+# clock_refresh <samples>: read both signals, move the scale when the reading is
+# a real step above it. Ratchets UP only - nothing already promised to a running
+# recipe is taken back. -> 0 when the scale moved.
+clock_refresh() {
+  local cand
+  # a global, not stdout: clock_sample sets CLOCK_PCT only on success, so a
+  # host with no load average must read the running scale instead of ""
+  if clock_sample; then cand="$CLOCK_PCT"; else cand="$JOURNEY_CLOCK_PCT"; fi
+  if wall_sample "${1:-1}" && [ "$WALL_PCT" -gt "$cand" ]; then cand="$WALL_PCT"; fi
+  case "$cand" in ''|*[!0-9]*) return 1 ;; esac
+  [ $((cand - JOURNEY_CLOCK_PCT)) -ge "$JOURNEY_CLOCK_STEP" ] || return 1
+  clock_set "$cand"
+  return 0
+}
+clock_report() {
+  local detail="no load average on this host"
+  [ -n "$JOURNEY_LOAD1" ] && detail="host load $JOURNEY_LOAD1 on $JOURNEY_CORES cpu"
+  [ -n "$WALL_PCT" ] && detail="$detail, wall stretch $WALL_PCT%"
+  printf 'journeys: timing budget %s%% (%s) - wall cap %ss per recipe\n' \
+    "$JOURNEY_CLOCK_PCT" "$detail" "$JOURNEY_TIMEOUT"
+}
 JOURNEY_CLOCK_PINNED=0
 if [ -n "${JOURNEY_CLOCK_PCT:-}" ]; then
   JOURNEY_CLOCK_PINNED=1
   clock_set "$JOURNEY_CLOCK_PCT"
-elif clock_sample; then
-  clock_set "$CLOCK_PCT"
 else
   clock_set 100
+  clock_refresh 3 || true
 fi
 # the run's own identity: lib.sh keeps this run's tag record apart from every
 # other run on the host (JRN_TAGFILE).
 JOURNEY_RUN_ID="${JOURNEY_RUN_ID:-$$}"
 export JOURNEY_RUN_ID
 # the browser session name rides EVERY command (lib.sh ab) and the CDP
-# connect: two concurrent suite runs share one agent-browser daemon, and
-# the daemon's default connection is global - without a session-scoped
-# connect the LAST connect wins and both runs drive one chrome (mis-read
-# DOM, foreign console noise, phantom reds). A fixed name keeps the
-# single-run behavior; concurrent workers export distinct names.
-JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"
+# connect: the daemon multiplexes concurrent clients, and the daemon's DEFAULT
+# connection is global - without a session-scoped connect the LAST connect wins
+# and both runs drive one chrome (mis-read DOM, foreign console noise, phantom
+# reds). The default used to be one name for the whole host, which made every
+# run on this machine a sibling of every other in the same daemon: a worker's
+# targeted recipe run, a crashed suite's leftover daemon, and the gate itself
+# shared one page, one console buffer and one localStorage. The name carries the
+# RUN now, so "which browser did this run drive" has exactly one answer; a
+# caller that wants to share a session (a repro driving an existing daemon)
+# still exports JOURNEY_SESSION and wins.
+JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}"
+export JOURNEY_SESSION
 
 # --- agent-browser version pin (card t_a1fe9f84) -----------------------------
 # agent-browser is a GATE DEPENDENCY, not an incidental tool: the
@@ -429,13 +507,8 @@ if [ "$ab_version" != "$JOURNEY_AB_VERSION" ]; then
 fi
 
 # --- the timing budget, stated on every run --------------------------------
-if [ -n "$JOURNEY_LOAD1" ]; then
-  printf 'journeys: timing budget %s%% (host load %s on %s cpu) - wall cap %ss per recipe\n' \
-    "$JOURNEY_CLOCK_PCT" "$JOURNEY_LOAD1" "$JOURNEY_CORES" "$JOURNEY_TIMEOUT"
-else
-  printf 'journeys: timing budget %s%% (no load average on this host) - wall cap %ss per recipe\n' \
-    "$JOURNEY_CLOCK_PCT" "$JOURNEY_TIMEOUT"
-fi
+clock_report
+printf 'journeys: browser session %s (cdp port %s)\n' "$JOURNEY_SESSION" "$JOURNEY_CHROME_PORT"
 if ! command -v timeout >/dev/null 2>&1; then
   printf 'journeys: no timeout(1) on this host - a wedged agent-browser call is bounded only by the wall cap\n' >&2
 fi
@@ -672,6 +745,7 @@ proc_child_pids() {
 }
 
 export JOURNEY_BASE_URL JOURNEY_CHROME_PORT JOURNEY_TIMEOUT JOURNEY_JSON JOURNEY_CDP_ATTACHED
+export JOURNEY_LOADAVG
 export JROOT
 export AB
 
@@ -716,12 +790,10 @@ for recipe in $want; do
   fi
   log="$EVID/$name.log"
   # the scale is re-sampled here, before the recipe gets its budgets: the load
-  # this suite was sized for can change while it runs (see the clock block).
-  if [ "$JOURNEY_CLOCK_PINNED" = "0" ] && clock_sample \
-     && [ "$CLOCK_PCT" -gt "$JOURNEY_CLOCK_PCT" ]; then
-    clock_set "$CLOCK_PCT"
-    printf 'journeys: timing budget %s%% (host load %s on %s cpu) - wall cap %ss per recipe\n' \
-      "$JOURNEY_CLOCK_PCT" "$JOURNEY_LOAD1" "$JOURNEY_CORES" "$JOURNEY_TIMEOUT"
+  # this suite was sized for can change while it runs (see the clock block), and
+  # so can the stretch a second costs on this host.
+  if [ "$JOURNEY_CLOCK_PINNED" = "0" ] && clock_refresh 1; then
+    clock_report
   fi
   printf 'journeys: %-30s running\n' "$name"
   recipe_started=$SECONDS

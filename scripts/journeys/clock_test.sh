@@ -37,6 +37,27 @@ set -uo pipefail
 # one host-global path let a second run overwrite the tag the first was still
 # reading (its label and search then looked for a session it never created).
 #
+# The batch pass that followed the two reds (the same card, second occurrence)
+# closed the three mechanisms the wall-cap and the 10s wait left standing:
+#
+#   e  A REST DEADLINE. curl bounds the CONNECT and nothing else, so the 164
+#      recipe calls to the lane (plus lib.sh's own session/residue calls) parked
+#      the recipe to the wall cap whenever the lane accepted and did not answer -
+#      the same class run.sh's health probe was fixed for alone. lib.sh's curl
+#      shim carries one clock-scaled deadline, names the URL it gave up on,
+#      retries a READ once, and leaves a background stream read (-N) alone.
+#      P9 proves the bound and proves the pre-fix shape parks to the cap.
+#   f  THE WALL STRETCH. load1 counts runnable threads; it does not say what a
+#      second costs here. On the train host load1 13.67/12 cpus read as 113%
+#      while `sleep 0.2` took 0.34s (171%), and the budgets are spent in wall
+#      seconds. The clock now takes the larger of the load average and a timed
+#      sleep, ratcheted, and prints which signal set it. P10 drives the probe to
+#      a known stretch from a host that reports an idle load.
+#   g  THE BROWSER SESSION BELONGS TO THE RUN. One default name for the host put
+#      every run (a worker's targeted run, a crashed suite's daemon, the gate) in
+#      one page, one console buffer and one localStorage. P11 proves two runs
+#      differ and carries the pre-fix shape.
+#
 # Fixtures are a copy of the journeys tree, a stub agent-browser and a stub
 # lane - no real browser, no real lane, nothing shared with a live run. The stub
 # dir rides PATH in POSIX form: an MSYS shell splits a C:/ PATH entry at the
@@ -100,6 +121,19 @@ exit 0
 STUB
 chmod +x "$TMP/bin/agent-browser"
 
+# stub `sleep`: it stretches ONLY the wall probe's exact duration, so the clock's
+# second signal can be driven to a known percentage on a host whose real
+# scheduler is idle (CI). Every other sleep is the real one, exec'd.
+REAL_SLEEP="$(command -v sleep)"
+cat > "$TMP/bin/sleep" <<'STUB'
+#!/bin/bash
+if [ "${1:-}" = "0.${PROBE_ARG:-200}" ]; then
+  exec "$REAL_SLEEP" "0.${PROBE_STRETCHED:-600}"
+fi
+exec "$REAL_SLEEP" "$@"
+STUB
+chmod +x "$TMP/bin/sleep"
+
 # stub lane: run.sh's health gate, the model probe, the residue sweep and
 # POST /sessions (which echoes the id it is handed, so a journey session can be
 # created against it) all answer.
@@ -113,6 +147,7 @@ cat > "$TMP/lane.py" <<'PY'
 import http.server
 import json
 import sys
+import time
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -125,6 +160,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/health"):
             self._send(b'{"status":"ok"}')
+        elif self.path.startswith("/hang"):
+            # a lane that ACCEPTS and never answers (the REST deadline's target)
+            time.sleep(120)
+            try:
+                self._send(b"{}")
+            except OSError:
+                # the caller gave up on its own deadline - the answer it never
+                # waited for is not a server error
+                pass
         else:
             self._send(b"{}")
 
@@ -197,14 +241,30 @@ R
 printf '100000.0 100000.0 100000.0 1/1\n' > "$JOURNEY_LOADAVG"
 step "host load raised on the next sample"
 R
+  # a REST call to a lane that accepts and never answers. stderr is KEPT - the
+  # shim's own words ("answered nothing ... retrying once") are the evidence.
+  cat > "$1/recipes/905-rest-deadline.sh" <<'R'
+#!/bin/bash
+rc=0
+curl -s "$JOURNEY_BASE_URL/hang" >/dev/null || rc=$?
+step "rest rc=$rc"
+assert_eq "$rc" "28" "the lane REST call gave up on its own deadline"
+R
+  # which browser session this run drives
+  cat > "$1/recipes/906-session.sh" <<'R'
+#!/bin/bash
+step "session=$JOURNEY_SESSION runid=$JOURNEY_RUN_ID"
+R
 }
 
 # drive <tree> [VAR=value...] -- <recipe> [<recipe>...]: the REAL run.sh against
 # the stubs, on stdout (callers redirect or pipe). The VAR=value assignments sit
 # between the tree and a `--`; everything after it is a recipe name, so a
-# multi-recipe run is just more names.
+# multi-recipe run is just more names. DRIVE_PIN_SESSION=0 leaves the browser
+# session name to the suite (the run-private default is what P11 measures).
+DRIVE_PIN_SESSION="${DRIVE_PIN_SESSION:-1}"
 drive() {
-  local tree="$1" envs=() recipes=()
+  local tree="$1" envs=() recipes=() pinargs=()
   shift
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -212,13 +272,19 @@ drive() {
       *) envs+=("$1"); shift ;;
     esac
   done
+  # a plain `if`, not `${VAR:+...}`: "0" is non-empty, so the :+ form would pin
+  # the session on exactly the leg that must not have it
+  if [ "$DRIVE_PIN_SESSION" = "1" ]; then
+    pinargs=(JOURNEY_SESSION=clock-test)
+  fi
   (
     cd "$tree" || exit 2
     env PATH="$TMP/bin:$PATH" \
       STUB_HANG="$TMP/hang" \
+      REAL_SLEEP="$REAL_SLEEP" \
       JOURNEY_BASE_URL="http://127.0.0.1:$PORT" \
       JOURNEY_LOCK="$TMP/lock" \
-      JOURNEY_SESSION=clock-test \
+      ${pinargs[@]+"${pinargs[@]}"} \
       JOURNEY_WORKTMP="$NATIVE_TMP" \
       ${envs[@]+"${envs[@]}"} \
       bash "$tree/run.sh" ${recipes[@]+"${recipes[@]}"}
@@ -233,10 +299,16 @@ evid_dir() {
 FIXED="$TMP/fixed"
 BROKEN="$TMP/broken"
 LEAKY="$TMP/leaky"
-mkdir -p "$FIXED" "$BROKEN" "$LEAKY"
+NODL="$TMP/nodl"
+NOWS="$TMP/nows"
+SHARED="$TMP/shared"
+mkdir -p "$FIXED" "$BROKEN" "$LEAKY" "$NODL" "$NOWS" "$SHARED"
 make_tree "$FIXED"
 make_tree "$BROKEN"
 make_tree "$LEAKY"
+make_tree "$NODL"
+make_tree "$NOWS"
+make_tree "$SHARED"
 # the mutation: the pre-fix shape - a call with no deadline of its own
 python3 - "$NATIVE_TMP/broken/lib.sh" <<'PY'
 import sys
@@ -270,6 +342,37 @@ assert head_old in src, "the watchdog head is not shaped as the mutation expects
 assert tail_old in src, "the watchdog tail is not shaped as the mutation expects"
 src = src.replace(head_old, head_new, 1).replace(tail_old, tail_new, 1)
 open(path, "w", encoding="utf-8", newline="").write(src)
+PY
+# the mutation: the pre-fix REST call - curl with no answer deadline
+python3 - "$NATIVE_TMP/nodl/lib.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = ' --max-time "$JOURNEY_HTTP_TIMEOUT" "$@"'
+assert src.count(old) == 2, "the REST shim is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(src.replace(old, ' "$@"'))
+PY
+# the mutation: the clock reading the load average ALONE (no wall-stretch signal)
+python3 - "$NATIVE_TMP/nows/run.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = '  if wall_sample "${1:-1}" && [ "$WALL_PCT" -gt "$cand" ]; then cand="$WALL_PCT"; fi\n'
+assert old in src, "the wall signal is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(src.replace(old, "", 1))
+PY
+# the mutation: one browser session name for the whole host
+python3 - "$NATIVE_TMP/shared/run.sh" <<'PY'
+import sys
+
+path = sys.argv[1]
+src = open(path, encoding="utf-8").read()
+old = 'JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey-$JOURNEY_RUN_ID}"'
+assert old in src, "the session default is not shaped as the mutation expects"
+open(path, "w", encoding="utf-8", newline="").write(
+    src.replace(old, 'JOURNEY_SESSION="${JOURNEY_SESSION:-omega-journey}"', 1))
 PY
 
 # --- P0: the fixture is the CLI under test, not a real one -------------------
@@ -390,8 +493,11 @@ else
 fi
 
 # --- P8: a load that ARRIVES mid-suite ratchets the scale up -----------------
+# The wall-stretch probe is OFF here on purpose: this leg grades the load-average
+# arithmetic and the ratchet alone, so it reads the same on an idle CI runner and
+# on a contended host. P10 is the leg that grades the probe.
 printf '1.20 1.20 1.20 1/1\n' > "$TMP/load"
-if drive "$FIXED" JOURNEY_LOADAVG="$TMP/load" -- 904-raise-load 901-budgets > "$TMP/p8.log" 2>&1; then
+if drive "$FIXED" JOURNEY_WALL_PROBE_MS=0 JOURNEY_LOADAVG="$TMP/load" -- 904-raise-load 901-budgets > "$TMP/p8.log" 2>&1; then
   ok "P8 the ratchet probe ran"
 else
   bad "P8 the ratchet probe failed: $(tail -3 "$TMP/p8.log")"
@@ -406,6 +512,93 @@ P8LOG="$(evid_dir "$TMP/p8.log")/901-budgets.log"
 grep -q 'budgets cap=1200 rtt=120 deadline=480 pct=400' "$P8LOG" 2>/dev/null \
   && ok "P8 the later recipe ran on the raised scale (cap 1200 / floor 120)" \
   || bad "P8 the later recipe did not inherit the ratchet: $(grep budgets "$P8LOG" 2>/dev/null)"
+
+# --- P9: a lane that accepts and never answers is bounded, and NAMED ---------
+# curl bounds the CONNECT and nothing else; 164 recipe calls rode it that way, so
+# a lane that accepts and never answers parked the recipe to the wall cap - the
+# silent-hang shape. The stub lane's /hang sleeps 120s on the request thread.
+if drive "$FIXED" JOURNEY_HTTP_TIMEOUT=1 JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 \
+     -- 905-rest-deadline > "$TMP/p9.log" 2>&1; then
+  ok "P9 a lane that never answers does not park the recipe"
+else
+  bad "P9 the REST call parked the recipe: $(tail -3 "$TMP/p9.log")"
+fi
+P9LOG="$(evid_dir "$TMP/p9.log")/905-rest-deadline.log"
+grep -q 'lane answered nothing in 1s, retrying once: http://127.0.0.1' "$P9LOG" 2>/dev/null \
+  && ok "P9 the deadline names the URL it gave up on and retries a read once" \
+  || bad "P9 the REST deadline never fired: $(grep -iE 'rest rc|lane ' "$P9LOG" 2>/dev/null | head -2)"
+grep -q 'rest rc=28' "$P9LOG" 2>/dev/null \
+  && ok "P9 the call returned curl's timeout status, not an empty success" \
+  || bad "P9 the call did not report its timeout: $(tail -3 "$P9LOG" 2>/dev/null)"
+if drive "$NODL" JOURNEY_HTTP_TIMEOUT=1 JOURNEY_TIMEOUT=15 JOURNEY_WALL_PROBE_MS=0 \
+     -- 905-rest-deadline > "$TMP/p9b.log" 2>&1; then
+  bad "P9 the tree without the REST deadline stayed green - the pin proves nothing"
+else
+  ok "P9 without the deadline the recipe is killed by the wall cap (the silent hang)"
+fi
+grep -q 'exceeded 15s wall cap' "$(evid_dir "$TMP/p9b.log")/905-rest-deadline.log" 2>/dev/null \
+  && ok "P9 the pre-fix RED names the wall cap" \
+  || bad "P9 the pre-fix RED named nothing: $(tail -3 "$TMP/p9b.log")"
+
+# --- P10: the wall stretch, not the queue length, sets the scale -------------
+# The stub sleep stretches ONLY the probe's duration by 3x, so a host that
+# reports an idle load (1.20 on 12 cpus = 100%) must still be sized for 300%.
+printf '1.20 1.20 1.20 1/1\n' > "$TMP/load-idle"
+if drive "$FIXED" JOURNEY_LOADAVG="$TMP/load-idle" PROBE_STRETCHED=600 JOURNEY_TIMEOUT=600 \
+     -- 901-budgets > "$TMP/p10.log" 2>&1; then
+  ok "P10 the wall-stretch probe ran"
+else
+  bad "P10 the probe run failed: $(tail -3 "$TMP/p10.log")"
+fi
+P10PCT="$(sed -n 's/^journeys: timing budget \([0-9]*\)%.*/\1/p' "$TMP/p10.log" | head -1)"
+if [ -n "$P10PCT" ] && [ "$P10PCT" -ge 300 ]; then
+  ok "P10 a stretched second moves the scale (load says 100%, the clock says ${P10PCT}%)"
+else
+  bad "P10 the wall signal never moved the scale: $(grep 'timing budget' "$TMP/p10.log" | head -2)"
+fi
+grep -q "timing budget $P10PCT% (.*wall stretch $P10PCT%" "$TMP/p10.log" \
+  && ok "P10 the line names the signal that set the budget" \
+  || bad "P10 the budget line does not name the wall signal: $(grep 'timing budget' "$TMP/p10.log" | head -1)"
+if drive "$NOWS" JOURNEY_LOADAVG="$TMP/load-idle" PROBE_STRETCHED=600 JOURNEY_TIMEOUT=600 \
+     -- 901-budgets > "$TMP/p10b.log" 2>&1 \
+   && grep -q 'timing budget 100%' "$TMP/p10b.log"; then
+  ok "P10 the load average alone reads 100% on the same host (the pre-fix shape)"
+else
+  bad "P10 the pre-fix clock did not stay at 100%: $(grep 'timing budget' "$TMP/p10b.log" | head -2)"
+fi
+
+# --- P11: the browser session belongs to the RUN -----------------------------
+# One name for the whole host made every run on the machine a sibling in the same
+# daemon: a worker's targeted run, a crashed suite's leftover daemon and the gate
+# shared one page, one console buffer and one localStorage.
+DRIVE_PIN_SESSION=0
+drive "$FIXED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 \
+  -- 906-session > "$TMP/p11a.log" 2>&1
+drive "$FIXED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 \
+  -- 906-session > "$TMP/p11b.log" 2>&1
+P11LOGA="$(evid_dir "$TMP/p11a.log")/906-session.log"
+P11LOGB="$(evid_dir "$TMP/p11b.log")/906-session.log"
+SESA="$(sed -n 's/.*session=\([^ ]*\) .*/\1/p' "$P11LOGA" 2>/dev/null)"
+SESB="$(sed -n 's/.*session=\([^ ]*\) .*/\1/p' "$P11LOGB" 2>/dev/null)"
+RUNA="$(sed -n 's/.*runid=\([^ ]*\)$/\1/p' "$P11LOGA" 2>/dev/null)"
+if [ -n "$SESA" ] && [ -n "$SESB" ] && [ "$SESA" != "$SESB" ]; then
+  ok "P11 two runs on one host drive different browser sessions ($SESA vs $SESB)"
+else
+  bad "P11 the browser session is shared across runs: [$SESA] vs [$SESB]"
+fi
+case "$SESA" in
+  *-"$RUNA") ok "P11 the session name carries the run id ($SESA)" ;;
+  *) bad "P11 the session name lost the run id: session=[$SESA] runid=[$RUNA]" ;;
+esac
+if drive "$SHARED" JOURNEY_TIMEOUT=60 JOURNEY_WALL_PROBE_MS=0 \
+     -- 906-session > "$TMP/p11c.log" 2>&1; then
+  SHAA="$(sed -n 's/.*session=\([^ ]*\) .*/\1/p' "$(evid_dir "$TMP/p11c.log")/906-session.log" 2>/dev/null)"
+  [ "$SHAA" = "omega-journey" ] \
+    && ok "P11 the pre-fix default names every run the same ($SHAA)" \
+    || bad "P11 the pre-fix tree did not reproduce the shared name: [$SHAA]"
+else
+  bad "P11 the pre-fix run failed: $(tail -3 "$TMP/p11c.log")"
+fi
 
 printf '\nclock_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" = 0 ] || exit 1
