@@ -204,7 +204,7 @@ if [ -n "${STUB_CURL_DIE_FILE:-}" ] && [ -f "$STUB_CURL_DIE_FILE" ]; then
 fi
 exec __REAL_CURL__ "$@"
 STUB
-python3 - "$TMP/bin/curl" "$REAL_CURL" <<'PY'
+python3 - "$NATIVE_TMP/bin/curl" "$REAL_CURL" <<'PY'
 import sys
 path, real = sys.argv[1], sys.argv[2]
 src = open(path, encoding="utf-8").read()
@@ -819,7 +819,7 @@ else
   bad "P9 the REST call parked the recipe: $(tail -3 "$TMP/p9.log")"
 fi
 P9LOG="$(evid_dir "$TMP/p9.log")/905-rest-deadline.log"
-grep -q 'lane answered nothing in 1s, retrying once: http://127.0.0.1' "$P9LOG" 2>/dev/null \
+grep -q 'lane answered nothing in 1s, retrying (1 left): http://127.0.0.1' "$P9LOG" 2>/dev/null \
   && ok "P9 the deadline names the URL it gave up on and retries a read once" \
   || bad "P9 the REST deadline never fired: $(grep -iE 'rest rc|lane ' "$P9LOG" 2>/dev/null | head -2)"
 grep -q 'rest rc=28' "$P9LOG" 2>/dev/null \
