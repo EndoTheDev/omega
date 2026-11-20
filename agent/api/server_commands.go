@@ -4,12 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -46,29 +46,20 @@ type commandDispatchResponse struct {
 	Actions []core.CmdAction `json:"actions,omitempty"`
 }
 
-// compactAction is the /compact intent. The capsule declares it (it owns the
-// summarizer, no store); the dispatch below runs it (it owns session shape).
-const compactAction = "run_compact"
+// compactAction is the /compact intent, declared once in core so both hosts read the same
+// name. The capsule declares it (it owns the summarizer, no store); the host holding the
+// session runs it through agent.FoldSession.
+const compactAction = core.CmdRunCompact
 
 // runCompact folds the session a dispatch names and answers with what the fold actually
-// did. Every branch names a real outcome or a real reason - a command that did nothing
-// says so, in its own words.
+// did. The fold and its wording live in agent.FoldSession/agent.CompactLine - the CLI loop
+// runs the SAME helper, so the two surfaces cannot answer differently.
 func (s *Server) runCompact(ctx context.Context, sessionID string) (string, error) {
-	switch {
-	case sessionID == "":
-		return "nothing folded: no session is bound to this chat yet", nil
-	case isEphemeralID(sessionID):
-		return "nothing folded: ephemeral sessions keep no history", nil
-	}
-	out, err := s.compactSession(ctx, sessionID)
+	out, err := agent.FoldSession(ctx, s.store, s.manualCompactor(), sessionID)
 	if err != nil {
 		return "", err
 	}
-	if !out.Folded {
-		return "nothing folded: " + out.Why, nil
-	}
-	return fmt.Sprintf("folded %d messages into a summary - the context now starts at message %s, and the last %d stay verbatim",
-		out.Rows, out.Start, out.Kept), nil
+	return agent.CompactLine(out), nil
 }
 
 func (s *Server) handleCommands(w http.ResponseWriter, r *http.Request) {

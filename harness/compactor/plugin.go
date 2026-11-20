@@ -64,7 +64,7 @@ func (p *Plugin) handleCompact(ctx context.Context, name, args string) (core.Com
 		return core.CommandResult{}, core.CommandMiss(name)
 	}
 	return core.CommandResult{
-		Actions: []core.CmdAction{{Type: "run_compact"}},
+		Actions: []core.CmdAction{{Type: core.CmdRunCompact}},
 	}, nil
 }
 
