@@ -692,7 +692,7 @@ journey_reap_verdict() {
 # the id; writes the unique run tag to $JRN_TAGFILE (function runs in a
 # $(...) subshell, so state crosses back through the file).
 new_journey_session() {
-  local name="$1" resp id runtag
+  local name="$1" resp id runtag rc
   # the tag carries the RUN (mechanism: a one-second session namespace). The
   # bare timestamp made the id of a recipe in run A and the same recipe in run B
   # identical whenever they started in the same second, so the second run drove
@@ -702,16 +702,19 @@ new_journey_session() {
   id="jrn-${runtag}-${name}"
   resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
          -d "{\"id\": \"${id}\"}")
+  rc=$?
   # the id is the RUN's, so a second POST lands the same session - never a twin.
   # A lane that drops the connection under load answers nothing at all, and the
   # one-shot shape died on it with an empty message (the red said "failed: ").
   if ! printf '%s' "$resp" | grep -q "$id"; then
-    printf '%s [journey] POST /sessions answered nothing - retrying (the id is this run-owned session)\n' \
-      "$(date +%H:%M:%S)" >&2
+    printf '%s [journey] POST /sessions answered nothing (rc=%s) - retrying (the id is this run-owned session)\n' \
+      "$(date +%H:%M:%S)" "$rc" >&2
     resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/sessions" -H 'Content-Type: application/json' \
            -d "{\"id\": \"${id}\"}")
+    rc=$?
   fi
-  printf '%s' "$resp" | grep -q "$id" || die "POST /sessions failed: ${resp:-<no answer>}"
+  printf '%s' "$resp" | grep -q "$id" \
+    || die "POST /sessions failed (rc=$rc): ${resp:-<no answer>}"
   printf '%s\n' "$id"
 }
 

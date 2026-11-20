@@ -864,12 +864,15 @@ for recipe in $want; do
     # card t_fdd12843; lib.sh journey_exit_cleanup).
     trap 'journey_exit_cleanup' EXIT
     . "$JROOT/lib.sh"
+    # the death record is per RECIPE: what killed the previous recipe's subshell
+    # says nothing about this one, and the mark must be gone before the first
+    # primitive (whose own redirection would swallow the guard's message).
+    rm -f "$(journey_death_mark)" 2>/dev/null
     # scope the console record to THIS recipe (t_6654bc60): the daemon's
     # buffer outlives the page, the reload and the chrome, so a transient
     # error from an earlier run used to red every later
     # assert_no_console_errors while the pages themselves were silent.
     console_scope_begin
-    rm -f "$(journey_death_mark)" 2>/dev/null
     . "$recipe"
     # a die inside a command substitution stopped only that subshell; the mark
     # it left is this recipe's real verdict (mechanism: the substitution boundary)
