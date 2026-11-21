@@ -356,6 +356,48 @@ for artifact in dist/release-notes.md dist/release-notes-body.md dist/discord-re
 		|| bad "H19: generated release artifact not gitignored: $artifact (running the notes script would dirty the checkout)"
 done
 
+# --- H20: is_tracked cannot lose a match to the writer's SIGPIPE ----------
+# `printf '%s\n' "$TRACKED" | grep -qxF` under pipefail hands back the WRITER's
+# SIGPIPE when grep exits at the FIRST match, so a tracked path sorts early in
+# `git ls-files` (.agents/*) and reads as untracked: the mapping-rot die then
+# fires on a healthy table, nightly-only and timing-dependent. No membership
+# test in the SUT may pipe into `grep -q` - a herestring has no writer, so
+# grep's early exit costs nothing.
+PIPE_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+# a comment can name the hazard (this file's own header does); only code counts
+piped="$(grep -vE '^[[:space:]]*#' "$SUT" | grep -nE "$PIPE_SHAPE")"
+[ -z "$piped" ] && ok || bad "H20: a membership test pipes into grep -q (writer SIGPIPE under pipefail): $piped"
+# the pin must stay red on the exact shape it exists to stop
+printf '%s\n' '  printf "%s\n" "$TRACKED" | grep -qxF -- "$1"' | grep -qE "$PIPE_SHAPE" && ok \
+	|| bad "H20: the detector no longer sees the pre-fix pipe shape"
+
+is_tracked_src="$(awk '/^is_tracked\(\)/{f=1} f{print} f&&/^\}$/{exit}' "$SUT")"
+[ -n "$is_tracked_src" ] && ok || bad "H20: is_tracked() not found in the SUT"
+# drive the extracted function on the REAL ls-files list, .agents/COMMIT.md
+# first in sort order (the worst case for an early exit)
+TRACKED_REAL="$(cd "$REPO" && git ls-files)"
+[ -n "$TRACKED_REAL" ] && ok || bad "H20: the real checkout lists no tracked files"
+races="$(
+	set -uo pipefail
+	export TRACKED="$TRACKED_REAL"
+	eval "$is_tracked_src"
+	n=0 i=0
+	while [ "$i" -lt 100 ]; do
+		is_tracked .agents/COMMIT.md || n=$((n + 1))
+		i=$((i + 1))
+	done
+	printf '%s' "$n"
+)"
+[ "$races" = 0 ] && ok \
+	|| bad "H20: is_tracked lost a tracked doc $races/100 times (.agents/COMMIT.md over the full ls-files list)"
+# the false verdict was one-sided: a genuinely untracked path must still fail
+(
+	set -uo pipefail
+	export TRACKED="$TRACKED_REAL"
+	eval "$is_tracked_src"
+	is_tracked .agents/NOT-A-REAL-DOC.md
+) && bad "H20: is_tracked accepted a path nobody tracks" || ok
+
 echo
 echo "docs-health_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

@@ -96,6 +96,8 @@ scripts/release-notes.overrides.md|scripts/release-notes.sh
 docs/architecture.md
 docs/troubleshooting.md,docs/extraction-recipe.md,docs/project-trust.md
 AGENTS.md,.agents/COMMIT.md,.agents/DESIGN.md,.agents/REVIEW.md
+SECURITY.md,docs/glossary.md
+docs/adr/0001-capsule-model.md,docs/adr/0002-zero-js-preview-artifacts.md,docs/adr/0003-wails-not-tauri.md,docs/adr/0004-async-turn-loop.md,docs/adr/0005-omega-ships-zero-modules.md,docs/adr/0006-embedded-spa.md,docs/adr/0007-dependency-law.md,docs/adr/0008-importability-over-extraction.md,docs/adr/0009-landing-pipeline-gates.md
 README.md,CONTRIBUTING.md,.agents/ISSUES.md,harness/README.md,scripts/journeys/README.md,.github/PULL_REQUEST_TEMPLATE.md
 MAP
 }
@@ -199,7 +201,10 @@ TRACKED="$(git ls-files)"
 TAGS="$(git for-each-ref --format='%(refname:short) %(creatordate:unix)' refs/tags 2>/dev/null)"
 
 is_tracked() { # <path>
-  printf '%s\n' "$TRACKED" | grep -qxF -- "$1"
+  # herestring, never a pipe: `printf ... | grep -q` hands back the WRITER's
+  # SIGPIPE under pipefail when grep exits at the first match, so a tracked
+  # path reads as untracked and the mapping-rot die fires on a healthy table
+  grep -qxF -- "$1" <<<"$TRACKED"
 }
 
 # --- freshness --------------------------------------------------------------
@@ -278,7 +283,7 @@ UNMAPPED=()
 TRACKED_MD="$(printf '%s\n' "$TRACKED" | grep -E '\.md$' || true)"
 while IFS= read -r doc; do
   [ -n "$doc" ] || continue
-  printf '%s\n' "$MAPPED" | grep -qxF -- "$doc" && continue
+  grep -qxF -- "$doc" <<<"$MAPPED" && continue
   UNMAPPED+=("$doc")
   add_row "$doc" - "$(fmt_date "$(git log -1 --format=%ct -- "$doc" 2>/dev/null || echo 0)")" "-" UNMAPPED
 done <<<"$TRACKED_MD"
@@ -318,7 +323,7 @@ while IFS= read -r doc; do
       BROKEN+=("$doc -> $t (tracked but missing on disk: $target)")
       continue
     fi
-    if [ -n "$anchor" ] && ! anchors_of "$target" | grep -qxF -- "$anchor"; then
+    if [ -n "$anchor" ] && ! grep -qxF -- "$anchor" <<<"$(anchors_of "$target")"; then
       BROKEN+=("$doc -> $t (no heading anchor #$anchor in $target)")
     fi
   done <<<"$targets"
