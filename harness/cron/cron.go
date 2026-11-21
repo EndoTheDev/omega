@@ -1,5 +1,7 @@
-// Package cron schedules omega prompts on cron expressions. Trust gate: omega may only
-// ever PROPOSE jobs - it never writes crons.yaml.
+// Package cron schedules omega prompts on cron expressions.
+//
+// crons.yaml is hand-authored; omega writes it only through the enabled-flag
+// toggle and the job editor, each touching just its own entry.
 package cron
 
 import (
