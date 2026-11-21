@@ -242,6 +242,7 @@
               :data-id="t.id"
               :class="{ dragging: isDragging(t.id) }"
               @click="onCardClick(t)"
+              @contextmenu="onCardMenu($event, t)"
               @pointerdown="onCardPointerDown($event, t)">
               <div class="card-title-row">
                 <span
@@ -326,7 +327,10 @@
 
 <script setup lang="ts">
   import { computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref, watch } from "vue";
+  import { copyText } from "~/composables/clipboard";
+  import { openContextMenu } from "~/composables/contextMenu";
   import DetailDrawer from "./board/DetailDrawer.vue";
+  import { cardMenuItems } from "./board/cardMenu";
   import {
     BOARD_STATUSES,
     BOARDS_PATH,
@@ -976,6 +980,31 @@
       return;
     }
     openDetail(t);
+  }
+
+  // the meta row's copy path: the clipboard composable's one honest answer decides the
+  // notice, so a refused copy never reads as "copied".
+  async function copyCardId(id: string) {
+    const ok = await copyText(id);
+    setNotice(ok ? `card ${id} copied` : "copy failed - the clipboard is unavailable", !ok);
+  }
+
+  // The right-click menus the card under the pointer (the closures capture it), never the
+  // drawer's selection. Archive rides moveBoard, the lane arrow's own PATCH.
+  function onCardMenu(e: MouseEvent, t: BoardTask) {
+    e.preventDefault();
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      cardMenuItems(
+        { id: t.id, status: t.status },
+        {
+          open: () => openDetail(t),
+          copyId: () => void copyCardId(t.id),
+          archive: () => void moveBoard(t, "archived"),
+        },
+      ),
+    );
   }
 
   const selected = ref<BoardTask | null>(null);
