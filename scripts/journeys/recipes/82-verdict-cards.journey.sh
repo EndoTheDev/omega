@@ -30,18 +30,31 @@
 # Residue-free: the browser half runs in its own throwaway session
 # (jrn- prefix) and lib.sh deletes it on exit.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # --- seam mounted: the pending-cards list answers with the shape ---
 payload=$(curl -s "${JOURNEY_BASE_URL}/verdicts")
-printf '%s' "$payload" | grep -qF '"cards"' || \
+grep -qF '"cards"' <<<"$payload" || \
   die "GET /verdicts answered non-verdict payload (wrong lane or seam unmounted): $payload"
-printf '%s' "$payload" | grep -qF '"count"' || \
+grep -qF '"count"' <<<"$payload" || \
   die "GET /verdicts missing count: $payload"
 step "ok: verdicts seam mounted, /verdicts answered with the pending list"
 
 # --- per-session listing answers the same shape ---
 payload=$(curl -s "${JOURNEY_BASE_URL}/sessions/jrn-ghost/verdicts")
-printf '%s' "$payload" | grep -qF '"cards"' || \
+grep -qF '"cards"' <<<"$payload" || \
   die "GET /sessions/{id}/verdicts answered wrong shape: $payload"
 step "ok: per-session pending listing wired"
 
@@ -62,7 +75,7 @@ code="${resp##*$'\n'}"
 body="${resp%$'\n'*}"
 printf '%s\n' "$body" > "${EVID}/82-ghost-body"
 [ "$code" = "404" ] || die "ghost-card answer status = $code, want 404: $body"
-printf '%s' "$body" | grep -q "no pending verdict card" || \
+grep -q "no pending verdict card" <<<"$body" || \
   die "ghost-card 404 body is not the hub's 'no pending verdict card' (route unwired?): $body"
 step "ok: ghost-card answer is 404 with the hub reason"
 
@@ -87,8 +100,8 @@ bundle_hit_list=
 bundle_hit_row=
 for asset in $(printf '%s' "$index" | grep -oE '/_nuxt/[A-Za-z0-9._-]+\.js' | sort -u | head -15); do
   body=$(curl -s "${JOURNEY_BASE_URL}${asset}")
-  printf '%s' "$body" | grep -qF 'verdict-option-row' && bundle_hit_row=1
-  printf '%s' "$body" | grep -qF 'type your own answer' && bundle_hit_list=1
+  grep -qF 'verdict-option-row' <<<"$body" && bundle_hit_row=1
+  grep -qF 'type your own answer' <<<"$body" && bundle_hit_list=1
 done
 [ "$bundle_hit_row" = "1" ] || die "served bundle does not carry the v1.1 option rows (stale static/?): no .verdict-option-row anywhere in /_nuxt"
 [ "$bundle_hit_list" = "1" ] || die "served bundle does not carry the typed-answer row (stale static?)"
@@ -97,7 +110,7 @@ step "ok: served SPA carries the list layout (option rows + typed-answer row)"
 # --- browser: a REAL card, rendered and answered. Needs the lane's
 # model; a modelless lane skips this half without going red (the REST
 # half above already judged everything the bundle can carry).
-if ! curl -s "${JOURNEY_BASE_URL}/models" | grep -q '"models":\[[^]]'; then
+if ! grep -q '"models":\[[^]]' <<<"$(curl -s "${JOURNEY_BASE_URL}/models")"; then
   step "skipped: lane has no reachable model - the card render half needs a live run"
   exit 0
 fi

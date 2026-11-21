@@ -25,6 +25,19 @@
 # The skills tab is NOT provider-gated - this recipe runs on any lane.
 
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # SKILL: the throwaway skill's name (the jrn- prefix keeps the journey
 # voice; a single folder component is the name law).
@@ -81,8 +94,8 @@ step "ok: saved skill row renders ($SKILL)"
 poll_http "$JOURNEY_BASE_URL/skills" "\"name\":\"$SKILL\"" \
   || die "GET /skills lost the saved skill"
 content=$(curl -s "$JOURNEY_BASE_URL/skills/content?name=$SKILL")
-printf '%s' "$content" | grep -q "journey CRUD probe skill" || die "GET /skills/content lost the description"
-printf '%s' "$content" | grep -q "first body line" || die "GET /skills/content lost the body"
+grep -q "journey CRUD probe skill" <<<"$content" || die "GET /skills/content lost the description"
+grep -q "first body line" <<<"$content" || die "GET /skills/content lost the body"
 step "ok: the saved skill rides the wire (frontmatter composed, no restart)"
 
 # --- b: edit ---------------------------------------------------------------
@@ -96,13 +109,13 @@ assert_eq "$(setfield description 'journey CRUD probe skill EDITED')" "1" "descr
 jsq '(()=>{const b=[...document.querySelectorAll(".skill-editor-btn")].find((x)=>(x.textContent||"").trim().startsWith("save skill"));if(!b) return 0;b.click();return 1})()' >/dev/null
 i=0; edited=0
 while [ "$i" -lt 20 ]; do
-  if curl -s "$JOURNEY_BASE_URL/skills" | grep -q "journey CRUD probe skill EDITED"; then edited=1; break; fi
+  if grep -q "journey CRUD probe skill EDITED" <<<"$(curl -s "$JOURNEY_BASE_URL/skills")"; then edited=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
 [ "$edited" = "1" ] || die "the description edit never landed on the wire"
 step "ok: the description edit landed on the wire"
 content=$(curl -s "$JOURNEY_BASE_URL/skills/content?name=$SKILL")
-printf '%s' "$content" | grep -q "first body line" \
+grep -q "first body line" <<<"$content" \
   || die "the body did not survive the description edit"
 
 # --- c: remove (armed, then confirm) ---------------------------------------
@@ -118,7 +131,7 @@ jsq '(()=>{const b=[...document.querySelectorAll(".skill-editor-btn.danger")].fi
 
 i=0; gone=0
 while [ "$i" -lt 20 ]; do
-  if ! curl -s "$JOURNEY_BASE_URL/skills" | grep -q "\"name\":\"$SKILL\""; then gone=1; break; fi
+  if ! grep -q "\"name\":\"$SKILL\"" <<<"$(curl -s "$JOURNEY_BASE_URL/skills")"; then gone=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
 [ "$gone" = "1" ] || die "the deleted skill still rides the wire"

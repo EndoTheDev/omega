@@ -36,6 +36,19 @@
 # prefix glob), and the cron runner's GC sweeps the wake entry out of
 # cronstate.json once the home is gone.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 runtag=$(date +%d%H%M%S)
 printf '%s' "$runtag" > "${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
@@ -104,7 +117,7 @@ import json,sys
 rows=json.load(sys.stdin)
 print(json.dumps([r for r in rows if r.get('name')=='$CONT_NAME']))
 " 2>/dev/null)
-printf '%s' "$row" | grep -q "$CONT_NAME" || die "roster row for $CONT_NAME missing: $roster"
+grep -q "$CONT_NAME" <<<"$row" || die "roster row for $CONT_NAME missing: $roster"
 next=$(printf '%s' "$row" | grep -oE '"next_wake": ?"[^"]*"' | head -1)
 case "$next" in
   *'T'*) ;; # an ISO timestamp means the schedule produced a next wake

@@ -23,6 +23,19 @@
 # Residue-free: the trap deletes the seeded mcp entry, the skill dir, the probe file, the
 # board task (whose done move IS the notification seed) and clears the feed.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 if [ -z "${OMEGA_HOME:-}" ]; then
   [ -n "${OMEGA_BIN:-}" ] || die "set OMEGA_HOME or OMEGA_BIN to the serving lane home"
@@ -130,20 +143,19 @@ printf -- '---\nname: %s\ndescription: journey seed - the row menu probe\n---\nb
 
 saved=$(curl -s -X POST "$JOURNEY_BASE_URL/mcp/save" -H 'Content-Type: application/json' \
   -d "{\"name\":\"$MCP\",\"command\":\"jrn-nonexistent-binary\"}")
-printf '%s' "$saved" | grep -q "\"name\":\"$MCP\"" || die "POST /mcp/save did not land $MCP"
+grep -q "\"name\":\"$MCP\"" <<<"$saved" || die "POST /mcp/save did not land $MCP"
 
 created=$(curl -s -X POST "$JOURNEY_BASE_URL/tasks" -H 'Content-Type: application/json' \
   -d "{\"title\":\"$JRN_TASK\"}")
 TASK_ID=$(printf '%s' "$created" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 's/.*"\(t_[a-f0-9]*\)".*/\1/')
 [ -n "$TASK_ID" ] || die "task create failed: $created"
-curl -s -X PATCH "$JOURNEY_BASE_URL/tasks/$TASK_ID" -H 'Content-Type: application/json' \
-  -d '{"status":"done"}' | grep -Eq '"status": ?"done"' || die "the done move (the notification seed) failed"
+grep -Eq '"status": ?"done"' <<<"$(curl -s -X PATCH "$JOURNEY_BASE_URL/tasks/$TASK_ID" -H 'Content-Type: application/json'  -d '{"status":"done"}')" || die "the done move (the notification seed) failed"
 
 JRN_ID=$(new_journey_session menu)
 label_journey_session "$JRN_ID" "jrn-rowmenu-$(date +%d%b%H%M%S)"
 wrote=$(curl -s -X POST "$JOURNEY_BASE_URL/files/write" -H 'Content-Type: application/json' \
   -d "{\"path\":\"$PROBE\",\"content\":\"row menu probe\\n\",\"session\":\"$JRN_ID\"}")
-printf '%s' "$wrote" | grep -q "\"$PROBE\"" || die "POST /files/write did not land $PROBE: $wrote"
+grep -q "\"$PROBE\"" <<<"$wrote" || die "POST /files/write did not land $PROBE: $wrote"
 step "seed: skill $SKILL, mcp $MCP, one notification record, session $JRN_ID"
 
 open_app
@@ -210,7 +222,7 @@ jsq '(() => {const b=[...document.querySelectorAll(".skill-editor-btn.danger")].
 i=0
 gone=0
 while [ "$i" -lt 40 ]; do
-  if ! curl -s "$JOURNEY_BASE_URL/skills" | grep -q "\"$SKILL\""; then gone=1; break; fi
+  if ! grep -q "\"$SKILL\"" <<<"$(curl -s "$JOURNEY_BASE_URL/skills")"; then gone=1; break; fi
   sleep 0.5
   i=$((i + 1))
 done
@@ -267,7 +279,7 @@ jsq '(() => {const b=document.querySelector(".mcp-detail .mcp-confirm-go"); if(!
 i=0
 gone=0
 while [ "$i" -lt 40 ]; do
-  if ! curl -s "$JOURNEY_BASE_URL/mcp/servers" | grep -q "\"$MCP\""; then gone=1; break; fi
+  if ! grep -q "\"$MCP\"" <<<"$(curl -s "$JOURNEY_BASE_URL/mcp/servers")"; then gone=1; break; fi
   sleep 0.5
   i=$((i + 1))
 done

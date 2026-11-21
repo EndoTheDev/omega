@@ -25,6 +25,19 @@
 # worker-onboarding law): refs invalidate each render snapshot.
 
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # JOB: the throwaway job's name (the jrn- prefix keeps the registry
 # voice; [a-z0-9-] is the schema's name grammar).
@@ -70,8 +83,8 @@ step "ok: saved job row renders ($JOB)"
 
 # the wire carries the definition (hot reload without restart)
 wire=$(curl -s "$JOURNEY_BASE_URL/cron/jobs")
-printf '%s' "$wire" | grep -q "\"name\":\"$JOB\"" || die "GET /cron/jobs lost the saved job"
-printf '%s' "$wire" | grep -q '"schedule":"0 12 \* \* \*"' || die "GET /cron/jobs lost the schedule"
+grep -q "\"name\":\"$JOB\"" <<<"$wire" || die "GET /cron/jobs lost the saved job"
+grep -q '"schedule":"0 12 \* \* \*"' <<<"$wire" || die "GET /cron/jobs lost the schedule"
 step "ok: the saved job rides the wire"
 
 # --- c: the last-status contract fields ----------------------------------
@@ -91,7 +104,7 @@ assert_eq "$(setfield schedule '0 13 * * *')" "1" "schedule re-filled (editor pr
 jsq '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn")].find((x)=>(x.textContent||"").trim().startsWith("save job"));if(!b) return 0;b.click();return 1})()' >/dev/null
 i=0; edited=0
 while [ "$i" -lt 20 ]; do
-  if curl -s "$JOURNEY_BASE_URL/cron/jobs" | grep -q '"schedule":"0 13 \* \* \*"'; then edited=1; break; fi
+  if grep -q '"schedule":"0 13 \* \* \*"' <<<"$(curl -s "$JOURNEY_BASE_URL/cron/jobs")"; then edited=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
 [ "$edited" = "1" ] || die "the schedule edit never landed on the wire"
@@ -110,7 +123,7 @@ jsq '(()=>{const b=[...document.querySelectorAll(".cron-editor-btn.danger")].fin
 
 i=0; gone=0
 while [ "$i" -lt 20 ]; do
-  if ! curl -s "$JOURNEY_BASE_URL/cron/jobs" | grep -q "\"name\":\"$JOB\""; then gone=1; break; fi
+  if ! grep -q "\"name\":\"$JOB\"" <<<"$(curl -s "$JOURNEY_BASE_URL/cron/jobs")"; then gone=1; break; fi
   sleep 0.5; i=$((i + 1))
 done
 [ "$gone" = "1" ] || die "the deleted job still rides the wire"

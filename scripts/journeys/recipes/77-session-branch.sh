@@ -6,6 +6,19 @@
 # inline and survives a reload, export is the /export-parity JSONL.
 JOURNEY_NEEDS_MODEL=1
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # fresh_open: this recipe runs against a long-lived chrome (one the
 # runner did NOT launch with a profile reset), so ab open to the SAME
@@ -161,7 +174,7 @@ content=$(printf '%s' "$body" | head -1 | python3 -c "import sys, json; line=jso
 assert_eq "$role" "user" "export first line is the seeded user turn (TUI /export JSONL shape)"
 assert_ne "$content" "" "export content present"
 cd=$(curl -s -I "$JOURNEY_BASE_URL/sessions/$CHILD/export" | grep -i content-disposition | head -1)
-printf '%s' "$cd" | grep -q attachment || die "export: not served as an attachment download ($cd)"
+grep -q attachment <<<"$cd" || die "export: not served as an attachment download ($cd)"
 step "ok: export served as attachment download"
 
 # --- reload: the label + the badges survive --------------------------

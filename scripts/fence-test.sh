@@ -75,7 +75,7 @@ must_block() {  # label, then the fenced invocation
   local label="$1"; shift
   out=$("$@" 2>&1); rc=$?
   [ "$rc" -ne 0 ]         && ok || bad "$label: exited 0 (must refuse)"
-  printf '%s' "$out" | grep -q "FENCE:" && ok || bad "$label: refusal did not name the law: $out"
+  grep -q "FENCE:" <<<"$out" && ok || bad "$label: refusal did not name the law: $out"
 }
 must_pass() {   # label, then the invocation
   local label="$1"; shift
@@ -233,7 +233,7 @@ PYEOF
       BC="$(grep '^OMEGA_WORKER_CARD=' "$FIX/bound.env" | sed 's/^OMEGA_WORKER_CARD=//')"
       out=$(env -i OMEGA_WORKER="$BO" OMEGA_WORKER_CARD="$BC" PATH="$BV" git -C "$R" push --dry-run origin 2>&1); rc=$?
       [ "$rc" -ne 0 ] && ok || bad "bound-env push: exited 0 (must refuse)"
-      printf '%s' "$out" | grep -q "FENCE:" && ok || bad "bound-env push: refusal did not name the law: $out"
+      grep -q "FENCE:" <<<"$out" && ok || bad "bound-env push: refusal did not name the law: $out"
     else
       bad "bind(fenced): worker never bound the task: $(tail -c 400 "$FIX/bind-1.err" 2>/dev/null)"
       kill_bind "${BOUND_PID:-0}"
@@ -259,6 +259,23 @@ PYEOF
 else
   echo "NOTICE: hermes tree absent ($HERMES_DIR) - live-bind assertions skipped (CI host)"
 fi
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
 
 echo "fence-test: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

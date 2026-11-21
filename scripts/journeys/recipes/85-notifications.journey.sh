@@ -23,12 +23,25 @@
 # recipe-lint: allow no-browser - this recipe drives the notifications endpoints over the wire and never opens a page; its only residue is a
 # journey session, reaped by cleanup_journey_residue in run.sh's EXIT trap.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 trap cleanup_journey_residue EXIT
 
 # --- lane alive; the seam answers (a foreign lane 200s with the SPA -
 # the payload check is what proves THIS lane has the seam) ---
 payload=$(curl -s "${JOURNEY_BASE_URL}/notifications")
-printf '%s' "$payload" | grep -qF '"notifications"' || \
+grep -qF '"notifications"' <<<"$payload" || \
   die "lane answered non-JSON to /notifications (wrong lane?): ${JOURNEY_BASE_URL}"
 step "ok: notifications seam mounted"
 
@@ -44,7 +57,7 @@ created=$(curl -s -X POST "${JOURNEY_BASE_URL}/tasks" -H 'Content-Type: applicat
 tid1=$(printf '%s' "$created" | grep -oE '"id": ?"t_[a-f0-9]+"' | head -1 | sed 's/.*"\(t_[a-f0-9]*\)".*/\1/')
 [ -n "$tid1" ] || die "task create failed: $created"
 done_move=$(curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${tid1}" -H 'Content-Type: application/json' -d '{"status":"done"}')
-printf '%s' "$done_move" | grep -Eq '"status": ?"done"' || die "done move failed: $done_move"
+grep -Eq '"status": ?"done"' <<<"$done_move" || die "done move failed: $done_move"
 step "ok: worker completion path fired ($tid1 -> done)"
 
 # the record rides the list with the right shape
@@ -64,7 +77,7 @@ assert n['kind']=='task' and n['verdict']=='ok' and n['read'] is False, n
 assert n['title'].startswith('task ') and n['title'].endswith(' done'), n" \
   || die "record shape wrong: $rec"
 # metadata only: the title line carries no prompt/session content
-if printf '%s' "$rec" | grep -qF "${JRN_TASK}"; then
+if grep -qF "${JRN_TASK}" <<<"$rec"; then
   die "title leaked card text (privacy law): $rec"
 fi
 step "ok: record kind=task verdict=ok, title metadata only"
@@ -109,7 +122,7 @@ for _ in $(seq 1 20); do
   if grep -q "event: notification" "$ssecmd" 2>/dev/null; then
     frame=$(grep -A1 "event: notification" "$ssecmd" | grep "data:" | head -1)
     case "$frame" in
-      *"$tid2"*) printf '%s' "$frame" | grep -qF '"kind":"task"' && sse_ok="yes" ;;
+      *"$tid2"*) grep -qF '"kind":"task"' <<<"$frame" && sse_ok="yes" ;;
     esac
     [ "$sse_ok" = "yes" ] || sse_ok="bad-frame: $frame"
     break
@@ -126,7 +139,7 @@ step "ok: /notifications/events streamed the live emit"
 # clear-all button on the wire). The feed GOES EMPTY - and the store
 # still records after the delete. ---
 clear_out=$(curl -s -X DELETE "${JOURNEY_BASE_URL}/notifications")
-printf '%s' "$clear_out" | grep -Eq '"ok" ?: ?true' || die "clear-all answered: $clear_out"
+grep -Eq '"ok" ?: ?true' <<<"$clear_out" || die "clear-all answered: $clear_out"
 cleared=$(printf '%s' "$clear_out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["cleared"]);' 2>/dev/null)
 [ -n "$cleared" ] || die "clear-all lost the cleared count: $clear_out"
 step "ok: clear-all dropped $cleared records"

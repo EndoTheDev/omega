@@ -39,6 +39,19 @@
 # arm/confirm two-step that needed a second click is dead - the first
 # click now writes and the aria flips straight to the opposite name).
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 SKILL="jrn-tgl$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
 GHOST="jrn-ghost-${SKILL#jrn-tgl}"
@@ -153,11 +166,11 @@ step "seeded: $SKILL_DIR"
 # next listing; die on never
 i=0
 while [ "$i" -lt 40 ]; do
-  curl -s "$JOURNEY_BASE_URL/skills" | grep -q "\"$SKILL\"" && break
+  grep -q "\"$SKILL\"" <<<"$(curl -s "$JOURNEY_BASE_URL/skills")" && break
   sleep 0.5
   i=$((i + 1))
 done
-curl -s "$JOURNEY_BASE_URL/skills" | grep -q "\"$SKILL\"" || \
+grep -q "\"$SKILL\"" <<<"$(curl -s "$JOURNEY_BASE_URL/skills")" || \
   die "seeded skill never showed up in GET /skills"
 step "ok: seeded skill in the inventory"
 
@@ -271,7 +284,7 @@ for ns in skills tools agents; do
   body=$(curl -s -X PUT "$JOURNEY_BASE_URL/disabled/$ns" \
     -H 'Content-Type: application/json' \
     -d "{\"name\":\"$GHOST\",\"enabled\":false}")
-  printf '%s' "$body" | grep -q "toggle refused" || \
+  grep -q "toggle refused" <<<"$body" || \
     die "$ns unknown-name toggle did not answer a visible refusal text: $body"
   code=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$JOURNEY_BASE_URL/disabled/$ns" \
     -H 'Content-Type: application/json' \
@@ -320,7 +333,7 @@ code=$(curl -s -o "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" -w '%{http_cod
 body=$(cat "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$" 2>/dev/null)
 rm -f "$JOURNEY_WORKTMP/omega-jrn-disable-default.$$"
 assert_eq "$code" "409" "the default-agent disable PUT is refused 409"
-printf '%s' "$body" | grep -q "cannot be disabled" || die "the refusal text lost the law: $body"
+grep -q "cannot be disabled" <<<"$body" || die "the refusal text lost the law: $body"
 if fold_has_name agents default; then die "the default agent landed in the fold (refusal bypassed)"; fi
 step "ok: (c) the default agent carries NO toggle, the roster keeps its pills, the wire refuses"
 

@@ -40,8 +40,8 @@ pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
-has() { printf '%s\n' "$1" | grep -qF "$2"; }
-hasnt() { ! printf '%s\n' "$1" | grep -qF "$2"; }
+has() { grep -qF "$2" <<<"$1"; }
+hasnt() { ! grep -qF "$2" <<<"$1"; }
 
 [ -f "$SCRIPT" ] || { echo "factory-prune_test: $SCRIPT missing" >&2; exit 1; }
 
@@ -371,5 +371,53 @@ cd /
 rm -rf "$FIX" 2>/dev/null || true
 
 echo
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+# the behaviour, not the spelling: drive the extracted helpers on a payload
+# that outruns the pipe buffer, with the needle on the FIRST line (the worst
+# case for an early exit). A reformed helper extracts as a fragment and
+# defines nothing, so the drive refuses instead of passing vacuously.
+_pin_big="$(awk 'BEGIN{for(i=1;i<=8000;i++) printf "row %05d done\n", i}')"
+_pin_has="$(awk '/^has\(\)/{print; exit}' "$_PIN_SELF")"
+_pin_hasnt="$(awk '/^hasnt\(\)/{print; exit}' "$_PIN_SELF")"
+[ -n "$_pin_has" ] && ok || bad "PIN: has() not found in this suite"
+[ -n "$_pin_hasnt" ] && ok || bad "PIN: hasnt() not found in this suite"
+_pin_races="$(
+	set -uo pipefail
+	fail=0
+	ok() { :; }
+	bad() { fail=$((fail + 1)); }
+	eval "$_pin_has"
+	eval "$_pin_hasnt"
+	declare -F has >/dev/null && declare -F hasnt >/dev/null || { printf 'nodfn'; exit 0; }
+	i=0
+	while [ "$i" -lt 20 ]; do
+		has "$_pin_big" "row 00001 done"
+		hasnt "$_pin_big" "row 99999 done"
+		i=$((i + 1))
+	done
+	printf '%s' "$fail"
+)"
+case "$_pin_races" in
+0) ok ;;
+nodfn) bad "PIN: the extracted has()/hasnt() defined no function (reformatted?)" ;;
+*) bad "PIN: the assertion helpers lost a match $_pin_races/40 times on a $(( ${#_pin_big} / 1024 )) KB payload" ;;
+esac
+
 echo "factory-prune_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

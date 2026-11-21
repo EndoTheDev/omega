@@ -78,33 +78,33 @@ out=$(run_status ""); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T1: status exited $rc on a healthy fixture (out: $out)"
 
 # T2: both running cards get a worker line, with the pid verdict the host gave.
-printf '%s' "$out" | grep -qE "t_dead +run 4242 +cody +hb [0-9]+m[0-9]+s +pid $VICTIM_PID +gone" \
+grep -qE "t_dead +run 4242 +cody +hb [0-9]+m[0-9]+s +pid $VICTIM_PID +gone" <<<"$out" \
 	&& ok || bad "T2a: the dead worker's line is missing/wrong (out: $out)"
-printf '%s' "$out" | grep -qE "t_alive +run 4243 +vera +hb [0-9]+s +pid $LIVE_PID +alive" \
+grep -qE "t_alive +run 4243 +vera +hb [0-9]+s +pid $LIVE_PID +alive" <<<"$out" \
 	&& ok || bad "T2b: the LIVE worker's line is missing/wrong (out: $out)"
 
 # T3: the corpse marker fires for the dead card only, and names the sources.
-printf '%s' "$out" | grep -q 'CORPSE: the worker process is gone but the card is still running' \
+grep -q 'CORPSE: the worker process is gone but the card is still running' <<<"$out" \
 	&& ok || bad "T3a: no CORPSE marker for a running card whose pid is gone (out: $out)"
 n=$(printf '%s' "$out" | grep -c 'CORPSE:')
 [ "$n" -eq 1 ] && ok || bad "T3b: expected exactly 1 CORPSE marker (dead card only), got $n - a false corpse makes the readout worthless"
-printf '%s' "$out" | grep -qF "task_runs.error for run 4242" \
+grep -qF "task_runs.error for run 4242" <<<"$out" \
 	&& ok || bad "T3c: the corpse marker named no run-level cause (out: $out)"
-printf '%s' "$out" | grep -qF "profiles/cody/logs/agent.log" \
+grep -qF "profiles/cody/logs/agent.log" <<<"$out" \
 	&& ok || bad "T3d: the corpse marker named no traceback path (out: $out)"
 
 # T4: bad endings carry the error text and a per-run traceback pointer.
-printf '%s' "$out" | grep -qF 'run 4241' \
+grep -qF 'run 4241' <<<"$out" \
 	&& ok || bad "T4a: the crashed run is missing from -- recent bad endings -- (out: $out)"
-printf '%s' "$out" | grep -qF 'worker died mid-stream' \
+grep -qF 'worker died mid-stream' <<<"$out" \
 	&& ok || bad "T4b: the crashed run printed no error text (out: $out)"
-printf '%s' "$out" | grep -qF 'traceback:' \
+grep -qF 'traceback:' <<<"$out" \
 	&& ok || bad "T4c: no traceback pointer (out: $out)"
 
 # T5/T6: the two host conditions that kill workers without a kill.
-printf '%s' "$out" | grep -q 'PARKED PROFILES: cody' \
+grep -q 'PARKED PROFILES: cody' <<<"$out" \
 	&& ok || bad "T5: the parked-profile marker was not surfaced (out: $out)"
-printf '%s' "$out" | grep -q 'previous life exited UNCLEANLY' \
+grep -q 'previous life exited UNCLEANLY' <<<"$out" \
 	&& ok || bad "T6: the unclean gateway death in the lifecycle ledger was not surfaced (out: $out)"
 
 # T7: a missing board must refuse LOUDLY, never print a healthy-looking header.
@@ -112,7 +112,7 @@ out=$( cd "$(dirname "$SCRIPT")/.." && env HOME="$(mktemp -d)" HERMES_HOME= \
         HERMES_KANBAN_HOME="$(mixpath "$(mktemp -d)")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
         bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T7a: a missing board exited 0 - verdicts from empty lists"
-printf '%s' "$out" | grep -q 'board DB not found' \
+grep -q 'board DB not found' <<<"$out" \
 	&& ok || bad "T7b: the refusal did not name the missing board (out: $out)"
 
 # T8: no usable reader must refuse too (the sqlite3 CLI is not a fallback).
@@ -124,5 +124,22 @@ out=$( cd "$(dirname "$SCRIPT")/.." && env HOME="$FHOME" HERMES_HOME= FS_PY=/non
 rm -rf "$FHOME"
 
 echo
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
 echo "factory-status_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

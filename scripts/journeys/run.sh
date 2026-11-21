@@ -83,6 +83,19 @@
 # start - a concurrent worker's session is live then.
 
 set -u
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # --- suite run lock ----------------------------------------------------------
 # A journey suite is not concurrency-safe: two suites running at once share
@@ -595,7 +608,7 @@ launch_chrome() {
   CHROME_UD="$UD"
   local i=0
   while [ "$i" -lt 20 ]; do
-    if curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome; then
+    if grep -q Chrome <<<"$(curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null)"; then
       return 0
     fi
     sleep 0.5
@@ -659,7 +672,7 @@ trap 'journey_lock_release; stop_chrome; rm -f "$JRN_LIVE_FILE" 2>/dev/null' EXI
 # the diagnosis below: the old follow-up curl doubled the wait on a dead lane
 # and could re-hang on a lane that froze after the first attempt.
 lane_health="$(curl -s -m 10 "$JOURNEY_BASE_URL/health" 2>/dev/null)"
-if ! printf '%s' "$lane_health" | grep -q '"ok"'; then
+if ! grep -q '"ok"' <<<"$lane_health"; then
   echo "journeys: lane $JOURNEY_BASE_URL is not healthy (infra, not product)" >&2
   printf '%s\n' "$lane_health" >&2 || true
   exit 2
@@ -675,7 +688,7 @@ CHROME_UD=""
 trap 'exit 130' INT
 trap 'exit 143' TERM
 chrome_listening() {
-  curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null | grep -q Chrome
+  grep -q Chrome <<<"$(curl -s "http://127.0.0.1:$JOURNEY_CHROME_PORT/json/version" 2>/dev/null)"
 }
 # --- the port this run owns (mechanism: one CDP port for the host) -----------
 # A browser already answering on the DEFAULT port is not ours to drive: it is
@@ -827,7 +840,7 @@ export AB
 # says nothing about the presentation. The nightly CI lane without model
 # creds runs green with skips; the dev lane runs everything.
 lane_has_models() {
-  curl -s -m 10 "$JOURNEY_BASE_URL/models" | grep -q '"models":\[[^]]'
+  grep -q '"models":\[[^]]' <<<"$(curl -s -m 10 "$JOURNEY_BASE_URL/models")"
 }
 NEEDS_MODEL_PROBE_DONE=0
 NEEDS_MODEL_PROBE_RESULT=0

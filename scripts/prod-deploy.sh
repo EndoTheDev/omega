@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # prod-deploy.sh <version-tag>
 #
@@ -90,7 +103,7 @@ ssh_run() {
 health_ready() {
 	local body=${1:-} got
 	[ -n "$body" ] || return 1
-	printf '%s' "$body" | grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' || return 1
+	grep -Eq '"status"[[:space:]]*:[[:space:]]*"ok"' <<<"$body" || return 1
 	got=$(printf '%s' "$body" |
 		sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 	[ "$got" = "$VERSION" ]
@@ -118,7 +131,7 @@ if [ -z "$VERSION" ]; then
 	die "version tag is required"
 fi
 # Strict shape: also the injection guard - the tag rides a remote command line.
-if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.]*)?$'; then
+if ! grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.]*)?$' <<<"$VERSION"; then
 	die "not a version tag: '$VERSION' (want vMAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH-nightly.YYYYMMDD)"
 fi
 

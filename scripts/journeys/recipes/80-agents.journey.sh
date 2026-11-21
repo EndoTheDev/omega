@@ -21,6 +21,19 @@
 # the cleanup trap (no agent dir is scaffolded on the live lane - the
 # nightly would accumulate them; scaffold lives in the Go gates).
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 open_app
 ab wait --load networkidle >/dev/null 2>&1 || true
@@ -33,7 +46,7 @@ step "ok: dock tree renders ($panes panes)"
 
 # --- inventory: the default agent exists by definition ---
 inv=$(curl -s "${JOURNEY_BASE_URL}/agents")
-printf '%s' "$inv" | grep -Eq '"name": ?"default"' || \
+grep -Eq '"name": ?"default"' <<<"$inv" || \
   die "GET /agents lost the default agent: $inv"
 step "ok: /agents lists default"
 
@@ -50,8 +63,8 @@ assert_eq "$counts" "$names" "every profile row carries session_count"
 
 # --- detail ---
 det=$(curl -s "${JOURNEY_BASE_URL}/agents/default")
-printf '%s' "$det" | grep -Eq '"name": ?"default"' || die "GET /agents/default returned $det"
-printf '%s' "$det" | grep -q '"dir"' || die "detail lost the dir field: $det"
+grep -Eq '"name": ?"default"' <<<"$det" || die "GET /agents/default returned $det"
+grep -q '"dir"' <<<"$det" || die "detail lost the dir field: $det"
 code=$(curl -s -o /dev/null -w '%{http_code}' "${JOURNEY_BASE_URL}/agents/does-not-exist-jrn")
 assert_eq "$code" "404" "unknown agent detail 404s"
 step "ok: default detail answers, ghost 404s"
@@ -62,23 +75,23 @@ printf '%s' "$runtag" > "${JRN_TAGFILE:-$JOURNEY_WORKTMP/omega-jrn-runtag}"
 JRN_ID="jrn-${runtag}-agents"
 resp=$(curl -s -X POST "${JOURNEY_BASE_URL}/agents/default/sessions" \
        -H 'Content-Type: application/json' -d "{\"id\": \"${JRN_ID}\"}")
-printf '%s' "$resp" | grep -q "$JRN_ID" || die "POST /agents/default/sessions failed: $resp"
+grep -q "$JRN_ID" <<<"$resp" || die "POST /agents/default/sessions failed: $resp"
 # residue-free: the jrn- session dies in the trap (the residue reaper,
 # card t_a99ffcd7 - the broad sweep also covers crashed-run leftovers)
 trap cleanup_journey_residue EXIT
 step "ok: created $JRN_ID as the default agent"
 
 # the row carries the binding agent=default
-echo "$resp" | grep -Eq '"agent": ?"default"' || die "created row lost agent=default: $resp"
+grep -Eq '"agent": ?"default"' <<<"$resp" || die "created row lost agent=default: $resp"
 
 # the agent's own list carries it
 agent_list=$(curl -s "${JOURNEY_BASE_URL}/agents/default/sessions")
-echo "$agent_list" | grep -q "$JRN_ID" || die "agent session list lost $JRN_ID"
+grep -q "$JRN_ID" <<<"$agent_list" || die "agent session list lost $JRN_ID"
 step "ok: /agents/default/sessions lists the bound session"
 
 # a DEFAULT-bound row is visible on the plain sessions list
 plain=$(curl -s "${JOURNEY_BASE_URL}/sessions")
-echo "$plain" | grep -q "$JRN_ID" || die "default-bound session missing from GET /sessions"
+grep -q "$JRN_ID" <<<"$plain" || die "default-bound session missing from GET /sessions"
 bad=$(printf '%s' "$plain" | python3 -c '
 import json,sys
 rows=json.load(sys.stdin)
@@ -88,7 +101,7 @@ step "ok: default-bound row rides GET /sessions, nothing else leaks in"
 
 # --- transcript carries the agent ---
 trans=$(curl -s "${JOURNEY_BASE_URL}/sessions/${JRN_ID}/transcript")
-echo "$trans" | grep -Eq '"agent": ?"default"' || \
+grep -Eq '"agent": ?"default"' <<<"$trans" || \
   die "transcript response lost the agent field"
 step "ok: transcript carries agent=default"
 

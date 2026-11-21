@@ -31,6 +31,19 @@
 #   JOURNEY_CLOCK_PCT   the run's timing scale, exported by run.sh
 
 JOURNEY_BASE_URL=${JOURNEY_BASE_URL:-http://127.0.0.1:8098}
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 JOURNEY_CHROME_PORT=${JOURNEY_CHROME_PORT:-9333}
 # the run's own identity: private tag record, private browser session.
 # run.sh exports it; a standalone recipe run gets its own shell pid.
@@ -524,7 +537,7 @@ poll_http() {
     case "$code" in
       2*|3*)
         answered=$((answered + 1))
-        printf '%s' "$out" | sed '$d' | grep -q "$pat" && return 0
+        grep -q "$pat" <<<"$(printf '%s' "$out" | sed '$d')" && return 0
         ;;
       *) silent=$((silent + 1)) ;;
     esac
@@ -678,7 +691,7 @@ assert_no_console_errors() {
   if [ -n "${JOURNEY_DEV_LANE:-}" ]; then
     errs=$(printf '%s' "$errs" | grep -viE 'vite|hmr|nuxt devtools|suspense')
   fi
-  if printf '%s' "$errs" | grep -qiE 'error|referenceerror|typeerror|syntaxerror'; then
+  if grep -qiE 'error|referenceerror|typeerror|syntaxerror' <<<"$errs"; then
     die "console errors on $JOURNEY_BASE_URL: $errs"
   fi
   step "ok: console silent"
@@ -761,7 +774,7 @@ new_journey_session() {
   # The transport is what fails here, not the lane (curl rc 128+ dies on a signal
   # under suite load), so it gets the same bounded budget a read does.
   tries="$JOURNEY_HTTP_READ_TRIES"
-  while ! printf '%s' "$resp" | grep -q "$id" && [ "$tries" -gt 1 ]; do
+  while ! grep -q "$id" <<<"$resp" && [ "$tries" -gt 1 ]; do
     tries=$((tries - 1))
     printf '%s [journey] POST /sessions answered nothing (rc=%s) - retrying (%s left, the id is this run-owned session)\n' \
       "$(date +%H:%M:%S)" "$rc" "$tries" >&2
@@ -770,7 +783,7 @@ new_journey_session() {
            -d "{\"id\": \"${id}\"}")
     rc=$?
   done
-  printf '%s' "$resp" | grep -q "$id" \
+  grep -q "$id" <<<"$resp" \
     || die "POST /sessions failed (rc=$rc): ${resp:-<no answer>}"
   printf '%s\n' "$id"
 }
