@@ -27,8 +27,7 @@ type Server struct {
 	tools map[string]core.Tool
 	// runs is a per-PROCESS hub, not per-bind: every multi-bind mirror shares it
 	// (HTTPChannel.Start swaps it in), or a run started through the action pipe on one
-	// bind is invisible to the transcript/events reads on the others - exactly the hub
-	// invisibility journey 30 caught.
+	// bind is invisible to the transcript/events reads on the others.
 	runs *RunHub // detached /chat runs by session id (reattach surface)
 	// sockets is the push channel's fan-out. eph is the no-persist (ephemeral) session
 	// registry: `eph-` ids live here, never in the store - invisible to every
@@ -39,15 +38,15 @@ type Server struct {
 	verdictMu  sync.Mutex
 	verdictSrc verdictCardSource
 	settings   core.Settings
-	// modules is the optional module-toggle seam (v0.12 E2): the /modules endpoints serve
+	// modules is the optional module-toggle seam: the /modules endpoints serve
 	// registry introspection + live toggles through it; a nil value answers 501.
 	modules core.ModuleToggles
-	// registries is the optional registry-browser toggle seam (v0.14.1): the /disabled
+	// registries is the optional registry-browser toggle seam: the /disabled
 	// endpoints serve and write the config.yaml `disabled:` fold's skills/tools/agents
 	// namespaces through it; a nil value answers 501.
 	registries core.RegistryToggles
 	seams seamSet
-	// canvas is the runtime behind the canvas transport (arc 3b). Nil means nothing
+	// canvas is the runtime behind the canvas transport. Nil means nothing
 	// mounted - /ui/canvas serves [] and /ui/actions answers the unknown-module 404.
 	canvas *agent.Canvas
 	chat *ChatCapsule
@@ -82,7 +81,7 @@ type Server struct {
 	serve http.Handler
 }
 
-// seamSet is the optional-module surface behind the Server's routes (v0.12 E2).
+// seamSet is the optional-module surface behind the Server's routes.
 type seamSet struct {
 	mu sync.RWMutex
 	// modules is the module-rest mux rebuilt from ctx.ModuleRoutes at every rewire. A nil
@@ -93,11 +92,10 @@ type seamSet struct {
 	// has no precedence hook across muxes, so the rescue layer reads.
 	moduleLiterals map[string]http.HandlerFunc
 	logger         agent.LoggerProvider
-	// ctx is the live Context (part 3, the seam constitution): the capsule-facing routes
-	// resolve their services per request from the universal registry - a live toggle swaps
-	// the pointer under their feet exactly the way the old pinned fields followed the
-	// rewire. Nil-safe: a directly constructed Server (tests) with no Context rewired
-	// answers the nil-seam degradation (501 / empty).
+	// ctx is the live Context (the seam constitution): the capsule-facing routes
+	// resolve their services per request from the universal registry - a live toggle
+	// swaps the pointer under their feet. Nil-safe: a directly constructed Server
+	// (tests) with no Context rewired answers the nil-seam degradation (501 / empty).
 	ctx *core.Context
 	commands       []core.ExtensionCommand
 	commandHandler func(ctx context.Context, name, args string) (core.CommandResult, error)
@@ -259,19 +257,18 @@ func moduleLiterals(routes []core.ModuleRoute) map[string]http.HandlerFunc {
 	return out
 }
 
-// registerRoutes mounts the base endpoint set onto the shared mux. The patterns are
-// exactly the ones the pre-split NewServer registered for these handlers; the shell's
-// own routes (health, themes, module toggle, disabled fold, inspector reads, SPA
-// catch-all) stay in the rump's NewServer against the same mux.
+// registerRoutes mounts the base endpoint set onto the shared mux. The shell's own
+// routes (health, themes, module toggle, disabled fold, inspector reads, SPA catch-all)
+// stay in api's NewServer against the same mux.
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/models", s.handleModels)
 	mux.HandleFunc("/chat", s.handleChat)
 	mux.HandleFunc("/attach-image", s.handleAttachImage)
 	mux.HandleFunc("/attach-file", s.handleAttachFile)
-	// (the raw-bytes image route was the file explorer's. The base keeps the chat floor:
-	// POST /sessions (session id creation), /sessions/{id} (detail/context/delete -
-	// pattern-atomic, the chat page calls its PATCH and ephemeral DELETE live), and the
-	// live-run reads (events/stop/transcript/variants) + verdicts.
+	// The base keeps the chat floor: POST /sessions (session id creation),
+	// /sessions/{id} (detail/context/delete - pattern-atomic, the chat page calls its
+	// PATCH and ephemeral DELETE live), and the live-run reads
+	// (events/stop/transcript/variants) + verdicts.
 	mux.HandleFunc("POST /sessions", s.handleSessionCreate)
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
@@ -279,18 +276,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
 	mux.HandleFunc("/sessions/{id}/new", s.handleSessionNew)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
-	// The workspace PICKER + @ intent walk rode the files capsule out with wave 3.
 	mux.HandleFunc("/tools", s.handleTools)
 	mux.HandleFunc("/commands", s.handleCommands)
 	mux.HandleFunc("/commands/dispatch", s.handleCommandDispatch)
 	mux.HandleFunc("/settings", s.handleSettings)
 	mux.HandleFunc("/settings/raw", s.handleSettingsRaw)
 	mux.HandleFunc("/settings/reset", s.handleSettingsReset)
-	// GET /insights rode the store capsule out with wave 2 (a view over store data. The
-	// /agents roster surface rode the continuous capsule out with wave 2
-	// (harness/continuous/agentsrest.go): every handler in the old server_agents.go served
-	// the roster tab - the chat page never fetches agent profiles (verified: the only
-	// /agents consumer is AgentsPanel.vue), so the whole file moved.
 	mux.HandleFunc("/ui/canvas", s.handleCanvas)
 	mux.HandleFunc("/ui/actions", s.handleUIActions)
 }
@@ -303,8 +294,8 @@ func (s *Server) Active(id string) bool { return s.runs.active(id) }
 // Agent exposes the agent handle.
 func (s *Server) Agent() *agent.Agent { return s.agent }
 
-// Store exposes the store seam (the shell's /health database fact pings it through. Nil
-// when no store module is mounted - the health body then carries no database fact.
+// Store exposes the store seam. Nil when no store module is mounted - the health body
+// then carries no database fact.
 func (s *Server) Store() agent.StoreProvider { return s.store }
 
 // ModuleToggles exposes the module-toggle seam (GET/PUT /modules).
@@ -326,8 +317,8 @@ func (s *Server) Canvas() *agent.Canvas { return s.canvas }
 // ActiveRun reports the run hub's active state for one session id.
 func (s *Server) ActiveRun(id string) bool { return s.runs.active(id) }
 
-// BindInspectSeams installs the optional provider surfaces the shell's inspector. The
-// capsule services (cron, skills) ride the universal registry instead - the caller
+// BindInspectSeams installs the optional provider surfaces the shell's inspector reads.
+// The capsule services (cron, skills) ride the universal registry instead - the caller
 // rewires the Context (RewireSeams) and the routes resolve by key.
 func (s *Server) BindInspectSeams(logger agent.LoggerProvider) {
 	s.seams.mu.Lock()
@@ -619,7 +610,7 @@ type chatRequest struct {
 	// Unexported: never part of the request wire.
 	branchFloor int64
 	// persistInput is the send's incoming messages. Unexported: never part of the request
-	// wire. Unexported: never part of the request wire.
+	// wire.
 	workspace string
 	// workspacePromptContext is the trust-gated AGENTS.md context of the workspace.
 	// Unexported: never part of the request wire.
@@ -1098,11 +1089,10 @@ func (s *Server) stopRun(id string) (ok, cancellable bool) {
 	return ok, cancellable
 }
 
-// sessionHistory loads the session's persisted history and returns it with the. When no
-// session is configured (nil store or empty ID), messages are returned unchanged.
-// Failures come back as runErrors - the caller owns its error surface (chat-last 1/3:
-// one history load for the /chat entry AND the chat panel's retry action; the status
-// codes are the old handler's).
+// sessionHistory loads the session's persisted history and returns it with the incoming
+// messages appended. When no session is configured (nil store or empty ID), messages
+// are returned unchanged. Failures come back as runErrors - the caller owns its error
+// surface (one history load for the /chat entry AND the chat panel's retry action).
 func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming []core.Message) ([]core.Message, error) {
 	if isEphemeralID(req.SessionID) {
 		// Ephemeral context: the registry's in-memory history IS the conversation - the store

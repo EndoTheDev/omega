@@ -20,7 +20,7 @@ type Context struct {
 
 	ModuleRoutes []ModuleRoute
 
-	// Panel providers (additive - canvas contract, arc 3a).
+	// Panel providers (additive - the canvas contract).
 	PanelProviders []PanelProvider
 
 	services *Services
@@ -34,7 +34,7 @@ type Context struct {
 	CWD     string
 	Configs map[string]any // per-plugin typed config, keyed by plugin Name()
 
-	// Lifecycle is the goroutine fence run-group (v0.12 E1). Nil until the first module
+	// Lifecycle is the goroutine fence run-group. Nil until the first module
 	// registers a handle - Reach it through RunGroup, never assign it directly.
 	Lifecycle *Lifecycle
 
@@ -61,7 +61,7 @@ func (c *Context) Services() *Services {
 	return c.services
 }
 
-// RunGroup returns the Context's fence run-group (the goroutine fence, v0.12 E1).
+// RunGroup returns the Context's fence run-group.
 func (c *Context) RunGroup() *Lifecycle {
 	if c.Lifecycle == nil {
 		c.Lifecycle = &Lifecycle{}

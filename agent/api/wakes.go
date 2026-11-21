@@ -258,7 +258,8 @@ func wakeToolName(ctx context.Context) string {
 	return ""
 }
 
-// AppendTurnMessage passes the message through and, when a wake run's completion is.
+// AppendTurnMessage passes the message through, standing a visible note in for an
+// all-empty wake completion.
 func (w *wakeNoteSink) AppendTurnMessage(ctx context.Context, msg core.Message) error {
 	if a, ok := msg.(core.Assistant); ok {
 		if agent.IsEmptyAssistant(a) {
@@ -384,8 +385,7 @@ func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 // pending call is settled without a result (nothing re-enters a conversation the human
 // ended), and the wake FIFO is emptied so a queued settlement cannot launch either.
 // Settling is not cosmetic - the never-compact law and the pending placeholders both read
-// this table, and a row left behind would pin the compactor's boundary on a
-// conversation that is.
+// this table, and a row left behind would pin the compactor's boundary.
 func (s *Server) abandonPending(sessionID string) {
 	lgr := s.Logger()
 	if l := s.yieldLedger; l != nil {

@@ -37,7 +37,7 @@ type attachImageRequest struct {
 	URL string `json:"url"`
 }
 
-// urlHost extracts the host (IP or hostname) from an absolute http(s) URL, or "" when.
+// urlHost extracts the host (IP or hostname) from an absolute http(s) URL.
 func urlHost(raw string) string {
 	u, err := url.Parse(raw)
 	if err != nil {

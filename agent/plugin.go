@@ -33,19 +33,19 @@ type Describer interface {
 	ConfigKey() string
 }
 
-// Dismounter is an optional Plugin capability (v0.12 E1).
+// Dismounter is an optional Plugin capability.
 
-// Toggleable is an optional Plugin capability (the tier law, grill Q1/Q13). The
+// Toggleable is an optional Plugin capability (the tier law). The
 // always-on tier - agent-loop, provider and logging - and the shell's channel (served
 // by api/) never implement it, and disabling them fails the boot loud.
 type Toggleable interface {
 	Toggleable() bool
 }
 
-// filterDisabled applies the config.yaml `disabled:` list (grill Q1) to the plugin set
+// filterDisabled applies the config.yaml `disabled:` list to the plugin set
 // before anything mounts: a disabled name must exist and name a toggleable capsule (the
 // tier law), and a remaining plugin whose required seam is mounted only by a disabled
-// module fails the boot naming the edge (Q3 - no silent degradation).
+// module fails the boot naming the edge, never a silent degradation.
 func filterDisabled(plugins []Plugin, disabled []string) ([]Plugin, error) {
 	if len(disabled) == 0 {
 		return plugins, nil

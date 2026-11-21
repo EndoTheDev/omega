@@ -1,4 +1,4 @@
-// The registry introspection and the live toggle (v0.12 phase E2). Every toggle is
+// The registry introspection and the live toggle. Every toggle is
 // census-checked: a dismount may only remove surface, never grow it; an enable may only
 // add it, never shrink it.
 package agent
@@ -44,7 +44,7 @@ func loneProviders(catalog []Plugin, name string) map[string]bool {
 }
 
 // DependentModules returns the ACTIVE modules that require a seam only name provides.
-// Disabled modules are never dependents: Q3 stops them at boot, they are not live to
+// Disabled modules are never dependents: the boot refuses them, they are not live to
 // strand.
 func (r *Registry) DependentModules(name string) []string {
 	r.mu.Lock()
@@ -131,9 +131,9 @@ func (r *Registry) logRefusal(name, predicate string, err error) {
 // Toggle enables or disables one module live. Disable: the cascade (name + transitive
 // dependents) dismounts in reverse topo order through the journal path; the census must
 // not GROW, or the toggle is rejected and the cascade is best-effort put back. Enable:
-// every required seam must already be mounted (Q3 - the rejection names the missing
+// every required seam must already be mounted (the rejection names the missing
 // edge); the mount goes through the scoped proxy, and a panic rolls back and rejects
-// with the ModulePanicError text (Q11).
+// with the ModulePanicError text.
 func (r *Registry) Toggle(ctx *core.Context, name string, enabled bool, deps core.StartDeps) error {
 	if enabled {
 		return r.toggleOn(ctx, name, deps)
@@ -190,7 +190,6 @@ func (r *Registry) toggleOn(ctx *core.Context, name string, deps core.StartDeps)
 	if r.isActive(name) {
 		return nil // already on
 	}
-	// Q3, surfaced: every required seam must be mounted now.
 	r.mu.Lock()
 	activeProvides := map[string]string{}
 	for _, m := range r.catalogOrder {

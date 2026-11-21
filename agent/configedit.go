@@ -1,7 +1,6 @@
 package agent
 
-// agent/configedit.go: the agents DEFINITION LAYER (0.17.3 make-over,
-// the backend half of the two-card flip). The
+// agent/configedit.go: the agents DEFINITION LAYER. The
 // agents/<name>/config/config.yaml file is the whole definition of an
 // agent; this file is its read, its write, and the laws both enforce:
 //
@@ -454,7 +453,7 @@ func normalizeNames(in []string) []string {
 // settings truth the request must respect; visible is the skill registry the agent can
 // see (own + shared + main's own when inherit.skills is on).
 func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []string) error {
-	// The secret-free law: a secret written into an agent file is a law violation, not.
+	// The secret-free law: a secret written into an agent file is a law violation.
 	// Name the endpoint that actually owns it so the caller has a next step.
 	for _, retired := range []struct {
 		key   string

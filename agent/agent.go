@@ -16,7 +16,7 @@ type Agent struct {
 	provider      Provider
 	tools         map[string]core.Tool
 	toolProviders []core.ToolProvider
-	// tpMu guards toolProviders and extensionInfos: a live module toggle (v0.12 E2) swaps
+	// tpMu guards toolProviders and extensionInfos: a live module toggle swaps
 	// both sets mid-process while concurrent runs and the /tools and /extensions
 	// inventories read them under the loop.
 	tpMu   sync.RWMutex
@@ -66,7 +66,7 @@ func (a *Agent) SetEventObserverSource(src func() []core.EventObserver) {
 	a.eventObserverSource = src
 }
 
-// sessionEventObservers returns the session-attributed spine snapshot source; nil is.
+// sessionEventObservers returns the session-attributed spine snapshot source.
 func (a *Agent) sessionEventObservers() []core.SessionEventObserver {
 	if a.sessionObserverSource == nil {
 		return nil
@@ -143,7 +143,7 @@ func (a *Agent) SetPromptContext(s string) {
 }
 
 // SetToolProviders installs additional tool providers (from extensions). The
-// live-toggle path (v0.12 E2) calls this mid-process; concurrent runs read it under the
+// live-toggle path calls this mid-process; concurrent runs read it under the
 // tpMu lock - the loop always receives a snapshot taken under the same lock.
 func (a *Agent) SetToolProviders(tps []core.ToolProvider) {
 	a.tpMu.Lock()
@@ -217,7 +217,7 @@ func (a *Agent) ToolsWithDisabled() (tools map[string]core.Tool, disabled map[st
 	return tools, out
 }
 
-// SetDisabledTools installs the config.yaml disabled.tools opt-out (v0.14.1).
+// SetDisabledTools installs the config.yaml disabled.tools opt-out.
 func (a *Agent) SetDisabledTools(names []string) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
@@ -332,7 +332,7 @@ func (a *Agent) SetLoopProvider(loop LoopProvider) {
 	a.loop = loop
 }
 
-// SetUserInput sets a channel for receiving user messages while the agent loop is.
+// SetUserInput sets a channel for receiving user messages while the agent loop runs.
 // One-shot mode (omega run) leaves it nil.
 func (a *Agent) SetUserInput(ch chan string) {
 	a.userInput = ch

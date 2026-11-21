@@ -8,7 +8,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The module-toggle surface (v0.12 E2). A host without the seam (nil modules) answers
+// The module-toggle surface. A host without the seam (nil modules) answers
 // 501 so the pane can hide the list.
 
 // shellModules never appear in the list.

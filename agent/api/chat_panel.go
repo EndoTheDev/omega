@@ -1,7 +1,7 @@
 package api
 
 // The chat canvas surface: the conversation itself rides the canvas contract. The /chat
-// REST + SSE API surface stays exactly where it is (settled Q6a); the canvas is
+// REST + SSE API surface stays exactly where it is; the canvas is
 // additive for renderers. Push law (the kanban capsule's law): mutations through the
 // module's own faces (the launchRun loop, the action pipe) push through the sink the
 // canvas runtime installed at registration; a nil or failed push never fails a run -
@@ -261,7 +261,7 @@ func composeItems(persisted, open []transcriptItem) []transcriptItem {
 		if i, dup := seen[sig]; dup {
 			if out[i].Kind == "tool_call" && it.StartedAt != "" {
 				// the persisted twin adopts the open row's start stamp too: the row the renderer
-				// keeps is the one that must carry the clock (round 3 - the stamp is the only
+				// keeps is the one that must carry the clock (the stamp is the only
 				// anchor that survives a cached payload)
 				out[i].StartedAt = it.StartedAt
 			}

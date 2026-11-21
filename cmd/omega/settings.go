@@ -729,7 +729,7 @@ func applyProviderInstances(cfg *Config, key string, raw any) error {
 				return instancesDoor(name, "api_key")
 			}
 		default:
-			// a plain key: an identical echo of the stored secret is a no-op, anything else is.
+			// a plain key: an identical echo of the stored secret is a no-op.
 			if !(has && existing.APIKey == inst.APIKey) {
 				return instancesDoor(name, "api_key")
 			}

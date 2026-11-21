@@ -211,7 +211,7 @@ func run(args []string) error {
 			}
 			return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 		}
-		// Module-owned subcommands (v0.12 phase D, Q6 - CLI homecoming).
+		// Module-owned subcommands.
 		if handled, err := dispatchModuleCLI(args, sub, rest); handled {
 			return err
 		}
@@ -224,8 +224,8 @@ func run(args []string) error {
 
 // isRootSubcommand reports whether sub is a built-in switch case in run.
 // The list must stay in sync with run's switch: a built-in keeps the root's flag
-// short-circuit on its trailing argv, while a module subcommand owns the whole tail
-// (Q6). `tools` is a built-in that is deliberately ABSENT here: it carries a module
+// short-circuit on its trailing argv, while a module subcommand owns the whole tail.
+// `tools` is a built-in that is deliberately ABSENT here: it carries a module
 // subcommand's flag contract (its own `--help`, its own argv parse) while living in
 // cmd/omega, where the one config.yaml writer (writeDisabled) already sits.
 func isRootSubcommand(sub string) bool {
@@ -447,7 +447,7 @@ func requireConfig(configPath string) error {
 	return nil
 }
 
-// resolveHomePaths fills in home-relative defaults for DBPath and Skills.Dir when.
+// resolveHomePaths fills in home-relative defaults for DBPath and Skills.Dir.
 // Returns an error if the home directory cannot be created.
 func resolveHomePaths(cfg *Config) error {
 	home := omegaHome()
@@ -519,8 +519,6 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	}, nil
 }
 
-// buildConfigs and webBaseURL moved out in arc 2b.
-
 // newAgent wires config into a provider, agent, store, and extensions via the. The
 // store and plugin context are returned so the caller can close the store and start
 // channels.
@@ -534,7 +532,7 @@ func newAgent(cfg Config, configPath string, appendPrompts []string, trust trust
 		Configs: agent.RouteConfigs(plugins, cfg),
 		DisabledTools: cfg.Disabled.Tools,
 	}
-	// The API mount honors the config.yaml disabled.modules toggle list (v0.12 E1, Q1).
+	// The API mount honors the config.yaml disabled.modules toggle list.
 	// ALWAYS OFF: an agent home mounts the locked pair plus exactly the capsules its
 	// definition enables - everything else toggleable is off, whether or not main runs it.
 	// The host's own fold still applies (the subset law: an agent can never enable more
@@ -726,10 +724,10 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		// Fresh install, no config.yaml anywhere.
 		configFile = omegaHome() + "/config/config.yaml"
 	}
-	// The E2 module-toggle surface (Q7): the registry behind the seam, arming the fence
+	// The module-toggle surface: the registry behind the seam, arming the fence
 	// handles exactly like the boot-time StartAll below, persisting the toggle list to the
-	// config.yaml disabled: key boot reads. v0.14.1 adds the registry-toggle seam next to
-	// it: the skills/tools/agents namespaces of the same fold, one shared live fold
+	// config.yaml disabled: key boot reads. The registry-toggle seam rides next to it:
+	// the skills/tools/agents namespaces of the same fold, one shared live fold
 	// pointer so a module toggle and a registry toggle can never clobber each other's
 	// namespaces.
 	fold := &DisabledNamespaces{
@@ -738,7 +736,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		Tools:      cfg.Disabled.Tools,
 		Agents:     cfg.Disabled.Agents,
 	}
-	// one mutex for BOTH toggle surfaces (gate must-fix 1).
+	// one mutex for BOTH toggle surfaces.
 	foldMu := &sync.Mutex{}
 	mods := &omegaModules{
 		pctx:       pctx,
@@ -788,7 +786,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		}(ch)
 	}
 
-	// The fence (v0.12 E1): module background work starts here, after the mount commit.
+	// The fence: module background work starts here, after the mount commit.
 	if err := pctx.RunGroup().StartAll(ctx, core.StartDeps{
 		Ctx:   pctx,
 		Agent: ag,

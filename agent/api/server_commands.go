@@ -13,7 +13,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// commandDispatchTimeout caps one extension-command dispatch (v0.14.1 audit NOTE-tier).
+// commandDispatchTimeout caps one extension-command dispatch.
 const commandDispatchTimeout = time.Minute
 
 // The command palette's server surface. The old shell ran slash commands locally -
@@ -105,7 +105,7 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "no command handler mounted", http.StatusNotImplemented)
 			return
 		}
-		// the dispatch runs under a hard timeout (v0.14.1 audit NOTE-tier): a module command
+		// the dispatch runs under a hard timeout: a module command
 		// handler that never returned previously pinned the HTTP request forever - now the
 		// wire answers 500 and the client walks away the invoking surface's session rides the
 		// context: a session-scoped command resolves it with core.CommandSession instead of

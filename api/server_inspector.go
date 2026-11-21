@@ -287,7 +287,7 @@ func (s *Server) pushLogDelta(path string, offset int64, carry string) (int64, s
 		return offset, carry
 	}
 	if !s.Sockets().Wants(agentapi.TopicLogs) {
-		// nobody asked: skip the bytes, keep the offset at the end so a later subscriber is.
+		// nobody asked: skip the bytes, keep the offset at the end.
 		return size, ""
 	}
 	n := size - offset

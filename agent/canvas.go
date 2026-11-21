@@ -1,4 +1,4 @@
-// The canvas runtime (arc 3a): the host-side registry behind the canvas contract.
+// The canvas runtime: the host-side registry behind the canvas contract.
 package agent
 
 import (
@@ -28,7 +28,7 @@ type seamTally struct {
 	refused  int
 }
 
-// ActionTally is one accept-counter snapshot (phase F, sketch 3).
+// ActionTally is one accept-counter snapshot.
 type ActionTally struct {
 	Accepted int
 	Refused  int
@@ -88,7 +88,7 @@ func NewCanvas(ctx *core.Context, emit func(core.Event)) (*Canvas, error) {
 	return c, nil
 }
 
-// installSink hands one registered provider its update closure - the arc 4b law.
+// installSink hands one registered provider its update closure.
 func (c *Canvas) installSink(module string, p core.PanelProvider) {
 	if module == "" {
 		return
@@ -202,7 +202,7 @@ func (c *Canvas) Update(module string, panel core.Panel) error {
 	return nil
 }
 
-// Resync reconciles the runtime against the live Context (v0.12 E2). The callers hold
+// Resync reconciles the runtime against the live Context. The callers hold
 // the toggle serialization: this runs after the mount machinery changed the Context and
 // before the serving surface re-reads it.
 func (c *Canvas) Resync(ctx *core.Context) error {
@@ -268,7 +268,7 @@ func moduleNameOf(p core.PanelProvider) string {
 	return module
 }
 
-// Dispatch routes one action call through the pipe (settled Q4b): the module must be
+// Dispatch routes one action call through the pipe: the module must be
 // mounted, the action id must be one the module registered on its panels, and then the
 // capsule's handler receives the call verbatim.
 func (c *Canvas) Dispatch(call core.ActionCall) (any, error) {

@@ -132,8 +132,6 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 	return out, nil
 }
 
-// Captioner moved to core with the agent (arc 1b).
-
 // CaptionStore persists computed captions keyed by image content. Implemented by the
 // store extension as a separate narrow interface, so StoreProvider consumers never need
 // to know captions exist.

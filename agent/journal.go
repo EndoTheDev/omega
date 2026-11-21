@@ -1,4 +1,4 @@
-// The contribution journal (v0.12 phase E1, implementation sketch 1, grill Q11). A
+// The contribution journal. A
 // panic during remount plays the registry side backward and discards the proxy: the
 // live Context never saw the write, the rejected toggle leaves zero contributions. That
 // split is the load-bearing guarantee of live toggling.
@@ -65,7 +65,7 @@ func (j *journal) undo(ctx *core.Context, reg *Registry) {
 	}
 }
 
-// playBackRegistry is the remount-panic path (Q11, "panic plays backward"): the Context
+// playBackRegistry is the remount-panic path ("panic plays backward"): the Context
 // contributions died with the scoped proxy - the live Context never saw them - so only
 // the registry side, which landed live during registration, needs unwinding.
 func (j *journal) playBackRegistry(reg *Registry) {
@@ -79,7 +79,7 @@ func (j *journal) playBackRegistry(reg *Registry) {
 // removeOne deletes the first element of s identical to want and returns the result.
 // Not-found returns s unchanged: the undo removes exactly this module's own
 // contribution, never a slice truncation - a truncation deletes a later module's append
-// whenever dismounts leave strict reverse mount order (the gate audit, live toggles).
+// whenever dismounts leave strict reverse mount order (live toggles).
 func removeOne[T any](s []T, want T) []T {
 	for i, v := range s {
 		if identical(v, want) {
