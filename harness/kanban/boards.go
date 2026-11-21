@@ -1,8 +1,6 @@
 package kanban
 
-// The board registry: ALL boards live inside ONE sqlite database. Recipe-pinned journey
-// boards (j78-a, j78-b, j86-b - pinnedJourneyBoards) never migrate: the recipes
-// re-create them as fresh rows.
+// The board registry: ALL boards live inside ONE sqlite database.
 
 import (
 	"context"
@@ -26,24 +24,20 @@ var errNoBoards = errors.New("no boards - create one first")
 // boardNameRE governs registry names.
 var boardNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// pinnedJourneyBoards is the EXACT set of board names the journey recipes pin
-// (78-board-switch.sh: j78-a, j78-b; 86-dock-round5: j86-b) - fixed names the recipes
-// re-create as fresh rows on every run, so a legacy row of the same name is never
-// migrated. The skip was once a signature regex (^j\d+), which also ate legal user
-// boards like "j2026-planning": never again match by shape, match by pinned name only.
+// pinnedJourneyBoards is the EXACT set of board names the journey recipes pin: fixed
+// names the recipes re-create as fresh rows on every run, so a legacy row of the same
+// name is never migrated. Never match a board by shape - a signature regex ate legal
+// user boards like "j2026-planning".
 var pinnedJourneyBoards = map[string]bool{
 	"j78-a": true,
 	"j78-b": true,
 	"j86-b": true,
 }
 
-// isPinnedJourneyBoard reports whether name is a recipe-pinned journey
-// board that must never migrate (the recipes re-create it fresh).
 func isPinnedJourneyBoard(name string) bool {
 	return pinnedJourneyBoards[name]
 }
 
-// ValidBoardName reports whether name may name a board.
 func ValidBoardName(name string) bool {
 	return boardNameRE.MatchString(name)
 }
@@ -54,8 +48,8 @@ func registryStaleDSN(home, dsn string) bool {
 	return err == nil && !strings.HasPrefix(rel, "..")
 }
 
-// ensureBoardsTable creates the boards table + the one-current partial index, and. Zero
-// boards is a legal state since 0.17.3: a home whose user deleted every board must not
+// ensureBoardsTable creates the boards table and the one-current partial index. Zero
+// boards is a legal state: a home whose user deleted every board must not
 // have "main" resurrected under it at the next start, and the seed is the only insert
 // the registry performs by itself. The tasks rebuild in migrate backfills board_id
 // against main's id, so the fresh-database seed must still land before any card row.
@@ -116,7 +110,6 @@ func (s *Store) boardID(board string) (int64, error) {
 	return id, nil
 }
 
-// BoardExists reports whether name is a row in the boards table.
 func (s *Store) BoardExists(name string) bool {
 	if !ValidBoardName(name) {
 		return false
@@ -125,7 +118,6 @@ func (s *Store) BoardExists(name string) bool {
 	return s.q.QueryRowContext(context.Background(), `SELECT 1 FROM boards WHERE name = ?`, name).Scan(&one) == nil
 }
 
-// Boards implements BoardLister.
 func (s *Store) Boards(ctx context.Context) ([]BoardInfo, error) {
 	rows, err := s.q.QueryContext(ctx, `SELECT name, is_current FROM boards ORDER BY position, id`)
 	if err != nil {
@@ -208,7 +200,7 @@ func (s *Store) CreateBoardRow(name string) error {
 	return err
 }
 
-// RenameBoardRow renames a board (0.17.3. The new name obeys the same grammar and must
+// RenameBoardRow renames a board. The new name obeys the same grammar and must
 // be free; the row keeps its id, so every card, comment and event stays where it was
 // and the is_current flag follows the row.
 func (s *Store) RenameBoardRow(oldName, newName string) error {
@@ -288,8 +280,9 @@ func (s *Store) DeleteBoardRow(name string) error {
 	return tx.Commit()
 }
 
-// migrateLegacyBoards folds the legacy per-board-directory layout into the single. Per
-// board directory <name>: pinned journey boards, illegal names and a stray main dir
+// migrateLegacyBoards folds the legacy per-board-directory layout into the single
+// database. Per board directory <name>: pinned journey boards, illegal names and a stray
+// main dir
 // skip - they are ARCHIVED into <home>/data/boards-junk (recoverable), never deleted
 // silently. A committed-before-failure state is equally recoverable: every next boot
 // re-verifies against the source and deletes the layout (idempotent).
@@ -420,7 +413,7 @@ func archiveSkippedBoardDirs(dir, archive string, names []string) error {
 	return nil
 }
 
-// boardRowIDTx resolves a board name inside the open migration tx, 0 when the name.
+// boardRowIDTx resolves a board name inside the open migration tx, 0 when unknown.
 func (s *Store) boardRowIDTx(tx *sql.Tx, pointer string) int64 {
 	if !ValidBoardName(pointer) || isPinnedJourneyBoard(pointer) {
 		return 0
@@ -432,7 +425,7 @@ func (s *Store) boardRowIDTx(tx *sql.Tx, pointer string) int64 {
 	return id
 }
 
-// readPointerContent reads the legacy pointer file, "" when unreadable, empty, or not.
+// readPointerContent reads the legacy pointer file, "" when unreadable, empty or invalid.
 func readPointerContent(path string) string {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -445,7 +438,6 @@ func readPointerContent(path string) string {
 	return name
 }
 
-// copyLegacyBoard copies one legacy board db's rows into the single database.
 func copyLegacyBoard(alias, name string, tx *sql.Tx, boardID int64) error {
 	copies := []struct{ sql, what string }{
 		{`INSERT INTO tasks (id, title, body, assignee, status, session_id, source, created_at, started_at, completed_at, board_id)
@@ -483,14 +475,13 @@ func verifyBoardCopy(alias, name string, tx *sql.Tx, boardID int64) error {
 	return nil
 }
 
-// MountRegistry opens the home's single kanban database (schema ensured, main. A
-// migration failure is a startup error - a board that silently dropped rows is worse
-// than a crash.
+// MountRegistry opens the home's single kanban database (schema ensured, main row
+// seeded). A migration failure is a startup error - a board that silently dropped rows
+// is worse than a crash.
 func MountRegistry(home string) (*Store, error) {
 	return MountRegistryDSN(home, datadir.DBPath(home, "kanban.db"))
 }
 
-// MountRegistryDSN is MountRegistry against an explicit dsn.
 func MountRegistryDSN(home, dsn string) (*Store, error) {
 	s, err := Open(dsn)
 	if err != nil {

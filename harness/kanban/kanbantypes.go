@@ -5,8 +5,6 @@ import (
 	"errors"
 )
 
-// KanbanTask is one board task: 9 statuses (triage todo scheduled ready running
-// blocked review done archived); Position is the column order, json:"-".
 type KanbanTask struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`
@@ -25,7 +23,6 @@ type KanbanTask struct {
 	Board string `json:"board,omitempty"`
 }
 
-// KanbanComment is one comment in a task's thread.
 type KanbanComment struct {
 	ID        int64  `json:"id"`
 	TaskID    string `json:"task_id"`
@@ -34,7 +31,6 @@ type KanbanComment struct {
 	CreatedAt string `json:"created_at"`
 }
 
-// KanbanEvent is one audit-trail entry on a task (created, moved, comment).
 type KanbanEvent struct {
 	ID        int64  `json:"id"`
 	TaskID    string `json:"task_id"`
@@ -55,22 +51,18 @@ type KanbanPatch struct {
 	Source    *string
 }
 
-// ValidPriority reports whether p may ride a task.
 func ValidPriority(p int) bool { return p >= 0 }
 
 // ErrTaskNotFound is the shared "no such task" sentinel on the kanban seam: the HTTP
 // channel maps it to a 404, so modules need not import each other to compare errors.
 var ErrTaskNotFound = errors.New("task not found")
 
-// BoardInfo is one row of the board registry (multi-board listing).
 type BoardInfo struct {
 	Name string `json:"name"`
 	Current bool `json:"current"`
 }
 
-// BoardLister is the optional multi-board capability on the kanban seam.
 type BoardLister interface {
-	// Boards lists every board the registry knows, the current one flagged.
 	Boards(ctx context.Context) ([]BoardInfo, error)
 }
 
@@ -93,16 +85,12 @@ type Batcher interface {
 	BeginBatch(ctx context.Context) (batch KanbanProvider, commit func() error, cancel func(), err error)
 }
 
-// KanbanProvider is the board seam: task CRUD plus the comment and event threads.
 type KanbanProvider interface {
 	CreateTask(ctx context.Context, board string, in KanbanTask) (KanbanTask, error)
-	// ListTasks returns the board's tasks in board order.
 	ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error)
 	// GetTask returns one task by id on the named board (store.ErrNotFound when missing).
 	GetTask(ctx context.Context, board, id string) (KanbanTask, error)
-	// GetTaskComments returns the task's comment thread, oldest first.
 	GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error)
-	// GetTaskEvents returns the task's audit trail, oldest first.
 	GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error)
 	// UpdateTask applies the patch on the named board and writes the audit events. There is
 	// deliberately no cross-board move: changing board is a pointer switch, never a patch.

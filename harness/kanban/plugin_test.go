@@ -1,7 +1,5 @@
 package kanban
 
-// Plugin-level multi-board tests.
-
 import (
 	"context"
 	"fmt"
@@ -39,7 +37,6 @@ func mountPlugin(t *testing.T) (*Plugin, *core.Context, string) {
 	return p, ctx, home
 }
 
-// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	_, ctx, _ := mountPlugin(t)
 	patterns := map[string]bool{}

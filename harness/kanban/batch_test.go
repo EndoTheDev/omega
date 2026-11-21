@@ -10,18 +10,16 @@ import (
 	"testing"
 )
 
-// batchRun returns the kanban.batch tool's Run.
 func batchRun(p *ToolProvider) func(context.Context, map[string]any) (string, error) {
 	return p.Tools()["kanban.batch"].Run
 }
 
-// TestRunTaskBatchInBatchRefs covers create-then-act inside one atomic batch.
 func TestRunTaskBatchInBatchRefs(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
 	ctx := withSession(context.Background(), "sess_refs")
 
-	// the card's exact shape, now passing: comment/update/complete via LAST
+	// comment/update/complete via LAST
 	out, err := batch(ctx, map[string]any{"operations": []any{
 		map[string]any{"action": "create", "title": "referred"},
 		map[string]any{"action": "comment", "id": "LAST", "body": "via LAST"},
@@ -68,7 +66,6 @@ func TestRunTaskBatchInBatchRefs(t *testing.T) {
 	}
 }
 
-// extractCreatedID pulls the task id from batch result line n (1-based).
 func extractCreatedID(t *testing.T, out string, n int) string {
 	t.Helper()
 	for _, ln := range strings.Split(out, "\n") {
@@ -80,7 +77,6 @@ func extractCreatedID(t *testing.T, out string, n int) string {
 	return ""
 }
 
-// TestRunTaskBatchRollbackRefCoversTheRepro: the exact batch from the card's repro.
 func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
@@ -104,7 +100,6 @@ func TestRunTaskBatchRollbackRefCoversTheRepro(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchPreflightRefusesBadRefs: a malformed or forward-pointing reference.
 func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := batchRun(p)
@@ -140,7 +135,6 @@ func TestRunTaskBatchPreflightRefusesBadRefs(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatchDoneEmitsOnlyOnCommit: a done move inside a batch emits.
 func TestRunTaskBatchDoneEmitsOnlyOnCommit(t *testing.T) {
 	p, _ := toolProvider(t)
 	batch := batchRun(p)

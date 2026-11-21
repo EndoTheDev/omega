@@ -106,7 +106,6 @@ func TestPatchReorder(t *testing.T) {
 		t.Fatalf("refusal text = %q", raw)
 	}
 
-	// malformed JSON answers 400
 	res, _ = patchBody(t, ts.URL, a, "{")
 	if res.StatusCode != http.StatusBadRequest {
 		t.Fatalf("bad body = %d", res.StatusCode)

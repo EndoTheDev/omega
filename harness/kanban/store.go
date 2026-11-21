@@ -27,7 +27,6 @@ type Store struct {
 	// transaction, and registry work never joins a batch.
 	q stmtDB
 
-	// tx is the open batch transaction this store executes inside.
 	tx *sql.Tx
 
 	// batchEmits buffers finished-things emissions while a batch is open. Nil on a plain
@@ -51,7 +50,6 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// SetNotifier wires the finished-things consumers face.
 func (s *Store) SetNotifier(n finishedThings) {
 	s.notifier = n
 }
@@ -68,7 +66,6 @@ func (s *Store) emitDone(taskID string) {
 	s.noticeDone(taskID)
 }
 
-// noticeDone emits through the notifier (nil-safe).
 func (s *Store) noticeDone(taskID string) {
 	if s.notifier == nil {
 		return
@@ -81,8 +78,6 @@ func (s *Store) noticeDone(taskID string) {
 	})
 }
 
-// Compile-time assertions: *Store implements the kanban seam plus the
-// board-registry, delete and atomic-batch capabilities.
 var (
 	_ KanbanProvider = (*Store)(nil)
 	_ BoardLister    = (*Store)(nil)
@@ -111,7 +106,6 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// openDB is the dsn-widening + sql.Open step, shared by Open.
 func openDB(dsn string) (*sql.DB, error) {
 	dsnParams := dsn
 	if !strings.Contains(dsn, "?") {
@@ -126,12 +120,10 @@ func openDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Close releases the database handle.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// migrate ensures the schema on the single database.
 const boardIndexes = `
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_task_comments_task ON task_comments(task_id, id);
@@ -161,7 +153,6 @@ func (s *Store) migrate(db *sql.DB) error {
 	return err
 }
 
-// migrateTaskPositions adds the drag-order column when it is missing.
 func migrateTaskPositions(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "position") {
 		return nil
@@ -177,7 +168,6 @@ UPDATE tasks SET position = (
 	return err
 }
 
-// taskTables is the three card tables in the boards-aware shape.
 const taskTables = `
 CREATE TABLE IF NOT EXISTS tasks (
 	id           TEXT PRIMARY KEY,
@@ -281,7 +271,6 @@ func rebuildLegacyRows(db *sql.DB) error {
 	return tx.Commit()
 }
 
-// tableMissingColumn reports whether table lacks column.
 func tableMissingColumn(db *sql.DB, table, column string) bool {
 	rows, err := db.Query("PRAGMA table_info(" + table + ")")
 	if err != nil {
@@ -325,14 +314,12 @@ type QueryRowContexter interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// writeScope is one task-write transaction.
 type writeScope struct {
 	tx     *sql.Tx
 	commit func() error
 	revert func()
 }
 
-// beginWrite opens the transaction one mutating task op needs.
 func (s *Store) beginWrite(ctx context.Context) (writeScope, error) {
 	if s.tx != nil {
 		return writeScope{tx: s.tx, commit: func() error { return nil }, revert: func() {}}, nil
@@ -374,7 +361,6 @@ func (s *Store) BeginBatch(ctx context.Context) (KanbanProvider, func() error, f
 	return &b, commit, cancel, nil
 }
 
-// migrateTaskPriority adds the urgency column when it is missing.
 func migrateTaskPriority(db *sql.DB) error {
 	if !tableMissingColumn(db, "tasks", "priority") {
 		return nil
@@ -431,7 +417,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	return KanbanTask{}, fmt.Errorf("could not allocate a task id after 5 tries")
 }
 
-// describeNew renders the created-event detail line.
 func describeNew(t KanbanTask) string {
 	detail := "status " + t.Status
 	if t.Priority != 0 {
@@ -446,7 +431,6 @@ func describeNew(t KanbanTask) string {
 	return detail
 }
 
-// ListTasks returns the board's tasks in board order.
 func (s *Store) ListTasks(ctx context.Context, board, status string) ([]KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -496,7 +480,6 @@ func statusFilter(status string) (string, []any, error) {
 	}
 }
 
-// ListAllTasks is the all-boards read behind the board view's "all boards" search.
 func (s *Store) ListAllTasks(ctx context.Context, status string) ([]KanbanTask, error) {
 	where, args, err := statusFilter(status)
 	if err != nil {
@@ -534,7 +517,6 @@ func scanTask(row interface{ Scan(...any) error }) (*KanbanTask, error) {
 	return &t, nil
 }
 
-// GetTask returns one task by id on the named board.
 func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -551,7 +533,6 @@ func (s *Store) GetTask(ctx context.Context, board, id string) (KanbanTask, erro
 	return *t, nil
 }
 
-// GetTaskComments returns the comment thread, oldest first.
 func (s *Store) GetTaskComments(ctx context.Context, board, taskID string) ([]KanbanComment, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -574,7 +555,6 @@ SELECT id, task_id, author, body, created_at FROM task_comments WHERE task_id = 
 	return out, rows.Err()
 }
 
-// GetTaskEvents returns the audit trail, oldest first.
 func (s *Store) GetTaskEvents(ctx context.Context, board, taskID string) ([]KanbanEvent, error) {
 	bid, err := s.boardID(board)
 	if err != nil {
@@ -597,7 +577,6 @@ SELECT id, task_id, kind, detail, created_at FROM task_events WHERE task_id = ? 
 	return out, rows.Err()
 }
 
-// AddComment appends to the thread and writes the comment event.
 func (s *Store) AddComment(ctx context.Context, board, taskID, author, body string) (KanbanComment, error) {
 	if strings.TrimSpace(body) == "" {
 		return KanbanComment{}, fmt.Errorf("comment body is required")
@@ -741,7 +720,6 @@ UPDATE tasks SET title=?, body=?, assignee=?, status=?, session_id=?, source=?, 
 	return t, nil
 }
 
-// DeleteTask implements TaskDeleter.
 func (s *Store) DeleteTask(ctx context.Context, board, taskID string) error {
 	bid, err := s.boardID(board)
 	if err != nil {

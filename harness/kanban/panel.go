@@ -12,7 +12,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Panel ids and action ids of the capsule.
 const (
 	listPanelID    = "tasks"
 	boardsPanelID  = "boards"
@@ -20,17 +19,14 @@ const (
 	actionSwitch   = "kanban.switch_board"
 )
 
-// panelRows caps the task panel's payload.
 const panelRows = 20
 
-// rowAction is one action binding a row carries.
 type rowAction struct {
 	Action string `json:"action"`
 	Label  string `json:"label"`
 	Args   any    `json:"args,omitempty"`
 }
 
-// taskRow is one task-panel line.
 type taskRow struct {
 	ID        string     `json:"id"`
 	Status    string     `json:"status"`
@@ -40,14 +36,12 @@ type taskRow struct {
 	RowAction *rowAction `json:"action,omitempty"`
 }
 
-// taskListPayload is the task panel's view-model.
 type taskListPayload struct {
 	Board string    `json:"board"`
 	Total int       `json:"total"`
 	Rows  []taskRow `json:"rows"`
 }
 
-// boardRow is one board-switcher line.
 type boardRow struct {
 	Name      string     `json:"name"`
 	Current   bool       `json:"current"`
@@ -55,7 +49,6 @@ type boardRow struct {
 	RowAction *rowAction `json:"action,omitempty"`
 }
 
-// boardsPayload is the switcher's view-model.
 type boardsPayload struct {
 	Active string     `json:"active"`
 	Rows   []boardRow `json:"rows"`
@@ -74,7 +67,6 @@ type capsule struct {
 var _ core.PanelProvider = (*capsule)(nil)
 var _ core.PanelUpdateSink = (*capsule)(nil)
 
-// newCapsule builds the capsule over the store and the session board.
 func newCapsule(s *Store, board func() string, setBoard func(string)) *capsule {
 	return &capsule{store: s, board: board, setBoard: setBoard}
 }
@@ -88,7 +80,6 @@ func (c *capsule) SetPanelUpdate(update func(core.Panel) error) {
 	c.mu.Unlock()
 }
 
-// push routes one panel through the installed closure.
 func (c *capsule) push(p core.Panel) {
 	c.mu.Lock()
 	up := c.update
@@ -109,12 +100,10 @@ func (c *capsule) activeBoard() string {
 	return c.board()
 }
 
-// Panels declares the snapshot.
 func (c *capsule) Panels() []core.Panel {
 	return []core.Panel{c.taskPanel(), c.boardsPanel()}
 }
 
-// displayBoard names the board a board-less view-model line refers.
 func displayBoard(board string) string {
 	if board == "" {
 		return DefaultBoardName
@@ -122,7 +111,6 @@ func displayBoard(board string) string {
 	return board
 }
 
-// taskPanel builds the task panel descriptor from the live store.
 func (c *capsule) taskPanel() core.Panel {
 	board := c.activeBoard()
 	tasks, err := c.store.ListTasks(context.Background(), board, "")
@@ -157,7 +145,6 @@ func (c *capsule) taskPanel() core.Panel {
 	}
 }
 
-// boardsPanel builds the switcher descriptor.
 func (c *capsule) boardsPanel() core.Panel {
 	active := displayBoard(c.activeBoard())
 	boards, err := c.store.Boards(context.Background())
@@ -183,16 +170,13 @@ func (c *capsule) boardsPanel() core.Panel {
 	}
 }
 
-// refreshTasks pushes a fresh task panel.
 func (c *capsule) refreshTasks() { c.push(c.taskPanel()) }
 
-// refreshAll pushes both panels.
 func (c *capsule) refreshAll() {
 	c.push(c.taskPanel())
 	c.push(c.boardsPanel())
 }
 
-// HandleAction routes one action-pipe call (core.PanelProvider).
 func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 	switch call.Action {
 	case actionComplete:

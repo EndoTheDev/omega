@@ -10,7 +10,6 @@ import (
 	"testing"
 )
 
-// captureStdout reroutes os.Stdout through a pipe for the duration of fn.
 func captureStdout(t *testing.T, fn func() error) (string, error) {
 	t.Helper()
 	r, w, err := os.Pipe()
@@ -30,7 +29,6 @@ func captureStdout(t *testing.T, fn func() error) (string, error) {
 	return <-outCh, fnErr
 }
 
-// cardCount opens the board's db and counts tasks.
 func cardCount(t *testing.T, home, board string) int {
 	t.Helper()
 	s := openRegistryStore(t, home)

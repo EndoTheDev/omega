@@ -1,7 +1,5 @@
 package kanban
 
-// The board REST tests.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -334,7 +332,7 @@ func TestBoardsDeleteEndpoint(t *testing.T) {
 	ctx, _ := multiBoardCtx(t)
 	ts := serveRoutes(t, ctx)
 
-	// 0.17.3 make-over: every board leaves, main included, and a home may end on ZERO.
+	// every board leaves, main included, and a home may end on ZERO.
 	res, _ := http.Post(ts.URL+"/tasks?board=beta", "application/json", strings.NewReader(`{"title":"live"}`))
 	var created KanbanTask
 	json.NewDecoder(res.Body).Decode(&created)

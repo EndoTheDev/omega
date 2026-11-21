@@ -1,7 +1,5 @@
 package kanban
 
-// The board registry CLI: the kanban subcommand's home.
-
 import (
 	"context"
 	"flag"
@@ -12,7 +10,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// kanbanSummary is the one-line entry the global `omega --help` list shows.
 const kanbanSummary = "the task board registry (see: omega kanban --help)"
 
 // kanbanHelp documents the kanban subcommand tree.
@@ -42,7 +39,6 @@ Flags:
                    everything with --status all)
 `
 
-// cliHome resolves the omega home for the CLI handlers.
 func cliHome() (string, error) {
 	home, err := datadir.AgentHome()
 	if err != nil {
@@ -54,7 +50,6 @@ func cliHome() (string, error) {
 	return home, nil
 }
 
-// cmdKanban dispatches the kanban subcommand tree.
 func cmdKanban(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Print(kanbanHelp)
@@ -72,7 +67,6 @@ func cmdKanban(args []string) error {
 	}
 }
 
-// kanbanCardOpts is the parsed per-call target.
 type kanbanCardOpts struct {
 	board  string
 	status string
@@ -81,7 +75,6 @@ type kanbanCardOpts struct {
 
 func (o *kanbanCardOpts) Close() { o.store.Close() }
 
-// parseCardFlags reads --board/--status from the args and returns the remaining.
 func parseCardFlags(args []string) (opts *kanbanCardOpts, rest []string, err error) {
 	home, err := cliHome()
 	if err != nil {
@@ -103,7 +96,6 @@ func parseCardFlags(args []string) (opts *kanbanCardOpts, rest []string, err err
 	return opts, fs.Args(), nil
 }
 
-// cmdKanbanCards runs the card subcommands (list/create/done), each scoped to one.
 func cmdKanbanCards(sub string, args []string) error {
 	opts, rest, err := parseCardFlags(args)
 	if err != nil {
@@ -166,7 +158,6 @@ func cmdKanbanCards(sub string, args []string) error {
 	return fmt.Errorf("unknown kanban card subcommand %q", sub)
 }
 
-// statusSuffix renders the list summary's status part.
 func statusSuffix(status string) string {
 	if status == "" {
 		return ""
@@ -174,7 +165,6 @@ func statusSuffix(status string) string {
 	return " [" + status + "]"
 }
 
-// cmdKanbanBoard runs the board registry subcommands.
 func cmdKanbanBoard(args []string) error {
 	if len(args) == 0 || args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprint(os.Stderr, "usage: omega kanban board {list|create <name>|delete <name>|use <name>|current}\n")
