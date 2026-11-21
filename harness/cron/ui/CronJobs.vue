@@ -281,7 +281,8 @@
         v-for="j in filteredJobs"
         :key="cronKeyOf(j)"
         class="cron-row reg-row"
-        :class="{ disabled: !j.enabled }">
+        :class="{ disabled: !j.enabled }"
+        @contextmenu="onRowMenu($event, j)">
         <div class="cron-head reg-row-head">
           <div class="reg-row-main">
             <span class="cron-name reg-row-name">{{ j.name }}</span>
@@ -332,6 +333,8 @@
 <script setup lang="ts">
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
+  import { openContextMenu } from "~/composables/contextMenu";
+  import { cronMenuItems } from "./cronMenu";
   // the empty-state copy lives in its own PURE module.
   import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "./emptyState";
   import {
@@ -756,6 +759,23 @@
   function onToggle(j: CronJobWire) {
     if (busy.value !== null) return;
     apply(j);
+  }
+
+  // the row's right-click: Pause/Resume IS the pill, Delete opens the tab's own armed
+  // confirm in the editor - the same guard the editor's delete button carries.
+  function onRowMenu(e: MouseEvent, j: CronJobWire) {
+    e.preventDefault();
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      cronMenuItems(j, {
+        toggle: () => onToggle(j),
+        remove: () => {
+          startEdit(j);
+          if (editor.value) editor.value.armedDelete = true;
+        },
+      }),
+    );
   }
 
   async function apply(j: CronJobWire) {

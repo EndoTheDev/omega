@@ -244,6 +244,25 @@ the store does the rest.
   `composables/dockables.ts`): Close and Close others. Close follows the
   tab's own X - absent on an uncloseable component and on the locked
   last tab; Close others appears only when another closable tab exists.
+- **Sidebar rows are the second** (`sessionMenuItems`,
+  `agentMenuItems`, `cronMenuItems`, one pure builder per capsule's
+  `ui/` dir): a session row menus New session, Branch, Export and, on a
+  running row only, Stop; an agent row menus New agent and Delete (never
+  the locked default); a cron row menus Pause or Resume and Delete (never
+  an agent-owned job, whose file main's delete route cannot touch). Every
+  row is an existing verb - a route or a client intent the surface
+  already carried - so the menu is a second door to the same paths.
+  `RegistryList` takes the builder as `row-menu`; a row surface that
+  registers nothing keeps the browser's own menu.
+- **The statusbar is the third** (`components/shell/statusStats.ts`):
+  every stat with a check state, one click hiding or showing it. `checked`
+  IS visibility.
+- **Hiding is a flag, never a close.** A hidden sidebar chip keeps its
+  seat, its ref and its pane; only the chip stops rendering (the pane body
+  follows the active visible chip, so a hide never blanks a pane). The
+  set lives in the layout record beside the tree, so it survives a reload,
+  and the strip - the surface that stays visible - carries the restore
+  list. Opening a view from the palette or the menubar clears its flag.
 
 ## Motion
 
@@ -258,7 +277,10 @@ Everything else animates through `transition`, not keyframes.
 
 - **The shell is a pane tree, not fixed slots.** `composables/dock.ts`
   owns the persisted tree (splits + panes, under the desktop
-  persistence key); `DockSplit`/`DockPane`/`DockDivider` render it. A
+  persistence key); `DockSplit`/`DockPane`/`DockDivider` render it. The
+  same record carries the closed shells' stows and the visibility sets
+  (hidden sidebar chips, hidden statusbar stats); a record with none of
+  them keeps its older shape. A
   bare pane can be the tree root (all sidebars closed) - the renderer
   has an explicit single-pane root branch. A tree with zero panes is a
   bug, not a state.

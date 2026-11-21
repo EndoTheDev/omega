@@ -22,7 +22,8 @@
           'registry-off': r.disabled,
           'registry-row-open': openableRow(r),
           'reg-row-active': activeName === r.name,
-        }">
+        }"
+        @contextmenu="onRowMenu($event, r)">
         <div
           class="reg-row-head"
           @click="onHeadClick($event, r)">
@@ -136,6 +137,7 @@
 <script setup lang="ts">
   import { ref } from "vue";
   import Icon from "./ui/Icon.vue";
+  import { openContextMenu, type ContextMenuEntry } from "~/composables/contextMenu";
   import {
     registryNote,
     type RegistryKind,
@@ -165,6 +167,11 @@
       feel?: "quiet" | "sessions";
       activeName?: string;
       expander?: "text" | "chevron";
+      /**
+       * the row's right-click rows. Absent, the row keeps the browser's own menu - a
+       * surface that registers nothing never eats a right-click.
+       */
+      rowMenu?: (row: RegistryRow) => ContextMenuEntry[];
     }>(),
     {
       busy: null,
@@ -229,7 +236,24 @@
     if (isExpanded(r.name)) emit("expand", r);
   }
 
-  defineExpose({ flipExpand, isExpanded });
+  /** unfold a row's detail without toggling it shut - the menu's verbs that live down there */
+  function openDetail(name: string) {
+    if (expanded.value[name]) return;
+    expanded.value = { ...expanded.value, [name]: true };
+    const row = props.rows.find((r) => r.name === name);
+    if (row) emit("expand", row);
+  }
+
+  // a right-click registers into the ONE shared menu; no rows = no menu, and the browser's
+  // own stays where the surface offers nothing.
+  function onRowMenu(e: MouseEvent, r: RegistryRow) {
+    const items = props.rowMenu?.(r) ?? [];
+    if (items.length === 0) return;
+    e.preventDefault();
+    void openContextMenu(e.clientX, e.clientY, items);
+  }
+
+  defineExpose({ flipExpand, isExpanded, openDetail });
 </script>
 
 <style scoped>

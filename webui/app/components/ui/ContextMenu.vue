@@ -28,10 +28,15 @@
           type="button"
           class="context-menu-item"
           :class="{ active: i === contextMenuActive, danger: entry.danger }"
-          role="menuitem"
+          :role="entry.checked === undefined ? 'menuitem' : 'menuitemcheckbox'"
+          :aria-checked="entry.checked"
           :disabled="entry.disabled"
           @mouseenter="setContextMenuActive(i)"
           @click="runContextMenuItem(i)">
+          <span
+            v-if="entry.checked !== undefined"
+            class="context-menu-check"
+            aria-hidden="true">{{ entry.checked ? "✓" : "" }}</span>
           <span class="context-menu-label">{{ entry.label }}</span>
           <span
             v-if="entry.shortcut"
@@ -148,6 +153,17 @@
   }
   .context-menu-item.danger {
     color: var(--err);
+  }
+  /* the state column: an empty cell still holds its width, so the labels align */
+  .context-menu-check {
+    flex: none;
+    width: 11px;
+    color: var(--accent);
+    font-size: 12px;
+    text-align: center;
+  }
+  .context-menu-label {
+    flex: 1 1 auto;
   }
   .context-menu-item:disabled {
     opacity: 0.4;

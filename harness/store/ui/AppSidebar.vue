@@ -92,6 +92,7 @@
             :key="s.id"
             :class="rowClasses(s)"
             @click="$emit('open', s.id)"
+            @contextmenu="onRowMenu($event, s)"
             @mouseenter="hoveredId = s.id"
             @mouseleave="clearHovered(s.id)">
             <!--
@@ -222,6 +223,7 @@
   import Icon from "~/components/ui/Icon.vue";
   import { copyText } from "~/composables/clipboard";
   import { emitLocalToast } from "~/composables/canvas";
+  import { openContextMenu } from "~/composables/contextMenu";
   import {
     bucketSessions,
     commitSessionRename,
@@ -229,6 +231,7 @@
     relativeAge,
     rowMeta,
     sessionRowBadge,
+    stopSessionRun,
     withSearchHits,
     searchSessions,
     SESSION_SEARCH_DEBOUNCE_MS,
@@ -238,6 +241,7 @@
     sessionRowStatus,
   } from "~/composables/omega";
   import type { Session, SessionBuckets } from "~/composables/omega";
+  import { sessionMenuItems } from "./sessionMenu";
 
   const props = defineProps<{
     sessions: Session[];
@@ -451,6 +455,52 @@
       created_at: new Date().toISOString(),
       read: true,
     });
+  }
+
+  // the row's Export row uses the same JSONL URL as the hover download link.
+  function exportSession(id: string) {
+    const a = document.createElement("a");
+    a.href = exportUrl(id);
+    a.download = id + ".jsonl";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  async function stopSession(id: string) {
+    try {
+      await stopSessionRun(id);
+    } catch (e) {
+      emitLocalToast({
+        id: 0,
+        kind: "chat",
+        source_id: "session-stop",
+        title: `stop failed: ${e instanceof Error ? e.message : String(e)}`,
+        verdict: "failed",
+        created_at: new Date().toISOString(),
+        read: true,
+      });
+    }
+  }
+
+  // the row's right-click: the SAME verbs its hover cluster and clicks already carry, so
+  // the menu is a second door to the existing paths, never a second implementation.
+  function onRowMenu(e: MouseEvent, s: Session) {
+    e.preventDefault();
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      sessionMenuItems(
+        { id: s.id, running: props.streamingIds.has(s.id) },
+        {
+          newSession: () => emit("new"),
+          branch: () => emit("branch", s.id),
+          exportSession: () => exportSession(s.id),
+          stop: () => void stopSession(s.id),
+        },
+      ),
+    );
   }
 
   // inline rename --- renamingId holds the row whose title is an input right now.
