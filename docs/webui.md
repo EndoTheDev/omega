@@ -504,12 +504,32 @@ resolution mirror the one command law every surface follows:
   shell commands (`composables/commands.ts` `WEBUI_SHELL_COMMANDS` -
   `/new` and `/sessions` plus the local-action set
   `/copy /modules /fork /help /panels /retry /theme /variant`;
-  `/extensions` rides the palette as
-  the /modules alias), then extension commands from
+  the session verbs `/resume /branch /label`; `/extensions` rides the
+  palette as the /modules alias), then extension commands from
   `GET /commands`, then skills as `/<skill-name>` rows.
   Typing filters case-insensitively
   over name AND description; ArrowUp/ArrowDown navigate, Enter picks
   or (with the draft not in palette mode) submits, Esc dismisses.
+- **ONE row per name: a shell name wins.** The host routes a shell name
+  to the app's own handler BEFORE any dispatch, so a module command of
+  the same name would be a second row over a door that can never open -
+  `paletteCommands` drops those extension rows (`/new`, `/sessions`,
+  `/resume`, `/branch`, `/label` are registered by the store capsule
+  for the terminal loop and hidden here).
+- **The session verbs are the shell's, because only the shell can act
+  on them.** `/resume <#|id|label>` opens a session in a chat tab (the
+  `#` counts the rows the sessions pane renders, newest first inside
+  each bucket; an id is exact, a label is a case-insensitive prefix);
+  `/branch [id]` POSTs `/sessions/{id}/branch` and opens the child;
+  `/label <text>` PUTs the label on the tab's session and the sidebar
+  row follows (`/label` with no text clears it). None of them touches
+  `POST /commands/dispatch` from the webui - a server could create the
+  row, never the tab. The store capsule keeps the same verbs for the
+  terminal loop, answering TEXT (the resolved session, the branched id,
+  the label it set) and declaring no `CmdAction`: `new_session`,
+  `load_session`, `branch_session` and `set_label` had no executor on
+  any surface, so a client with no field for `actions` showed "no answer
+  from the server" and the command read as a dead no-op.
 - **Shell commands act LOCALLY and never hit the agent.** `/fork`,
   `/retry`, `/variant`, `/theme` and friends run through the app's own
   handler; extension commands and `/<skill-name>` go to

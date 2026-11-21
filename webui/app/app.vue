@@ -420,6 +420,7 @@
     fetchModels,
     fetchTranscript,
     fetchSessions,
+    listedSessions,
     markSessionRead,
     parseSessionPath,
     sessionPath,
@@ -491,6 +492,9 @@
     type DockTab,
   } from "./composables/dock";
   import { useBottomWidthMode } from "./composables/bottomWidth";
+  // the palette's shell set: /resume resolves a session reference the same way the store
+  // does, so the webui and the terminal loop answer alike
+  import { resolveSessionRef } from "./composables/commands";
   import {
     INSPECTOR_TAB_COMPONENTS,
     PRIMARY_TAB_COMPONENTS,
@@ -970,6 +974,51 @@
           }
         }
         openChatTab(null);
+        return true;
+      }
+      // /resume opens a session HERE: the pane is the shell's, so the shell is the door.
+      // #N counts the rows the sessions pane renders (listedSessions); the fall-through for
+      // an id and a label prefix is resolveSessionRef's, the same rule the store answers.
+      // The OPEN TAB is the answer (exactly like /new) - only a refusal needs a line.
+      case "/resume": {
+        if (!arg) {
+          note("resume: usage /resume <#|id|label> (# counts the rows in the sessions pane)");
+          return true;
+        }
+        const hit = resolveSessionRef(listedSessions(sessions.value), arg);
+        if (!hit) {
+          note(`resume: no session matches "${arg}"`);
+          return true;
+        }
+        openChatTab(hit.id);
+        return true;
+      }
+      // /branch creates the child through the store's REST parity AND opens it - a server
+      // action could create the row but never a tab. The child's own tab is the receipt.
+      case "/branch": {
+        const parent = arg || focusedSessionId.value;
+        if (!parent) {
+          note("branch: no session in this tab - /resume <#|id|label> first, or /branch <id>");
+          return true;
+        }
+        const child = await branchChatSession(parent);
+        if (!child) note(`branch: the server refused to branch ${parent}`);
+        return true;
+      }
+      // /label writes the row the sidebar renders, so the label lands where the human sees
+      // it - no server-side action, no second copy of the write.
+      case "/label": {
+        const id = focusedSessionId.value;
+        if (!id) {
+          note("label: no session in this tab - the label rides a conversation");
+          return true;
+        }
+        const ok = await renameChatSession(id, arg);
+        if (!ok) {
+          note(`label: the write for ${id} failed - the sidebar still shows the old label`);
+          return true;
+        }
+        note(arg ? `[label: ${arg}]` : "[label cleared]");
         return true;
       }
       case "/sessions": {
@@ -1871,20 +1920,23 @@
     }
   }
 
-  // branchSession flow: POST creates the child.
-  async function branchChatSession(id: string) {
+  // branchSession flow: POST creates the child. The child's id comes back so a narrator
+  // (the /branch palette command) can name what it opened; null = the store refused.
+  async function branchChatSession(id: string): Promise<string | null> {
     let child: Session | null = null;
     try {
       child = await branchSession(id);
     } catch {
-      return;
+      return null;
     }
-    if (!child) return;
+    if (!child) return null;
     await refreshSessions();
     openChatTab(child.id);
+    return child.id;
   }
 
-  async function renameChatSession(id: string, label: string) {
+  // renameChatSession writes the label the sidebar renders; true = the server took it.
+  async function renameChatSession(id: string, label: string): Promise<boolean> {
     const updateList = (list: Session[]) =>
       list.map((s) => (s.id === id ? { ...s, label } : s));
     const before = sessions.value;
@@ -1894,7 +1946,9 @@
     } catch {
       sessions.value = before;
       refreshSessions();
+      return false;
     }
+    return true;
   }
 
   const deleteId = ref<string | null>(null);

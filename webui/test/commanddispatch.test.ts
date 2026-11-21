@@ -2,8 +2,9 @@
 // Two laws, both behavioural - the host is the real chat host with the
 // wire stubbed:
 // the invoking tab's session rides the dispatch body, so a
-//     session-scoped command (/export, /label, /branch) acts on the tab
-//     the operator typed in;
+//     session-scoped command (/export, /search) acts on the tab
+//     the operator typed in - and the shell verbs (/new /resume
+//     /branch /label) never touch the wire at all;
 // what the status line shows is the SERVER's answer - a refusal
 //     arrives in its own words, and a table answer that opens with a
 //     blank line still shows its header line instead of nothing.
@@ -84,16 +85,41 @@ describe("palette dispatch: the tab's session rides the wire", () => {
   });
 
   it("args ride through beside the session", async () => {
-    const wire = stubFetch(() => json({ kind: "command", text: "[label: mine]" }));
+    const wire = stubFetch(() => json({ kind: "command", text: "[search: needle]" }));
     try {
       const host = createChatHost(deps());
       host.ensureState("c1", "s-1");
-      await host.command("c1", "/label mine");
+      await host.command("c1", "/search needle");
       assert.deepEqual(wire.calls[0]!.body, {
-        name: "/label",
-        args: "mine",
+        name: "/search",
+        args: "needle",
         session_id: "s-1",
       });
+    } finally {
+      wire.restore();
+    }
+  });
+
+  // t_146d3133: /new /resume /branch /label are SHELL verbs - the pane is the shell's, so
+  // the shell opens, branches and renames. Nothing about them belongs on this wire.
+  it("the session verbs never reach the dispatch at all", async () => {
+    const wire = stubFetch(() => json({ kind: "command", text: "should never be asked" }));
+    const ran: string[] = [];
+    try {
+      const host = createChatHost(
+        deps({
+          runCommand: (_key, text) => {
+            ran.push(text);
+            return true;
+          },
+        }),
+      );
+      host.ensureState("c1", "s-1");
+      for (const draft of ["/new", "/resume #1", "/branch", "/label mine"]) {
+        await host.command("c1", draft);
+      }
+      assert.equal(wire.calls.length, 0, "no dispatch: the shell handled every one of them");
+      assert.deepEqual(ran, ["/new", "/resume #1", "/branch", "/label mine"]);
     } finally {
       wire.restore();
     }

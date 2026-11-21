@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"encoding/hex"
 	"strings"
 	"testing"
@@ -150,62 +151,39 @@ func TestMessageContent(t *testing.T) {
 	})
 }
 
-// HandleNewCommand
-
-func TestHandleNewCommand(t *testing.T) {
-	t.Run("default no args", func(t *testing.T) {
-		res, err := HandleNewCommand("")
+// Session commands answer TEXT and declare no actions
+//
+// t_146d3133: new_session, load_session, branch_session and set_label had no executor on
+// any surface - the dispatch relayed them, the webui's wire had no field for them, and a
+// command whose Text was empty read as a silent no-op. The intents are gone; the store
+// answers the real result, and this pin fails the day one comes back without an executor.
+func TestSessionCommandsShipNoActions(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	if err := s.CreateSession(ctx, "pin-1", "", "pin label"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	bound := core.WithCommandSession(ctx, "pin-1")
+	cases := []struct{ name, args string }{
+		{"/resume", "#1"},
+		{"/resume", "pin-1"},
+		{"/resume", "PIN"},
+		{"/branch", ""},
+		{"/label", "from the palette"},
+		{"/label", ""},
+	}
+	for _, c := range cases {
+		res, err := sessionCommandsThrough(t, bound, s, c.name, c.args)
 		if err != nil {
-			t.Fatalf("HandleNewCommand(\"\") error: %v", err)
+			t.Fatalf("%s %q: %v", c.name, c.args, err)
 		}
-		if len(res.Actions) != 1 {
-			t.Fatalf("actions len = %d, want 1", len(res.Actions))
+		if len(res.Actions) != 0 {
+			t.Fatalf("%s %q declares %+v - nothing in this repo executes those types", c.name, c.args, res.Actions)
 		}
-		act := res.Actions[0]
-		if act.Type != "new_session" {
-			t.Fatalf("action type = %q, want new_session", act.Type)
+		if strings.TrimSpace(res.Text) == "" {
+			t.Fatalf("%s %q answered no text: the client has nothing to show", c.name, c.args)
 		}
-		if act.Value != "" {
-			t.Fatalf("action value = %q, want empty", act.Value)
-		}
-	})
-
-	t.Run("ephemeral flag", func(t *testing.T) {
-		res, err := HandleNewCommand("--ephemeral")
-		if err != nil {
-			t.Fatalf("HandleNewCommand(\"--ephemeral\") error: %v", err)
-		}
-		if len(res.Actions) != 1 {
-			t.Fatalf("actions len = %d, want 1", len(res.Actions))
-		}
-		act := res.Actions[0]
-		if act.Type != "new_session" {
-			t.Fatalf("action type = %q, want new_session", act.Type)
-		}
-		if act.Value != "--ephemeral" {
-			t.Fatalf("action value = %q, want --ephemeral", act.Value)
-		}
-	})
-
-	t.Run("ephemeral with surrounding whitespace", func(t *testing.T) {
-		res, err := HandleNewCommand("  --ephemeral  ")
-		if err != nil {
-			t.Fatalf("error: %v", err)
-		}
-		if res.Actions[0].Value != "--ephemeral" {
-			t.Fatalf("value = %q, want --ephemeral", res.Actions[0].Value)
-		}
-	})
-
-	t.Run("non-ephemeral args ignored", func(t *testing.T) {
-		res, err := HandleNewCommand("some other args")
-		if err != nil {
-			t.Fatalf("error: %v", err)
-		}
-		if res.Actions[0].Value != "" {
-			t.Fatalf("value = %q, want empty for non-ephemeral args", res.Actions[0].Value)
-		}
-	})
+	}
 }
 
 // agent.FormatInsights

@@ -16,6 +16,7 @@ import {
   slashTokenAt,
   replaceSlashToken,
   clampIndex,
+  resolveSessionRef,
 } from "../app/composables/commands.ts";
 // the shell's TopLevel command palette (Ctrl+K) - the registry build + filter are pure,
 // the overlay's grammar is pinned by file assertions (node cannot import.vue)
@@ -43,6 +44,18 @@ describe("command palette assembly", () => {
     assert.ok(!names.includes("/exit"), "the webui has nothing to quit - /exit is out");
     assert.ok(names.includes("/new"), "the webui equivalent of the TUI /new rides the palette");
     assert.ok(names.includes("/sessions"));
+  });
+
+  // t_146d3133: the session verbs the store capsule declares are SHELL commands here,
+  // because only the shell can switch/open/rename what the human is looking at.
+  it("the session verbs the store cannot perform are shell commands", () => {
+    const names = WEBUI_SHELL_COMMANDS.map((c) => c.name);
+    for (const cmd of ["/resume", "/branch", "/label"]) {
+      assert.ok(names.includes(cmd), `${cmd} must be a webui shell command, not a dispatch row`);
+      assert.ok(SHELL_COMMAND_NAMES.has(cmd), `${cmd} must route to the app handler before any dispatch`);
+    }
+    const dupes = names.filter((n) => names.indexOf(n) !== names.lastIndexOf(n));
+    assert.deepEqual(dupes, [], "one row per name in the shell set");
   });
 
   it("SHELL_COMMAND_NAMES is exactly the shell set - the routing set the host dispatches on", () => {
@@ -580,5 +593,76 @@ describe("the palette takeover (t_cc6d0920)", () => {
     assert.match(block, /top:\s*var\(--menubar-h\)/, "the list drops from the bar's edge");
     assert.match(block, /width:\s*420px/, "the tuned band");
     assert.match(block, /z-index:\s*200/, "over the panes, above every chrome");
+  });
+});
+
+// t_146d3133: /new /resume /branch /label answered a CmdAction and no text. Nothing in the
+// repo executes new_session, load_session, branch_session or set_label, and the webui's
+// wire declares no `actions` field - so the client showed "no answer from the server" and
+// the command did nothing. The store no longer declares them; the shell owns the verbs.
+describe("session verbs: one door each, no executor-less intent (t_146d3133)", () => {
+  const app = readFileSync(join(here, "../app/app.vue"), "utf8");
+
+  it("a module command of the same name never gets a second, dead palette row", () => {
+    const items = paletteCommands(
+      [
+        { name: "/new", description: "start a fresh conversation" },
+        { name: "/resume", description: "resume a session by #, id, or label" },
+        { name: "/label", description: "set a label" },
+        { name: "/branch", description: "branch a session" },
+        { name: "/sessions", description: "list sessions" },
+        { name: "/genuine", description: "a module command only the server runs" },
+      ],
+      [],
+    );
+    const names = items.map((i) => i.name);
+    for (const shell of ["/new", "/resume", "/label", "/branch", "/sessions"]) {
+      assert.equal(
+        names.filter((n) => n === shell).length,
+        1,
+        `${shell} renders once - the shell row is the one that can act`,
+      );
+      assert.equal(items.find((i) => i.name === shell)!.kind, "shell");
+    }
+    const genuine = items.find((i) => i.name === "/genuine");
+    assert.ok(genuine && genuine.kind === "extension", "a non-shell module command keeps its row");
+  });
+
+  it("resolveSessionRef matches the store's order: #N, exact id, label prefix", () => {
+    const rows = [
+      { id: "aaa", label: "morning planning" },
+      { id: "bbb" },
+      { id: "ccc", label: "Night Shift" },
+    ];
+    assert.equal(resolveSessionRef(rows, "#1")!.id, "aaa", "1-based, the list's own order");
+    assert.equal(resolveSessionRef(rows, "2")!.id, "bbb", "a bare number is the same reference");
+    assert.equal(resolveSessionRef(rows, "#3")!.id, "ccc");
+    assert.equal(resolveSessionRef(rows, "ccc")!.id, "ccc", "an exact id wins");
+    assert.equal(resolveSessionRef(rows, "MORN")!.id, "aaa", "label prefix, case-insensitive");
+    assert.equal(resolveSessionRef(rows, "night")!.id, "ccc");
+    assert.equal(resolveSessionRef(rows, "#9"), null, "an out-of-range number never falls through to a row");
+    assert.equal(resolveSessionRef(rows, "nope"), null);
+    assert.equal(resolveSessionRef(rows, "  "), null);
+  });
+
+  it("the host opens/branches/renames locally - it never dispatches these four", () => {
+    const resume = app.slice(app.indexOf('case "/resume"'), app.indexOf('case "/branch"'));
+    assert.ok(resume.length > 0, "the /resume case exists");
+    assert.match(resume, /resolveSessionRef\(listedSessions\(sessions\.value\), arg\)/, "the list the pane renders is the one it reads");
+    assert.match(resume, /openChatTab\(hit\.id\)/, "the resolved session is OPENED, not named and dropped");
+    assert.match(resume, /no session matches/, "a miss says so, in the human's words");
+
+    const branch = app.slice(app.indexOf('case "/branch"'), app.indexOf('case "/label"'));
+    assert.match(branch, /branchChatSession\(parent\)/, "the child is created through the REST parity and opened");
+    assert.match(branch, /const parent = arg \|\| focusedSessionId\.value/, "the tab's own session is the default parent");
+    assert.match(branch, /refused to branch/, "a refusal is named, never a fabricated success");
+
+    const label = app.slice(app.indexOf('case "/label"'), app.indexOf('case "/sessions"'));
+    assert.match(label, /renameChatSession\(id, arg\)/, "the label is written where the sidebar reads it");
+    assert.match(label, /const ok = await renameChatSession/, "the write's outcome is read, not assumed");
+    assert.match(label, /label cleared/, "an empty label says cleared, exactly like the store's line");
+    // the write returns its outcome so the notice cannot lie about it
+    assert.match(app, /async function renameChatSession\(id: string, label: string\): Promise<boolean>/);
+    assert.match(app, /async function branchChatSession\(id: string\): Promise<string \| null>/);
   });
 });

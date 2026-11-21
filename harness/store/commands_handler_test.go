@@ -344,19 +344,19 @@ func TestHandleResumeCommandNumberResolution(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleResumeCommand #1: %v", err)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "load_session" {
-		t.Fatalf("actions = %+v, want one load_session", res.Actions)
+	if len(res.Actions) != 0 {
+		t.Fatalf("actions = %+v, want none - load_session has no executor", res.Actions)
 	}
-	if res.Actions[0].Value != "s1" {
-		t.Fatalf("#1 resolved to %q, want s1", res.Actions[0].Value)
+	if res.Text != "[resume: s1]" {
+		t.Fatalf("#1 answered %q, want the resolved session's line", res.Text)
 	}
 
 	res, err = HandleResumeCommand(ctx, s, "2")
 	if err != nil {
 		t.Fatalf("HandleResumeCommand 2: %v", err)
 	}
-	if res.Actions[0].Value != "s2" {
-		t.Fatalf("2 resolved to %q, want s2", res.Actions[0].Value)
+	if res.Text != "[resume: s2]" {
+		t.Fatalf("2 answered %q, want s2", res.Text)
 	}
 }
 
@@ -370,8 +370,8 @@ func TestHandleResumeCommandExactID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleResumeCommand exact id: %v", err)
 	}
-	if res.Actions[0].Type != "load_session" || res.Actions[0].Value != "abc123" {
-		t.Fatalf("actions = %+v, want load_session abc123", res.Actions)
+	if res.Text != "[resume: abc123]" {
+		t.Fatalf("exact id answered %q, want the resolved id", res.Text)
 	}
 }
 
@@ -385,8 +385,9 @@ func TestHandleResumeCommandLabelPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleResumeCommand label prefix: %v", err)
 	}
-	if res.Actions[0].Value != "s1" {
-		t.Fatalf("label prefix resolved to %q, want s1", res.Actions[0].Value)
+	// a labelled row names BOTH ends, so the line is a real answer rather than an id
+	if res.Text != "[resume: my-cool-session (s1)]" {
+		t.Fatalf("label prefix answered %q, want the label and its id", res.Text)
 	}
 }
 
@@ -443,13 +444,11 @@ func TestHandleBranchCommandCreatesChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleBranchCommand: %v", err)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "branch_session" {
-		t.Fatalf("actions = %+v, want one branch_session", res.Actions)
+	// the answer names the child it created - no branch_session intent (t_146d3133)
+	if len(res.Actions) != 0 {
+		t.Fatalf("actions = %+v, want none - branch_session has no executor", res.Actions)
 	}
-	childID := res.Actions[0].Value
-	if childID == "" {
-		t.Fatal("branch_session value empty")
-	}
+	childID := childIDFromLine(t, res.Text, "root")
 	child, err := s.GetSession(ctx, childID)
 	if err != nil {
 		t.Fatalf("get child: %v", err)
@@ -457,6 +456,17 @@ func TestHandleBranchCommandCreatesChild(t *testing.T) {
 	if child.ParentID != "root" {
 		t.Fatalf("child.ParentID = %q, want root", child.ParentID)
 	}
+}
+
+// childIDFromLine reads the branched child's id back out of the line the handler answers:
+// "[branched <child> from <parent>]".
+func childIDFromLine(t *testing.T, line, parent string) string {
+	t.Helper()
+	suffix := " from " + parent + "]"
+	if !strings.HasPrefix(line, "[branched ") || !strings.HasSuffix(line, suffix) {
+		t.Fatalf("text = %q, want [branched <child> from %s]", line, parent)
+	}
+	return strings.TrimSuffix(strings.TrimPrefix(line, "[branched "), suffix)
 }
 
 func TestHandleBranchCommandMissingParent(t *testing.T) {
@@ -511,8 +521,8 @@ func TestHandleLabelCommandSetLabel(t *testing.T) {
 	if !strings.Contains(res.Text, "my-label") {
 		t.Fatalf("Text = %q, want to contain 'my-label'", res.Text)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "set_label" || res.Actions[0].Value != "my-label" {
-		t.Fatalf("actions = %+v, want set_label my-label", res.Actions)
+	if len(res.Actions) != 0 {
+		t.Fatalf("actions = %+v, want none - set_label has no executor", res.Actions)
 	}
 	sess, err := s.GetSession(ctx, "s1")
 	if err != nil {
@@ -536,8 +546,8 @@ func TestHandleLabelCommandClearLabel(t *testing.T) {
 	if res.Text != "[label cleared]" {
 		t.Fatalf("Text = %q, want '[label cleared]'", res.Text)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "set_label" || res.Actions[0].Value != "" {
-		t.Fatalf("actions = %+v, want set_label empty", res.Actions)
+	if len(res.Actions) != 0 {
+		t.Fatalf("actions = %+v, want none - set_label has no executor", res.Actions)
 	}
 	sess, err := s.GetSession(ctx, "s1")
 	if err != nil {

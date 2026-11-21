@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import {
   bucketSessions,
   formatTokens,
+  listedSessions,
   parseCollapsedLabels,
   relativeAge,
   rowMeta,
@@ -131,6 +132,32 @@ describe("bucketSessions", () => {
   it("malformed updated_at lands in earlier instead of crashing", () => {
     const b = bucketSessions([sess({ id: "bad", updated_at: "nope" })], NOW);
     assert.deepEqual(b.earlier.map((s) => s.id), ["bad"]);
+  });
+});
+
+// t_146d3133: /resume's #N counts the rows the pane RENDERS - pinned first, then the day
+// buckets newest-first, then archived. Numbering the sessions table's created_at order
+// instead would open a different session than the row the human was looking at.
+describe("listedSessions", () => {
+  it("flattens the buckets in pane order: pinned, today, yesterday, earlier, archived", () => {
+    const sessions = [
+      sess({ id: "old", updated_at: "2026-10-01T10:00:00" }),
+      sess({ id: "todayA", updated_at: `${TODAY}T09:00:00` }),
+      sess({ id: "todayB", updated_at: `${TODAY}T11:00:00` }),
+      sess({ id: "pin", updated_at: "2026-10-10T12:00:00", pinned: true }),
+      sess({ id: "arch", updated_at: `${TODAY}T08:00:00`, archived: true }),
+      sess({ id: "yest", updated_at: `${YESTERDAY}T23:50:00` }),
+    ];
+    assert.deepEqual(
+      listedSessions(sessions, NOW).map((s) => s.id),
+      ["pin", "todayB", "todayA", "yest", "old", "arch"],
+      "pinned first, newest first inside each bucket, archived last",
+    );
+  });
+
+  it("is the same order the sidebar's sections render", () => {
+    // one source: SIDEBAR_BUCKETS. A second ordering here would drift from the pane.
+    assert.deepEqual(SIDEBAR_BUCKETS, ["pinned", "today", "yesterday", "earlier", "archived"]);
   });
 });
 

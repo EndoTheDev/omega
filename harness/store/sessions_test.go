@@ -102,32 +102,18 @@ func ids(sessions []core.Session) []string {
 	return out
 }
 
-// HandleNewCommand flag parsing (the TUI's /new --agent surface).
-func TestHandleNewCommandAgentFlag(t *testing.T) {
-	res, err := HandleNewCommand("--agent scout")
-	if err != nil {
-		t.Fatalf("--agent scout: %v", err)
+// HandleNewCommand is gone (t_146d3133): its only output was a new_session intent no host
+// executed, so /new now lives where it can actually open a conversation - the webui's shell
+// (a chat tab) and the terminal loop (a session on the first message). This pin keeps the
+// name from returning to the capsule registry without a door behind it.
+func TestNewCommandIsNotRegistered(t *testing.T) {
+	for _, c := range sessionCommands() {
+		if c.Name == "/new" {
+			t.Fatalf("/new is back in the store capsule with no executor: %+v", c)
+		}
 	}
-	if len(res.Actions) != 1 || len(res.Actions[0].List) != 1 || res.Actions[0].List[0] != "scout" {
-		t.Errorf("action = %+v, want List [scout]", res.Actions)
-	}
-	res, _ = HandleNewCommand("--ephemeral --agent=a")
-	if len(res.Actions[0].List) != 1 || res.Actions[0].List[0] != "a" {
-		t.Errorf("--agent= form: %+v", res.Actions)
-	}
-	if _, err := HandleNewCommand("--agent"); err == nil {
-		t.Errorf("bare --agent accepted")
-	}
-	if _, err := HandleNewCommand("--agent ../evil"); err == nil {
-		t.Errorf("path-shaped agent accepted")
-	}
-	res, _ = HandleNewCommand("")
-	if len(res.Actions[0].List) != 0 {
-		t.Errorf("plain /new grew an agent binding: %+v", res.Actions)
-	}
-	res, _ = HandleNewCommand("--ephemeral")
-	if res.Actions[0].Value != "--ephemeral" {
-		t.Errorf("--ephemeral lost: %+v", res.Actions)
+	if _, err := (&Plugin{}).handleSessionCommand(nil, context.Background(), "/new", ""); err == nil {
+		t.Fatal("/new still resolves in the store capsule - drop it or give it a surface")
 	}
 }
 
