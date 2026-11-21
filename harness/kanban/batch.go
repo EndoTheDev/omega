@@ -17,7 +17,6 @@ import (
 	"strings"
 )
 
-// opIndexRef matches a "#N" positional reference to a create operation.
 var opIndexRef = regexp.MustCompile(`^#([0-9]+)$`)
 
 // batchPreflight validates every in-batch reference BEFORE the first operation applies.
@@ -55,7 +54,6 @@ func batchPreflight(ops []map[string]any) error {
 	return nil
 }
 
-// parseOpIndex reads a "#N" reference.
 func parseOpIndex(id string, total int) (int, error) {
 	m := opIndexRef.FindStringSubmatch(id)
 	if m == nil {
@@ -68,7 +66,6 @@ func parseOpIndex(id string, total int) (int, error) {
 	return n, nil
 }
 
-// resolveRef rewrites one operation's in-batch id reference to the real task id.
 func resolveRef(op map[string]any, last string, created map[int]string, total int) (map[string]any, string, error) {
 	id, _ := op["id"].(string)
 	if id == "" {
@@ -99,7 +96,7 @@ func resolveRef(op map[string]any, last string, created map[int]string, total in
 	return out, resolved, nil
 }
 
-// runTaskBatch runs the operations array on the tool provider's board (the. On a
+// runTaskBatch runs the operations array on the tool provider's board. On a
 // Batcher board the whole batch is one transaction: the first failure rolls back the
 // operations that already applied and the result says so; on success everything commits
 // at once (done-notifications flush after the commit, never for a rolled-back batch).

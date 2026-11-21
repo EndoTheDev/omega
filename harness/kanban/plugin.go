@@ -13,17 +13,14 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Plugin adapts the kanban Store into omega's plugin system.
 type Plugin struct {
 	store   *Store
 	tools   *ToolProvider
 	capsule *capsule
 }
 
-// Compile-time assertions: *Plugin is a Plugin, *Store a KanbanProvider.
 var _ agent.Plugin = (*Plugin)(nil)
 
-// NewPlugin returns a kanban Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 // Store returns the mounted board store (the host and the proof
@@ -32,21 +29,17 @@ func (p *Plugin) Store() *Store { return p.store }
 
 func (p *Plugin) Name() string { return "kanban" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "kanban: the durable task board agents and workers coordinate through"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "kanban" }
 
 // Provides stays the declared data the census reads.
 func (p *Plugin) Provides() []string { return []string{"kanban", "tools"} }
 
-// Requires: none. The finished-things dependency on the notifications
-// seam moved to the emitter registration (below) - the hook receives
-// the mounted seam at mount end, nil-safe, so the classic Requires
-// edge retired with the mount-time capture (v0.12 phase C1).
+// Requires: none. The finished-things dependency rides the emitter hook
+// (below), which receives the notifications seam at mount end, nil-safe.
 func (p *Plugin) Requires() []string { return nil }
 
 // Dismount releases the mounted board store: beyond-Context state the journal cannot.
@@ -103,9 +96,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		},
 		func() error { return api.RegisterPanelProvider(p.capsule) },
 		func() error { return p.registerCommands(api) },
-		// CLI homecoming (v0.12 phase D, Q6).
 		func() error { return api.RegisterSubcommand("kanban", kanbanSummary, cmdKanban) },
-		// done transitions report to the finished- things store. The hook hands the mounted
+		// done transitions report to the finished-things store. The hook hands the mounted
 		// notifications seam over at mount end, nil when the module is absent (nil is legal -
 		// the emitter is nil-safe by the classic law).
 		func() error {
@@ -124,7 +116,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// registerCommands registers the /board and /boards slash commands through the API.
 func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 	if err := api.RegisterCommand("/board", "show the active board, or switch it (/board [name])", nil,
 		func(c context.Context, name, args string) (core.CommandResult, error) {
@@ -144,7 +135,6 @@ func (p *Plugin) registerCommands(api *agent.ExtensionAPI) error {
 		})
 }
 
-// handleCommand answers /boards (list + pointer) and /board.
 func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/boards":
@@ -187,8 +177,6 @@ func (p *Plugin) handleCommand(name, args string) (core.CommandResult, error) {
 	return core.CommandResult{}, core.CommandMiss(name)
 }
 
-// session-scoped active board.
-
 func (p *Plugin) sessionBoard() string {
 	if p.tools == nil {
 		return ""
@@ -204,7 +192,6 @@ func (p *Plugin) setSessionBoard(name string) {
 	p.tools.mu.Unlock()
 }
 
-// ToolProvider exposes the board as agent tools.
 type ToolProvider struct {
 	board KanbanProvider
 
@@ -216,21 +203,16 @@ type ToolProvider struct {
 	active string
 }
 
-// sessionBoard is the read side for the runTask board resolution.
 func (p *ToolProvider) sessionBoard() string {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.active
 }
 
-// taskVerbs is the kanban verb set: the batch contract's per-op action enum derives.
-// The registry unification B rule split the flat action-protocol tool into
-// kanban.<verb> wire tools - dotted names are the norm on this registry (process.*,
-// delegate.*, web.*); kanban.batch keeps the per-op action contract for the operations
-// array.
+// taskVerbs is the kanban verb set: the batch contract's per-op action enum derives
+// from it, and kanban.batch keeps the per-op action contract for the operations array.
 var taskVerbs = []string{"create", "list", "update", "complete", "comment", "delete"}
 
-// Tools returns the kanban wire: seven dotted tools, one per verb.
 func (p *ToolProvider) Tools() map[string]core.Tool {
 	board := prop("string", "Board name to operate on (omit = the active board; 'main' is the default board).")
 	return map[string]core.Tool{
@@ -314,7 +296,6 @@ func (p *ToolProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// prop assembles one typed schema property.
 func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
@@ -331,7 +312,6 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// parseTaskOperations converts the raw interface{} from tool args into ordered.
 func parseTaskOperations(raw any) ([]map[string]any, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -357,10 +337,8 @@ func parseTaskOperations(raw any) ([]map[string]any, error) {
 	return ops, nil
 }
 
-// runBatchTool is kanban.batch's Run: parse the operations array (its own per-op action
-// contract), then hand it to the batch engine. The batch is atomic on a Batcher board
-// (one transaction, create-then-act referenced in-batch; batch.go) and fail-forward,
-// honestly reported, where the board cannot provide one.
+// runBatchTool is kanban.batch's Run: parse the per-op action contract, then hand it
+// to the batch engine (batch.go).
 func (p *ToolProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
 	ops, err := parseTaskOperations(args["operations"])
 	if err != nil {
@@ -369,7 +347,6 @@ func (p *ToolProvider) runBatchTool(ctx context.Context, args map[string]any) (s
 	return p.runTaskBatch(ctx, ops)
 }
 
-// verbRunner binds one verb of the dotted surface.
 func (p *ToolProvider) verbRunner(action string) func(context.Context, map[string]any) (string, error) {
 	return func(ctx context.Context, args map[string]any) (string, error) {
 		a := maps.Clone(args)
@@ -395,7 +372,6 @@ func (p *ToolProvider) refreshCapsule() {
 	p.capsule.refreshTasks()
 }
 
-// runTaskOp executes one task operation by its action on the provider b.
 func (p *ToolProvider) runTaskOp(ctx context.Context, b KanbanProvider, args map[string]any) (string, string, error) {
 	action, _ := args["action"].(string)
 	board := str(args["board"])
@@ -512,13 +488,11 @@ func (p *ToolProvider) runDelete(ctx context.Context, b KanbanProvider, board st
 	return "deleted " + id, nil
 }
 
-// str reads a tool arg that is always present.
 func str(v any) string {
 	s, _ := v.(string)
 	return s
 }
 
-// intArg is str for numbers.
 func intArg(v any) int {
 	f, ok := v.(float64)
 	if !ok {
@@ -546,5 +520,5 @@ func optStr(v any) *string {
 	return &s
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule as a module capsule (the tier law).
 func (p *Plugin) Toggleable() bool { return true }

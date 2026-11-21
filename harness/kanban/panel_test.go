@@ -1,7 +1,5 @@
 package kanban
 
-// The capsule's module tests.
-
 import (
 	"context"
 	"encoding/json"
@@ -11,7 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// testCapsule builds a capsule over a fresh registry-backed store.
 func testCapsule(t *testing.T) (*capsule, *string) {
 	t.Helper()
 	s := testStore(t)
@@ -20,7 +17,6 @@ func testCapsule(t *testing.T) (*capsule, *string) {
 	return c, &active
 }
 
-// capture installs the sink closure and records the pushed panels.
 func capture(t *testing.T, c *capsule) *[]core.Panel {
 	t.Helper()
 	var pushed []core.Panel
@@ -98,7 +94,7 @@ func TestCapsulePanelsDeclare(t *testing.T) {
 	}
 }
 
-// TestCapsuleCompleteAction: the pipe completes through the same grammar the tools.
+// TestCapsuleCompleteAction: the pipe completes through the same grammar the tools use.
 func TestCapsuleCompleteAction(t *testing.T) {
 	c, _ := testCapsule(t)
 	pushed := capture(t, c)
@@ -141,7 +137,7 @@ func TestCapsuleCompleteAction(t *testing.T) {
 	}
 }
 
-// TestCapsuleCompleteActionErrors: no id is a rejection, a bad action is the canvas.
+// TestCapsuleCompleteActionErrors: no id is a rejection, an unknown action too.
 func TestCapsuleCompleteActionErrors(t *testing.T) {
 	c, _ := testCapsule(t)
 	if _, err := c.HandleAction(core.ActionCall{Module: "kanban", Action: actionComplete}); err == nil || !strings.Contains(err.Error(), "id is required") {
@@ -152,7 +148,7 @@ func TestCapsuleCompleteActionErrors(t *testing.T) {
 	}
 }
 
-// TestCapsuleSwitchAction: the pipe validates the board the way /board does, moves.
+// TestCapsuleSwitchAction: the pipe validates the board the way /board does.
 func TestCapsuleSwitchAction(t *testing.T) {
 	c, active := testCapsule(t)
 	pushed := capture(t, c)
@@ -256,7 +252,7 @@ func TestCapsuleSwitchOnRegistryBoard(t *testing.T) {
 	}
 }
 
-// TestCapsuleTaskPanelFollowsSessionBoard: the panel lists the session's active.
+// TestCapsuleTaskPanelFollowsSessionBoard: the panel lists the session's active board.
 func TestCapsuleTaskPanelFollowsSessionBoard(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -335,7 +331,6 @@ func TestToolRefreshPushes(t *testing.T) {
 	}
 }
 
-// payloadOf renders a payload through its wire serialization.
 func payloadOf(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)
@@ -345,7 +340,6 @@ func payloadOf(t *testing.T, v any) string {
 	return string(b)
 }
 
-// TestCapsuleSilentWithoutSink: no canvas, no push.
 func TestCapsuleSilentWithoutSink(t *testing.T) {
 	c, _ := testCapsule(t)
 	ctx := context.Background()

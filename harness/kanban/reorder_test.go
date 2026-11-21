@@ -12,7 +12,6 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-// idsOf lists a column's tasks newest-slot-first (position order).
 func idsOf(t *testing.T, s *Store, board, status string) []string {
 	t.Helper()
 	ctx := context.Background()
@@ -71,7 +70,6 @@ func seedThree(t *testing.T) (*Store, string, string, string) {
 	return s, a, b, c
 }
 
-// TestCreateLandsOnTop: each fresh card takes the top slot of its column, so list.
 func TestCreateLandsOnTop(t *testing.T) {
 	s, a, b, c := seedThree(t)
 	got := idsOf(t, s, "", "")
@@ -173,7 +171,6 @@ func TestReorderWritesEvent(t *testing.T) {
 	}
 }
 
-// TestReorderPersistsAcrossReopen: the order is a column of the board database, not.
 func TestReorderPersistsAcrossReopen(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "kanban.db")
 	s0, err := Open(dsn)
@@ -209,7 +206,6 @@ func TestReorderPersistsAcrossReopen(t *testing.T) {
 	titlesEqual(t, titlesOf(t, s1, "", "triage"), []string{"p3", "p1", "p2"}, "reopened order")
 }
 
-// TestMigrationBackfillOrdersAsRendered: a pre-position database.
 func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	dsn := filepath.Join(t.TempDir(), "kanban.db")
 	s0, err := Open(dsn)
@@ -264,7 +260,6 @@ func TestMigrationBackfillOrdersAsRendered(t *testing.T) {
 	positionsDense(t, readPositions(t, s1))
 }
 
-// readPositions dumps (title, position) pairs straight from the table.
 func readPositions(t *testing.T, s *Store) map[string]int {
 	t.Helper()
 	rows, err := s.db.Query(`SELECT title, position FROM tasks`)
@@ -287,7 +282,6 @@ func readPositions(t *testing.T, s *Store) map[string]int {
 	return out
 }
 
-// positionsDense checks the pair dump is exactly 0.n-1.
 func positionsDense(t *testing.T, positions map[string]int) {
 	t.Helper()
 	seen := map[int]bool{}

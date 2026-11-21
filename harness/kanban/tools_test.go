@@ -24,7 +24,7 @@ func withSession(ctx context.Context, id string) context.Context {
 	return agent.WithSessionID(ctx, id)
 }
 
-// dottedToolNames is the full split wire: exactly these seven, and no flat kanban tool.
+// dottedToolNames is the wire: exactly these seven, and no flat kanban tool.
 var dottedToolNames = []string{
 	"kanban.list",
 	"kanban.create",
@@ -119,7 +119,6 @@ func TestDottedToolSchemasCarryOnlyTheirOwnArgs(t *testing.T) {
 	}
 }
 
-// schemaProps reads a tool schema's property table.
 func schemaProps(t *testing.T, tool core.Tool) map[string]any {
 	t.Helper()
 	props, ok := tool.Parameters["properties"].(map[string]any)
@@ -129,7 +128,6 @@ func schemaProps(t *testing.T, tool core.Tool) map[string]any {
 	return props
 }
 
-// assertRequired pins the schema's exact required list.
 func assertRequired(t *testing.T, tool core.Tool, want ...string) {
 	t.Helper()
 	got, ok := tool.Parameters["required"].([]string)
@@ -227,7 +225,7 @@ func TestTaskUpdateEmptyAssigneeUnassigns(t *testing.T) {
 	}
 }
 
-// TestDottedToolsCoverAllVerbs is the split's behavior gate.
+// TestDottedToolsCoverAllVerbs is the wire's behavior gate.
 func TestDottedToolsCoverAllVerbs(t *testing.T) {
 	p, board := toolProvider(t)
 	tools := p.Tools()
@@ -281,7 +279,6 @@ func TestDottedToolsCoverAllVerbs(t *testing.T) {
 	}
 }
 
-// TestRunTaskBatch covers the batch surface.
 func TestRunTaskBatch(t *testing.T) {
 	p, board := toolProvider(t)
 	batch := p.Tools()["kanban.batch"]
@@ -371,7 +368,7 @@ func (b nonBatcher) Close() error { return nil }
 
 var _ KanbanProvider = nonBatcher{}
 
-// TestRunTaskBatchFailForward pins the no-Batcher fallback: the board cannot roll.
+// TestRunTaskBatchFailForward pins the no-Batcher fallback: the board cannot roll back.
 func TestRunTaskBatchFailForward(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -402,9 +399,8 @@ func TestRunTaskBatchFailForward(t *testing.T) {
 	}
 }
 
-// TestTaskAliasesRetired pins the v0.12 phase-C1 retirement plus the B rule: the wire
-// is exactly the seven dotted names - the legacy alias shims and the flat domain tool
-// never register.
+// TestTaskAliasesRetired pins the wire's exactly-seven-dotted-names law: the legacy
+// alias shims and the flat domain tool never register.
 func TestTaskAliasesRetired(t *testing.T) {
 	p, _ := toolProvider(t)
 	tools := p.Tools()

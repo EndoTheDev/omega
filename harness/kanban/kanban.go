@@ -24,7 +24,6 @@ const (
 	StatusArchived  = "archived"
 )
 
-// statuses is the canonical ordered list (board column order).
 var statuses = []string{
 	StatusTriage, StatusTodo, StatusScheduled, StatusReady,
 	StatusRunning, StatusBlocked, StatusReview, StatusDone, StatusArchived,
@@ -39,17 +38,14 @@ func IsStatus(s string) bool {
 // StatusAll is a list-only filter value, never a board status.
 const StatusAll = "all"
 
-// IsListStatus reports whether s is a legal list filter.
 func IsListStatus(s string) bool {
 	return s == StatusAll || IsStatus(s)
 }
 
-// IsSettled reports whether the status is a terminal resting state (done, archived).
 func IsSettled(s string) bool {
 	return s == StatusDone || s == StatusArchived
 }
 
-// newTaskID returns a "t_" + 8 random hex chars id.
 func newTaskID() string {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {

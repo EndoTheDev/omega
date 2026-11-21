@@ -28,7 +28,6 @@ export function isBoardPath(p: string): boolean {
 export const LANE_RAIL_PX = 36;
 export const LANE_EASE_MS = 180;
 
-/** the per-lane dot tone (the Hermes status mapping) */
 export const LANE_TONES: Record<BoardStatus, string> = {
   triage: "#8f8f8f",
   todo: "#cfcfcf",
@@ -41,12 +40,10 @@ export const LANE_TONES: Record<BoardStatus, string> = {
   archived: "#4a4a4a",
 };
 
-/** the dot tone for a lane; an unknown status falls back to triage's gray. */
 export function laneTone(status: string): string {
   return LANE_TONES[status as BoardStatus] ?? LANE_TONES.triage;
 }
 
-// A pin is the user's override for one lane.
 export type LanePin = "open" | "collapsed";
 export type LanePins = Record<string, LanePin>;
 
@@ -58,7 +55,6 @@ export function laneFolded(status: string, count: number, pins: LanePins): boole
   return count <= 0;
 }
 
-/** toggleLanePin flips one lane between its rail and its column. */
 export function toggleLanePin(
   status: string,
   count: number,
@@ -75,8 +71,6 @@ export const NARROW_MAX_PX = 360;
 export function isNarrowWidth(px: number): boolean {
   return px > 0 && px < NARROW_MAX_PX;
 }
-
-// One task row, exactly what GET /tasks returns.
 
 // last_heartbeat_at rides only when the store stamps it.
 export interface BoardTask {
@@ -99,12 +93,10 @@ export interface BoardTask {
 
 export const PRIORITY_LEVELS = [0, 1, 2, 3] as const;
 
-/** the chip/sel label for a priority value. */
 export function priorityLabel(n: number): string {
   return `P${n}`;
 }
 
-/** true when a card wears its priority chip (0 = normal, silent). */
 export function hasPriorityChip(n: number): boolean {
   return n > 0;
 }
@@ -116,7 +108,6 @@ export function priorityOptions(): { value: number; label: string }[] {
   }));
 }
 
-/** bodyPreview is the card's dimmed teaser (first non-blank line, 79 chars + ellipsis). */
 export function bodyPreview(body: string): string {
   const line = (body ?? "")
     .split("\n")
@@ -147,7 +138,6 @@ export interface HeartbeatChip {
   runningMs: number;
 }
 
-/** whole minutes, floored and never negative - the chip's own unit. */
 export function minuteLabel(ms: number): string {
   return `${Math.max(0, Math.floor(ms / 60000))}m`;
 }
@@ -265,7 +255,6 @@ export function columns(tasks: BoardTask[]): BoardTask[][] {
   return BOARD_STATUSES.map((s) => by.get(s) as BoardTask[]);
 }
 
-/** step moves one frame along the board for the arrow buttons; null at either edge. */
 export function step(status: string, dir: -1 | 1): string | null {
   const i = BOARD_STATUSES.indexOf(status as BoardStatus);
   if (i < 0) return null;
@@ -276,7 +265,6 @@ export function step(status: string, dir: -1 | 1): string | null {
 
 export const DEFAULT_BOARD_NAME = "main";
 
-/** the create-board POST path (the empty state's only control). */
 export const BOARDS_PATH = "/boards";
 
 /** an unnamed board has no row to remove; the default board's refusal is the server's. */
@@ -284,7 +272,6 @@ export function canRemoveBoard(name: string): boolean {
   return name !== "";
 }
 
-/** the DELETE path for a registry board (name always encoded). */
 export function boardDeletePath(name: string): string {
   return `/boards/${encodeURIComponent(name)}`;
 }
@@ -300,7 +287,6 @@ export function boardRenamePath(name: string): string {
 
 export const BOARD_MENU_RENAME = "!rename";
 
-/** the dropdown row that removes the current board (armed: click again) */
 export const BOARD_MENU_REMOVE = "!remove";
 
 export type BoardMenuPick =
@@ -380,7 +366,6 @@ export function reorderAfter(
   return rest;
 }
 
-/** a compact relative age ("now", "42m", "3h", "5d"); empty on an unparseable stamp. */
 export function age(iso: string, now: Date = new Date()): string {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return "";

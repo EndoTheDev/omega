@@ -1,6 +1,5 @@
 package kanban
 
-// dotted_e2e_test.go: the split's acceptance witness.
 
 import (
 	"context"
@@ -14,7 +13,7 @@ import (
 )
 
 func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
-	// A FILE-backed board, not:memory: the loop executes tool calls concurrently,.
+	// A FILE-backed board, not :memory: the loop executes tool calls concurrently.
 	s, err := Open(filepath.Join(t.TempDir(), "kanban.db"))
 	if err != nil {
 		t.Fatal(err)

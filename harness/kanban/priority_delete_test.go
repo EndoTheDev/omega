@@ -1,6 +1,5 @@
 package kanban
 
-// The CRUD-round tests: the Priority field.
 
 import (
 	"context"
@@ -139,7 +138,6 @@ func TestRestPriorityAndDelete(t *testing.T) {
 	p, ctx, _ := mountPlugin(t)
 	ts := serveRoutes(t, ctx)
 
-	// POST /tasks carries priority
 	res, err := http.Post(ts.URL+"/tasks", "application/json",
 		strings.NewReader(`{"title":"hot","priority":3,"assignee":"cody"}`))
 	if err != nil {
@@ -152,7 +150,6 @@ func TestRestPriorityAndDelete(t *testing.T) {
 		t.Fatalf("created = %+v", created)
 	}
 
-	// PATCH /tasks/{id} re-prioritizes
 	req, _ := http.NewRequest(http.MethodPatch, ts.URL+"/tasks/"+created.ID,
 		strings.NewReader(`{"priority":1}`))
 	req.Header.Set("Content-Type", "application/json")
@@ -167,7 +164,6 @@ func TestRestPriorityAndDelete(t *testing.T) {
 		t.Fatalf("patched = %+v", patched)
 	}
 
-	// DELETE /tasks/{id} removes the row
 	req, _ = http.NewRequest(http.MethodDelete, ts.URL+"/tasks/"+created.ID, nil)
 	res, err = http.DefaultClient.Do(req)
 	if err != nil {

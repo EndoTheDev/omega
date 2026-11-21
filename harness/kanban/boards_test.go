@@ -23,7 +23,7 @@ func tempHome(t *testing.T) string {
 	return t.TempDir()
 }
 
-// openRegistryStore opens the home's single kanban database exactly the way.
+// openRegistryStore opens the home's single kanban database the way a mount does.
 func openRegistryStore(t *testing.T, home string) *Store {
 	t.Helper()
 	s, err := MountRegistry(home)
@@ -77,7 +77,6 @@ func TestFreshRegistryHasMain(t *testing.T) {
 	}
 }
 
-// datadirBoards is the legacy registry directory inside a home.
 func datadirBoards(home string) string {
 	return filepath.Join(home, "data", "boards")
 }
@@ -135,7 +134,6 @@ func TestDeleteGuards(t *testing.T) {
 	s := openRegistryStore(t, home)
 	ctx := context.Background()
 
-	// 0.17.3 make-over: DELETE ALL BOARDS.
 	if err := s.DeleteBoardRow("beta"); err == nil || !strings.Contains(err.Error(), "no such board") {
 		t.Fatalf("delete of unknown board: %v", err)
 	}
@@ -186,7 +184,7 @@ func TestDeleteGuards(t *testing.T) {
 		t.Fatalf("current after deleting the pointer holder = %q err %v, want %q", cur, err, DefaultBoardName)
 	}
 
-	// and main itself leaves - ZERO BOARDS is a legal state (0.17.3)
+	// and main itself leaves - ZERO BOARDS is a legal state
 	if err := s.DeleteBoardRow(DefaultBoardName); err != nil {
 		t.Fatalf("delete of the default board refused: %v", err)
 	}
@@ -342,7 +340,7 @@ func TestStoreBoardIsolation(t *testing.T) {
 		t.Fatalf("cross-board comment: err = %v", err)
 	}
 
-	// unknown / illegal boards error at the door; the store never auto-creates a named.
+	// unknown / illegal boards error at the door; the store never auto-creates.
 	if _, err := s.ListTasks(ctx, "gamma", ""); err == nil {
 		t.Fatal("unknown board accepted")
 	}
@@ -414,8 +412,6 @@ func TestCurrentBoardFlagMovesDefault(t *testing.T) {
 		t.Fatalf("remounted current = %q err %v", cur, err)
 	}
 }
-
-// the legacy layout migration --------------------------------------
 
 // seedLegacy is a real legacy sqlite board db.
 func seedLegacy(t *testing.T, dsn string, prefix string) {
@@ -616,7 +612,7 @@ func TestMigrateReRunAfterCommittedFoldIsNoOp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// boot 2 must be a no-op SUCCESS: no UNIQUE refusal, no duplicated rows, mount does.
+	// boot 2 must be a no-op SUCCESS: no UNIQUE refusal, no duplicated rows.
 	s2, err := MountRegistry(home)
 	if err != nil {
 		t.Fatalf("re-run mount failed - migration not re-runnable: %v", err)
@@ -650,8 +646,8 @@ func TestMigrateKeepsJourneyLookalikeBoard(t *testing.T) {
 		t.Fatal(err)
 	}
 	seedLegacy(t, mainDSN, "main")
-	// a LEGAL user board the old shape-signature (^j\d+) silently
-	// destroyed: never backed up, never ledgered, gone with the layout
+	// a LEGAL user board a shape-signature skip would have destroyed: migrated,
+	// never archived
 	if err := os.MkdirAll(filepath.Join(boards, "j2026-planning"), 0755); err != nil {
 		t.Fatal(err)
 	}
