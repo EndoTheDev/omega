@@ -316,6 +316,8 @@ flake, because the debugging run always passes. Use the package's
 - `.agents/COMMIT.md` - commit convention and voice
 - `.agents/REVIEW.md` - the reviewer lens law (the single authority): per-area failure definitions, finding tags, the security lens
 - `.agents/DESIGN.md` - the design system: colors, icons, components, composer, accessibility, architecture
+- `docs/glossary.md` - the domain vocabulary: one definition per term; read it before naming anything in code, docs or UI text
+- `docs/adr/` - the why-fence records: read the relevant ADR before removing or changing a settled mechanism
 
 ## Style
 
