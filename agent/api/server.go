@@ -6,7 +6,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1144,7 +1143,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 		}
 		req.branchParent = core.MsgID(view.Path[end].ID)
 		req.branchFloor = branchFloorOf(view.Path)
-		return storedMessages(view.Path[:end+1]), nil
+		return agent.StoredMessages(view.Path[:end+1]), nil
 	}
 	if req.Fork != "" {
 		forkID, idErr := core.ParseMsgID(req.Fork)
@@ -1168,7 +1167,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 			}
 			req.branchParent = req.Fork
 			req.branchFloor = branchFloorOf(view.Path)
-			return storedMessages(view.Path[:at+1]), nil
+			return agent.StoredMessages(view.Path[:at+1]), nil
 		default:
 			if len(incoming) == 0 {
 				return nil, &runError{http.StatusBadRequest, "fork requires a message to run from the forked point"}
@@ -1177,43 +1176,25 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 				incoming[i] = core.WithParentID(incoming[i], req.Fork)
 			}
 			req.persistInput = incoming
-			return append(storedMessages(view.Path[:at+1]), incoming...), nil
+			return append(agent.StoredMessages(view.Path[:at+1]), incoming...), nil
 		}
 	}
 	req.persistInput = incoming
-	return append(foldSummaryPrefix(sessionRow.ContextSummary), append(storedMessages(view.Path), incoming...)...), nil
+	return append(foldSummaryPrefix(sessionRow.ContextSummary), append(agent.StoredMessages(view.Path), incoming...)...), nil
 }
 
-// foldPath cuts the active path at a folded conversation's context boundary.
+// foldPath cuts the active path at a folded conversation's context boundary; the
+// implementation lives in agent.FoldPath because the CLI loop applies the SAME boundary -
+// a fold cannot mean two different things on two hosts.
 func foldPath(path []core.StoredMessage, start string) []core.StoredMessage {
-	if start == "" {
-		return path
-	}
-	for i, sm := range path {
-		if core.MsgID(sm.ID) == start {
-			return path[i:]
-		}
-	}
-	return path
+	return agent.FoldPath(path, start)
 }
 
 // foldSummaryPrefix heads a folded conversation's context with its summary. No summary
 // (a fold too small to earn one, or a compactor that was not mounted) leaves the
 // context exactly as the boundary left it.
 func foldSummaryPrefix(summary string) []core.Message {
-	if summary == "" {
-		return nil
-	}
-	return []core.Message{core.NewSystem(core.ContextFoldPrefix + summary + core.ContextFoldSuffix)}
-}
-
-// storedMessages strips the tree view down to plain provider context.
-func storedMessages(path []core.StoredMessage) []core.Message {
-	out := make([]core.Message, 0, len(path))
-	for _, sm := range path {
-		out = append(out, sm.Message)
-	}
-	return out
+	return agent.FoldSummaryPrefix(summary)
 }
 
 // branchFloorOf reports the active path's max store row id.
@@ -1664,62 +1645,11 @@ func (s *Server) manualCompactor() manualCompactorFace {
 	return svc
 }
 
-// errNoFoldFace: the store cannot hold a context boundary.
-var errNoFoldFace = errors.New("session store has no session-context surface")
+// errNoFoldFace: the store cannot hold a context boundary - the agent package's sentinel,
+// because the fold itself lives there (agent.FoldSession) and both hosts must see the same
+// verdict.
+var errNoFoldFace = agent.ErrNoSessionContext
 
-// compactOutcome is what a manual fold actually did.
-type compactOutcome struct {
-	Folded bool
-	Start  string // the message the next context begins at
-	Rows   int    // messages the fold removed from the live context
-	Kept   int    // messages the next context keeps verbatim
-	Why    string // the refusal, when Folded is false
-}
-
-// compactSession folds a session the human asked to compact. The session PERSISTS - a
-// fold moves the context boundary, it never starts a new conversation. Nothing is
-// written when the compactor has no summary to offer: a boundary that drops the middle
-// and keeps nothing in its place is worse than no fold at all.
-func (s *Server) compactSession(ctx context.Context, id string) (compactOutcome, error) {
-	scx, ok := s.store.(agent.SessionContextStore)
-	if !ok {
-		return compactOutcome{}, errNoFoldFace
-	}
-	view, err := s.store.GetActiveView(ctx, id)
-	if err != nil {
-		return compactOutcome{}, err
-	}
-	path := storedMessages(view.Path)
-	if len(path) == 0 {
-		return compactOutcome{Why: "this conversation has no messages yet"}, nil
-	}
-	c := s.manualCompactor()
-	if c == nil {
-		return compactOutcome{Why: "the compaction module is not mounted"}, nil
-	}
-	folded, err := c.FoldNow(ctx, path)
-	if err != nil {
-		return compactOutcome{}, err
-	}
-	if len(folded) == 0 {
-		return compactOutcome{Why: "the compactor had nothing to summarize (a short conversation, or compaction is off)"}, nil
-	}
-	// foldSummary reads the head the compactor wrote; the rows after it are the tail the
-	// fold kept verbatim, and they are what the boundary has to sit on.
-	summary := foldSummary(folded)
-	kept := len(folded) - 1
-	start := len(path) - kept
-	if summary == "" {
-		return compactOutcome{}, errors.New("the compactor answered a fold without a summary")
-	}
-	if start <= 0 || start >= len(path) {
-		return compactOutcome{}, fmt.Errorf("fold kept %d of %d rows - no boundary to write", kept, len(path))
-	}
-	if err := scx.SetSessionContextStart(ctx, id, core.MsgID(view.Path[start].ID), summary); err != nil {
-		return compactOutcome{}, err
-	}
-	return compactOutcome{Folded: true, Start: core.MsgID(view.Path[start].ID), Rows: start, Kept: kept}, nil
-}
 
 // handleSessionNew serves POST /sessions/{id}/new. A conversation the HUMAN owns
 // answers "fork" - the shell opens a fresh tab, exactly what /new always did. A
@@ -1763,7 +1693,7 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	// The fold happens on the ACTIVE PATH (the variant branches are not
 	// context), and the boundary keeps the tail message: a fresh context
 	// with a foothold, never an empty one.
-	path := storedMessages(view.Path)
+	path := agent.StoredMessages(view.Path)
 	start := ""
 	if n := len(view.Path); n > 0 {
 		start = core.MsgID(view.Path[n-1].ID)
@@ -1771,7 +1701,7 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	summary := ""
 	if c := s.compactor(); c != nil && len(path) > 0 {
 		if folded, ferr := c.Compact(ctx, path); ferr == nil && len(folded) < len(path) {
-			summary = foldSummary(folded)
+			summary = agent.FoldSummary(folded)
 		}
 		// A compactor that refuses (no provider, a dead upsteam) leaves the fold without a. A
 		// fold that costs context is the point; it never costs the run.
@@ -1786,22 +1716,6 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 		"folded":  len(path),
 		"summary": summary != "",
 	})
-}
-
-// foldSummary pulls the summary out of a compacted message list.
-func foldSummary(folded []core.Message) string {
-	for _, m := range folded {
-		sys, ok := m.(core.System)
-		if !ok {
-			continue
-		}
-		if s, found := strings.CutPrefix(sys.Content, core.ContextFoldPrefix); found {
-			if s, found := strings.CutSuffix(s, core.ContextFoldSuffix); found {
-				return s
-			}
-		}
-	}
-	return ""
 }
 
 // handleSessionByID serves GET /sessions/{id} (session + messages) and DELETE.

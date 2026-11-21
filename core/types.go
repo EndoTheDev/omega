@@ -56,10 +56,15 @@ type CommandResult struct {
 
 // CmdAction tells the host to do something after a command runs.
 type CmdAction struct {
-	Type  string   // "set_model", "refresh_title", "fetch_model_info", "run_compact", "set_model_list", "set_tool_display", "set_thinking", "new_session", "load_session", "branch_session", "set_label"
+	Type  string   // "set_model", "refresh_title", "fetch_model_info", CmdRunCompact, "set_model_list", "set_tool_display", "set_thinking", "new_session", "load_session", "branch_session", "set_label"
 	Value string   // primary value (model name, session ID, label text)
 	List  []string // list values (model names)
 }
+
+// CmdRunCompact is the /compact intent. The capsule declares it - it owns the summarizer
+// and no store - and every host that holds a session runs the fold itself through
+// agent.FoldSession, so the intent has an executor on every surface a human can type on.
+const CmdRunCompact = "run_compact"
 
 // ToolInfo is a tool name and description pair, for display in the system prompt.
 // The flag is stamped where the fold is known (StampDisabledTools), never stored on the
