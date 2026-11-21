@@ -15,9 +15,9 @@ func cwd() string {
 	return dir
 }
 
-// The host's own need faces of the trust capsule (part 3, the seam constitution). The
-// "trust" key is data, not a shared type - delete the capsule and these faces
-// nil-handle exactly as before (proof: TestTrustRemovalProof, removal_test.go, eighth).
+// The host's own need faces of the trust capsule. The "trust" key is data, not a
+// shared type - delete the capsule and these faces nil-handle exactly as before
+// (proof: TestTrustRemovalProof, removal_test.go).
 type trustResolver interface {
 	ResolveContext(dir string, approve, noApprove, interactive bool) string
 }

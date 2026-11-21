@@ -404,7 +404,7 @@ func (lo *cliLoop) commandExtension(name, args string) error {
 // hostAction executes one host action a command declared. The CLI loop owns a session and
 // the mounted compactor, so `run_compact` runs the SAME compact the HTTP dispatch runs and
 // prints the same line (agent.CompactLine); an action this surface cannot execute says so
-// instead of vanishing, because silence is the defect this path was carded for.
+// instead of vanishing: silence is the defect this path exists to fix.
 func (lo *cliLoop) hostAction(ctx context.Context, a core.CmdAction) error {
 	switch a.Type {
 	case core.CmdRunCompact:
@@ -568,8 +568,8 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
-// verdictSink is the CLI loop's own need face of the verdicts capsule (part 3, the. The
-// key is data; the owner capsule never knows a loop exists.
+// verdictSink is the CLI loop's own need face of the verdicts capsule - the key is
+// data; the owner capsule never knows a loop exists.
 type verdictSink interface {
 	Pending(sessionID string) []core.QuestionPrompt
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)

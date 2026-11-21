@@ -274,9 +274,9 @@ func fingerprintEqual(a, b map[string]int64) bool {
 	return maps.Equal(a, b)
 }
 
-// themeFingerprint maps file name -> mtime (unix nanos) for every theme file in the. A
-// read error yields nil: every file counts as changed on the next healthy poll, which
-// reloads. Nil maps compare equal to each other and unequal to any populated map.
+// themeFingerprint maps file name -> mtime (unix nanos) for every theme file in the
+// dir. A read error yields nil: every file counts as changed on the next healthy poll,
+// which reloads. Nil maps compare equal to each other and unequal to any populated map.
 func themeFingerprint(dir string) map[string]int64 {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

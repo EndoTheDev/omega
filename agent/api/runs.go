@@ -41,9 +41,9 @@ type activeRun struct {
 	// double-render.
 	openTail []transcriptItem
 	openTailAt time.Time
-	// branch pins the run head's parent row id with the session's max store row id at. The
-	// chat panel's composition reads it to cut the old sibling's persisted rows so the
-	// fresh response streams into their place - never stacked.
+	// branch pins the run head's parent row id with the session's max store row id at
+	// run start. The chat panel's composition reads it to cut the old sibling's
+	// persisted rows so the fresh response streams into their place - never stacked.
 	branch string
 	floor  int64
 }

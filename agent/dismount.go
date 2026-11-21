@@ -1,4 +1,4 @@
-// The teardown machinery (v0.12 phase E1, implementation sketch 2, grill Q3/Q11). A
+// The teardown machinery. A
 // runtime remount mounts through the scoped Context proxy with split panic semantics:
 // boot re-panics loudly naming the module; a remount panic rolls back, rejects the
 // toggle and the server keeps running.
@@ -12,7 +12,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Dismounter is an optional Plugin capability (v0.12 E1): module- internal teardown
+// Dismounter is an optional Plugin capability: module-internal teardown
 // beyond the Context - state the mount opened that the journal cannot see (a
 // connection, a watcher).
 type Dismounter interface {
@@ -35,7 +35,7 @@ func DismountAll(reg *Registry, ctx *core.Context) error {
 	return nil
 }
 
-// mountOne is the one mount path boot and remount share (Q7. The phase selects only the
+// mountOne is the one mount path boot and remount share. The phase selects only the
 // panic semantics and which Context the writes land on - the live Context (boot,
 // applied directly) or the scoped proxy (remount, applied at commit). On success it
 // returns the module's journal for the caller to commit (remount) or keep (boot,
@@ -119,7 +119,7 @@ func (reg *Registry) bootMount(target *core.Context, p Plugin) error {
 	return nil
 }
 
-// Mount mounts one plugin into the live Context (the runtime enable path, Q7). A panic
+// Mount mounts one plugin into the live Context (the runtime enable path). A panic
 // plays backward and returns as *core.ModulePanicError: rejected toggle, zero
 // contributions, the server keeps running.
 func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error {

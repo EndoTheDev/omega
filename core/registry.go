@@ -2,7 +2,7 @@ package core
 
 import "sort"
 
-// Services is the universal seam registry (restructure part 3, the seam constitution).
+// Services is the universal seam registry (the seam constitution).
 // The substrate never names a domain interface again: a capsule-shaped type in core is
 // residue by the deletability law, but the key string is data (one inert trace per
 // consumer's resolve call, accepted and documented). That is what keeps the mount's
@@ -11,7 +11,7 @@ import "sort"
 // every other Context write. Offer is claim-checked at mount: one owner per key, a
 // different tenant offering a held key fails the mount loud (the same fail-loud boot
 // the exclusive slots always had), a same-tenant re-offer replaces (the
-// clean-idempotent remount, Q7). The mount journal replays offers backward at dismount:
+// clean-idempotent remount). The mount journal replays offers backward at dismount:
 // the undo restores exactly the previous pointer, so after-dismount equals before-mount
 // (the census).
 type Services struct {
@@ -112,5 +112,5 @@ func (e *foreignOfferError) Error() string {
 	return "seam key " + e.Key + " offered by " + e.Module + " is already held by " + e.Owner
 }
 
-// Unwrap carries the one-tenant sentinel (Q5).
+// Unwrap carries the one-tenant sentinel.
 func (e *foreignOfferError) Unwrap() error { return ErrSeamForeignTenant }

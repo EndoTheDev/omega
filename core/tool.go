@@ -84,7 +84,7 @@ func (t Tool) SchemaParameters() map[string]any {
 	return out
 }
 
-// ModelInfo holds metadata about the current model, queried from the provider when.
+// ModelInfo holds metadata about the current model.
 // Zero values mean the provider does not expose that field; callers fall back to config
 // defaults.
 type ModelInfo struct {

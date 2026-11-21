@@ -1,7 +1,6 @@
 package agent
 
-// agent/profiles.go: continuous-agent homes
-// design; the definition layer of 0.17.3 rides on top). An
+// agent/profiles.go: the continuous-agent home shape. An
 // agent IS a home directory:
 //
 //	main (the default agent) = the home root itself
@@ -17,10 +16,7 @@ package agent
 //	  user.md, memory.md, soul.md scoped persona files, ONE soul per agent
 // <name>.log scoped log file (no logs/ directory)
 //
-// Folder presence is registration: there is no registry file. The
-// former agents/default profile died migrating UP into the home root
-// MigrateAgentHomes performs that one-time move (the reverse of card
-// 's migration).
+// Folder presence is registration: there is no registry file.
 //
 // Two laws live here because both are HOME-SHAPE facts:
 //
@@ -450,7 +446,7 @@ var StoreSnapshot func(srcDSN, dstPath string) error
 // config directory, skill tree, persona files and stores are COPIED into agents/<dst>,
 // never linked. The enumeration is deliberately COMPLETE, because the rename path leans
 // on it: an agent home whose schedules or boards were left behind is data the operator
-// cannot regenerate (Important 2 of the same review). Rows in a copied store still
+// cannot regenerate. Rows in a copied store still
 // carry the SOURCE agent tag - the caller re-tags them
 // (harness/store.RetagAgentSessions) because this package never touches SQLite shape.
 func CloneAgent(home, src, dst, description string) error {
@@ -787,8 +783,8 @@ func VisibleSkillDirs(home, name string, inheritMain bool) []string {
 	return dirs
 }
 
-// scanProfileSkillNames walks the ordered dirs for <name>/<name>.md layouts and. The
-// shared root is a container of skills, never a skill itself.
+// scanProfileSkillNames walks the ordered dirs for <name>/<name>.md layouts and dedupes
+// by name. The shared root is a container of skills, never a skill itself.
 func scanProfileSkillNames(dirs []string) []string {
 	seen := map[string]bool{}
 	var out []string

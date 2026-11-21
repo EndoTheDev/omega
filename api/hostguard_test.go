@@ -71,7 +71,7 @@ func doReq(t *testing.T, srv *httptest.Server, method, host, origin string) int 
 	return res.StatusCode
 }
 
-// declared public hosts (v0.15.1) ------------------------------------
+// declared public hosts ------------------------------------
 
 // The operator declares a tunneled domain (server.public_hosts).
 func TestGuardPublicHostPassesWhenDeclared(t *testing.T) {

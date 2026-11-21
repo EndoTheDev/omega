@@ -1,7 +1,6 @@
 package agent
 
-// agent/configedit.go: the agents DEFINITION LAYER (0.17.3 make-over,
-// the backend half of the two-card flip). The
+// agent/configedit.go: the agents DEFINITION LAYER. The
 // agents/<name>/config/config.yaml file is the whole definition of an
 // agent; this file is its read, its write, and the laws both enforce:
 //
@@ -100,8 +99,9 @@ type AgentInherit struct {
 // Any reports whether at least one artifact kind is enabled.
 func (i AgentInherit) Any() bool { return i.Skills || i.Soul || i.User || i.Memory }
 
-// AgentConfigUpdates is the PUT /agents/{name} write set, one field per item of the. A
-// nil field is untouched - the endpoint writes only what the request carries. MaxTurns
+// AgentConfigUpdates is the PUT /agents/{name} write set, one field per item of the
+// request. A nil field is untouched - the endpoint writes only what the request
+// carries. MaxTurns
 // writes a yaml INT node: the layer's max_turns is unmarshalled straight into
 // Config.MaxTurns int at the next wake, so a quoted "42" would be a boot error, and 0
 // ("no cap") is a real value: nil is what means unset.
@@ -454,7 +454,7 @@ func normalizeNames(in []string) []string {
 // settings truth the request must respect; visible is the skill registry the agent can
 // see (own + shared + main's own when inherit.skills is on).
 func validateAgentUpdates(u AgentConfigUpdates, host HostDefinition, visible []string) error {
-	// The secret-free law: a secret written into an agent file is a law violation, not.
+	// The secret-free law: a secret written into an agent file is a law violation.
 	// Name the endpoint that actually owns it so the caller has a next step.
 	for _, retired := range []struct {
 		key   string

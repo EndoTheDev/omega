@@ -1,10 +1,9 @@
 package api
 
 // The boot-wiring pin: at lane boot the canvas
-// handlers map carries the shell panel namespace. The Oct-27
-// incident: a toggle-storm chopped the Start-time chat registration
-// off the Context (a journal truncation undo, retired by d73fecd) and
-// every chat panel push thereafter logged
+// handlers map carries the shell panel namespace. The failure: a
+// toggle-storm chopped the Start-time chat registration off the Context
+// (a journal truncation undo) and every chat panel push thereafter logged
 //   canvas: unknown module: "http_channel"
 // until the next restart. The wire path - registerAt, then NewCanvas
 // must leave the chat namespace routed and pushing, and the served

@@ -232,7 +232,8 @@ func TestChatPanelSnapshotDeclaresNewestSession(t *testing.T) {
 	}
 }
 
-// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their own when.
+// TestChatPanelDeltasRunTheBatchLaw: token chunks never flush on their own when
+// batching.
 // batch=1h pins the law: exactly the structural flushes plus the exit one, no token
 // deltas in between.
 func TestChatPanelDeltasRunTheBatchLaw(t *testing.T) {
@@ -753,7 +754,8 @@ func TestBranchPathCutsTheOldSiblingKeepsRunRows(t *testing.T) {
 	}
 }
 
-// gateHoldProvider streams one response chunk, then holds the stream open until.
+// gateHoldProvider streams one response chunk, then holds the stream open until
+// released.
 type gateHoldProvider struct {
 	release chan struct{}
 }
@@ -998,7 +1000,7 @@ func postChatGetSessionID(t *testing.T, ts *httptest2.Server) string {
 	return f.ID
 }
 
-// TestChatDeltaRidesTheRunStream (settled Q1).
+// TestChatDeltaRidesTheRunStream.
 func TestChatDeltaRidesTheRunStream(t *testing.T) {
 	a := agent.NewAgent(newMockProvider("mock", scripted(
 		core.ResponseChunk{Type: "response_chunk", Content: "hel"},

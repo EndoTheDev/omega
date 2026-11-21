@@ -24,7 +24,7 @@ func TestParseModelSlot(t *testing.T) {
 		{"llama3.2:70b", "llama3.2", "70b"}, // dot ids split too; lookup decides
 		{"gemma3", "", "gemma3"},            // no colon = a bare model name
 		{"default", "", "default"},          // grammar only: the word is a bare
-		// model here; the RESERVED meaning (the receiver's own model) is.
+		// model here; the RESERVED meaning (the receiver's own model) is not parsed here.
 		{":gemma3:27b", "", ":gemma3:27b"}, // empty prefix is not a route
 	}
 	for _, c := range cases {

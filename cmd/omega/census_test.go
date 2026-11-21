@@ -172,7 +172,7 @@ func TestFoldOmegaJSONSiblingAndHomeSearch(t *testing.T) {
 	if _, statErr := os.Stat(filepath.Join(cfgDir, "omega.json")); !os.IsNotExist(statErr) {
 		t.Fatalf("an empty sidecar must still be buried: %v", statErr)
 	}
-	// Malformed JSON fails the boot loud (Q5 - no silent degradation).
+	// Malformed JSON fails the boot loud - no silent degradation.
 	if err := os.WriteFile(filepath.Join(cfgDir, "omega.json"),
 		[]byte("{nope"), 0o644); err != nil {
 		t.Fatal(err)

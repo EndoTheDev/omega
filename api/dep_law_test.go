@@ -26,7 +26,8 @@ func isAPILegalImport(path string) bool {
 	return rest == "core" || strings.HasPrefix(rest, "agent")
 }
 
-// TestAPIImportsShellVocabularyOnly parses every non-test api/*.go file and fails if.
+// TestAPIImportsShellVocabularyOnly parses every non-test api/*.go file and fails on an
+// import outside {stdlib, core, agent}.
 func TestAPIImportsShellVocabularyOnly(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

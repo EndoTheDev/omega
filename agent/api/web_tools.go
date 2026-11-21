@@ -53,10 +53,8 @@ const (
 	webFetchDesc  = "Fetch a single web page by URL and return its title, main content, and links found on the page."
 )
 
-// tools returns the web tools as the namespaced pair web.search and web.fetch. The
-// legacy shape - one consolidated "web" domain tool with dotted alias shims - retired
-// with the v0.12 mount migration (Q10: the machine-facing identity is the module.verb
-// pair; alias shims that cannot carry it die).
+// tools returns the web tools as the namespaced pair web.search and web.fetch: the
+// machine-facing identity is the module.verb pair, never a dotted alias shim.
 func (t *webTools) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"web.search": {

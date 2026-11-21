@@ -324,7 +324,7 @@ func expectFrame(t *testing.T, rd *bufio.Reader, event string) sseFrame {
 	return frame
 }
 
-// The arc 3b centerpiece journey.
+// The centerpiece journey.
 func TestViewModelDeltaRidesChatStream(t *testing.T) {
 	s, ts, _, release := gatedCanvasServer(t)
 	body, _ := json.Marshal(map[string]any{

@@ -191,7 +191,7 @@ func TestVariantSelectPersistsAndDrivesContext(t *testing.T) {
 	}
 	// PIN: a select is not a run. The select handler must repaint the focused panel;
 	// otherwise the webui's post-select snapshot refetch keeps the OLD variant rows
-	// forever (journey 30 red).
+	// forever.
 	if len(selPainted) == 0 {
 		t.Fatal("variant select never repainted the chat panel")
 	}

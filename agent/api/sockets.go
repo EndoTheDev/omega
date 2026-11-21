@@ -175,7 +175,7 @@ func (s *SocketSub) Subscribe(topics []string) []string {
 	return accepted
 }
 
-// Publish marshals one payload and fans it out to every subscriber that wants the. The
+// Publish marshals one payload and fans it out to every subscriber that wants the topic.
 // payload marshals once (never per subscriber) and not at all when nobody wants the
 // topic - a shell command with no browser attached pays one map scan per chunk.
 func (h *SocketHub) Publish(topic, session string, payload any) {
@@ -340,7 +340,8 @@ func (s *Server) subscribeVerdictCards(ctx *core.Context) {
 	src.OnCardRegistered(s.publishVerdictIssued)
 }
 
-// claimVerdictSource records the source this server subscribed to and reports whether.
+// claimVerdictSource records the source this server subscribed to and reports whether it
+// changed - re-claiming the same source is a no-op.
 func (s *Server) claimVerdictSource(src verdictCardSource) bool {
 	s.verdictMu.Lock()
 	defer s.verdictMu.Unlock()
@@ -370,8 +371,8 @@ func sameVerdictSource(a, b verdictCardSource) bool {
 	return false
 }
 
-// publishVerdictIssued pushes one issued card onto the chat topic under the card's. It
-// runs on the issuing goroutine, outside the hub's lock, and it is deliberately
+// publishVerdictIssued pushes one issued card onto the chat topic under its session id.
+// It runs on the issuing goroutine, outside the hub's lock, and it is deliberately
 // fire-and-forget: with no subscriber the hub does no work and nothing is buffered -
 // the GET routes stay the truth.
 func (s *Server) publishVerdictIssued(card core.QuestionPrompt) {

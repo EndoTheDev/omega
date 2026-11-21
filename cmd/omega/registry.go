@@ -1,6 +1,6 @@
 package main
 
-// registry.go: the host's registry-browser toggle adapter (v0.14.1). The toggle order
+// registry.go: the host's registry-browser toggle adapter. The toggle order
 // is always: validate the name against its registry (disable direction only - a
 // re-enable must always work, even for a name whose registry entry has since vanished),
 // mutate the live fold, write config.yaml, then apply the live effect.
@@ -25,7 +25,7 @@ type omegaRegistries struct {
 	setAgents  func([]string) // the continuous capsule's disabled-agents fold, nil when it is not mounted
 	logger     agent.LoggerProvider
 
-	mu *sync.Mutex // one fold mutation + write at a time - SHARED pointer with omegaModules (gate must-fix 1)
+	mu *sync.Mutex // one fold mutation + write at a time - SHARED pointer with omegaModules
 }
 
 // Compile-time assertion that omegaRegistries implements the seam.
@@ -34,7 +34,7 @@ var _ core.RegistryToggles = (*omegaRegistries)(nil)
 // Sync applies a hand-edited disabled fold (the config watcher path): the
 // skills/tools/agents namespaces take live, exactly as a toggle would leave them. The
 // modules namespace is untouched - the mount machinery is boot business; a hand edit
-// there keeps applying at the next boot exactly as it did before v0.14.1.
+// there keeps applying at the next boot.
 func (r *omegaRegistries) Sync(d DisabledNamespaces) {
 	if r == nil {
 		return
@@ -78,7 +78,7 @@ func (r *omegaRegistries) applyLive() {
 	}
 }
 
-// skillDisabler is the host registry's own need face of the skills capsule (part 3).
+// skillDisabler is the host registry's own need face of the skills capsule.
 type skillDisabler interface {
 	SetDisabled(names []string)
 }

@@ -183,7 +183,8 @@ func TestStripAppendPrompts(t *testing.T) {
 	}
 }
 
-// TestResolveConfigPath verifies --config wins outright, the home config.yaml is.
+// TestResolveConfigPath verifies --config wins outright, the home config.yaml is the
+// fallback.
 func TestResolveConfigPath(t *testing.T) {
 	t.Run("explicit flag path wins", func(t *testing.T) {
 		t.Setenv("OMEGA_HOME", t.TempDir())

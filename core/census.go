@@ -1,4 +1,4 @@
-// The teardown census (v0.12 phase E1, implementation sketch 2). stdlib-only by the
+// The teardown census. stdlib-only by the
 // core law: this is vocabulary, never behavior.
 package core
 

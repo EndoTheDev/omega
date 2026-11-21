@@ -45,7 +45,7 @@ func bootMount(t *testing.T, sink core.RefusalSink) (*agent.Registry, *core.Cont
 	return reg, ctx, canvas
 }
 
-// TestDoubleBootPurity is the registration-surface regulator diff (phase F proof 3):
+// TestDoubleBootPurity is the registration-surface regulator diff:
 // two boots of the same plugin set must produce the identical registration surface -
 // census equality.
 func TestDoubleBootPurity(t *testing.T) {
@@ -93,8 +93,8 @@ var mutationBattery = []struct {
 	{"not-json", []byte("{not json"), true},
 }
 
-// TestMutationConformance is the mutation-based conformance suite (phase F proof 5,
-// sketch 3): the battery drives every registered action on the full mount; per-seam
+// TestMutationConformance is the mutation-based conformance suite: the battery
+// drives every registered action on the full mount; per-seam
 // accept counters and the refusal ledger must agree with the boundary verdicts on
 // exactly what the module decode rejects - no refusal without a verdict, no verdict
 // without a count, no count without a boot-identical replay.
@@ -150,7 +150,7 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// reconcile 1: the counters - every dispatched payload counted
+	// The counters - every dispatched payload counted
 	// exactly once, accepted or refused, never both, never neither,
 	// every action in the table, nothing outside the dispatched set.
 	tallies := canvas.ActionTallies()
@@ -167,7 +167,7 @@ func TestMutationConformance(t *testing.T) {
 		}
 	}
 
-	// reconcile 2: the refusal ledger (Q12) only ever fires on boundary-owned verdicts - a
+	// The refusal ledger only ever fires on boundary-owned verdicts - a
 	// "not valid JSON" or "refused by" refusal whose action the battery dispatched, never
 	// on an accepted dispatch, never on an undispatched action.
 	byAction := map[string][]core.Refusal{}

@@ -11,7 +11,8 @@ import (
 // visionCapability is the registry flag a model carries when it accepts image input.
 const visionCapability = "vision"
 
-// captionSwitch is the consumer-owned face a captioner MAY satisfy to report whether.
+// captionSwitch is the consumer-owned face a captioner MAY satisfy to report whether
+// captioning is enabled.
 // The host installs the captioner from boot so the vision_model knob can flip live,
 // which makes "off" a state rather than a missing pointer: a captioner that answers
 // false is skipped exactly like a nil one (images ride to the main provider and a blind
@@ -131,8 +132,6 @@ func (a *Agent) applyCaptions(ctx context.Context, provider Provider, messages [
 	}
 	return out, nil
 }
-
-// Captioner moved to core with the agent (arc 1b).
 
 // CaptionStore persists computed captions keyed by image content. Implemented by the
 // store extension as a separate narrow interface, so StoreProvider consumers never need

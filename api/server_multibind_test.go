@@ -81,8 +81,8 @@ func TestChatActionPipeMirrorKeepsTheRunVisible(t *testing.T) {
 // The multi-bind canvas pin: the panel state a mirror's GET /ui/canvas serves must. The
 // channel start used to build one canvas per bind, and the capsule's push closure is
 // last-one-wins - the mirror that lost the start race served its boot-time seed
-// forever, so any repaint whose durable path is the snapshot refetch (journey 30's
-// variant switch back) never flipped on that mirror.
+// forever, so any repaint whose durable path is the snapshot refetch (the variant
+// switch back) never flipped on that mirror.
 func TestMultiBindServesOneCanvas(t *testing.T) {
 	prov := newMultiProvider("step")
 	st, err := store.Open(":memory:")

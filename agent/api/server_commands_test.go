@@ -21,7 +21,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/verdict"
 )
 
-// listingSkills serves the serving surface's own face (part 3).
+// listingSkills serves the serving surface's own face.
 type listingSkills struct{}
 
 // errNotFound: the skill provider's plain not-found phrasing.
@@ -392,7 +392,7 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 	}
 
 	// /new is NOT a store command any more: it declared new_session, nothing ran it, and
-	// the two surfaces that can open a conversation do it themselves (t_146d3133).
+	// the two surfaces that can open a conversation do it themselves.
 	code, _, raw = dispatch(t, body("/new", "", ""))
 	if code != http.StatusNotFound {
 		t.Fatalf("/new: %d %q, want 404 - the store cannot open a conversation", code, raw)
@@ -414,7 +414,7 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 	}
 }
 
-// TestDispatchShipsOnlyExecutedActions is the executor law (t_146d3133): an intent may
+// TestDispatchShipsOnlyExecutedActions is the executor law: an intent may
 // leave /commands/dispatch only when a host in THIS repo runs it. The dispatch consumes
 // run_compact itself (it owns the session shape), so that is the whole allowed set -
 // new_session, load_session, branch_session and set_label had no executor, rode a wire the

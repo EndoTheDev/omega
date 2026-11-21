@@ -1,9 +1,9 @@
 package agent
 
-// The registration-surface tests (v0.12 phase B onward). The identity law (namespaced
-// machine-facing names, Q10), the one-tenant rule (Q5), clean-idempotent replacement
-// (Q7), the census enforcement (every seam maps to a registration), the CLI subcommand
-// law (Q6), the emitter handoff and the subcommand registry.
+// The registration-surface tests: the identity law (namespaced machine-facing
+// names), the one-tenant rule, clean-idempotent replacement, the census
+// enforcement (every seam maps to a registration), the CLI subcommand law, the
+// emitter handoff and the subcommand registry.
 
 import (
 	"context"
@@ -43,7 +43,7 @@ func (plugNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() { close(ch) }
 }
 
-// noticeEmit is the test's own consumer face (part 3).
+// noticeEmit is the test's own consumer face.
 type noticeEmit interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
@@ -114,7 +114,8 @@ func (fakeStore) SessionModels(ctx context.Context) (map[string]string, error) {
 
 var emitterSeen noticeEmit
 
-// TestNamespaceEnforcement pins Q10: a machine-facing registration must carry its own.
+// TestNamespaceEnforcement pins the identity law: a machine-facing registration must
+// carry its own namespace.
 func TestNamespaceEnforcement(t *testing.T) {
 	var ctx Context
 	reg, err := MountAllAPI([]Plugin{badNamespace{}}, &ctx, nil, nil)
@@ -141,7 +142,8 @@ func (b badNamespace) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return fmt.Errorf("all namespace violations were rejected (this error fails the mount on purpose, Q5 fail-loud)")
 }
 
-// TestOneTenant pins Q5: a seam mounted by one module cannot be claimed by another.
+// TestOneTenant pins the one-tenant rule: a seam mounted by one module cannot be
+// claimed by another.
 func TestOneTenant(t *testing.T) {
 	var ctxA Context
 	_, err := MountAllAPI([]Plugin{classicStore{}, apiStoreClaimer{}}, &ctxA, nil, nil)
@@ -204,8 +206,8 @@ func (secondStore) MountWithAPI(ctx *Context, api *ExtensionAPI) error {
 	return api.Offer("store", fakeStore{})
 }
 
-// TestSameTenantReplace pins Q7: the same capsule re-registering its
-// own name replaces the entry - mount stays clean-idempotent.
+// TestSameTenantReplace pins clean-idempotent replacement: the same capsule
+// re-registering its own name replaces the entry, so mount stays clean.
 func TestSameTenantReplace(t *testing.T) {
 	var ctx Context
 	reg, err := MountAllAPI([]Plugin{replaceCapsule{}}, &ctx, nil, nil)
@@ -358,7 +360,7 @@ func TestSubcommandRegistration(t *testing.T) {
 		}
 	}
 
-	// same tenant remount (Q7): a fresh registry is clean-idempotent
+	// same tenant remount: a fresh registry is clean-idempotent
 	var ctx3 Context
 	reg3, err := MountAllAPI([]Plugin{
 		&subCapsule{name: "greeter", summary: "greets by name"},

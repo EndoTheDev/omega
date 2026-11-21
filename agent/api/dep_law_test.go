@@ -37,7 +37,8 @@ func isAgentAPILegalImport(path string) bool {
 	return false
 }
 
-// TestAPIImportsMechanismOnly parses every non-test agent/api/*.go file and fails if.
+// TestAPIImportsMechanismOnly parses every non-test agent/api/*.go file and fails on an
+// import outside {stdlib, core, agent, llm}.
 func TestAPIImportsMechanismOnly(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

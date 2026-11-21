@@ -21,7 +21,7 @@ import (
 	"github.com/EndoTheDev/omega/harness/terminal"
 )
 
-// Local consumer faces for the proof tests (part 3, the seam constitution).
+// Local consumer faces for the proof tests.
 type proofNotifier interface {
 	Emit(n core.Notice) (core.Notice, error)
 	List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error)
@@ -55,7 +55,7 @@ func proofResolve(t *testing.T, ctx *core.Context, key string) {
 //     canvas carries no notifications panel, no toast exists, and no
 //     emitter wiring is left to fire.
 //
-// The output lines are the pastable proof the card asks.
+// The output lines are the pastable proof.
 func TestNotificationsRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -182,8 +182,8 @@ func payloadJSON(v any) string {
 	return string(b)
 }
 
-// TestKanbanRemovalProof is the arc 5 removal proof
-// the flagship reference the removal recipe doc is written against):
+// TestKanbanRemovalProof is the removal proof (the flagship
+// reference the removal recipe doc is written against):
 // kanban is the biggest module - tools, commands, panels, the REST
 // surface. The two mounts are the proof:
 //
@@ -198,7 +198,7 @@ func payloadJSON(v any) string {
 //     tree depends on the module - no Requires edge names kanban, so
 //     the removal takes no dependents with it.
 //
-// The module nouns live in the capsule now (phase F): the board types
+// The module nouns live in the capsule: the board types
 // are package kanban, core carries zero of them - the binary-purity
 // nm check (scripts/nm-purity.sh) is the machine law on top.
 func TestKanbanRemovalProof(t *testing.T) {
@@ -373,8 +373,8 @@ func pluginTool(ctx *core.Context, name string) (func(context.Context, map[strin
 	return nil, fmt.Errorf("tool %q not registered", name)
 }
 
-// TestCronRemovalProof is the arc 6 removal proof
-// third capsule through the recipe): cron is the cheap read-only case.
+// TestCronRemovalProof is the removal proof (the third capsule
+// through the recipe): cron is the cheap read-only case.
 // The two mounts are the proof:
 //
 //  1. WITH cron: the seam is mounted, the canvas carries the jobs
@@ -393,7 +393,7 @@ func pluginTool(ctx *core.Context, name string) (func(context.Context, map[strin
 // human-authored, omega may only ever propose jobs) - the proof pins
 // the absence too.
 //
-// Core carries no cron vocabulary (part 3, the seam constitution):
+// Core carries no cron vocabulary:
 // CronDeps and JobInfo live in the capsule, the service resolves by
 // the "cron" key from the universal registry, and the consumers keep
 // only their own local need interfaces. No seam type left to compile.
@@ -533,7 +533,7 @@ func cronPanel(panels []core.Panel) (core.Panel, bool) {
 //     so no Requires edge exists and none is needed. The two store
 //     files stay on disk: data is not code.
 //
-// Core carries no memory vocabulary (part 3, the seam constitution):
+// Core carries no memory vocabulary:
 // the memory files live with the capsule, the service resolves by the
 // "memory" key, and the consumer's local interface is its own need
 // statement. The tool-name references the host
@@ -1100,7 +1100,7 @@ for line in sys.stdin:
 // code. The card + answer wire shapes stay in core (QuestionPrompt,
 // QuestionAnswer - wire vocabulary, marshalled identically by every
 // consumer and the serving surface); the seam interface was consumed by
-// each consumer's own local one (wave 1), so no core seam type remains.
+// each consumer's own local one, so no core seam type remains.
 // The proof asserts the wire shapes compile.
 func TestVerdictRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
@@ -1311,10 +1311,9 @@ func TestVerdictRemovalProof(t *testing.T) {
 //     unchanged (trust Requires nothing and nothing Requires trust).
 //
 // Data is not code: trust.yaml and its trusted entries stay on disk
-// after a removal. Core carries no trust vocabulary (part 3, the seam
-// constitution): the capsule owns its types, the service resolves by
-// the "trust" key, and the host keeps its own nil-guarded need faces
-// the deletion takes nothing with it.
+// after a removal. Core carries no trust vocabulary: the capsule owns its
+// types, the service resolves by the "trust" key, and the host keeps its
+// own nil-guarded need faces - the deletion takes nothing with it.
 func TestTrustRemovalProof(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 	cfg := DefaultConfig()
@@ -1485,10 +1484,9 @@ func terminalMuxOf(ctx *core.Context) *http.ServeMux {
 	return mux
 }
 
-// TestTerminalRemovalProof is the terminal capsule's removal proof (the v0.15
-// arc's terminal proof, folded by the 0.17.3 modules
-// fold, the agent's tool family and the webui's
-// integrated terminal are ONE registration named "terminal"). Its whole
+// TestTerminalRemovalProof is the terminal capsule's removal proof (the agent's
+// tool family and the webui's integrated terminal are ONE registration named
+// "terminal"). Its whole
 // surface is the four shell.* tools, six /terminal routes and the
 // lifecycle fence that owns the shells. The two mounts are the proof:
 //
@@ -1656,7 +1654,7 @@ func TestTerminalRemovalProof(t *testing.T) {
 //     the Approval Gate prompt section ships from the plugin, and no
 //     other plugin Requires "approvals".
 // 2. MODE OFF: the seam is nil and the prompt section is absent
-//     Q10 provably zero-cost: the loop consults nothing, no audit
+//     provably zero-cost: the loop consults nothing, no audit
 //     file is created, no calls or rows exist.
 //  3. REMOVED: the module is out of buildPlugins - the seam is nil,
 //     nothing Requires it, and removing harness/approval takes the

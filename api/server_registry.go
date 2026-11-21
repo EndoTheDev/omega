@@ -1,6 +1,6 @@
 package api
 
-// server_registry.go: the registry-browser toggle surface (v0.14.1). A host without the
+// server_registry.go: the registry-browser toggle surface. A host without the
 // seam (nil) answers 501 so the tabs can hide their toggles.
 
 import (

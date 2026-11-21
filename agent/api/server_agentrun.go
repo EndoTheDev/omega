@@ -20,9 +20,9 @@ func (s *Server) SetAgentRunFactory(f AgentRunFactory) {
 	s.agentRuns = f
 }
 
-// runAgentFor resolves the agent that serves this run: nil unless the store names a. A
-// nil answer means "the daemon's agent", the single home every session lived in before
-// per-agent routing.
+// runAgentFor resolves the agent that serves this run: nil unless the store names an
+// agent home. A nil answer means "the daemon's agent", the single home every session
+// lived in before per-agent routing.
 func (s *Server) runAgentFor(ctx context.Context, sessionID string) (*agent.Agent, error) {
 	if s.agentRuns == nil || s.store == nil || sessionID == "" || isEphemeralID(sessionID) {
 		return nil, nil

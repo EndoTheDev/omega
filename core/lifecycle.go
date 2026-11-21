@@ -1,4 +1,4 @@
-// The goroutine fence (v0.12 phase E1, implementation sketch 1, grill Q11): a module
+// The goroutine fence: a module
 // must not spawn background work in Mount. Recover cannot unwind a goroutine that a
 // panicked Mount already spawned - the fence is what keeps the contribution-rollback
 // story true: a rejected remount leaves zero running background work behind.
@@ -56,7 +56,7 @@ type Lifecycle struct {
 }
 
 // Register records a handle for owner module. The same owner re-registering the same
-// name replaces (the clean-idempotent remount, Q7); the same name under a different
+// name replaces (the clean-idempotent remount); the same name under a different
 // owner is a fence violation and fails loud.
 func (l *Lifecycle) Register(owner string, h LifecycleHandle) {
 	if h.Name == "" {

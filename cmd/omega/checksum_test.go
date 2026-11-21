@@ -154,7 +154,7 @@ func TestVerifyChecksumAliasOnlyShape(t *testing.T) {
 	}
 }
 
-// legacyChecksumLookup is the pre-Oct-16 entry matcher, VERBATIM from v0.5.1.
+// legacyChecksumLookup is the entry matcher older releases shipped, kept VERBATIM.
 func legacyChecksumLookup(checksums, assetName string) string {
 	wantHash := ""
 	for _, line := range strings.Split(checksums, "\n") {

@@ -161,7 +161,8 @@ func TestChatRetryAppendsBelowLastUserTurn(t *testing.T) {
 	}
 }
 
-// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is taken is.
+// TestChatRetryGatesOnLiveRun: a retry while the session's run slot is taken is
+// refused with 409.
 func TestChatRetryGatesOnLiveRun(t *testing.T) {
 	s, prov, st, ts := newMultiServer(t)
 	createSession(t, ts, "s9")

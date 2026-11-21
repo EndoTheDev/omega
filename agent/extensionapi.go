@@ -94,7 +94,7 @@ type Registry struct {
 	mu       sync.Mutex
 	owner    map[string]string // seam name or namespace pair -> tenant module
 	emitter  []emitterReg      // finished-things hooks, delivered at mount end
-	routes   []Route           // module REST, consumed in phase D
+	routes   []Route           // module REST routes, served by the shell
 	subcmds  []Subcommand      // module CLI subcommands, dispatched by the omega binary
 	refusals core.RefusalSink
 
@@ -229,7 +229,7 @@ func (r *Registry) claimSlot(seam, module string) error {
 	if owner, ok := r.owner[seam]; ok && owner != module {
 		return fmt.Errorf("%w: seam %q mounted by %q, claimed by %q", core.ErrSeamForeignTenant, seam, owner, module)
 	}
-	r.owner[seam] = module // same tenant re-claims = replace (Q7)
+	r.owner[seam] = module // same tenant re-claims = replace
 	return nil
 }
 
@@ -285,7 +285,7 @@ type ExtensionAPI struct {
 	module  string
 	ctx     *core.Context
 	reg     *Registry
-	j       *journal // this mount's contribution journal (v0.12 E1)
+	j       *journal // this mount's contribution journal
 	live    bool     // true = writes are already on the live Context (boot)
 	builtin bool     // the capsule ships built-in vocabulary (not Toggleable)
 	tools   map[string]core.Tool
@@ -486,7 +486,7 @@ func (api *ExtensionAPI) RegisterRoute(pattern string, h func(http.ResponseWrite
 	replaced := false
 	for i, r := range api.reg.routes {
 		if r.Pattern == pattern {
-			api.reg.routes[i].Handler = h // same tenant re-registers = replace (Q7)
+			api.reg.routes[i].Handler = h // same tenant re-registers = replace
 			replaced = true
 			break
 		}
@@ -548,7 +548,7 @@ func (api *ExtensionAPI) RegisterSubcommand(name, summary string, handler func(a
 	replaced := false
 	for i, s := range api.reg.subcmds {
 		if s.Name == name && s.Module == module {
-			api.reg.subcmds[i].Summary = summary // same tenant re-registers = replace (Q7)
+			api.reg.subcmds[i].Summary = summary // same tenant re-registers = replace
 			api.reg.subcmds[i].Handler = handler
 			replaced = true
 			break

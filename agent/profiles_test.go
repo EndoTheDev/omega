@@ -449,7 +449,6 @@ func installStubSnapshot(t *testing.T) *[][2]string {
 	return &calls
 }
 
-// TestCloneAgentCopiesTheWholeHome pins Important 2 of the review.
 func TestCloneAgentCopiesTheWholeHome(t *testing.T) {
 	home := scratchHome(t)
 	calls := installStubSnapshot(t)
@@ -611,7 +610,7 @@ func TestCloneAgentFromMainRefusesMainOnlySchedules(t *testing.T) {
 	}
 }
 
-// TestCloneAgentFailureLeavesNoPhantom pins Important 3: folder presence
+// TestCloneAgentFailureLeavesNoPhantom pins it: folder presence
 // IS registration, so a clone that dies mid-copy must not leave a
 // half-built agent home behind.
 func TestCloneAgentFailureLeavesNoPhantom(t *testing.T) {
@@ -669,7 +668,6 @@ func TestCloneAgentWithoutSnapshotIsLoud(t *testing.T) {
 	}
 }
 
-// TestMigrateAgentHomesRefusesSymlinkedSkill pins Nit 1 of the review.
 func TestMigrateAgentHomesRefusesSymlinkedSkill(t *testing.T) {
 	home := scratchHome(t)
 	legacy := filepath.Join(home, "agents", "default")
