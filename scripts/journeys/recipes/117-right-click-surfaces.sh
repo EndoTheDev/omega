@@ -62,7 +62,8 @@ right_click_js() {
 
 click_row() {
   local label=$1 box
-  box=$(jsq "(() => {const b=[...document.querySelectorAll('.context-menu-item')].find(x=>(x.textContent||'').trim().startsWith('$label')); if(!b) return ''; const r=b.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()")
+  # the label span, never the row's whole text: a checked row carries its state glyph first
+  box=$(jsq "(() => {const b=[...document.querySelectorAll('.context-menu-item')].find(x=>((x.querySelector('.context-menu-label')||{}).textContent||'').trim()==='$label'); if(!b) return ''; const r=b.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()")
   box=${box//\"/}
   [ -n "$box" ] || die "no menu row named $label"
   ab mouse move $box >/dev/null 2>&1
@@ -71,14 +72,18 @@ click_row() {
   ab mouse up >/dev/null 2>&1
 }
 
-# chip_box <aria-label>: the chip's centre, empty when the chip is not rendered
+# THE TAB NAME: a chip's own word, whatever the strip renders (aria-label on the icon-only
+# sidebar chips, the title text on a main-pane tab) - matched case-insensitively.
+TAB_NAME_JS="const name=(t)=>((t.getAttribute('aria-label')||t.title||((t.querySelector('.dock-tab-title')||{textContent:''}).textContent)||'')).trim().toLowerCase();"
+
+# chip_box <name>: the chip's centre, empty when the chip is not rendered
 chip_box() {
-  jsq "(() => {const t=document.querySelector('.dock-tab[aria-label=\"$1\"]'); if(!t) return ''; const r=t.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
+  jsq "(() => {${TAB_NAME_JS} const t=[...document.querySelectorAll('.dock-tab')].find((x)=>name(x)==='$(printf '%s' "$1" | tr 'A-Z' 'a-z')'); if(!t) return ''; const r=t.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 }
 
 chip_click() {
   local clicked
-  clicked=$(jsq "(() => {const t=document.querySelector('.dock-tab[aria-label=\"$1\"]'); if(!t) return 0; t.click(); return 1})()")
+  clicked=$(jsq "(() => {${TAB_NAME_JS} const t=[...document.querySelectorAll('.dock-tab')].find((x)=>name(x)==='$(printf '%s' "$1" | tr 'A-Z' 'a-z')'); if(!t) return 0; t.click(); return 1})()")
   assert_eq "${clicked//\"/}" "1" "the $1 chip is on the strip"
 }
 
@@ -148,8 +153,8 @@ step "ok: the hidden set survives a reload"
 
 right_click_js "(() => {const b=document.querySelector('.statusbar'); const r=b.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
-uncheck=$(jsq '[...document.querySelectorAll(".context-menu-item")].find(x=>(x.textContent||"").trim().startsWith("Message count"))?.querySelector(".context-menu-check")?.textContent.trim()||"?"')
-assert_eq "${uncheck//\"/}" "" "the hidden stat reads unchecked in the menu that stays"
+uncheck=$(jsq '(() => {const row=[...document.querySelectorAll(".context-menu-item")].find(x=>((x.querySelector(".context-menu-label")||{}).textContent||"").trim()==="Message count"); if(!row) return "missing"; const c=row.querySelector(".context-menu-check"); if(!c) return "nocheck"; const t=(c.textContent||"").trim(); return t===""?"empty":t;})()')
+assert_eq "${uncheck//\"/}" "empty" "the hidden stat reads unchecked in the menu that stays"
 click_row "Message count"
 if ! wait_js '(() => (document.querySelector(".statusbar .zone.right").innerText||"").includes("messages"))()' 10; then
   die "the restore click did not put the stat back"
@@ -163,8 +168,8 @@ right_click_js "$(chip_box "Files")"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
 assert_eq "$(menu_rows)" "Hide this tab" "a secondary-sidebar chip menus Hide this tab"
 click_row "Hide this tab"
-if ! wait_js '(() => !document.querySelector(".dock-tab[aria-label=\"Files\"]"))()' 10; then
-  die "the Hidden chip is still on the strip"
+if ! wait_js "(() => {${TAB_NAME_JS} return ![...document.querySelectorAll('.dock-tab')].some((x)=>name(x)==='files')})()" 10; then
+  die "the hidden chip is still on the strip"
 fi
 if ! wait_js '(() => {const p=[...document.querySelectorAll(".dock-pane")].find(x=>x.className.includes("kind-skills")||x.className.includes("kind-tools")); return !!p && !!p.querySelector(".dock-content")})()' 10; then
   die "hiding a chip blanked its pane - the body did not follow the next visible tab"
@@ -173,18 +178,19 @@ step "ok: Hide takes the chip and the pane keeps rendering"
 
 ab reload >/dev/null 2>&1
 wait_booted
-if ! wait_js '(() => !document.querySelector(".dock-tab[aria-label=\"Files\"]"))()' 10; then
+if ! wait_js "(() => {${TAB_NAME_JS} return ![...document.querySelectorAll('.dock-tab')].some((x)=>name(x)==='files')})()" 10; then
   die "the hidden chip came back on reload - the flag did not persist"
 fi
 step "ok: the hidden chip survives a reload"
 
-# the strip IS the visible surface that keeps the restore door
-strip_box="(() => {const p=[...document.querySelectorAll('.dock-pane')].find(x=>!!x.querySelector('.dock-tab[aria-label=\"cron\"]')); if(!p) return ''; const bar=p.querySelector('.dock-tabbar'); if(!bar) return ''; const r=bar.getBoundingClientRect(); return Math.round(r.right-8)+' '+Math.round(r.y+r.height/2);})()"
+# the strip IS the visible surface that keeps the restore door: a right-click on the
+# secondary sidebar's own bar (not a chip) lists what it hid
+strip_box="(() => {${TAB_NAME_JS} const p=[...document.querySelectorAll('.dock-pane')].find((x)=>[...x.querySelectorAll('.dock-tab')].some((t)=>name(t)==='skills')); if(!p) return ''; const bar=p.querySelector('.dock-tabbar'); if(!bar) return ''; const r=bar.getBoundingClientRect(); return Math.round(r.right-8)+' '+Math.round(r.y+r.height/2);})()"
 right_click_js "$strip_box"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
 assert_eq "$(menu_rows)" "Show Files" "the strip lists the hidden tab for restore"
 click_row "Show Files"
-if ! wait_js '(() => !!document.querySelector(".dock-tab[aria-label=\"Files\"]"))()' 10; then
+if ! wait_js "(() => {${TAB_NAME_JS} return [...document.querySelectorAll('.dock-tab')].some((x)=>name(x)==='files')})()" 10; then
   die "the restore row put no chip back"
 fi
 step "ok: the strip's right-click restores the chip"
@@ -192,7 +198,7 @@ step "ok: the strip's right-click restores the chip"
 # --- 4. an agent row -----------------------------------------------------
 chip_click "Agents"
 wait_js '(() => !!document.querySelector(".registry-rows"))()' 15
-right_click_js "(() => {const row=[...document.querySelectorAll('.registry-rows li')].find(r=>(r.innerText||'').trim().startsWith('main')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
+right_click_js "(() => {const row=[...document.querySelectorAll('.registry-rows li')].find(r=>!!r.querySelector('.agents-main-badge')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
 assert_eq "$(menu_rows)" "New agent" "the locked default agent offers New agent and no Delete"
 click_row "New agent"
