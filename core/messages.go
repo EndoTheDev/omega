@@ -1,9 +1,9 @@
 package core
 
-// ContextFoldPrefix and ContextFoldSuffix wrap the summary that heads a folded context.
+// ContextCompactPrefix and ContextCompactSuffix wrap a compacted context's summary head.
 const (
-	ContextFoldPrefix = "[compacted: "
-	ContextFoldSuffix = "]"
+	ContextCompactPrefix = "[compacted: "
+	ContextCompactSuffix = "]"
 )
 
 type Session struct {
@@ -27,7 +27,7 @@ type Session struct {
 
 	// MachineOwned marks a conversation the MACHINERY owns rather than the human: such a row
 	// opens from its owner's surface, never from the human's session list, and a /new on it
-	// folds the conversation in place instead of forking - a bot keeps one conversation.
+	// compacts the conversation in place instead of forking - a bot keeps one conversation.
 	MachineOwned bool `json:"machine_owned,omitempty"`
 
 	ContextStart string `json:"context_start,omitempty"`

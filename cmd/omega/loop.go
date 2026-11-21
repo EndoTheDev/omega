@@ -339,7 +339,7 @@ func (lo *cliLoop) commandSession(args string) error {
 		lo.printf("fresh session - created on the next message\n")
 		return nil
 	}
-	msgs, err := agent.FoldContext(context.Background(), lo.store, args)
+	msgs, err := agent.CompactContext(context.Background(), lo.store, args)
 	if err != nil {
 		return fmt.Errorf("session %s: %w", args, err)
 	}
@@ -402,18 +402,18 @@ func (lo *cliLoop) commandExtension(name, args string) error {
 }
 
 // hostAction executes one host action a command declared. The CLI loop owns a session and
-// the mounted compactor, so `run_compact` runs the SAME fold the HTTP dispatch runs and
+// the mounted compactor, so `run_compact` runs the SAME compact the HTTP dispatch runs and
 // prints the same line (agent.CompactLine); an action this surface cannot execute says so
 // instead of vanishing, because silence is the defect this path was carded for.
 func (lo *cliLoop) hostAction(ctx context.Context, a core.CmdAction) error {
 	switch a.Type {
 	case core.CmdRunCompact:
-		out, err := agent.FoldSession(ctx, lo.store, lo.compactor(), lo.sessionID)
+		out, err := agent.CompactSession(ctx, lo.store, lo.compactor(), lo.sessionID)
 		if err != nil {
 			return err
 		}
 		lo.printf("%s\n", agent.CompactLine(out))
-		if out.Folded {
+		if out.Compacted {
 			// The loop sends its own history, so the boundary it just wrote only reaches
 			// the next run when the in-memory context is rebuilt from the store.
 			if err := lo.loadHistory(); err != nil {
@@ -427,8 +427,8 @@ func (lo *cliLoop) hostAction(ctx context.Context, a core.CmdAction) error {
 	return nil
 }
 
-// compactor is the mounted manual fold face. The capsule owns the summarizer, the loop
-// owns the session: the two meet at agent.FoldSession, never at a second implementation.
+// compactor is the mounted manual compact face. The capsule owns the summarizer, the loop
+// owns the session: the two meet at agent.CompactSession, never at a second implementation.
 func (lo *cliLoop) compactor() agent.ManualCompactor {
 	if lo.pctx == nil {
 		return nil
@@ -437,14 +437,15 @@ func (lo *cliLoop) compactor() agent.ManualCompactor {
 	return c
 }
 
-// loadHistory refreshes the in-memory context from the store, honouring the session's fold
-// boundary and its summary - the CLI sends this list itself, so a fold only takes effect
-// when the boundary is applied here (the HTTP dispatch applies the same one per request).
+// loadHistory refreshes the in-memory context from the store, honouring the session's
+// compact boundary and its summary - the CLI sends this list itself, so a compact only
+// takes effect when the boundary is applied here (the HTTP dispatch applies the same one
+// per request).
 func (lo *cliLoop) loadHistory() error {
 	if lo.sessionID == "" {
 		return nil
 	}
-	msgs, err := agent.FoldContext(context.Background(), lo.store, lo.sessionID)
+	msgs, err := agent.CompactContext(context.Background(), lo.store, lo.sessionID)
 	if err != nil {
 		return err
 	}
@@ -530,7 +531,7 @@ func (lo *cliLoop) send(text string, lines <-chan string) error {
 	lo.out.Flush()
 
 	// The turn is persisted; rebuild the in-memory context from the store so the next run
-	// rides the session's fold boundary (and its summary) instead of a stale copy.
+	// rides the session's compact boundary (and its summary) instead of a stale copy.
 	if err := lo.loadHistory(); err != nil {
 		lo.printf("%s(context reload failed: %v)%s\n", lo.s(ansiDim), err, lo.s(ansiReset))
 	}

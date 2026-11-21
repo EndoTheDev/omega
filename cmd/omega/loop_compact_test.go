@@ -1,7 +1,7 @@
 package main
 
 // loop_compact_test.go: the CLI loop's half of the /compact contract. A capsule declares
-// the fold with no text; the loop owns the session, so it must run the fold the HTTP
+// the intent with no text; the loop owns the session, so it must run the compact the HTTP
 // dispatch runs - and print the SAME line (agent.CompactLine), or say why not. Silence is
 // the defect this path was carded for, so every branch here asserts a printed line.
 
@@ -17,12 +17,12 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// loopFold is the capsule's manual fold face, answering a fixed fold.
-type loopFold struct {
+// loopCompactor is the capsule's manual compact face, answering a fixed compact.
+type loopCompactor struct {
 	out []core.Message
 }
 
-func (f *loopFold) FoldNow(context.Context, []core.Message) ([]core.Message, error) {
+func (f *loopCompactor) CompactNow(context.Context, []core.Message) ([]core.Message, error) {
 	return f.out, nil
 }
 
@@ -65,10 +65,10 @@ func TestLoopCommandDispatchBindsTheSession(t *testing.T) {
 	}
 }
 
-// TestLoopCompactRunsTheFold is the card's law: a run_compact action is executed by the
+// TestLoopCompactRunsTheCompaction is the card's law: a run_compact action is executed by the
 // loop, the store's boundary + summary move, the printed line names them, and the loop's
 // OWN in-memory context is rebuilt on the new boundary (it sends that list itself).
-func TestLoopCompactRunsTheFold(t *testing.T) {
+func TestLoopCompactRunsTheCompaction(t *testing.T) {
 	ctx := context.Background()
 	lo, out := newLoopForCommands(t, []string{"/compact"}, func(context.Context, string, string) (core.CommandResult, error) {
 		return core.CommandResult{Actions: []core.CmdAction{{Type: core.CmdRunCompact}}}, nil
@@ -88,8 +88,8 @@ func TestLoopCompactRunsTheFold(t *testing.T) {
 	}
 	wantStart := core.MsgID(view.Path[4].ID)
 	lo.sessionID = "s-1"
-	lo.pctx.ApplyOffer("compactor", "compactor", &loopFold{out: []core.Message{
-		core.NewSystem(core.ContextFoldPrefix + "the middle of it" + core.ContextFoldSuffix),
+	lo.pctx.ApplyOffer("compactor", "compactor", &loopCompactor{out: []core.Message{
+		core.NewSystem(core.ContextCompactPrefix + "the middle of it" + core.ContextCompactSuffix),
 		core.NewUser("five"),
 	}})
 
@@ -107,14 +107,14 @@ func TestLoopCompactRunsTheFold(t *testing.T) {
 	if row.ContextStart != wantStart || row.ContextSummary != "the middle of it" {
 		t.Fatalf("boundary = (%q, %q), want (%q, the middle of it)", row.ContextStart, row.ContextSummary, wantStart)
 	}
-	// The loop sends its own history: a fold that did not rebuild it would be a placebo.
+	// The loop sends its own history: a compact that did not rebuild it would be a placebo.
 	if len(lo.history) != 2 {
 		t.Fatalf("loop context = %d rows, want the summary plus the kept tail (2)", len(lo.history))
 	}
 	if _, ok := lo.history[0].(core.System); !ok {
-		t.Fatalf("loop context head = %#v, want the fold summary", lo.history[0])
+		t.Fatalf("loop context head = %#v, want the compact summary", lo.history[0])
 	}
-	// The transcript keeps every row - a fold moves the boundary, it never deletes.
+	// The transcript keeps every row - a compact moves the boundary, it never deletes.
 	msgs, err := st.GetMessages(ctx, "s-1")
 	if err != nil {
 		t.Fatalf("messages: %v", err)

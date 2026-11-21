@@ -171,7 +171,7 @@ describe("palette dispatch: the tab's session rides the wire", () => {
     }
   });
 
-  it("a fold's own report is what the operator reads", async () => {
+  it("a compact's own report is what the operator reads", async () => {
     const wire = stubFetch(() =>
       json({
         kind: "command",

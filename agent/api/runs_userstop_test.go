@@ -34,7 +34,7 @@ func newStopTestServer(t *testing.T) (*Server, *store.Store, *httptest.Server) {
 
 // TestUserStopAbandonsPendingAndDropsWakes pins the wake half of the card without a run
 // in flight: the stop endpoint latches the session, settles every pending call (nothing
-// left for the never-fold law or the placeholders to read), empties the queued results,
+// left for the never-compact law or the placeholders to read), empties the queued results,
 // and refuses the settlement that arrives after the cancel.
 func TestUserStopAbandonsPendingAndDropsWakes(t *testing.T) {
 	s, st, ts := newStopTestServer(t)

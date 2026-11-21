@@ -207,8 +207,8 @@ func (s *Server) drainWakes(sessionID string) {
 		}
 		if !s.wakes.allow(sessionID) {
 			// Runaway guard: park with a visible note, settle the home's outstanding pending
-			// calls (a parked home must not pin the compactor's never-fold forever) and drop the
-			// queued results - they were counted, the note says.
+			// calls (a parked home must not pin the compactor's never-compact forever) and drop
+			// the queued results - they were counted, the note says.
 			s.parkHome(sessionID)
 			continue
 		}
@@ -383,7 +383,7 @@ func (s *Server) appendSessionBookkeeping(sessionID string, msg core.Message) {
 // abandonPending ends every piece of work the home had in flight at a user stop: each
 // pending call is settled without a result (nothing re-enters a conversation the human
 // ended), and the wake FIFO is emptied so a queued settlement cannot launch either.
-// Settling is not cosmetic - the never-fold law and the pending placeholders both read
+// Settling is not cosmetic - the never-compact law and the pending placeholders both read
 // this table, and a row left behind would pin the compactor's boundary on a
 // conversation that is.
 func (s *Server) abandonPending(sessionID string) {

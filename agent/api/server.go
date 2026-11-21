@@ -1128,8 +1128,8 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 	if err != nil {
 		return nil, &runError{http.StatusInternalServerError, "load history: " + err.Error()}
 	}
-	// The /new fold: a machinery-owned conversation restarts its CONTEXT without losing.
-	view.Path = foldPath(view.Path, sessionRow.ContextStart)
+	// The /new compact: a machinery-owned conversation restarts its CONTEXT without losing.
+	view.Path = compactPath(view.Path, sessionRow.ContextStart)
 	if req.Retry {
 		end := -1
 		for i := len(view.Path) - 1; i >= 0; i-- {
@@ -1180,21 +1180,21 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 		}
 	}
 	req.persistInput = incoming
-	return append(foldSummaryPrefix(sessionRow.ContextSummary), append(agent.StoredMessages(view.Path), incoming...)...), nil
+	return append(compactSummaryPrefix(sessionRow.ContextSummary), append(agent.StoredMessages(view.Path), incoming...)...), nil
 }
 
-// foldPath cuts the active path at a folded conversation's context boundary; the
-// implementation lives in agent.FoldPath because the CLI loop applies the SAME boundary -
-// a fold cannot mean two different things on two hosts.
-func foldPath(path []core.StoredMessage, start string) []core.StoredMessage {
-	return agent.FoldPath(path, start)
+// compactPath cuts the active path at a compacted conversation's context boundary; the
+// implementation lives in agent.CompactPath because the CLI loop applies the SAME boundary
+// - a compact cannot mean two different things on two hosts.
+func compactPath(path []core.StoredMessage, start string) []core.StoredMessage {
+	return agent.CompactPath(path, start)
 }
 
-// foldSummaryPrefix heads a folded conversation's context with its summary. No summary
-// (a fold too small to earn one, or a compactor that was not mounted) leaves the
+// compactSummaryPrefix heads a compacted conversation's context with its summary. No summary
+// (a compact too small to earn one, or a compactor that was not mounted) leaves the
 // context exactly as the boundary left it.
-func foldSummaryPrefix(summary string) []core.Message {
-	return agent.FoldSummaryPrefix(summary)
+func compactSummaryPrefix(summary string) []core.Message {
+	return agent.CompactSummaryPrefix(summary)
 }
 
 // branchFloorOf reports the active path's max store row id.
@@ -1620,10 +1620,10 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// compactorFace is the compaction face the /new fold holds. A
+// compactorFace is the compaction face the /new compact holds. A
 // consumer-owned local interface (the compactor capsule never knows its
 // callers); the loop's own contract lives in agent/seams.go, and this
-// file asks the same mounted service for the same fold.
+// file asks the same mounted service for the same compact.
 type compactorFace interface {
 	Compact(ctx context.Context, messages []core.Message) ([]core.Message, error)
 }
@@ -1633,11 +1633,11 @@ func (s *Server) compactor() compactorFace {
 	return svc
 }
 
-// manualCompactorFace is the on-demand fold a human asks for (/compact): the same
+// manualCompactorFace is the on-demand compact a human asks for (/compact): the same
 // mounted service, with the token budget out of the way and the new context's rows
 // answered back instead of a summary buried in a message list.
 type manualCompactorFace interface {
-	FoldNow(ctx context.Context, messages []core.Message) ([]core.Message, error)
+	CompactNow(ctx context.Context, messages []core.Message) ([]core.Message, error)
 }
 
 func (s *Server) manualCompactor() manualCompactorFace {
@@ -1645,16 +1645,15 @@ func (s *Server) manualCompactor() manualCompactorFace {
 	return svc
 }
 
-// errNoFoldFace: the store cannot hold a context boundary - the agent package's sentinel,
-// because the fold itself lives there (agent.FoldSession) and both hosts must see the same
-// verdict.
-var errNoFoldFace = agent.ErrNoSessionContext
-
+// errNoCompactFace: the store cannot hold a context boundary - the agent package's
+// sentinel, because the compact itself lives there (agent.CompactSession) and both hosts
+// must see the same verdict.
+var errNoCompactFace = agent.ErrNoSessionContext
 
 // handleSessionNew serves POST /sessions/{id}/new. A conversation the HUMAN owns
 // answers "fork" - the shell opens a fresh tab, exactly what /new always did. A
 // conversation the MACHINERY owns (an agent's canonical chat) NEVER forks: the
-// relationship is the point, so /new folds it instead.
+// relationship is the point, so /new compacts it instead.
 func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1690,7 +1689,7 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// The fold happens on the ACTIVE PATH (the variant branches are not
+	// The compact happens on the ACTIVE PATH (the variant branches are not
 	// context), and the boundary keeps the tail message: a fresh context
 	// with a foothold, never an empty one.
 	path := agent.StoredMessages(view.Path)
@@ -1700,21 +1699,21 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := ""
 	if c := s.compactor(); c != nil && len(path) > 0 {
-		if folded, ferr := c.Compact(ctx, path); ferr == nil && len(folded) < len(path) {
-			summary = agent.FoldSummary(folded)
+		if compacted, ferr := c.Compact(ctx, path); ferr == nil && len(compacted) < len(path) {
+			summary = agent.CompactSummary(compacted)
 		}
-		// A compactor that refuses (no provider, a dead upsteam) leaves the fold without a. A
-		// fold that costs context is the point; it never costs the run.
+		// A compactor that refuses (no provider, a dead upstream) leaves the compact without a
+		// summary. A compact that costs context is the point; it never costs the run.
 	}
 	if err := scx.SetSessionContextStart(ctx, id, start, summary); err != nil {
 		http.Error(w, "fold conversation: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"kind":    "compacted",
-		"session": id,
-		"folded":  len(path),
-		"summary": summary != "",
+		"kind":      "compacted",
+		"session":   id,
+		"compacted": len(path),
+		"summary":   summary != "",
 	})
 }
 

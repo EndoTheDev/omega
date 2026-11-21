@@ -260,7 +260,7 @@ func TestWakeDroppedWhenEphemeralHomeGone(t *testing.T) {
 }
 
 // TestEphemeralLedgerKeepsPendingThroughSettle: the eph lane's rows are readable while
-// the call is still outstanding (the compactor's never-fold law and the wake turn's
+// the call is still outstanding (the compactor's never-compact law and the wake turn's
 // sibling placeholders read the same table), and settle-then-inject leaves it empty.
 func TestEphemeralLedgerKeepsPendingThroughSettle(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
