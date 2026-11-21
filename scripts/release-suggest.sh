@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # release-suggest.sh - the release prompt's suggested bump + evidence list.
 #
@@ -67,8 +80,8 @@ while IFS= read -r -d $'\x1e' rec; do
   low="${subj,,}"
   # Breaking: the ! bang-marker (feat!:/refactor!:/feat(x)!:), a
   # BREAKING CHANGE footer line, or removed/renamed API surface.
-  if [[ "$subj" =~ $re_bang ]] \
-     || printf '%s\n' "$body" | grep -Eq '^[[:space:]]*BREAKING[[:space:]]+CHANGE' \
+  if grep -Eq '^[[:space:]]*BREAKING[[:space:]]+CHANGE' <<<"$body" \
+     || [[ "$subj" =~ $re_bang ]] \
      || [[ "$low" =~ $re_prefix ]]; then
     major_seen=1
     evidence+=("$sha $subj")

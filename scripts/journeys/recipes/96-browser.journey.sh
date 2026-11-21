@@ -36,6 +36,19 @@
 # lane home's data/browser.json (the cheapest loss in the home, per the
 # capsule's own law).
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 B="$JOURNEY_BASE_URL"
 
 # throwaway browser.json: the home is the serving lane's (the runner
@@ -100,7 +113,7 @@ du=$(curl -s -o /dev/null -w '%{http_code}' --retry 20 --retry-delay 1 \
   --retry-connrefused --max-time 3 "$DENYURL")
 [ "$fu" = "200" ] && [ "$du" = "200" ] || die "local frame origins never came up (friendly=$fu deny=$du)"
 # the deny origin really denies (its header is why the embed refuses)
-curl -s -D - -o /dev/null "$DENYURL" | grep -qi "^x-frame-options: deny" || die "deny origin lost its X-Frame-Options header"
+grep -qi "^x-frame-options: deny" <<<"$(curl -s -D - -o /dev/null "$DENYURL")" || die "deny origin lost its X-Frame-Options header"
 step "ok: local origins up (friendly :$P_FRIENDLY, deny :$P_DENY)"
 
 # --- a: the REST face -----------------------------------------------------
@@ -111,23 +124,23 @@ bad=$(curl -s -o /dev/null -w '%{http_code}' -X PUT "$B/browser/last" \
 [ "$bad" = "400" ] || die "a non-browsable scheme was not refused ($bad)"
 put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
   -d "{\"url\": \"$FRIENDLY\"}")
-printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
+grep -qF "127.0.0.1:$P_FRIENDLY" <<<"$put" || die "PUT did not answer the stored URL: $put"
 got=$(curl -s "$B/browser/last" | grep -oE "127\.0\.0\.1:$P_FRIENDLY" | head -1)
 [ -n "$got" ] || die "GET /browser/last lost the persisted URL"
 # the frameability probe: deny=false, friendly=true, dead host=null
 fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$DENYURL")")
-printf '%s' "$fv" | grep -qF '"frameable":false' || die "the probe missed the deny header: $fv"
+grep -qF '"frameable":false' <<<"$fv" || die "the probe missed the deny header: $fv"
 fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" "$FRIENDLY")")
-printf '%s' "$fv" | grep -qF '"frameable":true' || die "the probe refused the friendly page: $fv"
+grep -qF '"frameable":true' <<<"$fv" || die "the probe refused the friendly page: $fv"
 fv=$(curl -s "$B/browser/frameable?url=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1],safe=''))" http://127.0.0.1:1/)")
-printf '%s' "$fv" | grep -qF '"frameable":null' || die "an unreachable host must answer null (the probe cannot say): $fv"
+grep -qF '"frameable":null' <<<"$fv" || die "an unreachable host must answer null (the probe cannot say): $fv"
 # the reset: a PUT of the empty string clears the resume point
 reset=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' -d '{"url": ""}')
 [ -n "$(printf '%s' "$reset" | grep -oF '"last":""')" ] || die "the reset did not clear the resume: $reset"
 # restore the friendly resume for step c
 put=$(curl -s -X PUT "$B/browser/last" -H 'Content-Type: application/json' \
   -d "{\"url\": \"$FRIENDLY\"}")
-printf '%s' "$put" | grep -qF "127.0.0.1:$P_FRIENDLY" || die "PUT did not answer the stored URL: $put"
+grep -qF "127.0.0.1:$P_FRIENDLY" <<<"$put" || die "PUT did not answer the stored URL: $put"
 step "ok: the last-URL pair round-trips, the probe classifies, the reset clears"
 
 # --- b+c: open the tab (the command palette), the resume mounts ----------
@@ -205,7 +218,7 @@ done
 ft=$(jsq '(()=>{const f=document.querySelector(".browser-refused");return f?(f.textContent||"").includes("shown inline")?1:0:0})()')
 assert_eq "$ft" "1" "the fallback names the refusal"
 last=$(curl -s "$B/browser/last")
-printf '%s' "$last" | grep -qF "127.0.0.1:$P_FRIENDLY" || \
+grep -qF "127.0.0.1:$P_FRIENDLY" <<<"$last" || \
   die "a refused frame must not persist: /browser/last became $last"
 step "ok: the refusal surfaced and the refused URL persisted NOTHING"
 

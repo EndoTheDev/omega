@@ -40,6 +40,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 # fixture_error <msg>: the named cause plus the stake. Every fixture is a real
 # git repo driven with `git -C "$root"`, and `git -C ""` resolves to the CWD -
 # so an empty fixture root turns the suite into a commit generator for the
@@ -185,8 +203,8 @@ c "$fx" "fix(side): a race in the send path"
 merge_commit "$fx" "Merge branch 'wt/x' into dev" "chore(x): side scaffolding"
 c "$fx" "feat(main): the landing lane"
 run_notes "$fx"
-printf '%s' "$OUT" | grep -qF "1 feature, 0 refactors, 1 fix, 1 tune, 1 doc update, 1 merge across main, x, side, core" \
-	&& ok || bad "N1: counts line wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+grep -qF "1 feature, 0 refactors, 1 fix, 1 tune, 1 doc update, 1 merge across main, x, side, core" <<<"$OUT" \
+	&& ok || bad "N1: counts line wrong: $(grep -m1 'features' <<<"$OUT")"
 expect_body_bullets "$fx" N1 \
 	"feat(main): the landing lane" \
 	"fix(side): a race in the send path" \
@@ -195,10 +213,10 @@ expect_body_bullets "$fx" N1 \
 # the post carries the five-highlight law: only the newest feats, and the
 # conventional-commit prefix never posts (factory vocabulary, t_42854d3e)
 expect_bullets "$fx" N1 "the landing lane"
-md "$fx" | grep -qF "Merge branch" && bad "N1: bare merge must not highlight" || ok
-body "$fx" | grep -qF "Merge branch" && bad "N1: bare merge must not reach the record" || ok
-md "$fx" | grep -qF "chore" && bad "N1: chore leaked into the post" || ok
-body "$fx" | grep -qF "chore" && bad "N1: chore leaked into the record" || ok
+grep -qF "Merge branch" <<<"$(md "$fx")" && bad "N1: bare merge must not highlight" || ok
+grep -qF "Merge branch" <<<"$(body "$fx")" && bad "N1: bare merge must not reach the record" || ok
+grep -qF "chore" <<<"$(md "$fx")" && bad "N1: chore leaked into the post" || ok
+grep -qF "chore" <<<"$(body "$fx")" && bad "N1: chore leaked into the record" || ok
 
 # --- N2: every feat in the record, no scope dedupe, merges carry no bullet --
 fx=$(new_fixture) || exit 1
@@ -213,8 +231,8 @@ merge_commit "$fx" "merge: async cron overhaul - per-job agent and model (t_ecec
 c "$fx" "feat(webui): reference pills for tokens"
 run_notes "$fx"
 # counts: 4 feats, 1 fix, 0 tunes, 0 docs, 2 merges
-printf '%s' "$OUT" | grep -qF "4 features, 0 refactors, 1 fix, 0 tunes, 0 doc updates, 2 merges across webui, sessions, core" \
-	&& ok || bad "N2: counts line wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+grep -qF "4 features, 0 refactors, 1 fix, 0 tunes, 0 doc updates, 2 merges across webui, sessions, core" <<<"$OUT" \
+	&& ok || bad "N2: counts line wrong: $(grep -m1 'features' <<<"$OUT")"
 expect_body_bullets "$fx" N2 \
 	"feat(webui): reference pills for tokens" \
 	"feat(webui): command palette" \
@@ -228,9 +246,9 @@ expect_bullets "$fx" N2 \
 	"command palette" \
 	"the hygiene pass" \
 	"the context window grows"
-body "$fx" | grep -qF "the tree tells the product story" && bad "N2: card merge reached the record" || ok
+grep -qF "the tree tells the product story" <<<"$(body "$fx")" && bad "N2: card merge reached the record" || ok
 [ "$(body "$fx" | grep -cF 'feat(webui)')" -eq 2 ] && ok || bad "N2: same-scope feats were deduped"
-body "$fx" | grep -qF "embed-lane" && bad "N2: embed-lane leaked into the record" || ok
+grep -qF "embed-lane" <<<"$(body "$fx")" && bad "N2: embed-lane leaked into the record" || ok
 
 # --- N3: merge stories never become bullets ---------------------------------
 fx=$(new_fixture) || exit 1
@@ -265,8 +283,8 @@ c "$fx" "chore: one"
 c "$fx" "style: two"
 c "$fx" "wip: three"
 run_notes "$fx"
-printf '%s' "$OUT" | grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates" \
-	&& ok || bad "N5: noise-only counts wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates" <<<"$OUT" \
+	&& ok || bad "N5: noise-only counts wrong: $(grep -m1 'features' <<<"$OUT")"
 [ "$(bullets "$fx")" -eq 0 ] && ok || bad "N5: noise must not highlight"
 [ "$(body_bullets "$fx")" -eq 0 ] && ok || bad "N5: noise must not reach the record"
 [ "$RC" -eq 0 ] && ok || bad "N5: exit $RC"
@@ -276,23 +294,23 @@ printf '%s' "$OUT" | grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes, 0 doc 
 fx=$(new_fixture) || exit 1
 run_notes "$fx" v1.0.0
 [ "$RC" -eq 0 ] && ok || bad "N6: empty range exit $RC"
-printf '%s' "$OUT" | grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes" && ok || bad "N6: empty counts missing"
+grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes" <<<"$OUT" && ok || bad "N6: empty counts missing"
 
 # --- N7: annotated tag, subject only -> it IS the prose paragraph ----------
 fx=$(new_fixture) || exit 1
 c "$fx" "feat(side): delegates got safer"
 "${GUSER[@]}" -C "$fx" tag -a v2.0.0 -m 'Delegates got safer and the tree got flatter'
 run_notes "$fx"
-printf '%s' "$OUT" | LC_ALL=C grep -qF "🚀 **omega v2.0.0** is out!" && ok || bad "N7: rocket line wrong"
-printf '%s' "$OUT" | grep -qF "Delegates got safer and the tree got flatter" \
+LC_ALL=C grep -qF "🚀 **omega v2.0.0** is out!" <<<"$OUT" && ok || bad "N7: rocket line wrong"
+grep -qF "Delegates got safer and the tree got flatter" <<<"$OUT" \
 	&& ok || bad "N7: tag-annotation prose missing"
 # base excludes the version tag itself even though it points at HEAD
-printf '%s' "$OUT" | grep -qF "1 feature, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across side" \
+grep -qF "1 feature, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across side" <<<"$OUT" \
 	&& ok || bad "N7: base pick ignored the version tag"
-printf '%s' "$OUT" | grep -qF "full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v2.0.0>" \
+grep -qF "full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v2.0.0>" <<<"$OUT" \
 	&& ok || bad "N7: update + changelog link missing"
 # post: header(1), blank(2), prose(3)
-sed -n '2p' "$fx/out/release-notes.md" | grep -q . \
+grep -q . <<<"$(sed -n '2p' "$fx/out/release-notes.md")" \
 	&& bad "N7: line 2 must stay blank (prose sits at line 3)" || ok
 [ "$(sed -n '3p' "$fx/out/release-notes.md")" = "Delegates got safer and the tree got flatter" ] \
 	&& ok || bad "N7: prose should be the first content line after the rocket"
@@ -315,10 +333,10 @@ run_notes "$fx"
 	&& ok || bad "N8: hook should be the generated counts sentence, got [$(sed -n '3p' "$fx/out/release-notes.md")]"
 [ "$(sed -n '5p' "$fx/out/release-notes.md")" = "- a feature" ] \
 	&& ok || bad "N8: post must carry the user-facing bullet after the hook"
-printf '%s' "$OUT" | grep -qF "no override section and no tag annotation" \
+grep -qF "no override section and no tag annotation" <<<"$OUT" \
 	&& ok || bad "N8: the missing hook must be named on stderr"
-printf '%s' "$OUT" | grep -qF "1 feature" && ok || bad "N8: counts expected"
-printf '%s' "$OUT" | grep -qF "full changelog:" && ok || bad "N8: link expected"
+grep -qF "1 feature" <<<"$OUT" && ok || bad "N8: counts expected"
+grep -qF "full changelog:" <<<"$OUT" && ok || bad "N8: link expected"
 
 # --- N9: annotated tag quoting survives the JSON escape ---------------------
 fx=$(new_fixture) || exit 1
@@ -338,7 +356,7 @@ assert p["content"] == md, "payload content must equal the post"
 assert len(p["content"]) <= 2000
 assert "Endo said \"ship it\"" in p["content"]
 PY
-printf '%s' "$OUT" | grep -q 'over the 2000-char cap' && bad "N9: a normal cycle must not hit the cap" || ok
+grep -q 'over the 2000-char cap' <<<"$OUT" && bad "N9: a normal cycle must not hit the cap" || ok
 
 # --- N10: the record caps the tail classes at 5, keeps every feat ----------
 fx=$(new_fixture) || exit 1
@@ -362,7 +380,7 @@ expect_body_bullets "$fx" N10 \
 	"docs: doc 5" \
 	"docs: doc 4" \
 	"docs: doc 3"
-printf '%s' "$OUT" | grep -qF "7 fixes" && ok || bad "N10: counts must still carry every commit"
+grep -qF "7 fixes" <<<"$OUT" && ok || bad "N10: counts must still carry every commit"
 # the post still carries five at most, prefix-free
 expect_bullets "$fx" N10 \
 	"feature two" \
@@ -385,9 +403,9 @@ expect_bullets "$fx" N11 \
 	"feature 5" \
 	"feature 4" \
 	"feature 3"
-printf '%s' "$OUT" | grep -qF "7 features, 2 refactors, 6 fixes, 1 tune, 6 doc updates" \
+grep -qF "7 features, 2 refactors, 6 fixes, 1 tune, 6 doc updates" <<<"$OUT" \
 	&& ok || bad "N11: counts line missing from the post"
-printf '%s' "$OUT" | grep -qF "Update: \`omega update\` · full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v2.0.0>" \
+grep -qF "Update: \`omega update\` · full changelog: <https://github.com/EndoTheDev/omega/releases/tag/v2.0.0>" <<<"$OUT" \
 	&& ok || bad "N11: update + changelog line missing"
 [ "$(sed -n '2p' "$fx/out/release-notes.md")" = "" ] && ok || bad "N11: line 2 must stay blank"
 [ "$(sed -n '3p' "$fx/out/release-notes.md")" = "This update brings 7 new features and 6 bug fixes." ] \
@@ -416,8 +434,8 @@ expect_bullets "$fx" N12 \
 	"delegates get a budget"
 [ "$(sed -n '3p' "$fx/out/release-notes.md")" = "The cycle flattened the tree and made the delegates safer, in one pass." ] \
 	&& ok || bad "N12: annotation prose must ride the post verbatim"
-md "$fx" | grep -qF "feat(core)" && bad "N12: the override must replace the default feats" || ok
-printf '%s' "$OUT" | grep -qF "5 features" && ok || bad "N12: counts line missing from the post"
+grep -qF "feat(core)" <<<"$(md "$fx")" && bad "N12: the override must replace the default feats" || ok
+grep -qF "5 features" <<<"$OUT" && ok || bad "N12: counts line missing from the post"
 # the annotation curates the post, never the record
 [ "$(body_bullets "$fx")" -eq 5 ] && ok || bad "N12: the record must keep all 5 feats, got $(body_bullets "$fx")"
 
@@ -439,7 +457,7 @@ run_notes "$fx"
 [ "$RC" -eq 0 ] && ok || bad "N13: exit $RC"
 [ "$(sed -n '3p' "$fx/out/release-notes.md")" = "Paragraph one ran long so it wrapped across three lines, and nobody minded. A second paragraph rides the same post." ] \
 	&& ok || bad "N13: wrapped prose must collapse into one verbatim paragraph"
-md "$fx" | grep -qF "the wrapped release" && bad "N13: the annotation subject is a title, not prose" || ok
+grep -qF "the wrapped release" <<<"$(md "$fx")" && bad "N13: the annotation subject is a title, not prose" || ok
 [ "$(bullets "$fx")" -eq 5 ] && ok || bad "N13: default five feats expected, got $(bullets "$fx")"
 
 # --- N14: six annotation bullets -> first five post, the sixth named -------
@@ -460,9 +478,9 @@ expect_bullets "$fx" N14 \
 	"highlight 3" \
 	"highlight 4" \
 	"highlight 5"
-printf '%s' "$OUT" | grep -qF "annotation lists 6 highlights - the post keeps the first 5 (five-highlight law); not posted: highlight 6" \
+grep -qF "annotation lists 6 highlights - the post keeps the first 5 (five-highlight law); not posted: highlight 6" <<<"$OUT" \
 	&& ok || bad "N14: the sixth bullet must be named on stderr: $(printf '%s' "$OUT" | grep -i annotation)"
-md "$fx" | grep -qF "highlight 6" && bad "N14: the sixth bullet must not post" || ok
+grep -qF "highlight 6" <<<"$(md "$fx")" && bad "N14: the sixth bullet must not post" || ok
 # bullets-only annotation falls back to the subject as the prose paragraph
 [ "$(sed -n '3p' "$fx/out/release-notes.md")" = "the six-bullet release" ] \
 	&& ok || bad "N14: subject fallback prose missing"
@@ -479,7 +497,7 @@ run_notes "$fx"
 [ "$(bullets "$fx")" -eq 5 ] && ok || bad "N15: fat range post must stay at 5 bullets, got $(bullets "$fx")"
 [ "$(wc -c < "$fx/out/release-notes-body.md")" -gt 2000 ] && ok || bad "N15: the record should still be the full fat changelog"
 [ "$(body_bullets "$fx")" -eq 60 ] && ok || bad "N15: the record must keep all 60 feats, got $(body_bullets "$fx")"
-printf '%s' "$OUT" | grep -qF "60 features" && ok || bad "N15: counts must report the true total"
+grep -qF "60 features" <<<"$OUT" && ok || bad "N15: counts must report the true total"
 
 # --- N16: a post over 2000 chars is a loud backstop (no trimmer, no payload)
 # A 2100-char annotation line: the tag is broken, so nothing posts.
@@ -490,7 +508,7 @@ mkdir -p "$fx/out"
 printf '%s\n' '{"content":"stale payload from a previous run"}' > "$fx/out/discord-release.json"
 run_notes "$fx"
 [ "$RC" -eq 1 ] && ok || bad "N16: an over-cap post must exit 1, got $RC"
-printf '%s' "$OUT" | grep -qF "over the 2000-char cap" && ok || bad "N16: the cap message missing: $(printf '%s' "$OUT" | tail -2)"
+grep -qF "over the 2000-char cap" <<<"$OUT" && ok || bad "N16: the cap message missing: $(printf '%s' "$OUT" | tail -2)"
 [ -f "$fx/out/discord-release.json" ] && bad "N16: a skipped post must not leave a payload (stale JSON must be removed)" || ok
 [ -f "$fx/out/discord-exception.txt" ] && bad "N16: the trimmer's exception file is gone from this design" || ok
 [ "$(wc -c < "$fx/out/release-notes.md")" -gt 2000 ] && ok || bad "N16: the post itself must still be written for the log"
@@ -511,19 +529,19 @@ commit="$("${GUSER[@]}" -C "$fx" rev-parse 'v2.0.0^{commit}')"
 [ "$(git -C "$fx" cat-file -t refs/tags/v2.0.0)" = "commit" ] && ok \
 	|| bad "N17: fixture did not reproduce the checkout shape"
 run_notes "$fx"
-printf '%s' "$OUT" | grep -qF 'The paragraph the runner must not drop.' \
+grep -qF 'The paragraph the runner must not drop.' <<<"$OUT" \
 	&& bad "N17: a rewritten tag ref must not yield prose (the tag object is gone)" || ok
 [ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "1 feature, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across side" ] \
 	&& ok || bad "N17: the body must lead with the counts line when no annotation reads"
-printf '%s' "$OUT" | grep -qF 'refs/tags/v2.0.0 carries no readable annotation' \
+grep -qF 'refs/tags/v2.0.0 carries no readable annotation' <<<"$OUT" \
 	&& ok || bad "N17: the absence must be named on stderr: $(printf '%s' "$OUT" | head -2)"
-printf '%s' "$OUT" | grep -qF 'restore the tag object: git fetch --force origin refs/tags/v2.0.0:refs/tags/v2.0.0' \
+grep -qF 'restore the tag object: git fetch --force origin refs/tags/v2.0.0:refs/tags/v2.0.0' <<<"$OUT" \
 	&& ok || bad "N17: the remedy must be named on stderr"
 "${GUSER[@]}" -C "$fx" update-ref refs/tags/v2.0.0 "$tag_obj"
 run_notes "$fx"
 [ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "The paragraph the runner must not drop." ] \
 	&& ok || bad "N17: a restored tag object must put the prose back at the top of the body"
-printf '%s' "$OUT" | grep -qF 'carries no readable annotation' \
+grep -qF 'carries no readable annotation' <<<"$OUT" \
 	&& bad "N17: a readable annotation must not warn" || ok
 
 # --- N18: the release workflow restores the tag object before the notes ----
@@ -564,7 +582,7 @@ MD19="$fx/out/release-notes.md"
 [ "$(sed -n '8p' "$MD19")" = "2 features, 0 refactors, 1 fix, 0 tunes, 0 doc updates across core" ] \
 	&& ok || bad "N19: line 8 is the unchanged stats line, got [$(sed -n '8p' "$MD19")]"
 [ "$(sed -n '9p' "$MD19")" = "" ] && ok || bad "N19: line 9 is blank"
-printf '%s' "$(sed -n '10p' "$MD19")" | grep -qF "Update: \`omega update\` · full changelog:" \
+grep -qF "Update: \`omega update\` · full changelog:" <<<"$(printf '%s' "$(sed -n '10p' "$MD19")")" \
 	&& ok || bad "N19: line 10 is the update + changelog link"
 [ "$(sed -n '11p' "$MD19")" = "" ] && ok || bad "N19: the post ends after the link"
 # the shape held: no bullet rode above the hook
@@ -602,17 +620,17 @@ expect_bullets "$fx" N20 \
 	"the files tree was rebuilt" \
 	"folder references pin like files" \
 	"prod deploy is one command"
-printf '%s' "$OUT" | grep -qF "override lists 6 highlights - the post keeps the first 5 (five-highlight law); not posted: a sixth bullet that must not post" \
+grep -qF "override lists 6 highlights - the post keeps the first 5 (five-highlight law); not posted: a sixth bullet that must not post" <<<"$OUT" \
 	&& ok || bad "N20: the sixth override bullet must be named on stderr"
-md "$fx" | grep -qF "a sixth bullet" && bad "N20: the sixth override bullet must not post" || ok
-md "$fx" | grep -qF "tuner vocabulary" && bad "N20: annotation prose must not post under an override" || ok
-md "$fx" | grep -qF "stale bullet" && bad "N20: another version's bullets must not post" || ok
-md "$fx" | grep -qF "stale section" && bad "N20: another version's hook must not post" || ok
-printf '%s' "$OUT" | grep -qF "1 feature, 0 refactors, 1 fix, 0 tunes, 0 doc updates across core" \
+grep -qF "a sixth bullet" <<<"$(md "$fx")" && bad "N20: the sixth override bullet must not post" || ok
+grep -qF "tuner vocabulary" <<<"$(md "$fx")" && bad "N20: annotation prose must not post under an override" || ok
+grep -qF "stale bullet" <<<"$(md "$fx")" && bad "N20: another version's bullets must not post" || ok
+grep -qF "stale section" <<<"$(md "$fx")" && bad "N20: another version's hook must not post" || ok
+grep -qF "1 feature, 0 refactors, 1 fix, 0 tunes, 0 doc updates across core" <<<"$OUT" \
 	&& ok || bad "N20: the stats line stays the commit log's"
 [ "$(sed -n '1p' "$fx/out/release-notes-body.md")" = "The palette learned to edit the clock, in place." ] \
 	&& ok || bad "N20: the record should lead with the override hook"
-body "$fx" | grep -qF "feat(core): feature one" && ok || bad "N20: the record keeps the raw subjects"
+grep -qF "feat(core): feature one" <<<"$(body "$fx")" && ok || bad "N20: the record keeps the raw subjects"
 
 # --- N21: the style law - no em-dash, no en-dash in generated text ----------
 fx=$(new_fixture) || exit 1
@@ -632,7 +650,7 @@ for f in "$fx/out/release-notes.md" "$fx/out/release-notes-body.md"; do
 	grep -qF "$EM" "$f" && bad "N21: em-dash leaked into $(basename "$f")" || ok
 	grep -qF "$EN" "$f" && bad "N21: en-dash leaked into $(basename "$f")" || ok
 done
-body "$fx" | grep -qF "a feature - with an em-dash" \
+grep -qF "a feature - with an em-dash" <<<"$(body "$fx")" \
 	&& ok || bad "N21: the record subject must ride plain hyphens too"
 
 # --- N22: the shipped override renders the v0.17.3 worked examples ----------
@@ -657,12 +675,12 @@ expect_bullets "$fx" N22 \
 	"folder references pin like file references, so a whole folder can ride along with a message" \
 	"the files tree was rebuilt: hover guides show where a row sits and the tree scans faster"
 [ "$(bullets "$fx")" -eq 5 ] && ok || bad "N22: the v0.17.3 post must carry 5 bullets, got $(bullets "$fx")"
-md "$fx" | grep -qF "takes over the bar's time field in place" \
+grep -qF "takes over the bar's time field in place" <<<"$(md "$fx")" \
 	&& bad "N22: the internal-voice annotation must not reach the post" || ok
-md "$fx" | grep -qF "disjoint cards" && bad "N22: factory vocabulary reached the post" || ok
-md "$fx" | grep -qF "interaction vocabulary" && bad "N22: factory vocabulary reached the post" || ok
-printf '%s' "$OUT" | grep -qF "3 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across factory, agents, webui" \
-	&& ok || bad "N22: the stats line must stay the commit log's, got [$(printf '%s' "$OUT" | grep -m1 'features')]"
+grep -qF "disjoint cards" <<<"$(md "$fx")" && bad "N22: factory vocabulary reached the post" || ok
+grep -qF "interaction vocabulary" <<<"$(md "$fx")" && bad "N22: factory vocabulary reached the post" || ok
+grep -qF "3 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across factory, agents, webui" <<<"$OUT" \
+	&& ok || bad "N22: the stats line must stay the commit log's, got [$(grep -m1 'features' <<<"$OUT")]"
 # the shipped file itself: one section per release, plain hyphens only
 [ -f "$SHIPPED_OVERRIDES" ] && ok || bad "N22: scripts/release-notes.overrides.md must ship"
 grep -qE '^## v0\.17\.3$' "$SHIPPED_OVERRIDES" && ok || bad "N22: the shipped file must carry a v0.17.3 section"

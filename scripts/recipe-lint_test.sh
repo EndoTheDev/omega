@@ -40,6 +40,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 # expect_clean <name> <file>: exit 0 and no findings
 expect_clean() {
   local out rc
@@ -213,14 +231,14 @@ sleep 2
 EOF
 out=$(bash "$LINT" "$T/donelist.sh" 2>&1); rc=$?
 if [ "$rc" -ne 1 ]; then bad "done-as-list-item: exit $rc (want 1) | $out"
-elif printf '%s' "$out" | grep -q unbalanced; then bad "done-as-list-item: the parser drifted | $out"
+elif grep -q unbalanced <<<"$out"; then bad "done-as-list-item: the parser drifted | $out"
 elif [ "$(printf '%s\n' "$out" | grep -c 'fixed-sleep')" != "1" ]; then bad "done-as-list-item: want one finding | $out"
 else ok; fi
 
 # 15. --advisory reports and never fails
 out=$(bash "$LINT" --advisory "$T/sleep.sh" 2>&1); rc=$?
 if [ "$rc" -ne 0 ]; then bad "--advisory exited $rc (want 0)"
-elif ! printf '%s' "$out" | grep -q 'fixed-sleep'; then bad "--advisory dropped the findings: $out"
+elif ! grep -q 'fixed-sleep' <<<"$out"; then bad "--advisory dropped the findings: $out"
 else ok; fi
 
 # 16. usage errors are loud: unknown option and a missing file both exit 2
@@ -240,7 +258,6 @@ if [ -d "$CORPUS" ]; then
 else
   bad "no recipe corpus at $CORPUS"
 fi
-
 printf 'recipe-lint_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 set -uo pipefail
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # gate-preflight.sh - local discovery run BEFORE a nightly gate dispatch.
 #
@@ -415,7 +428,7 @@ fi
 # --- step 2: lane ------------------------------------------------------------
 port_listening() {
   if command -v netstat >/dev/null 2>&1; then
-    MSYS_NO_PATHCONV=1 netstat -ano 2>/dev/null | grep -qE "[:.]$1[[:space:]].*LISTEN"
+    grep -qE "[:.]$1[[:space:]].*LISTEN" <<<"$(MSYS_NO_PATHCONV=1 netstat -ano 2>/dev/null)"
   else
     curl -s -m 1 -o /dev/null "http://127.0.0.1:$1/" 2>/dev/null
   fi
@@ -485,7 +498,7 @@ health_ok() {
   else
     out="$(curl -s -m 5 "$PREFLIGHT_HEALTH_URL" 2>/dev/null || true)"
   fi
-  printf '%s' "$out" | grep -q '"ok"'
+  grep -q '"ok"' <<<"$out"
 }
 
 healthy=0
@@ -597,7 +610,7 @@ fi
 # the evidence that something was asserted; absent both, nothing was.
 judged=0
 if [ -f "$suite_log" ] &&
-  sed -n -E 's/^journeys: ([^ ]+) +(green|RED)$/\1/p' "$suite_log" 2>/dev/null | grep -q .; then
+  grep -q . <<<"$(sed -n -E 's/^journeys: ([^ ]+) +(green|RED)$/\1/p' "$suite_log" 2>/dev/null)"; then
   judged=1
 else
   for f in "$evid_used"/*.log; do

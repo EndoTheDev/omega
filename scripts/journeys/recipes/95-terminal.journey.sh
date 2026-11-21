@@ -25,6 +25,19 @@
 # a page, so there is no client state (panes, viewport, localStorage) to clean;
 # its one runtime actor (the claimed shell) dies in the EXIT trap below.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 B="${JOURNEY_BASE_URL:?}"
 runtag=$(date +%s)
 
@@ -73,7 +86,7 @@ step "ok: claimed terminal session $tid"
 
 # --- the shell is on the list (GET /terminal/sessions) --------------------
 lst=$(curl -s "$B/terminal/sessions")
-printf '%s' "$lst" | grep -qE "\"id\": ?\"$tid\"" || \
+grep -qE "\"id\": ?\"$tid\"" <<<"$lst" || \
   die "the claimed session is not in the store list: $lst"
 step "ok: session listed"
 
@@ -134,9 +147,9 @@ step "ok: the pty echoed the keystrokes through the stream"
 
 # --- resize: the pane's window reaches the pty -----------------------------
 r1=$(curl -s -X POST "$B/terminal/$tid/resize" -H 'Content-Type: application/json' -d '{"rows":24,"cols":80}')
-printf '%s' "$r1" | grep -qF '"rows":24' || die "resize answered wrong: $r1"
+grep -qF '"rows":24' <<<"$r1" || die "resize answered wrong: $r1"
 r2=$(curl -s -X POST "$B/terminal/$tid/resize" -H 'Content-Type: application/json' -d '{"rows":0,"cols":80}')
-printf '%s' "$r2" | grep -qF 'out of 1..10000' || die "an out-of-range resize was not refused: $r2"
+grep -qF 'out of 1..10000' <<<"$r2" || die "an out-of-range resize was not refused: $r2"
 step "ok: resize accepts a real window, refuses an out-of-range one"
 
 # --- hygiene: unknown ids ---------------------------------------------------

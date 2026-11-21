@@ -14,6 +14,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 GUSER=(git -c user.email=t@t -c user.name=t)
 
 # fixture_error <msg>: the named cause plus the stake. Fixtures are real git
@@ -96,13 +114,13 @@ run_case "$fx"
 fx=$(fixture 31 0) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S2: 31 commits -> expected exit 1 (trip at commit 31), got $RC"
-printf '%s' "$OUT" | grep -q "31 commits ahead of master" && ok || bad "S2: reason text missing the commit count"
+grep -q "31 commits ahead of master" <<<"$OUT" && ok || bad "S2: reason text missing the commit count"
 
 # S3: merge-base 8 days old, one dev commit dated now -> RED at day 8
 fx=$(fixture 1 8) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S3: 8 days -> expected exit 1 (trip at day 8), got $RC"
-printf '%s' "$OUT" | grep -q "8 days past master's last sync" && ok || bad "S3: reason text missing the day count"
+grep -q "8 days past master's last sync" <<<"$OUT" && ok || bad "S3: reason text missing the day count"
 
 # S4: merge-base 7 days old -> green (trip is at day 8)
 fx=$(fixture 1 7) || exit 1
@@ -113,8 +131,7 @@ run_case "$fx"
 fx=$(fixture 32 9) || exit 1
 run_case "$fx"
 [ "$RC" -eq 1 ] && ok || bad "S5: 32 commits + 9 days -> expected exit 1, got $RC"
-printf '%s' "$OUT" | grep -q "commits ahead of master" && \
-printf '%s' "$OUT" | grep -q "days past master's last sync" && \
+grep -q "commits ahead of master" <<<"$OUT" && grep -q "days past master's last sync" <<<"$OUT" && \
 	ok || bad "S5: expected both reasons in one gate"
 
 # S6: unmeasurable base -> exit 2 (also red: unknowable drift is not green)
@@ -131,7 +148,7 @@ run_case "$fx" DRIFT_MAX_COMMITS=1
 fx=$(fixture 31 0) || exit 1
 sum="$(mktemp "${TMPDIR:-/tmp}/drift-sum.XXXXXX")"
 run_case "$fx" GITHUB_STEP_SUMMARY="$sum"
-printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
+grep -Eq 'DRIFT GATE' <<<"$OUT" && \
 	grep -q 'Verdict: RED' "$sum" && \
 	grep -q 'commits ahead of master' "$sum" && \
 	ok || bad "S8: summary block missing or not written to GITHUB_STEP_SUMMARY"
@@ -142,14 +159,14 @@ printf '%s' "$OUT" | grep -Eq 'DRIFT GATE' && \
 fx=$(fixture 31 0) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1
 [ "$RC" -eq 0 ] && ok || bad "A9: advisory 31 commits -> expected exit 0, got $RC"
-printf '%s' "$OUT" | grep -q "DRIFT WARNING: 31 commits / 0 days ahead of master - reconcile at the next release round" && \
+grep -q "DRIFT WARNING: 31 commits / 0 days ahead of master - reconcile at the next release round" <<<"$OUT" && \
 	ok || bad "A9: greppable warning line missing: $OUT"
 
 # A10: the day trip stays exit 0 in advisory mode
 fx=$(fixture 1 8) || exit 1
 run_case "$fx" DRIFT_ADVISORY=1
 [ "$RC" -eq 0 ] && ok || bad "A10: advisory 8 days -> expected exit 0, got $RC"
-printf '%s' "$OUT" | grep -q "DRIFT WARNING: 1 commits / 8 days" && \
+grep -q "DRIFT WARNING: 1 commits / 8 days" <<<"$OUT" && \
 	ok || bad "A10: warning line missing the day count"
 
 # A11: summary records the advisory verdict (badge story in the UI)

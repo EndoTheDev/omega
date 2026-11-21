@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 # train-pass.sh - the merge train: ONE mechanical, no-LLM landing per pass.
 #
@@ -153,7 +166,7 @@ cur="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
 [ -z "$(git status --porcelain)" ] || die "main checkout is dirty - commit or clean before a train pass"
 
 # The landing must sit on top of what everyone else landed.
-if git remote 2>/dev/null | grep -q '^origin$'; then
+if grep -q '^origin$' <<<"$(git remote 2>/dev/null)"; then
   git fetch -q origin "$BASE"
   if ! git merge-base --is-ancestor "origin/$BASE" "$BASE"; then
     die "origin/$BASE diverged from local $BASE - resolve by hand, the train never rewrites"
@@ -740,7 +753,7 @@ gates_pass() {
       echo "==> go test"
       go test $pkglist
       # -race on the package(s) the landing actually touches.
-      if git diff --name-only "$pre" HEAD | grep -q '\.go$'; then
+      if grep -q '\.go$' <<<"$(git diff --name-only "$pre" HEAD)"; then
         pkgmod="$(go list -m -f '{{.Path}}')"
         raceargs=()
         for d in $(git diff --name-only "$pre" HEAD | grep '\.go$' | xargs -n1 dirname | sort -u); do
@@ -825,7 +838,7 @@ grep -m1 'race leg skipped' "$gates_log" 2>/dev/null || true
 
 # ---- land --------------------------------------------------------------
 
-have_origin() { git remote 2>/dev/null | grep -q '^origin$'; }
+have_origin() { grep -q '^origin$' <<<"$(git remote 2>/dev/null)"; }
 
 # marker: refs/train/<seq>-<task_id> at the merge commit. Zero-padded seq
 # keeps refname sort == chronological order, which train-bisect walks on.

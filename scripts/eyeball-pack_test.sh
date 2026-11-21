@@ -30,6 +30,24 @@ pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
+
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
 check() { # check <desc> <condition-exit>
   if [ "$2" -eq 0 ]; then ok; else bad "$1"; fi
 }
@@ -75,34 +93,34 @@ summary_line() { printf '%s\n' "$OUT" | grep '^EYEBALL: .* surfaces ' | tail -1;
 d=$(fixture_diff t1 webui/app/components/alpha/One.vue)
 run_pack "$d" "$WORK_ROOT/out1"
 check "T1 exit 0 with one matched surface" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)"
-check "T1 alpha captured" "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: alpha -> ' && echo 0 || echo 1)"
-check "T1 beta not captured" "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: beta -> ' && echo 1 || echo 0)"
-check "T1 gamma not captured" "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: gamma -> ' && echo 1 || echo 0)"
+check "T1 alpha captured" "$(grep -q '^EYEBALL: alpha -> ' <<<"$OUT" && echo 0 || echo 1)"
+check "T1 beta not captured" "$(grep -q '^EYEBALL: beta -> ' <<<"$OUT" && echo 1 || echo 0)"
+check "T1 gamma not captured" "$(grep -q '^EYEBALL: gamma -> ' <<<"$OUT" && echo 1 || echo 0)"
 check "T1 index carries the changed component" \
-  "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: alpha -> .*/01-alpha\.png (webui/app/components/alpha/One\.vue)$' && echo 0 || echo 1)"
+  "$(grep -q '^EYEBALL: alpha -> .*/01-alpha\.png (webui/app/components/alpha/One\.vue)$' <<<"$OUT" && echo 0 || echo 1)"
 check "T1 summary counts planned and skipped" \
-  "$(printf '%s\n' "$OUT" | grep -qx 'EYEBALL: 1 surfaces planned, 2 skipped' && echo 0 || echo 1)"
+  "$(grep -qx 'EYEBALL: 1 surfaces planned, 2 skipped' <<<"$OUT" && echo 0 || echo 1)"
 
 # --- T2: one component in two surfaces -> both listed ------------------------
 d=$(fixture_diff t2 webui/app/components/alpha/Beta.vue)
 run_pack "$d" "$WORK_ROOT/out2"
 check "T2 exit 0 with two matched surfaces" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)"
-check "T2 alpha listed (shared component)" "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: alpha -> ' && echo 0 || echo 1)"
-check "T2 beta listed (shared component)" "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: beta -> ' && echo 0 || echo 1)"
+check "T2 alpha listed (shared component)" "$(grep -q '^EYEBALL: alpha -> ' <<<"$OUT" && echo 0 || echo 1)"
+check "T2 beta listed (shared component)" "$(grep -q '^EYEBALL: beta -> ' <<<"$OUT" && echo 0 || echo 1)"
 check "T2 numbering follows the map order (alpha 01, beta 02)" \
-  "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: beta -> .*/02-beta\.png ' && echo 0 || echo 1)"
+  "$(grep -q '^EYEBALL: beta -> .*/02-beta\.png ' <<<"$OUT" && echo 0 || echo 1)"
 check "T2 summary counts two planned" \
-  "$(printf '%s\n' "$OUT" | grep -qx 'EYEBALL: 2 surfaces planned, 1 skipped' && echo 0 || echo 1)"
+  "$(grep -qx 'EYEBALL: 2 surfaces planned, 1 skipped' <<<"$OUT" && echo 0 || echo 1)"
 
 # --- T3: a surface with no changed component is skipped BY NAME --------------
 check "T3 gamma named as skipped" \
-  "$(printf '%s\n' "$OUT" | grep -qx 'EYEBALL-SKIP: gamma (no changed components)' && echo 0 || echo 1)"
+  "$(grep -qx 'EYEBALL-SKIP: gamma (no changed components)' <<<"$OUT" && echo 0 || echo 1)"
 
 # --- T4: the index line's contract shape ------------------------------------
 bad_shape=0
 while IFS= read -r line; do
   [ -n "$line" ] || continue
-  printf '%s' "$line" | grep -Eq '^EYEBALL: [a-z0-9-]+ -> [^ ]*/[0-9][0-9]-[a-z0-9-]+\.png \([^)]+\)$' || bad_shape=1
+  grep -Eq '^EYEBALL: [a-z0-9-]+ -> [^ ]*/[0-9][0-9]-[a-z0-9-]+\.png \([^)]+\)$' <<<"$line" || bad_shape=1
 done <<< "$(index_lines)"
 check "T4 every index line matches the contract shape" "$bad_shape"
 
@@ -112,7 +130,7 @@ run_pack "$d" "$WORK_ROOT/out5"
 check "T5 exit non-zero with zero surfaces" "$([ "$RC" -ne 0 ] && echo 0 || echo 1)"
 check "T5 no index line" "$([ -z "$(index_lines)" ] && echo 0 || echo 1)"
 check "T5 summary says zero planned, all skipped" \
-  "$(printf '%s\n' "$OUT" | grep -qx 'EYEBALL: 0 surfaces planned, 3 skipped' && echo 0 || echo 1)"
+  "$(grep -qx 'EYEBALL: 0 surfaces planned, 3 skipped' <<<"$OUT" && echo 0 || echo 1)"
 check "T5 every surface named as skipped" "$([ "$(skip_lines | wc -l | tr -d ' ')" = "3" ] && echo 0 || echo 1)"
 
 # --- T6: plan mode never launches a browser --------------------------------
@@ -133,7 +151,7 @@ OUT="$("$SUT" --map "$REAL_MAP" --diff-list "$d" --out-dir "$WORK_ROOT/out7" 2>&
 RC=$?
 check "T7 real map: exit 0" "$([ "$RC" -eq 0 ] && echo 0 || echo 1)"
 check "T7 real map: the composer's surface is chat-composer" \
-  "$(printf '%s\n' "$OUT" | grep -q '^EYEBALL: chat-composer -> ' && echo 0 || echo 1)"
+  "$(grep -q '^EYEBALL: chat-composer -> ' <<<"$OUT" && echo 0 || echo 1)"
 d=$(fixture_diff t7b webui/app/components/shell/MenuBar.vue)
 OUT="$("$SUT" --map "$REAL_MAP" --diff-list "$d" --out-dir "$WORK_ROOT/out7b" 2>&1)"
 check "T7 real map: a harness-free shell component maps to exactly one surface" \
@@ -152,8 +170,8 @@ while IFS= read -r line; do
   reach=${rest##*|}
   [ -n "$surface" ] || { map_shape=1; echo "  empty surface: $line"; }
   [ -n "$reach" ] || { map_shape=1; echo "  empty reach: $line"; }
-  printf '%s' "$reach" | grep -Eq '^[a-z]+:[^;]*(;[a-z]+:.*)*$' || { map_shape=1; echo "  bad reach: $line"; }
-  printf '%s' "$surface" | grep -Eq '^[a-z0-9-]+$' || { map_shape=1; echo "  bad surface slug: $surface"; }
+  grep -Eq '^[a-z]+:[^;]*(;[a-z]+:.*)*$' <<<"$reach" || { map_shape=1; echo "  bad reach: $line"; }
+  grep -Eq '^[a-z0-9-]+$' <<<"$surface" || { map_shape=1; echo "  bad surface slug: $surface"; }
   IFS=',' read -r -a pats <<< "$globs"
   for p in "${pats[@]}"; do
     case "$p" in webui/*|harness/*) ;; *) map_glob=1; echo "  glob outside webui|harness: $p" ;; esac

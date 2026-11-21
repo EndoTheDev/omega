@@ -99,6 +99,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 PY=$(command -v python3 || command -v python)
 [ -n "$PY" ] || { echo "factory-dispatch_test: no python on PATH (boards are queried through the python sqlite3 module)" >&2; exit 1; }
 mixpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
@@ -144,7 +162,7 @@ echo "RC=[$RC]"
 ' 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T1: empty RUNNING array killed the RC loop (exit $rc) - the || true guard is gone"
-printf '%s' "$out" | grep -q 'RC=\[' && ok || bad "T1: expected RC= line, got: $out"
+grep -q 'RC=\[' <<<"$out" && ok || bad "T1: expected RC= line, got: $out"
 
 # T2 (local only): dry-run on the REAL resolved board must exit 0 with
 # output - a silent empty run is the empty-RUNNING kill signature. No board
@@ -152,10 +170,10 @@ printf '%s' "$out" | grep -q 'RC=\[' && ok || bad "T1: expected RC= line, got: $
 # verdicts from empty lists with exit 0.
 out=$(HERMES_HOME= HERMES_KANBAN_HOME= HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash "$GUARD" --dry-run 2>&1)
 rc=$?
-if printf '%s' "$out" | grep -q "board DB not found"; then
+if grep -q "board DB not found" <<<"$out"; then
   [ "$rc" -ne 0 ] && ok || bad "T2: missing live board refused with exit 0 - the silent-empty signature"
   echo "T2: skipped (no live board DB resolved; refusal was loud, exit $rc)"
-elif printf '%s' "$out" | grep -q "CONFIG CAP READ FAILED:"; then
+elif grep -q "CONFIG CAP READ FAILED:" <<<"$out"; then
   # A runner home can resolve a board and still carry no hermes config: the cap
   # read refuses (card t_0303d69d). Loud and nonzero is the law here too.
   [ "$rc" -ne 0 ] && ok || bad "T2: an unreadable cap refused with exit 0"
@@ -211,9 +229,9 @@ printf "FILES: harness/{cron,memory,delegate}/\nplain harness/x/ text\ncmd;bad {
 ' 2>/dev/null)
 [ "$(printf "%s\n" "$tok" | grep -c "^harness/")" = "4" ] \
 	&& ok || bad "T5: brace list emitted $(printf "%s\n" "$tok" | grep -c "^harness/") tokens, expected 4 (got: $tok)"
-printf "%s" "$tok" | grep -q "^harness/cron/" && ok || bad "T5: harness/cron/ missing from expansion"
-printf "%s" "$tok" | grep -q "^harness/delegate/" && ok || bad "T5: harness/delegate/ missing from expansion"
-printf "%s" "$tok" | grep -q "cmd;bad" && bad "T5: metachar line was eval-expanded (gate failed)" || ok
+grep -q "^harness/cron/" <<<"$tok" && ok || bad "T5: harness/cron/ missing from expansion"
+grep -q "^harness/delegate/" <<<"$tok" && ok || bad "T5: harness/delegate/ missing from expansion"
+grep -q "cmd;bad" <<<"$tok" && bad "T5: metachar line was eval-expanded (gate failed)" || ok
 
 # T6 (local + CI): guard bug #7 - move-shaped lines. A move line names the
 # card's WHOLE write surface, including source paths the rooted prefix scan
@@ -231,9 +249,9 @@ printf "%s\n" \
 ' 2>/dev/null)
 for want in "webui/" "http_channel/" "api/" \
             "agent/" "ai/" "tui/" "harness/cron/" "harness/memory/" "core/"; do
-  printf "%s" "$tok" | grep -qx "$want" && ok || bad "T6: move token '$want' missing (got: $tok)"
+  grep -qx "$want" <<<"$tok" && ok || bad "T6: move token '$want' missing (got: $tok)"
 done
-printf "%s" "$tok" | grep -q "arrow" && bad "T6: prose arrow line leaked tokens" || ok
+grep -q "arrow" <<<"$tok" && bad "T6: prose arrow line leaked tokens" || ok
 
 # T7 (local + CI): the collision itself - a move source token collides with a
 # running card's edited webui file under the existing prefix-overlap law.
@@ -255,7 +273,7 @@ source <(sed -n "/^move_paths()/,/^}/p; /^tokens_of()/,/^}/p" "$GUARD")
 files="FILES: engine/webui/"
 body="$files
 engine ring move: webui/ -> engine/webui/"
-{ tokens_of <<<"$files"; move_paths <<<"$body"; } | grep -qx "webui/" >/dev/null 2>&1
+grep -qx "webui/" <<<"$({ tokens_of <<<"$files"; move_paths <<<"$body"; })" >/dev/null 2>&1
 echo $?
 ' 2>/dev/null)
 [ "$rc" = "0" ] && ok || bad "T8: FILES-only-target move card lost its source surface (rc=$rc)"
@@ -312,17 +330,17 @@ T9COMMENTS="$FDHOME/comments.log"; : >"$T9COMMENTS"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dry-run exited $rc"
-printf "%s" "$out" | grep -q "^hold: t_cand" && ok || bad "T9: move card did not hold the webui candidate (out: $out)"
-printf "%s" "$out" | grep -q "dry-run: no dispatch" && ok || bad "T9: dry-run dispatched (out: $out)"
+grep -q "^hold: t_cand" <<<"$out" && ok || bad "T9: move card did not hold the webui candidate (out: $out)"
+grep -q "dry-run: no dispatch" <<<"$out" && ok || bad "T9: dry-run dispatched (out: $out)"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" HERMES_STUB_COMMENTS="$T9COMMENTS" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dispatch pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T9: handoff line wrong (out: $out)"
-printf "%s" "$out" | grep -q "after: 4 (delta 3 since snapshot)" && ok || bad "T9: post-call re-read wrong (out: $out)"
-printf "%s" "$out" | grep -q "over-run" && ok || bad "T9: over-run not reported (out: $out)"
+grep -q "wanted <=2 running (snapshot 1 + slots 1)" <<<"$out" && ok || bad "T9: handoff line wrong (out: $out)"
+grep -q "after: 4 (delta 3 since snapshot)" <<<"$out" && ok || bad "T9: post-call re-read wrong (out: $out)"
+grep -q "over-run" <<<"$out" && ok || bad "T9: over-run not reported (out: $out)"
 # The spawner owns the onboarding law now (card t_f6d15b7f): the four cards the
 # stub really spawned are onboarded in the SAME pass, and the receipt says so.
-printf "%s" "$out" | grep -qF 'Onboarded: 4 (t_new1 t_new2 t_new3 t_new4)' \
+grep -qF 'Onboarded: 4 (t_new1 t_new2 t_new3 t_new4)' <<<"$out" \
 	&& ok || bad "T9: the spawn receipt did not answer Spawned: 4 with Onboarded: 4 (out: $out)"
 [ "$(wc -l <"$T9COMMENTS")" = "4" ] && ok || bad "T9: expected 4 onboarding comments, got $(wc -l <"$T9COMMENTS")"
 [ "$(cut -f1 "$T9COMMENTS" | sort -u | tr '\n' ' ')" = "t_new1 t_new2 t_new3 t_new4 " ] \
@@ -353,7 +371,7 @@ chmod +x "$FDHOME/bin/hermes"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" bash "$GUARD" --max 2 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T10: --max 2 pass exited $rc - SLOTS unset on the explicit path (out: $out)"
-printf "%s" "$out" | grep -q "wanted <=2 running (snapshot 1 + slots 1)" && ok || bad "T10: handoff line wrong (out: $out)"
+grep -q "wanted <=2 running (snapshot 1 + slots 1)" <<<"$out" && ok || bad "T10: handoff line wrong (out: $out)"
 rm -rf "$FDHOME"
 
 # T11 (local + CI): guard bug #11 - the dispatch sweep must not lift NAMED
@@ -401,7 +419,7 @@ s=$(sql "$FDB_N" "SELECT status FROM tasks WHERE id='t_hold';")
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T11: dispatch pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "re-parked: t_hold (ready -> blocked, named hold lifted by the dispatch sweep)" \
+grep -q "re-parked: t_hold (ready -> blocked, named hold lifted by the dispatch sweep)" <<<"$out" \
 	&& ok || bad "T11: t_hold not re-parked (out: $out)"
 sh2=$(sql "$FDB_N" "SELECT id||' '||status||' '||claim_lock FROM tasks WHERE id IN ('t_hold','t_hold2') ORDER BY id;")
 [ "$sh2" = "t_hold blocked pibtw:v0.14.0-hold
@@ -428,12 +446,12 @@ sqlex "$CFB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', 
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
   worker_pid INTEGER, last_heartbeat_at INTEGER);"
 out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
-printf "%s" "$out" | grep -q "cap=2" && ok || bad "T12: no config file -> cap must fall back to 2 (out: $out)"
+grep -q "cap=2" <<<"$out" && ok || bad "T12: no config file -> cap must fall back to 2 (out: $out)"
 printf 'kanban:\n  max_in_progress_per_profile: 4\n' >"$CFHOME/config.yaml"
 out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
-printf "%s" "$out" | grep -q "cap=4" && ok || bad "T12: config knob not read (out: $out)"
+grep -q "cap=4" <<<"$out" && ok || bad "T12: config knob not read (out: $out)"
 out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run --max 1 2>&1)
-printf "%s" "$out" | grep -q "cap=1" && ok || bad "T12: --max must override the config cap (out: $out)"
+grep -q "cap=1" <<<"$out" && ok || bad "T12: --max must override the config cap (out: $out)"
 rm -rf "$CFHOME"
 
 # T13 (local + CI): guard bug #13 (proven live 2026-10-31) - the pre-pass
@@ -480,11 +498,11 @@ s=$(sql "$DRB_N" "SELECT count(*) FROM tasks WHERE status='ready' AND coalesce(c
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$DRB_N" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T13: dispatch pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "hold-drift normalized: t_drift14 (ready -> blocked" \
+grep -q "hold-drift normalized: t_drift14 (ready -> blocked" <<<"$out" \
 	&& ok || bad "T13: v0.14.0 drift not normalized at snapshot (out: $out)"
-printf "%s" "$out" | grep -q "hold-drift normalized: t_driftde (ready -> blocked" \
+grep -q "hold-drift normalized: t_driftde (ready -> blocked" <<<"$out" \
 	&& ok || bad "T13: design-hold drift not normalized at snapshot (out: $out)"
-printf "%s" "$out" | grep -q "re-parked: t_drift14 (ready -> blocked" \
+grep -q "re-parked: t_drift14 (ready -> blocked" <<<"$out" \
 	&& ok || bad "T13: re-promoted hold not re-parked by the restore (out: $out)"
 sh13=$(sql "$DRB_N" "SELECT id||'|'||status||'|'||claim_lock FROM tasks WHERE id LIKE 't_drift%' ORDER BY id;")
 [ "$sh13" = "t_drift14|blocked|pibtw:v0.14.0-hold
@@ -529,20 +547,20 @@ no_side_effect() {  # rc, stub log, board shape all match refusal law
 }
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --help 2>&1); rc=$?
 [ "$rc" = "0" ] || bad "T14: --help exited $rc (expected 0)"
-printf "%s" "$out" | grep -q "collision-aware dispatch" || bad "T14: --help printed no usage (out: $out)"
+grep -q "collision-aware dispatch" <<<"$out" || bad "T14: --help printed no usage (out: $out)"
 no_side_effect "$rc" 0 "T14 --help"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" -h 2>&1); rc=$?
 [ "$rc" = "0" ] || bad "T14: -h exited $rc (expected 0)"
 no_side_effect "$rc" 0 "T14 -h"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --typo 2>&1); rc=$?
-printf "%s" "$out" | grep -q "unknown argument: --typo" || bad "T14: --typo message wrong (out: $out)"
-printf "%s" "$out" | grep -q "collision-aware dispatch" || bad "T14: --typo printed no usage"
+grep -q "unknown argument: --typo" <<<"$out" || bad "T14: --typo message wrong (out: $out)"
+grep -q "collision-aware dispatch" <<<"$out" || bad "T14: --typo printed no usage"
 no_side_effect "$rc" 2 "T14 --typo"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 2>&1); rc=$?
-printf "%s" "$out" | grep -q -- "--max needs a value" || bad "T14: valueless --max message wrong (out: $out)"
+grep -q -- "--max needs a value" <<<"$out" || bad "T14: valueless --max message wrong (out: $out)"
 no_side_effect "$rc" 2 "T14 --max missing value"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max abc 2>&1); rc=$?
-printf "%s" "$out" | grep -q -- "--max must be a positive integer" || bad "T14: non-integer --max message wrong (out: $out)"
+grep -q -- "--max must be a positive integer" <<<"$out" || bad "T14: non-integer --max message wrong (out: $out)"
 no_side_effect "$rc" 2 "T14 --max abc"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 0 2>&1); rc=$?
 no_side_effect "$rc" 2 "T14 --max 0"
@@ -579,21 +597,21 @@ printf 'project-omega\n' >"$FDHOME/rooth/hermes/kanban/current"
 out=$(HOME="$FDHOME/posixhome" LOCALAPPDATA="$FDHOME_N/app" HERMES_HOME= HERMES_KANBAN_HOME= HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T15a: dry-run on the populated LOCALAPPDATA-style home exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "legal: t_pop" && ok || bad "T15a: populated board not picked (out: $out)"
-printf "%s" "$out" | grep -q "command not found" && bad "T15a: shell-level command failure leaked (out: $out)" || ok
+grep -q "legal: t_pop" <<<"$out" && ok || bad "T15a: populated board not picked (out: $out)"
+grep -q "command not found" <<<"$out" && bad "T15a: shell-level command failure leaked (out: $out)" || ok
 
 # T15b: NEITHER home carries a board -> loud refusal, never empty-list verdicts
 out=$(HOME="$FDHOME/posixhome" LOCALAPPDATA="$FDHOME_N/empty" HERMES_HOME= HERMES_KANBAN_HOME= HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T15b: missing board DB refused with exit $rc (expected 3)"
-printf "%s" "$out" | grep -q "board DB not found" && ok || bad "T15b: refusal was not loud (out: $out)"
-printf "%s" "$out" | grep -qE "^(hold|legal):" && bad "T15b: verdicts printed from EMPTY lists (out: $out)" || ok
+grep -q "board DB not found" <<<"$out" && ok || bad "T15b: refusal was not loud (out: $out)"
+grep -qE "^(hold|legal):" <<<"$out" && bad "T15b: verdicts printed from EMPTY lists (out: $out)" || ok
 
 # T15c: a profile-shaped HERMES_HOME (<root>/profiles/<name>) names its ROOT
 out=$(HOME="$FDHOME/posixhome" LOCALAPPDATA="$FDHOME_N/app" HERMES_HOME="$FDHOME_N/rooth/hermes/profiles/w1" HERMES_KANBAN_HOME= HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T15c: profile-shaped HERMES_HOME dry-run exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "legal: t_prof" && ok || bad "T15c: profile-shaped HERMES_HOME did not resolve to its ROOT board (out: $out)"
+grep -q "legal: t_prof" <<<"$out" && ok || bad "T15c: profile-shaped HERMES_HOME did not resolve to its ROOT board (out: $out)"
 rm -rf "$FDHOME"
 
 # T16 (local + CI): the PAIR VERDICT - the dry-run states the pairing law for
@@ -635,11 +653,11 @@ WEB="INSERT INTO tasks VALUES('t_web','ready','webui one','FILES: engine/webui/a
 # files, so both go legal and the pair is sanctioned).
 out=$(PAIRRUN "$GO1
 $GO2")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T16a: disjoint go+go head not sanctioned (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_go2" \
+grep -q "^legal: t_go2" <<<"$out" \
 	&& ok || bad "T16a: disjoint go+go - t_go2 should be legal (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_go1" \
+grep -q "^legal: t_go1" <<<"$out" \
 	&& ok || bad "T16a: t_go1 should stay legal (out: $out)"
 
 # T16a2: go+go sharing a file - the same-pass leg HOLDS the second card, so the
@@ -647,9 +665,9 @@ printf "%s" "$out" | grep -q "^legal: t_go1" \
 # The class law itself is asserted above by T16a; here the hold is the proof.
 out=$(PAIRRUN "$GO1
 INSERT INTO tasks VALUES('t_go3','ready','go three','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -q "^hold: t_go3" \
+grep -q "^hold: t_go3" <<<"$out" \
 	&& ok || bad "T16a2: the same-pass leg did not hold t_go3 (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' <<<"$out" \
 	&& ok || bad "T16a2: held card leaked into the pair verdict (out: $out)"
 
 # T16a3: a HELD candidate must not poison the pair verdict. Dispatch order puts
@@ -660,21 +678,21 @@ printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candi
 out=$(PAIRRUN "$GO1
 INSERT INTO tasks VALUES('t_go3','ready','go three','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);
 $WEB")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T16a3: held candidate poisoned the legal pair (out: $out)"
-printf "%s" "$out" | grep -q "held this pass" \
+grep -q "held this pass" <<<"$out" \
 	&& bad "T16a3: held-this-pass caveat must be dead (out: $out)" || ok
 
 # T16b: sanctioned go+webui (the only sanctioned mixed pair), disjoint FILES.
 out=$(PAIRRUN "$GO1
 $WEB")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_go1 t_web, classes go+webui, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T16b: go+webui head not sanctioned (out: $out)"
 
 # T16c: sanctioned webui+webui, disjoint FILES (class must not forbid it).
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_w1','ready','webui one','FILES: engine/webui/app/pages/a.vue',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_w2','ready','webui two','FILES: engine/webui/test/b.test.ts',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_w1 t_w2, classes webui+webui, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_w1 t_w2, classes webui+webui, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T16c: webui+webui with disjoint FILES not sanctioned (out: $out)"
 
 # T16d: same-file collision - two webui candidates naming the same file. The
@@ -682,36 +700,36 @@ printf "%s" "$out" | grep -qF 'pair: sanctioned (t_w1 t_w2, classes webui+webui,
 # head) names one card. The collision law is proven by the hold itself.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_d1','ready','webui one','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_d2','ready','webui two','FILES: engine/webui/app/components/dock.vue',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -q "^hold: t_d2  (same-file: webui/app/components/dock.vue" \
+grep -q "^hold: t_d2  (same-file: webui/app/components/dock.vue" <<<"$out" \
 	&& ok || bad "T16d: same-file collision did not hold t_d2 (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_d1, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_d1, single would-spawn candidate)' <<<"$out" \
 	&& ok || bad "T16d: held card leaked into the pair verdict (out: $out)"
 
 # T16e: a single head slot forms no pair - sanctioned, and it names the card.
 out=$(PAIRRUN "$GO1")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' <<<"$out" \
 	&& ok || bad "T16e: single-candidate head not sanctioned (out: $out)"
 
 # T16f: --max 1 -> SLOTS 1 -> one head slot, so the same two go cards are not
 # a pair this pass (the --max decision is what the line exists to inform).
 out=$(PAIRRUN "$GO1
 $GO2" --max 1)
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_go1, single would-spawn candidate)' <<<"$out" \
 	&& ok || bad "T16f: --max 1 head must be a single slot (out: $out)"
-printf "%s" "$out" | grep -q "cap=1" && ok || bad "T16f: --max did not set the cap (out: $out)"
+grep -q "cap=1" <<<"$out" && ok || bad "T16f: --max did not set the cap (out: $out)"
 
 # T16g: --max 2 on the SAME board reaches two slots - the explicit path must
 # run the same slot math as the cap path. Disjoint go+go is sanctioned since
 # the 2026-11-10 ruling, so the verdict is sanctioned on BOTH paths.
 out=$(PAIRRUN "$GO1
 $GO2" --max 2)
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T16g: --max 2 disjoint go+go head not sanctioned (out: $out)"
 
 # T16h: empty board - the line still prints, never a silent absence (an
 # empty verdict section must be distinguishable from a blind computation).
 out=$(PAIRRUN "SELECT 1;")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+grep -qF 'pair: sanctioned (none, empty would-spawn set)' <<<"$out" \
 	&& ok || bad "T16h: empty board printed no pair verdict (out: $out)"
 
 # T16i: class-list containment + the unconditional class leg. Three running
@@ -723,11 +741,11 @@ INSERT INTO tasks VALUES('t_rgo','running','go bits','pure go bits','pibtw:2',NU
 INSERT INTO tasks VALUES('t_rweb','running','webui bits','FILES: engine/webui/app/','pibtw:3',NULL,5,'2026-11-07T14:02',NULL,NULL);
 INSERT INTO tasks VALUES('t_cgo','ready','go candidate','FILES: cmd/omega/loop.go',NULL,NULL,5,'2026-11-07T15:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_cdoc','ready','doc candidate','FILES: docs/other.md',NULL,NULL,5,'2026-11-07T15:01',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'hold: t_cgo  (go-class beside go with unproven surface: running=[docs,go,webui,]' \
+grep -qF 'hold: t_cgo  (go-class beside go with unproven surface: running=[docs,go,webui,]' <<<"$out" \
 	&& ok || bad "T16i: go candidate beside a token-less running go card not held (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_cdoc" \
+grep -q "^legal: t_cdoc" <<<"$out" \
 	&& ok || bad "T16i: doc candidate should stay legal - a FILES: docs/ card must class docs, not go (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+grep -qF 'pair: sanctioned (none, empty would-spawn set)' <<<"$out" \
 	&& ok || bad "T16i: running > cap must give zero head slots (out: $out)"
 
 # T17 (local + CI): a card with NO `FILES:` line is UNPROVABLE, not precise
@@ -751,32 +769,32 @@ NF_GO="INSERT INTO tasks VALUES('t_nfgo','ready','cron wake entry','the cron run
 # T17a: no FILES line beside a legal webui card -> forbidden pair, named reason.
 out=$(PAIRRUN "$NF_WEB
 $WEB")
-printf "%s" "$out" | grep -q "^legal: t_nofiles" \
+grep -q "^legal: t_nofiles" <<<"$out" \
 	&& ok || bad "T17a: a no-FILES card must stay legal alone - the prose fallback serves single dispatch, only the pair is forbidden (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' \
+grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' <<<"$out" \
 	&& ok || bad "T17a: no FILES line is unprovable, not precise - the pair was not forbidden / reason did not name the missing line (out: $out)"
 
 # T17b: the go+go leg - the no-FILES go card makes the pair unprovable, and the
 # hold names it (same-pass leg: t_nfgo went legal first, t_gofl follows it).
 out=$(PAIRRUN "$NF_GO
 INSERT INTO tasks VALUES('t_gofl','ready','memory store','FILES: harness/memory/store.go',NULL,NULL,5,'2026-11-11T05:01',NULL,NULL);")
-printf "%s" "$out" | grep -q "^legal: t_nfgo" \
+grep -q "^legal: t_nfgo" <<<"$out" \
 	&& ok || bad "T17b: no-FILES go card should stay legal alone (out: $out)"
-printf "%s" "$out" | grep -q "^hold: t_gofl  (go-class beside go with unproven surface" \
+grep -q "^hold: t_gofl  (go-class beside go with unproven surface" <<<"$out" \
 	&& ok || bad "T17b: no FILES line is unprovable, not precise - the go pair was not held (out: $out)"
-printf "%s" "$out" | grep -qF 'absent FILES: line is unprovable, never precise: same-pass t_nfgo' \
+grep -qF 'absent FILES: line is unprovable, never precise: same-pass t_nfgo' <<<"$out" \
 	&& ok || bad "T17b: the hold reason did not name the FILES-less card (out: $out)"
 
 # T17c: the boundary - a `FILES:` line with NO value declares no surface either.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_empty','ready','empty surface','FILES:',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);
 $WEB")
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_empty t_web, no FILES: line on t_empty - unprovable surface, never a pair)' \
+grep -qF 'pair: forbidden (t_empty t_web, no FILES: line on t_empty - unprovable surface, never a pair)' <<<"$out" \
 	&& ok || bad "T17c: an EMPTY FILES line must read absent, not precise (out: $out)"
 
 # T17d: CONTROL - the same two-card fixture with a real FILES line still pairs.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_precise','ready','webui tweak','FILES: webui/app/pages/y.vue',NULL,NULL,5,'2026-11-07T14:00',NULL,NULL);
 $WEB")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_precise t_web, classes webui+webui, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_precise t_web, classes webui+webui, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T17d: a declared FILES surface must still pair - the rule is the ABSENT line, not a pair ban (out: $out)"
 
 # T18 (local + CI): the PROSE legs of class_of() match on WORD BOUNDARIES (card
@@ -824,19 +842,19 @@ done
 printf "old t_dispatch=%s\n" "$(class_of_old t_dispatch)"
 printf "old t_space=%s\n" "$(class_of_old t_space)"
 ' 2>&1)
-printf "%s" "$out" | grep -qx "new t_dispatch=go" \
+grep -qx "new t_dispatch=go" <<<"$out" \
 	&& ok || bad "T18a: a FILES-less card whose prose says 'dispatch' must class go, not webui (out: $out)"
-printf "%s" "$out" | grep -qx "new t_space=go" \
+grep -qx "new t_space=go" <<<"$out" \
 	&& ok || bad "T18a: 'space' must not class webui either - bare spa is a substring (out: $out)"
-printf "%s" "$out" | grep -qx "new t_webprose=webui" \
+grep -qx "new t_webprose=webui" <<<"$out" \
 	&& ok || bad "T18a: TRUE webui prose (engine/webui + nuxt) must still class webui (out: $out)"
-printf "%s" "$out" | grep -qx "new t_spaprose=webui" \
+grep -qx "new t_spaprose=webui" <<<"$out" \
 	&& ok || bad "T18a: the word SPA must still class webui - word boundaries, not a removal (out: $out)"
-printf "%s" "$out" | grep -qx "new t_docsprose=docs" \
+grep -qx "new t_docsprose=docs" <<<"$out" \
 	&& ok || bad "T18a: docs prose must still class docs (out: $out)"
-printf "%s" "$out" | grep -qx "old t_dispatch=webui" \
+grep -qx "old t_dispatch=webui" <<<"$out" \
 	&& ok || bad "T18c: the pinned PRE-change prose body no longer reds on the fixture - the shape is not the bug (out: $out)"
-printf "%s" "$out" | grep -qx "old t_space=webui" \
+grep -qx "old t_space=webui" <<<"$out" \
 	&& ok || bad "T18c: the pinned PRE-change body must still misclass 'space' (out: $out)"
 rm -f "$T18DB"
 
@@ -846,11 +864,11 @@ rm -f "$T18DB"
 # it classes go and holds on the unproven surface, naming itself.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rgo','running','cron bits','FILES: harness/cron/runner.go','pibtw:1',NULL,5,'2026-11-11T04:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_dispatch','ready','dispatch guard sweep','the dispatcher picks the oldest ready card; this card declares no files line',NULL,NULL,5,'2026-11-11T05:00',NULL,NULL);")
-printf "%s" "$out" | grep -q "^hold: t_dispatch  (go-class beside go with unproven surface" \
+grep -q "^hold: t_dispatch  (go-class beside go with unproven surface" <<<"$out" \
 	&& ok || bad "T18b: a FILES-less dispatch card beside a running go card must class go and hold - not skip the class leg as webui (out: $out)"
-printf "%s" "$out" | grep -qF "[absent FILES: line is unprovable, never precise: candidate t_dispatch]" \
+grep -qF "[absent FILES: line is unprovable, never precise: candidate t_dispatch]" <<<"$out" \
 	&& ok || bad "T18b: the hold reason must name the FILES-less candidate (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_dispatch" \
+grep -q "^legal: t_dispatch" <<<"$out" \
 	&& bad "T18b: the candidate leaked as legal - the webui misclass is still in the prose leg (out: $out)" || ok
 
 # T19 pins the CLAMP (card t_8a1a46e1): a LIVE `--max N` (N>1) must OBEY the
@@ -959,17 +977,17 @@ STUB_EOF
 # LIVE --max 2 -> the clamp fires, ONE spawn, and the ids it declined to pair.
 out=$(SPAWNRUN clamp-forbidden "$NF_WEB
 $WEB" --max 2)
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' \
+grep -qF 'pair: forbidden (t_nofiles t_web, no FILES: line on t_nofiles - unprovable surface, never a pair)' <<<"$out" \
 	&& ok || bad "T19a: fixture no longer reads forbidden - the clamp case is not testing the clamp (out: $out)"
-printf "%s" "$out" | grep -qF 'clamp: --max 2 -> 1 (pair: forbidden - no FILES: line on t_nofiles - unprovable surface, never a pair) - declined to pair: t_nofiles t_web' \
+grep -qF 'clamp: --max 2 -> 1 (pair: forbidden - no FILES: line on t_nofiles - unprovable surface, never a pair) - declined to pair: t_nofiles t_web' <<<"$out" \
 	&& ok || bad "T19a: a forbidden head pair did not clamp --max 2, or the clamp line lost its reason/ids (out: $out)"
 grep -qxF 'kanban dispatch --max 1' "$(splog clamp-forbidden)" \
 	&& ok || bad "T19a: the inner dispatcher was not handed --max 1 (got: $(tr '\n' ';' <"$(splog clamp-forbidden)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_nofiles)' \
+grep -qF 'Spawned: 1 (t_nofiles)' <<<"$out" \
 	&& ok || bad "T19a: exactly ONE card must spawn under the clamp (out: $out)"
 # The spawn verdict path answers Spawned with Onboarded (card t_f6d15b7f): the
 # clamped pass posts the law to the one card it spawned, and the stub records it.
-printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_nofiles)' \
+grep -qF 'Onboarded: 1 (t_nofiles)' <<<"$out" \
 	&& ok || bad "T19a: the clamped pass did not onboard the card it spawned (out: $out)"
 [ "$(cut -f1 "$(spcomment clamp-forbidden)")" = "t_nofiles" ] \
 	&& ok || bad "T19a: the onboarding comment missed t_nofiles (got: $(cut -f1 "$(spcomment clamp-forbidden)" | tr '\n' ' '))"
@@ -980,9 +998,9 @@ nrun=$(sql "$(spdb clamp-forbidden)" "SELECT COUNT(*) FROM tasks WHERE status='r
 # still passes --max 2 through and spawns two. The clamp must not be a blanket.
 out=$(SPAWNRUN clamp-sanctioned "$GO1
 $GO2" --max 2)
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_go1 t_go2, classes go+go, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T19b: control fixture is not a sanctioned pair any more (out: $out)"
-printf "%s" "$out" | grep -q "clamp:" \
+grep -q "clamp:" <<<"$out" \
 	&& bad "T19b: a sanctioned pair was clamped - the clamp must obey the verdict, not ban pairs (out: $out)" || ok
 grep -qxF 'kanban dispatch --max 2' "$(splog clamp-sanctioned)" \
 	&& ok || bad "T19b: a sanctioned pair did not pass --max 2 through (got: $(tr '\n' ';' <"$(splog clamp-sanctioned)"))"
@@ -993,18 +1011,18 @@ nrun=$(sql "$(spdb clamp-sanctioned)" "SELECT COUNT(*) FROM tasks WHERE status='
 # nothing dispatches (ticks and tests read this output; it stays byte-stable).
 out=$(PAIRRUN "$NF_WEB
 $WEB" --max 2)
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_nofiles t_web' \
+grep -qF 'pair: forbidden (t_nofiles t_web' <<<"$out" \
 	&& ok || bad "T19c: dry-run lost its pair verdict (out: $out)"
-printf "%s" "$out" | grep -q "clamp:" \
+grep -q "clamp:" <<<"$out" \
 	&& bad "T19c: dry-run printed a clamp line - the clamp must sit BELOW the dry exit (out: $out)" || ok
-printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+grep -q "dry-run: no dispatch" <<<"$out" \
 	&& ok || bad "T19c: dry-run dispatched (out: $out)"
 
 # T19d: --max 1 needs no clamp - the request is already single, so the line
 # stays silent (N>1 is the condition, never a blanket on every forbidden pass).
 out=$(SPAWNRUN max1 "$NF_WEB
 $WEB" --max 1)
-printf "%s" "$out" | grep -q "clamp:" \
+grep -q "clamp:" <<<"$out" \
 	&& bad "T19d: --max 1 is already single - no clamp line expected (out: $out)" || ok
 grep -qxF 'kanban dispatch --max 1' "$(splog max1)" \
 	&& ok || bad "T19d: --max 1 pass did not hand --max 1 through (got: $(tr '\n' ';' <"$(splog max1)"))"
@@ -1014,7 +1032,7 @@ grep -qxF 'kanban dispatch --max 1' "$(splog max1)" \
 # exists to delete.
 out=$(SPAWNRUN clamp-bare "$NF_WEB
 $WEB")
-printf "%s" "$out" | grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden' \
+grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden' <<<"$out" \
 	&& ok || bad "T19e: a bare pass against a forbidden head set did not clamp (out: $out)"
 grep -qxF 'kanban dispatch --max 1' "$(splog clamp-bare)" \
 	&& ok || bad "T19e: the bare pass was not clamped to --max 1 (got: $(tr '\n' ';' <"$(splog clamp-bare)"))"
@@ -1043,17 +1061,17 @@ REV_SEED="INSERT INTO tasks VALUES('t_rev','review','review handoff','the review
 # T20a: ONE review card, zero ready, zero running -> the dispatcher IS called,
 # once, and the review spawns.
 out=$(SPAWNRUN review-only "$REV_SEED")
-printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev)' \
+grep -qF 'review candidates: 1 unclaimed (t_rev)' <<<"$out" \
 	&& ok || bad "T20a: a review-only board must name its review candidate (out: $out)"
 ncalls=$(grep -c . "$(splog review-only)" || true)
 [ "$ncalls" = "1" ] && ok || bad "T20a: the inner dispatcher must be called EXACTLY once (calls: $ncalls, log: $(tr '\n' ';' <"$(splog review-only)"))"
 grep -qE '^kanban dispatch --max [0-9]+$' "$(splog review-only)" \
 	&& ok || bad "T20a: the inner call lost its shape (log: $(tr '\n' ';' <"$(splog review-only)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev)' \
+grep -qF 'Spawned: 1 (t_rev)' <<<"$out" \
 	&& ok || bad "T20a: the review row did not spawn (out: $out)"
 s=$(sql "$(spdb review-only)" "SELECT status FROM tasks WHERE id='t_rev';")
 [ "$s" = "running" ] && ok || bad "T20a: review card status is '$s' after the pass (expected running - claim_review_task flips review -> running)"
-printf "%s" "$out" | grep -q "no dispatch" \
+grep -q "no dispatch" <<<"$out" \
 	&& bad "T20a: the pass took the no-dispatch branch on a review-only board (out: $out)" || ok
 
 # T20b: CONTROL - zero ready AND zero review: no claimable work, no call. A
@@ -1061,9 +1079,9 @@ printf "%s" "$out" | grep -q "no dispatch" \
 out=$(SPAWNRUN empty-board "SELECT 1;")
 ncalls=$(grep -c . "$(splog empty-board)" || true)
 [ "$ncalls" = "0" ] && ok || bad "T20b: an empty board made $ncalls inner dispatch call(s) - expected none (log: $(tr '\n' ';' <"$(splog empty-board)"))"
-printf "%s" "$out" | grep -qF 'no dispatch (running=0/cap=2, claimable=0)' \
+grep -qF 'no dispatch (running=0/cap=2, claimable=0)' <<<"$out" \
 	&& ok || bad "T20b: the empty-board line must state the reason (out: $out)"
-printf "%s" "$out" | grep -qF 'review candidates: 0 unclaimed' \
+grep -qF 'review candidates: 0 unclaimed' <<<"$out" \
 	&& ok || bad "T20b: the empty board must still print the review count (out: $out)"
 
 # T20c: CONTROL - a review card with a NAMED lock is not claimable: the inner
@@ -1074,9 +1092,9 @@ printf "%s" "$out" | grep -qF 'review candidates: 0 unclaimed' \
 out=$(SPAWNRUN review-locked "INSERT INTO tasks VALUES('t_revl','review','parked review','the review waits on the design gate','pibtw:review-park',NULL,5,'2026-11-11T08:00',NULL,NULL);")
 ncalls=$(grep -c . "$(splog review-locked)" || true)
 [ "$ncalls" = "0" ] && ok || bad "T20c: a locked review card opened the gate ($ncalls call(s)) - the inner filter is claim_lock IS NULL (log: $(tr '\n' ';' <"$(splog review-locked)"))"
-printf "%s" "$out" | grep -qF 'review candidates: 0 unclaimed' \
+grep -qF 'review candidates: 0 unclaimed' <<<"$out" \
 	&& ok || bad "T20c: a locked review card counted as a review candidate (out: $out)"
-printf "%s" "$out" | grep -qF 'no dispatch (running=0/cap=2, claimable=0)' \
+grep -qF 'no dispatch (running=0/cap=2, claimable=0)' <<<"$out" \
 	&& ok || bad "T20c: the locked-review board must report no claimable work (out: $out)"
 s=$(sql "$(spdb review-locked)" "SELECT status||'|'||claim_lock FROM tasks WHERE id='t_revl';")
 [ "$s" = "review|pibtw:review-park" ] && ok || bad "T20c: the locked review card changed shape ('$s')"
@@ -1084,11 +1102,11 @@ s=$(sql "$(spdb review-locked)" "SELECT status||'|'||claim_lock FROM tasks WHERE
 # T20d: the DRY-RUN names the review candidate it would spawn - the live pass
 # in T20a spawned one, so a dry-run reporting zero would lie about it.
 out=$(PAIRRUN "$REV_SEED")
-printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev)' \
+grep -qF 'review candidates: 1 unclaimed (t_rev)' <<<"$out" \
 	&& ok || bad "T20d: dry-run did not name the review candidate (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (none, empty would-spawn set)' \
+grep -qF 'pair: sanctioned (none, empty would-spawn set)' <<<"$out" \
 	&& ok || bad "T20d: a review row must not enter the pair accounting (out: $out)"
-printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+grep -q "dry-run: no dispatch" <<<"$out" \
 	&& ok || bad "T20d: dry-run dispatched (out: $out)"
 rm -rf "$SPAWN_BASE"
 
@@ -1176,37 +1194,37 @@ T21RUN() {  # $1 = running id ('' = none) -> guard output on the fixture board
 
 # T21a: running=none and running=t_cite must agree that t_web may spawn.
 out0=$(T21RUN "")
-printf "%s" "$out0" | grep -q "^legal: t_cite" \
+grep -q "^legal: t_cite" <<<"$out0" \
 	&& ok || bad "T21a: t_cite should be legal while ready (out: $out0)"
-printf "%s" "$out0" | grep -q "^legal: t_web" \
+grep -q "^legal: t_web" <<<"$out0" \
 	&& ok || bad "T21a: t_web should be legal beside the ready t_cite (out: $out0)"
-printf "%s" "$out0" | grep -qF 'pair: sanctioned (t_cite t_web, classes go+webui, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_cite t_web, classes go+webui, FILES disjoint)' <<<"$out0" \
 	&& ok || bad "T21a: the disjoint pair was not sanctioned while both are ready (out: $out0)"
 out1=$(T21RUN t_cite)
-printf "%s" "$out1" | grep -q "^hold: t_web" \
+grep -q "^hold: t_web" <<<"$out1" \
 	&& bad "T21a: t_web HELD once t_cite started running - the pair verdict read the run state; the running card's prose must not claim a directory its FILES: line never named (out: $out1)" \
 	|| ok
-printf "%s" "$out1" | grep -q "^legal: t_web" \
+grep -q "^legal: t_web" <<<"$out1" \
 	&& ok || bad "T21a: t_web should stay legal once t_cite is running (out: $out1)"
-printf "%s" "$out1" | grep -qF 'pair: sanctioned (t_web, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_web, single would-spawn candidate)' <<<"$out1" \
 	&& ok || bad "T21a: the pair verdict flipped with the run state (out: $out1)"
 
 # T21b: DIFF leg - t_intrude declares scripts/other.sh but its branch really
 # writes webui/app/components/ui/BandSelect.vue. The union must hold t_web.
 out=$(T21RUN t_intrude)
-printf "%s" "$out" | grep -q "^hold: t_web  (same-file: webui/app/components/ui/BandSelect.vue" \
+grep -q "^hold: t_web  (same-file: webui/app/components/ui/BandSelect.vue" <<<"$out" \
 	&& ok || bad "T21b: a running card whose DIFF writes the sibling's file must still hold it (out: $out)"
 
 # T21c: FILES leg - t_filerun declares the sibling's directory and has no diff.
 out=$(T21RUN t_filerun)
-printf "%s" "$out" | grep -q "^hold: t_web" \
+grep -q "^hold: t_web" <<<"$out" \
 	&& ok || bad "T21c: a running card that DECLARES the sibling's directory must hold it (out: $out)"
 
 # T21d: FILES-less running card - prose is the only surface it has (and it has
 # no branch yet, so the diff probe fails; the pass must not die on that).
 out=$(T21RUN t_nofiles); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T21d: a FILES-less running card with no branch killed the pass (exit $rc, out: $out)"
-printf "%s" "$out" | grep -q "^hold: t_web" \
+grep -q "^hold: t_web" <<<"$out" \
 	&& ok || bad "T21d: the prose fallback was lost - a FILES-less running card must still hold the sibling (out: $out)"
 rm -rf "$T21REPO" "$T21HOME"
 
@@ -1316,16 +1334,16 @@ T22ATTEMPT=0
 while :; do
   T22ATTEMPT=$((T22ATTEMPT + 1))
   out=$(T22RUN); rc=$?
-  printf "%s" "$out" | grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" && break
+  grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" <<<"$out" && break
   [ "$T22ATTEMPT" -lt 3 ] || break
   [ "$(pid_state "$VICTIM_PID")" = gone ] || break
 done
 [ "$rc" -eq 0 ] && ok || bad "T22: the corpse readout killed the pass (exit $rc, out: $out)"
-printf "%s" "$out" | grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" \
+grep -q "corpse: t_dead run 4242 (cody) worker pid $VICTIM_PID is GONE" <<<"$out" \
 	&& ok || bad "T22a: a running card with a dead worker pid printed no corpse line (out: $out)"
-printf "%s" "$out" | grep -qF "last tool calls in" \
+grep -qF "last tool calls in" <<<"$out" \
 	&& ok || bad "T22a: the corpse line named no corpse source (out: $out)"
-printf "%s" "$out" | grep -q "corpse: t_alive" \
+grep -q "corpse: t_alive" <<<"$out" \
 	&& bad "T22b: a LIVE worker pid read as a corpse - a false corpse makes every later corpse line untrustworthy (out: $out)" \
 	|| ok
 s=$(sql "$T22DB_N" "SELECT status||'|'||coalesce(worker_pid,0)||'|'||current_run_id FROM tasks WHERE id='t_dead';")
@@ -1354,9 +1372,9 @@ rm -rf "$T22REPO" "$T22HOME"
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rweb','running','dock pane','FILES: webui/app/app.vue','pibtw:1',NULL,5,'2026-11-13T22:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_multi','ready','menubar + dock','FILES: docs/webui.md
 FILES: webui/app/app.vue',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'hold: t_multi  (same-file: webui/app/app.vue)' \
+grep -qF 'hold: t_multi  (same-file: webui/app/app.vue)' <<<"$out" \
 	&& ok || bad "T23a: a token on the SECOND FILES line did not hold the candidate - the union read is missing (out: $out)"
-printf "%s" "$out" | grep -q "^legal: t_multi" \
+grep -q "^legal: t_multi" <<<"$out" \
 	&& bad "T23a: the candidate leaked as legal - lines 2..N are still invisible to the hold verdict (out: $out)" || ok
 
 # T23b: class_of on the full surface. Direct assertion (same extract T18 uses):
@@ -1377,11 +1395,11 @@ for id in t_multiclass t_multidocs t_singledocs; do
   printf "%s=%s\n" "$id" "$(class_of "$id")"
 done
 ' 2>&1)
-printf "%s" "$out" | grep -qx "t_multiclass=webui" \
+grep -qx "t_multiclass=webui" <<<"$out" \
 	&& ok || bad "T23b: a .vue path on the SECOND FILES line must class webui, not docs (out: $out)"
-printf "%s" "$out" | grep -qx "t_multidocs=docs" \
+grep -qx "t_multidocs=docs" <<<"$out" \
 	&& ok || bad "T23b: a docs+docs split must still class docs - the joined labels must not leak a non-docs token into the go leg (out: $out)"
-printf "%s" "$out" | grep -qx "t_singledocs=docs" \
+grep -qx "t_singledocs=docs" <<<"$out" \
 	&& ok || bad "T23b: the documented single-line docs shape drifted (out: $out)"
 rm -f "$T23DB"
 
@@ -1389,14 +1407,14 @@ rm -f "$T23DB"
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_rgo23','running','store work','FILES: scripts/other.sh','pibtw:1',NULL,5,'2026-11-13T22:00',NULL,NULL);
 INSERT INTO tasks VALUES('t_multibare','ready','memory store','FILES: harness/memory/store.go
 FILES: agent',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);")
-printf "%s" "$out" | grep -q "^hold: t_multibare  (go-class beside go with unproven surface" \
+grep -q "^hold: t_multibare  (go-class beside go with unproven surface" <<<"$out" \
 	&& ok || bad "T23c: a bare-dir token on the SECOND FILES line did not make the surface unprovable - the go pair was sanctioned on a split surface (out: $out)"
 
 # T23d: a bare `FILES:` line plus one carrying paths is NOT absent.
 out=$(PAIRRUN "INSERT INTO tasks VALUES('t_split','ready','split declaration','FILES:
 FILES: docs/cli.md',NULL,NULL,5,'2026-11-13T23:17',NULL,NULL);
 INSERT INTO tasks VALUES('t_doc2','ready','doc two','FILES: docs/other.md',NULL,NULL,5,'2026-11-13T23:18',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_split t_doc2, classes docs+docs, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_split t_doc2, classes docs+docs, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T23d: a bare FILES line beside one carrying paths read ABSENT - the union read is missing (out: $out)"
 
 # T24 (0.17.3 make-over): the tick SELF-HEALS its own configured board.
@@ -1457,7 +1475,7 @@ out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_D
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24a: the healing pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "self-heal: board 'gone-board' was missing - recreated" \
+grep -q "self-heal: board 'gone-board' was missing - recreated" <<<"$out" \
   && ok || bad "T24a: the self-heal was SILENT - no pass-report line (out: $out)"
 [ -f "$FDHOME/kanban/boards/gone-board/kanban.db" ] \
   && ok || bad "T24a: the configured board was not recreated"
@@ -1470,13 +1488,13 @@ out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_D
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24b: a dry pass on a missing board exited 0 - verdicts from an absent board"
-printf "%s" "$out" | grep -q "self-heal: board 'gone-board' is missing - a live pass recreates it" \
+grep -q "self-heal: board 'gone-board' is missing - a live pass recreates it" <<<"$out" \
   && ok || bad "T24b: the dry run did not name the would-be heal (out: $out)"
 [ ! -f "$FDHOME/kanban/boards/gone-board/kanban.db" ] \
   && ok || bad "T24b: a dry run WROTE a board - dry-run means no writes"
 [ ! -s "$stub_log" ] \
   && ok || bad "T24b: a dry run invoked hermes ($(cat "$stub_log"))"
-printf "%s" "$out" | grep -q "board DB not found" \
+grep -q "board DB not found" <<<"$out" \
   && ok || bad "T24b: the missing board did not refuse loudly (out: $out)"
 
 # (c) the DEFAULT board heals through `hermes kanban init`
@@ -1485,7 +1503,7 @@ out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_D
   PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24c: the default-board healing pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -q "self-heal: board 'default' was missing - recreated" \
+grep -q "self-heal: board 'default' was missing - recreated" <<<"$out" \
   && ok || bad "T24c: the default board heal was silent (out: $out)"
 [ -f "$FDHOME/kanban.db" ] && ok || bad "T24c: the default board DB was not recreated"
 grep -q "kanban init" "$stub_log" \
@@ -1542,17 +1560,17 @@ out=$(PAIRRUN "$TRIG1
 $TRIG2
 $TRIG3")
 PAIR_CONFIG=""
-printf "%s" "$out" | grep -qF "$SEATS_NOTE" \
+grep -qF "$SEATS_NOTE" <<<"$out" \
 	&& ok || bad "T25a: a config cap of 3 must be clamped to 2 implementation seats, loudly (out: $out)"
-printf "%s" "$out" | grep -qF 'impl lane: live=0 cap=2 - room: 2' \
+grep -qF 'impl lane: live=0 cap=2 - room: 2' <<<"$out" \
 	&& ok || bad "T25a: the implementation-seat state line did not report the 2-seat lane (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T25a: the head set must be the largest PAIR the seats can fund (out: $out)"
-printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg3 - legal, but no implementation slot this pass (2 head slot(s), 0 of 2 seats live)' \
+grep -qF 'impl lane over-cap: t_tg3 - legal, but no implementation slot this pass (2 head slot(s), 0 of 2 seats live)' <<<"$out" \
 	&& ok || bad "T25a: the third disjoint card must be named as over-cap (out: $out)"
-printf "%s" "$out" | grep -q "^trio: " \
+grep -q "^trio: " <<<"$out" \
 	&& bad "T25a: a trio verdict still exists - the third implementation seat is gone (out: $out)" || ok
-printf "%s" "$out" | grep -qF 'dry-run: no dispatch' \
+grep -qF 'dry-run: no dispatch' <<<"$out" \
 	&& ok || bad "T25a: the dry-run dispatched (out: $out)"
 
 # T25b: the LIVE pass - two spawn, the third is refused and LEFT READY (the
@@ -1563,13 +1581,13 @@ SPAWN_CONFIG="$TRIOCFG"
 out=$(SPAWNRUN impl-clamp-live "$TRIG1
 $TRIG2
 $TRIG3")
-printf "%s" "$out" | grep -qF "$SEATS_NOTE" \
+grep -qF "$SEATS_NOTE" <<<"$out" \
 	&& ok || bad "T25b: the live pass lost the seats clamp line (out: $out)"
-printf "%s" "$out" | grep -q "clamp:" \
+grep -q "clamp:" <<<"$out" \
 	&& bad "T25b: a sanctioned pair was clamped - the seats already bounded the head (out: $out)" || ok
 grep -qxF 'kanban dispatch --max 2' "$(splog impl-clamp-live)" \
 	&& ok || bad "T25b: the inner dispatcher must be handed --max 2, never 3 (got: $(tr '\n' ';' <"$(splog impl-clamp-live)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tg2)' \
+grep -qF 'Spawned: 2 (t_tg1 t_tg2)' <<<"$out" \
 	&& ok || bad "T25b: exactly two implementation cards may spawn under the 2+1 law (out: $out)"
 s=$(sql "$(spdb impl-clamp-live)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_tg3';")
 [ "$s" = "ready|NULL" ] && ok || bad "T25b: the refused third card changed shape ('$s') - it must stay ready with a free lock"
@@ -1579,13 +1597,13 @@ s=$(sql "$(spdb impl-clamp-live)" "SELECT status||'|'||coalesce(claim_lock,'NULL
 out=$(SPAWNRUN impl-clamp-max3 "$TRIG1
 $TRIG2
 $TRIG3" --max 3)
-printf "%s" "$out" | grep -qF 'seats: --max 3 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' \
+grep -qF 'seats: --max 3 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' <<<"$out" \
 	&& ok || bad "T25c: --max 3 must name the caller as the clamped source (out: $out)"
-printf "%s" "$out" | grep -qF 'clamp: --max 3 -> 2 (factory seats: 2 implementation + 1 review = 3 max)' \
+grep -qF 'clamp: --max 3 -> 2 (factory seats: 2 implementation + 1 review = 3 max)' <<<"$out" \
 	&& ok || bad "T25c: the seats clamp must be stated as a clamp line with the ids' arithmetic (out: $out)"
 grep -qxF 'kanban dispatch --max 2' "$(splog impl-clamp-max3)" \
 	&& ok || bad "T25c: --max 3 must reach the inner as --max 2 (got: $(tr '\n' ';' <"$(splog impl-clamp-max3)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 2 (t_tg1 t_tg2)' \
+grep -qF 'Spawned: 2 (t_tg1 t_tg2)' <<<"$out" \
 	&& ok || bad "T25c: --max 3 may not spawn three implementation cards (out: $out)"
 SPAWN_CONFIG=""
 
@@ -1596,15 +1614,15 @@ SPAWN_CONFIG="$TRIOCFG"
 out=$(SPAWNRUN impl-clamp-forbidden "INSERT INTO tasks VALUES('t_tnf','ready','webui tweak','the fix lands in webui/app/pages/y.vue and its test',NULL,NULL,5,'2026-11-15T09:00',NULL,NULL);
 $TRIG1
 INSERT INTO tasks VALUES('t_tw1','ready','webui one','FILES: webui/app/pages/a.vue',NULL,NULL,5,'2026-11-15T09:02',NULL,NULL);")
-printf "%s" "$out" | grep -qF 'pair: forbidden (t_tnf t_tg1, no FILES: line on t_tnf - unprovable surface, never a pair)' \
+grep -qF 'pair: forbidden (t_tnf t_tg1, no FILES: line on t_tnf - unprovable surface, never a pair)' <<<"$out" \
 	&& ok || bad "T25d: a FILES-less head member must forbid the pair and be named (out: $out)"
-printf "%s" "$out" | grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden - no FILES: line on t_tnf - unprovable surface, never a pair) - declined to pair: t_tnf t_tg1' \
+grep -qF 'clamp: wanted 2 -> 1 (pair: forbidden - no FILES: line on t_tnf - unprovable surface, never a pair) - declined to pair: t_tnf t_tg1' <<<"$out" \
 	&& ok || bad "T25d: the clamp line lost the pair reason or the declined ids (out: $out)"
-printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tw1 - legal, but no implementation slot this pass' \
+grep -qF 'impl lane over-cap: t_tw1 - legal, but no implementation slot this pass' <<<"$out" \
 	&& ok || bad "T25d: the unslotted legal card was not named (out: $out)"
 grep -qxF 'kanban dispatch --max 1' "$(splog impl-clamp-forbidden)" \
 	&& ok || bad "T25d: a forbidden head pair must reach the inner as --max 1 (got: $(tr '\n' ';' <"$(splog impl-clamp-forbidden)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_tnf)' \
+grep -qF 'Spawned: 1 (t_tnf)' <<<"$out" \
 	&& ok || bad "T25d: exactly one card may spawn under the clamped pair (out: $out)"
 SPAWN_CONFIG=""
 
@@ -1615,15 +1633,15 @@ out=$(SPAWNRUN impl-seat-math "INSERT INTO tasks VALUES('t_trun','running','docs
 $TRIG1
 $TRIG2
 $TRIG3")
-printf "%s" "$out" | grep -qF 'impl lane: live=1 (t_trun) cap=2 - room: 1' \
+grep -qF 'impl lane: live=1 (t_trun) cap=2 - room: 1' <<<"$out" \
 	&& ok || bad "T25e: the seat state line must report ONE free implementation seat (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1, single would-spawn candidate)' \
+grep -qF 'pair: sanctioned (t_tg1, single would-spawn candidate)' <<<"$out" \
 	&& ok || bad "T25e: with one card running the head holds one slot (out: $out)"
-printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg2 t_tg3 - legal, but no implementation slot this pass (1 head slot(s), 1 of 2 seats live)' \
+grep -qF 'impl lane over-cap: t_tg2 t_tg3 - legal, but no implementation slot this pass (1 head slot(s), 1 of 2 seats live)' <<<"$out" \
 	&& ok || bad "T25e: both legal leftovers must be named over-cap (out: $out)"
 grep -qxF 'kanban dispatch --max 2' "$(splog impl-seat-math)" \
 	&& ok || bad "T25e: running=1 + one slot must hand --max 2 (got: $(tr '\n' ';' <"$(splog impl-seat-math)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_tg1)' \
+grep -qF 'Spawned: 1 (t_tg1)' <<<"$out" \
 	&& ok || bad "T25e: exactly one card may spawn beside the running one (out: $out)"
 nrun=$(sql "$(spdb impl-seat-math)" "SELECT COUNT(*) FROM tasks WHERE status='running';")
 [ "$nrun" = "2" ] && ok || bad "T25e: $nrun cards running (expected 2: the running one + one spawn)"
@@ -1636,11 +1654,11 @@ out=$(PAIRRUN "$TRIG1
 $TRIG2
 $TRIG3")
 PAIR_CONFIG=""
-printf "%s" "$out" | grep -qF 'seats: config cap 4 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' \
+grep -qF 'seats: config cap 4 > 2 - implementation seats clamped to 2 (2 implementation + 1 review = 3 max)' <<<"$out" \
 	&& ok || bad "T25f: a config cap of 4 must be clamped to 2 implementation seats, loudly (out: $out)"
-printf "%s" "$out" | grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' \
+grep -qF 'pair: sanctioned (t_tg1 t_tg2, classes go+go, FILES disjoint)' <<<"$out" \
 	&& ok || bad "T25f: the pair verdict must still govern at the clamped seat count (out: $out)"
-printf "%s" "$out" | grep -qF 'impl lane over-cap: t_tg3' \
+grep -qF 'impl lane over-cap: t_tg3' <<<"$out" \
 	&& ok || bad "T25f: the third card must still be named over-cap (out: $out)"
 rm -rf "$SPAWN_BASE"; SPAWN_CONFIG=""
 PAIR_CONFIG=""
@@ -1688,13 +1706,13 @@ VALUES('t_w1','ready','webui one','FILES: webui/app/pages/a.vue',NULL,NULL,5,'20
 out=$(REVRUN rev-hold-dry "$REV_LIVE
 $REV_WAIT
 $REV_READY" "" --dry-run)
-printf "%s" "$out" | grep -qF 'review candidates: 1 unclaimed (t_rev2)' \
+grep -qF 'review candidates: 1 unclaimed (t_rev2)' <<<"$out" \
 	&& ok || bad "T26a: the waiting review was not counted (out: $out)"
-printf "%s" "$out" | grep -qF 'review lane: live=1 (t_rvr) cap=1 - a second review is HELD (2 implementation + 1 review = 3 max)' \
+grep -qF 'review lane: live=1 (t_rvr) cap=1 - a second review is HELD (2 implementation + 1 review = 3 max)' <<<"$out" \
 	&& ok || bad "T26a: the review-lane state line did not report the live run / the cap (out: $out)"
-printf "%s" "$out" | grep -qF 'review lane hold: t_rev2 (live review run (t_rvr) - one review at a time)' \
+grep -qF 'review lane hold: t_rev2 (live review run (t_rvr) - one review at a time)' <<<"$out" \
 	&& ok || bad "T26a: the held review was not named with its reason (out: $out)"
-printf "%s" "$out" | grep -q "dry-run: no dispatch" \
+grep -q "dry-run: no dispatch" <<<"$out" \
 	&& ok || bad "T26a: the dry-run dispatched (out: $out)"
 
 # T26b: LIVE - the ready card spawns, the held review does NOT, and it is
@@ -1705,7 +1723,7 @@ $REV_WAIT
 $REV_READY" "")
 grep -qxF 'kanban dispatch --max 2' "$(splog rev-hold-live)" \
 	&& ok || bad "T26b: with one review running and one impl seat free the inner must be handed --max 2 (got: $(tr '\n' ';' <"$(splog rev-hold-live)"))"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_w1)' \
+grep -qF 'Spawned: 1 (t_w1)' <<<"$out" \
 	&& ok || bad "T26b: the ready card must spawn and the held review must not (out: $out)"
 s=$(sql "$(spdb rev-hold-live)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_rev2';")
 [ "$s" = "review|NULL" ] && ok || bad "T26b: the held review row changed shape ('$s') - it must stay review with a FREE lock after the pass"
@@ -1720,9 +1738,9 @@ INSERT INTO task_events(task_id,run_id,kind,payload,created_at)
 VALUES('t_rvr',777,'claimed','{\"lock\": \"pibtw:777\", \"expires\": 0, \"run_id\": 777, \"source_status\": \"review\"}',0);"
 out=$(REVRUN rev-release "$REV_DONE
 $REV_WAIT" "")
-printf "%s" "$out" | grep -qF 'review lane: live=0 cap=1 - spawn: t_rev2' \
+grep -qF 'review lane: live=0 cap=1 - spawn: t_rev2' <<<"$out" \
 	&& ok || bad "T26c: a finished review run must free the lane and name the spawnable review (out: $out)"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev2)' \
+grep -qF 'Spawned: 1 (t_rev2)' <<<"$out" \
 	&& ok || bad "T26c: the waiting review must spawn once the lane is free (out: $out)"
 s=$(sql "$(spdb rev-release)" "SELECT status FROM tasks WHERE id='t_rev2';")
 [ "$s" = "running" ] && ok || bad "T26c: the released review is '$s' (expected running - claim_review_task flips review -> running)"
@@ -1732,11 +1750,11 @@ s=$(sql "$(spdb rev-release)" "SELECT status FROM tasks WHERE id='t_rev2';")
 out=$(REVRUN rev-two "INSERT INTO tasks(id,status,title,body,claim_lock,claim_expires,priority,created_at,worker_pid,last_heartbeat_at,current_run_id)
 VALUES('t_rev1','review','first review','the first review',NULL,NULL,5,'2026-11-15T10:04',NULL,NULL,NULL);
 $REV_WAIT" "")
-printf "%s" "$out" | grep -qF 'review lane: live=0 cap=1 - spawn: t_rev1' \
+grep -qF 'review lane: live=0 cap=1 - spawn: t_rev1' <<<"$out" \
 	&& ok || bad "T26d: the free lane must name exactly one spawnable review (out: $out)"
-printf "%s" "$out" | grep -qF 'review lane hold: t_rev2 (lane cap 1 - only t_rev1 may claim a review this pass)' \
+grep -qF 'review lane hold: t_rev2 (lane cap 1 - only t_rev1 may claim a review this pass)' <<<"$out" \
 	&& ok || bad "T26d: the second review was not held for the pass (out: $out)"
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_rev1)' \
+grep -qF 'Spawned: 1 (t_rev1)' <<<"$out" \
 	&& ok || bad "T26d: exactly ONE review may claim in a pass (out: $out)"
 s=$(sql "$(spdb rev-two)" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_rev2';")
 [ "$s" = "review|NULL" ] && ok || bad "T26d: the held review must be released to review|NULL after the pass ('$s')"
@@ -1811,11 +1829,11 @@ CAPOPT=""
 capfixture no-config
 CAPRUN no-config; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 3 ] && ok || bad "T27a: a home with no config must refuse with exit 3 (got $rc, out: $out)"
-printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED: '$CAPBASE_N/no-config/config.yaml' is absent (root '$CAPBASE_N/no-config')" \
+grep -qF "CONFIG CAP READ FAILED: '$CAPBASE_N/no-config/config.yaml' is absent (root '$CAPBASE_N/no-config')" <<<"$out" \
 	&& ok || bad "T27a: the refusal did not name the root and the file it tried (out: $out)"
-printf "%s" "$out" | grep -qE "^(legal|hold):" \
+grep -qE "^(legal|hold):" <<<"$out" \
 	&& bad "T27a: verdicts printed on a refused pass (out: $out)" || ok
-printf "%s" "$out" | grep -q "Spawned" && bad "T27a: the refused pass spawned (out: $out)" || ok
+grep -q "Spawned" <<<"$out" && bad "T27a: the refused pass spawned (out: $out)" || ok
 [ ! -s "$CAPBASE_N/no-config/calls.log" ] && ok \
 	|| bad "T27a: the inner dispatcher was invoked by a refused pass ($(cat "$CAPBASE_N/no-config/calls.log"))"
 s=$(sql "$CAPBASE_N/no-config/kanban/boards/project-omega/kanban.db" "SELECT status||'|'||coalesce(claim_lock,'NULL') FROM tasks WHERE id='t_cap';")
@@ -1825,9 +1843,9 @@ s=$(sql "$CAPBASE_N/no-config/kanban/boards/project-omega/kanban.db" "SELECT sta
 # so a dry-run can never report a cap it did not read.
 CAPRUN no-config --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 3 ] && ok || bad "T27b: a dry-run on an unreadable cap must refuse with exit 3 (got $rc, out: $out)"
-printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED:" \
+grep -qF "CONFIG CAP READ FAILED:" <<<"$out" \
 	&& ok || bad "T27b: the dry-run refusal is not greppable (out: $out)"
-printf "%s" "$out" | grep -q "cap=" \
+grep -q "cap=" <<<"$out" \
 	&& bad "T27b: a refused dry-run printed a cap (out: $out)" || ok
 
 # T27c: the success path names the file and the cap.
@@ -1835,20 +1853,20 @@ capfixture with-config
 printf 'kanban:\n  max_in_progress_per_profile: 2\n' >"$CAPBASE/with-config/config.yaml"
 CAPRUN with-config --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 0 ] && ok || bad "T27c: a readable cap must not refuse (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml" \
+grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml" <<<"$out" \
 	&& ok || bad "T27c: the pass did not name the file it read the cap from (out: $out)"
-printf "%s" "$out" | grep -qF 'seats: 2 implementation + 1 review = 3 max (config cap 2)' \
+grep -qF 'seats: 2 implementation + 1 review = 3 max (config cap 2)' <<<"$out" \
 	&& ok || bad "T27c: the seats line lost the config cap (out: $out)"
-printf "%s" "$out" | grep -q "cap=2" && ok || bad "T27c: the dry-run cap is wrong (out: $out)"
+grep -q "cap=2" <<<"$out" && ok || bad "T27c: the dry-run cap is wrong (out: $out)"
 
 # T27d: --max is the CALLER's number - named as such, never as `config cap`.
 CAPRUN with-config --max 1 --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 0 ] && ok || bad "T27d: a --max pass exited $rc (out: $out)"
-printf "%s" "$out" | grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml (--max 1 overrides this pass)" \
+grep -qF "config: cap 2 from $CAPBASE_N/with-config/config.yaml (--max 1 overrides this pass)" <<<"$out" \
 	&& ok || bad "T27d: the config line dropped the config value or the override (out: $out)"
-printf "%s" "$out" | grep -qF 'seats: 1 implementation + 1 review = 2 max (--max 1)' \
+grep -qF 'seats: 1 implementation + 1 review = 2 max (--max 1)' <<<"$out" \
 	&& ok || bad "T27d: the seats line must name --max as the source (out: $out)"
-printf "%s" "$out" | grep -q "config cap 1" \
+grep -q "config cap 1" <<<"$out" \
 	&& bad "T27d: a --max pass still calls the caller's number a config cap - the exact text the ticket misread (out: $out)" || ok
 
 # T27e: the sandbox opt-in reaches the floor of 2 - LOUDLY, never silently.
@@ -1857,11 +1875,11 @@ CAPOPT=1
 CAPRUN optin --dry-run; rc=$CAPRC; out=$OUT
 CAPOPT=""
 [ "$rc" -eq 0 ] && ok || bad "T27e: the sandbox opt-in must keep the floor reachable (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "CONFIG CAP DEFAULTED: '$CAPBASE_N/optin/config.yaml' is absent (FD_ALLOW_MISSING_CONFIG=1)" \
+grep -qF "CONFIG CAP DEFAULTED: '$CAPBASE_N/optin/config.yaml' is absent (FD_ALLOW_MISSING_CONFIG=1)" <<<"$out" \
 	&& ok || bad "T27e: the sandbox floor was taken SILENTLY (out: $out)"
-printf "%s" "$out" | grep -qF "config: cap 2 from <absent: $CAPBASE_N/optin/config.yaml> (sandbox floor, FD_ALLOW_MISSING_CONFIG=1)" \
+grep -qF "config: cap 2 from <absent: $CAPBASE_N/optin/config.yaml> (sandbox floor, FD_ALLOW_MISSING_CONFIG=1)" <<<"$out" \
 	&& ok || bad "T27e: the log claimed a file it never read - the floor must name its own absence (out: $out)"
-printf "%s" "$out" | grep -q "cap=2" && ok || bad "T27e: the documented floor is 2 (out: $out)"
+grep -q "cap=2" <<<"$out" && ok || bad "T27e: the documented floor is 2 (out: $out)"
 
 # T27f: an EXISTING config with no knob is drift - refuses even with the opt-in.
 capfixture drift
@@ -1870,7 +1888,7 @@ CAPOPT=1
 CAPRUN drift --dry-run; rc=$CAPRC; out=$OUT
 CAPOPT=""
 [ "$rc" -eq 3 ] && ok || bad "T27f: a config without the knob must refuse even with the opt-in (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "carries no usable kanban.max_in_progress_per_profile" \
+grep -qF "carries no usable kanban.max_in_progress_per_profile" <<<"$out" \
 	&& ok || bad "T27f: the drift refusal did not name the missing knob (out: $out)"
 
 # T27g: a non-positive or non-numeric knob value is drift too.
@@ -1879,7 +1897,7 @@ for bad_val in 0 three; do
   printf 'kanban:\n  max_in_progress_per_profile: %s\n' "$bad_val" >"$CAPBASE/bad-$bad_val/config.yaml"
   CAPRUN "bad-$bad_val" --dry-run; rc=$CAPRC; out=$OUT
   [ "$rc" -eq 3 ] && ok || bad "T27g: a knob value of '$bad_val' must refuse (exit $rc, out: $out)"
-  printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED:" \
+  grep -qF "CONFIG CAP READ FAILED:" <<<"$out" \
 	&& ok || bad "T27g: the '$bad_val' refusal is not greppable (out: $out)"
 done
 
@@ -1888,7 +1906,7 @@ out=$(HOME="$CAPBASE" HERMES_HOME= HERMES_KANBAN_HOME="$CAPBASE_N/no-such-home" 
   HERMES_KANBAN_DB="$CAPBASE_N/no-config/kanban/boards/project-omega/kanban.db" HERMES_KANBAN_BOARD= \
   FD_ALLOW_MISSING_CONFIG= bash "$GUARD" --dry-run 2>&1); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T27h: a bogus ROOT must refuse (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "CONFIG CAP READ FAILED: root '$CAPBASE_N/no-such-home' is not a directory" \
+grep -qF "CONFIG CAP READ FAILED: root '$CAPBASE_N/no-such-home' is not a directory" <<<"$out" \
 	&& ok || bad "T27h: the refusal did not name the root it could not read (out: $out)"
 
 # T27i: an EXISTING board pointer that is not a readable file refuses - the old
@@ -1899,9 +1917,9 @@ rm -f "$CAPBASE/pointer/kanban/current"
 mkdir "$CAPBASE/pointer/kanban/current"
 CAPRUN pointer --dry-run; rc=$CAPRC; out=$OUT
 [ "$rc" -eq 3 ] && ok || bad "T27i: a broken board pointer must refuse (exit $rc, out: $out)"
-printf "%s" "$out" | grep -qF "board pointer '$CAPBASE_N/pointer/kanban/current' exists but is not a readable file" \
+grep -qF "board pointer '$CAPBASE_N/pointer/kanban/current' exists but is not a readable file" <<<"$out" \
 	&& ok || bad "T27i: the pointer refusal did not name the file (out: $out)"
-printf "%s" "$out" | grep -qF "refusing to fall back to the default board" \
+grep -qF "refusing to fall back to the default board" <<<"$out" \
 	&& ok || bad "T27i: the pointer refusal did not say why the fallback is refused (out: $out)"
 rm -rf "$CAPBASE"
 
@@ -1924,9 +1942,9 @@ SPAWN_BASE_U=$(cygpath -u "$SPAWN_BASE" 2>/dev/null || printf '%s' "$SPAWN_BASE"
 ONBOARD_LIT='Load skill worker-onboarding at run start - you are one of up to 2 concurrent workers. When your card is done, request review with --reviewer vera (rule 7).'
 T28CARD="INSERT INTO tasks VALUES('t_law','ready','onboard me','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-18T12:00',NULL,NULL);"
 out=$(SPAWNRUN onboard-fresh "$T28CARD" --max 1)
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_law)' \
+grep -qF 'Spawned: 1 (t_law)' <<<"$out" \
 	&& ok || bad "T28a: the fixture did not spawn (out: $out)"
-printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_law)' \
+grep -qF 'Onboarded: 1 (t_law)' <<<"$out" \
 	&& ok || bad "T28a: a spawned card was NOT onboarded beside its Spawned line (out: $out)"
 [ "$(cut -f1 "$(spcomment onboard-fresh)")" = "t_law" ] \
 	&& ok || bad "T28a: the onboard comment did not land on t_law (got: $(cut -f1 "$(spcomment onboard-fresh)" | tr '\n' ' '))"
@@ -1938,11 +1956,11 @@ printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_law)' \
 out=$(SPAWNRUN onboard-dup "$T28CARD
 INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','unrelated earlier note',1794900000);
 INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','$ONBOARD_LIT',1794900060);" --max 1)
-printf "%s" "$out" | grep -qF 'Spawned: 1 (t_law)' \
+grep -qF 'Spawned: 1 (t_law)' <<<"$out" \
 	&& ok || bad "T28b: the fixture did not spawn - the duplicate guard is untested (out: $out)"
-printf "%s" "$out" | grep -qF 'Onboarded: 0' \
+grep -qF 'Onboarded: 0' <<<"$out" \
 	&& ok || bad "T28b: a card already carrying the law was counted as onboarded (out: $out)"
-printf "%s" "$out" | grep -qF 'onboard: t_law skipped - its latest comment is already the standing onboarding text' \
+grep -qF 'onboard: t_law skipped - its latest comment is already the standing onboarding text' <<<"$out" \
 	&& ok || bad "T28b: the skip is silent - the pass must name the card it left alone (out: $out)"
 [ ! -s "$(spcomment onboard-dup)" ] \
 	&& ok || bad "T28b: a DUPLICATE onboarding comment was posted (got: $(cut -f1 "$(spcomment onboard-dup)" | tr '\n' ' '))"
@@ -1953,7 +1971,7 @@ printf "%s" "$out" | grep -qF 'onboard: t_law skipped - its latest comment is al
 out=$(SPAWNRUN onboard-other "$T28CARD
 INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','$ONBOARD_LIT',1794900000);
 INSERT INTO task_comments(task_id,author,body,created_at) VALUES('t_law','user','a human reply landed after the law',1794900000);" --max 1)
-printf "%s" "$out" | grep -qF 'Onboarded: 1 (t_law)' \
+grep -qF 'Onboarded: 1 (t_law)' <<<"$out" \
 	&& ok || bad "T28c: a card whose latest comment is NOT the law must be onboarded (out: $out)"
 [ "$(wc -l <"$(spcomment onboard-other)")" = "1" ] \
 	&& ok || bad "T28c: expected exactly one onboarding comment (got: $(cat "$(spcomment onboard-other)"))"

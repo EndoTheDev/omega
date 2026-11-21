@@ -40,6 +40,19 @@
 # own reaper (cleanup_journey_residue, card t_a99ffcd7) owns it; the EXIT
 # trap also removes it directly in case this recipe dies mid-way.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 runtag=$(date +%d%H%M%S)
 AGENT="jrn-${runtag}-scope"
@@ -115,7 +128,7 @@ step "ok: seeded agent home $SEED_DIR"
 poll_http "$JOURNEY_BASE_URL/settings" "\"name\":\"$AGENT\"" 10 \
   || die "GET /settings never carried the scope $AGENT (the poll names the wire it read)"
 wire=$(curl -s "$JOURNEY_BASE_URL/settings")
-printf '%s' "$wire" | grep -q "\"name\":\"$AGENT\"" || die "GET /settings carries no scope $AGENT: $(printf '%s' "$wire" | head -c 400)"
+grep -q "\"name\":\"$AGENT\"" <<<"$wire" || die "GET /settings carries no scope $AGENT: $(printf '%s' "$wire" | head -c 400)"
 step "ok: GET /settings carries the seeded scope"
 
 # the pane's dots derive from THIS payload: a scope that reports an error

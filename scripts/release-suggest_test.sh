@@ -16,6 +16,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 GUSER=(git -c user.email=t@t -c user.name=t)
 
 # fixture_error <msg>: the named cause plus the stake. Fixtures are real git
@@ -77,8 +95,8 @@ run_suggest() {
 }
 
 assert_level() { # <want> <label>
-	printf '%s' "$OUT" | grep -qE "^SUGGEST=$1$" || bad "$2: expected SUGGEST=$1, got: $(printf '%s' "$OUT" | tail -1)"
-	printf '%s' "$OUT" | grep -q "Suggested bump: $1" && ok || bad "$2: missing human 'Suggested bump: $1' line"
+	grep -qE "^SUGGEST=$1$" <<<"$OUT" || bad "$2: expected SUGGEST=$1, got: $(printf '%s' "$OUT" | tail -1)"
+	grep -q "Suggested bump: $1" <<<"$OUT" && ok || bad "$2: missing human 'Suggested bump: $1' line"
 }
 
 # --- S1: BREAKING CHANGE marker (`feat!:` shape) -> major -------------------
@@ -87,8 +105,8 @@ fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat!: replace the store with an fs-free one"
 run_suggest "$fx"
 assert_level major "S1 breaking marker"
-printf '%s' "$OUT" | grep -qE '^  [0-9a-f]+ feat!:' && ok || bad "S1: evidence should name the feat! commit"
-printf '%s' "$OUT" | grep -q "fix: a small fix" && \
+grep -qE '^  [0-9a-f]+ feat!:' <<<"$OUT" && ok || bad "S1: evidence should name the feat! commit"
+grep -q "fix: a small fix" <<<"$OUT" && \
 	bad "S1: the fix commit must NOT appear in a major's evidence list" || ok
 
 # --- S2: BREAKING CHANGE footer in the body -> major ------------------------
@@ -129,7 +147,7 @@ fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "docs: note the soak law"
 run_suggest "$fx"
 assert_level patch "S6 fixes+merge"
-printf '%s' "$OUT" | grep -q "Evidence: none" && ok || bad "S6: patch with no driver should have empty evidence"
+grep -q "Evidence: none" <<<"$OUT" && ok || bad "S6: patch with no driver should have empty evidence"
 
 # --- S7: empty range -> patch ------------------------------------------------
 fx=$(new_fixture) || exit 1
@@ -146,7 +164,7 @@ fx=$(new_fixture) || exit 1
 "${GUSER[@]}" -C "$fx" commit --allow-empty -q -m "feat: b"
 run_suggest "$fx"
 assert_level minor "S8 default base"
-printf '%s' "$OUT" | grep -q "since v1.2.0, 1 commits" && ok || bad "S8: expected base v1.2.0 (not rc1/nightly) with 1 commit since"
+grep -q "since v1.2.0, 1 commits" <<<"$OUT" && ok || bad "S8: expected base v1.2.0 (not rc1/nightly) with 1 commit since"
 
 echo
 echo "release-suggest_test: $pass ok, $fail fail"

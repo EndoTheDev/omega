@@ -154,8 +154,57 @@ run_check() {  # $1 = card id
       HERMES_KANBAN_HOME="$(mixpath "$TPHOME")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
       bash "$SCRIPT" --check "$1" 2>&1 )
 }
-has() { printf '%s\n' "$1" | grep -qF "$2"; }
-hasnt() { ! printf '%s\n' "$1" | grep -qF "$2"; }
+has() { grep -qF "$2" <<<"$1"; }
+hasnt() { ! grep -qF "$2" <<<"$1"; }
+
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+# the behaviour, not the spelling: drive the extracted helpers on a payload
+# that outruns the pipe buffer, with the needle on the FIRST line (the worst
+# case for an early exit). A reformed helper extracts as a fragment and
+# defines nothing, so the drive refuses instead of passing vacuously.
+_pin_big="$(awk 'BEGIN{for(i=1;i<=8000;i++) printf "row %05d done\n", i}')"
+_pin_has="$(awk '/^has\(\)/{print; exit}' "$_PIN_SELF")"
+_pin_hasnt="$(awk '/^hasnt\(\)/{print; exit}' "$_PIN_SELF")"
+[ -n "$_pin_has" ] && ok || bad "PIN: has() not found in this suite"
+[ -n "$_pin_hasnt" ] && ok || bad "PIN: hasnt() not found in this suite"
+_pin_races="$(
+	set -uo pipefail
+	fail=0
+	ok() { :; }
+	bad() { fail=$((fail + 1)); }
+	eval "$_pin_has"
+	eval "$_pin_hasnt"
+	declare -F has >/dev/null && declare -F hasnt >/dev/null || { printf 'nodfn'; exit 0; }
+	i=0
+	while [ "$i" -lt 20 ]; do
+		has "$_pin_big" "row 00001 done"
+		hasnt "$_pin_big" "row 99999 done"
+		i=$((i + 1))
+	done
+	printf '%s' "$fail"
+)"
+case "$_pin_races" in
+0) ok ;;
+nodfn) bad "PIN: the extracted has()/hasnt() defined no function (reformatted?)" ;;
+*) bad "PIN: the assertion helpers lost a match $_pin_races/40 times on a $(( ${#_pin_big} / 1024 )) KB payload" ;;
+esac
+
 
 out=$(run_list); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T1: list mode exited $rc on a healthy fixture (out: $out)"
@@ -230,22 +279,22 @@ out=$(run_check t_pendmark); rc=$?
 [ "$rc" -eq 1 ] && ok || bad "T6c: --check on an owed marker exited $rc, not 1"
 out=$(run_check t_prose); rc=$?
 [ "$rc" -eq 2 ] && ok || bad "T6d: --check with no marker exited $rc, not 2 (no evidence is never settled)"
-printf '%s\n' "$out" | grep -q '^NOMARKER t_prose ' && ok || bad "T6e: --check said neither settled nor pending (out: $out)"
+grep -q '^NOMARKER t_prose ' <<<"$out" && ok || bad "T6e: --check said neither settled nor pending (out: $out)"
 out=$(run_check t_nosuchcard); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T6f: --check on an unknown id exited $rc, not 3"
-printf '%s\n' "$out" | grep -q 'no card t_nosuchcard' && ok || bad "T6g: the unknown-id refusal named no id (out: $out)"
+grep -q 'no card t_nosuchcard' <<<"$out" && ok || bad "T6g: the unknown-id refusal named no id (out: $out)"
 
 # -- refusals: no board, no reader ---------------------------------------
 out=$( cd "$(dirname "$SCRIPT")" && env HOME="$(mktemp -d)" HERMES_HOME= \
         HERMES_KANBAN_HOME="$(mixpath "$(mktemp -d)")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
         bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T7a: a missing board exited $rc, not 3"
-printf '%s\n' "$out" | grep -q 'board DB not found' && ok || bad "T7b: the missing board was not named (out: $out)"
+grep -q 'board DB not found' <<<"$out" && ok || bad "T7b: the missing board was not named (out: $out)"
 out=$( cd "$(dirname "$SCRIPT")" && env HOME="$TPHOME" HERMES_HOME= TP_PY=/nonexistent/python \
         HERMES_KANBAN_HOME="$(mixpath "$TPHOME")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
         bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T7c: a dead reader exited $rc, not 3 - an empty list reads as 'nothing owed'"
-printf '%s\n' "$out" | grep -q 'lacks the sqlite3 module\|no python on PATH' && ok \
+grep -q 'lacks the sqlite3 module\|no python on PATH' <<<"$out" && ok \
   || bad "T7d: the dead reader was not named (out: $out)"
 out=$( bash "$SCRIPT" --bogus 2>&1 ); rc=$?
 [ "$rc" -eq 3 ] && ok || bad "T7e: an unknown argument exited $rc, not 3"
@@ -271,7 +320,7 @@ CREATE TABLE task_events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, kin
           HERMES_KANBAN_HOME="$(mixpath "$h")" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
           bash "$SCRIPT" 2>&1 ); rc=$?
   [ "$rc" -eq 0 ] && ok || bad "T10b: a CR-carrying board pointer did not resolve (rc $rc, out: $cout)"
-  printf '%s\n' "$cout" | grep -qx 'PENDING none' && ok \
+  grep -qx 'PENDING none' <<<"$cout" && ok \
     || bad "T10c: the CR pointer did not reach the board (out: $cout)"
 done
 
@@ -290,7 +339,7 @@ cout=$( cd "$(dirname "$SCRIPT")" && env HOME="$HALF_HOME" HERMES_HOME= \
         bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -eq 3 ] && ok \
   || bad "T11b: a board with no comment table exited $rc, not 3 - a silent body-only read reads as 'nothing owed'"
-printf '%s\n' "$cout" | grep -q 'comment read failed' && ok \
+grep -q 'comment read failed' <<<"$cout" && ok \
   || bad "T11c: the half-read failure was not named (out: $cout)"
 
 # -- an all-clear is stated, never an empty page -------------------------
@@ -303,7 +352,7 @@ CREATE TABLE task_events(id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, kin
 out=$( cd "$(dirname "$SCRIPT")" && env HOME="$TPHOME" HERMES_HOME= \
         HERMES_KANBAN_DB="$EMPTY_DB" bash "$SCRIPT" 2>&1 ); rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T8b: an empty board exited $rc"
-printf '%s\n' "$out" | grep -qx 'PENDING none' && ok || bad "T8c: an empty board printed no explicit all-clear (out: $out)"
+grep -qx 'PENDING none' <<<"$out" && ok || bad "T8c: an empty board printed no explicit all-clear (out: $out)"
 rm -rf "$TPHOME" "$EMPTY_HOME" "$CR_HOME" "$CR2_HOME" "$HALF_HOME"
 
 echo

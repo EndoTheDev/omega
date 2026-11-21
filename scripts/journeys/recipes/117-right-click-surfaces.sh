@@ -23,6 +23,19 @@
 # Residue: one jrn- session (the suite's own reaper owns it), one jrn- cron job (deleted
 # BY THE RECIPE through the row menu - the delete row is part of the proof), no agent home.
 . "${JROOT:?run must export JROOT}/lib.sh"
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] \
+	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
+
 
 JOB="jrn-rc$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
 LABEL="jrn-rightclick-$(date +%d%b%H%M%S)"
@@ -99,7 +112,7 @@ JRN_ID=$(new_journey_session rightclick)
 label_journey_session "$JRN_ID" "$LABEL"
 saved=$(curl -s -X POST "$JOURNEY_BASE_URL/cron/save" -H 'Content-Type: application/json' \
   -d "{\"name\":\"$JOB\",\"kind\":\"interval\",\"minutes\":600,\"prompt\":\"journey right-click probe - say nothing and finish\",\"deliver\":\"new-session\",\"enabled\":true}")
-printf '%s' "$saved" | grep -q "\"name\":\"$JOB\"" || die "POST /cron/save did not land $JOB"
+grep -q "\"name\":\"$JOB\"" <<<"$saved" || die "POST /cron/save did not land $JOB"
 ab reload >/dev/null 2>&1
 wait_booted
 step "seed: session $JRN_ID and cron job $JOB on the lane"
@@ -231,7 +244,7 @@ jsq '(() => {const b=[...document.querySelectorAll(".cron-editor-btn.danger")].f
 i=0
 gone=0
 while [ "$i" -lt 20 ]; do
-  if ! curl -s "$JOURNEY_BASE_URL/cron/jobs" | grep -q "\"name\":\"$JOB\""; then gone=1; break; fi
+  if ! grep -q "\"name\":\"$JOB\"" <<<"$(curl -s "$JOURNEY_BASE_URL/cron/jobs")"; then gone=1; break; fi
   sleep 0.5
   i=$((i + 1))
 done
