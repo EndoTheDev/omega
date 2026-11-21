@@ -370,7 +370,7 @@ test("canRemoveBoard + the board paths: NOTHING is reserved any more (0.17.3)", 
 test("board view carries the board surface: armed remove, rename seat, zero-board empty state", () => {
   const boardVue = readFileSync(join(uiRoot, "..", "harness", "kanban", "ui", "Board.vue"), "utf8");
   // the pair lives in the board dropdown now, so the pins name the MENU rows.
-  assert.match(boardVue, /confirm remove/, "the armed click relabels: inline confirm row");
+  assert.match(boardVue, /Confirm delete/, "the armed click relabels: inline confirm row");
   assert.doesNotMatch(boardVue, /window\.confirm/, "no native confirm - the panel confirms inline");
   assert.match(boardVue, /method: "DELETE"/, "the removal fires the DELETE route");
   assert.match(boardVue, /boardDeletePath\(name\)/, "the delete goes to the encoded registry path");
@@ -407,12 +407,12 @@ test("boardMenuOptions + boardMenuPick: the verbs ride the board ladder", () => 
     "the boards first, the verbs last (the list the user picks boards from stays on top)",
   );
   assert.equal(menu[2]!.label, "rename board");
-  assert.equal(menu[3]!.label, "remove board");
+  assert.equal(menu[3]!.label, "delete board");
   assert.equal(menu[3]!.cls, undefined, "an unarmed remove row carries no marker class");
   // the armed row: same VALUE (the pick still reads it), relabelled + marked
   const armed = boardMenuOptions(boards, true);
   assert.equal(armed[3]!.value, BOARD_MENU_REMOVE);
-  assert.equal(armed[3]!.label, "confirm remove");
+  assert.equal(armed[3]!.label, "confirm delete");
   assert.equal(armed[3]!.cls, "armed");
   assert.deepEqual(boardMenuPick("alpha"), { kind: "board", name: "alpha" });
   assert.deepEqual(boardMenuPick(BOARD_MENU_RENAME), { kind: "rename" });
@@ -736,7 +736,9 @@ test("delete: drawer-level control, a confirm that names the card, optimistic re
 
   // the wire: DELETE through the capability route, card leaves the list first
   assert.match(boardVue, /@delete="onDrawerDelete"/, "the board wires the drawer's delete");
-  const deleteFn = boardVue.slice(boardVue.indexOf("async function onDrawerDelete"));
+  // deleteCard is THE one delete path (the drawer's confirm and the card menu's arm both
+  // land in it), so the optimistic-removal law is pinned there.
+  const deleteFn = boardVue.slice(boardVue.indexOf("async function deleteCard"));
   assert.ok(deleteFn.length > 0, "the board has the delete handler");
   const optimisticAt = deleteFn.indexOf("tasks.value = tasks.value.filter((t) => t.id !== id)");
   const requestAt = deleteFn.indexOf('method: "DELETE"');

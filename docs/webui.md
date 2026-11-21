@@ -246,17 +246,20 @@ the store does the rest.
   last tab; Close others appears only when another closable tab exists.
 - **Sidebar rows are the second** (`sessionMenuItems`,
   `agentMenuItems`, `cronMenuItems`, one pure builder per capsule's
-  `ui/` dir): a session row menus New session, Branch, Export and, on a
-  running row only, Stop; an agent row menus New agent and Delete (never
-  the locked default); a cron row menus Pause or Resume and Delete (never
-  an agent-owned job, whose file main's delete route cannot touch). Every
-  row is an existing verb - a route or a client intent the surface
-  already carried - so the menu is a second door to the same paths.
-  `RegistryList` takes the builder as `row-menu`; a row surface that
-  registers nothing keeps the browser's own menu.
+  `ui/` dir): a session row menus New session, Branch, Export,
+  Copy id and, on a running row only, Stop; an agent row menus New
+  agent and Delete (never the locked default); a cron row menus Pause
+  or Resume and Delete (never an agent-owned job, whose file main's
+  delete route cannot touch). Every row is an existing verb - a route
+  or a client intent the surface already carried - so the menu is a
+  second door to the same paths. `RegistryList` takes the builder as
+  `row-menu`; a row surface that registers nothing keeps the browser's
+  own menu.
 - **The statusbar is the third** (`components/shell/statusStats.ts`):
-  every stat with a check state, one click hiding or showing it. `checked`
-  IS visibility.
+  every stat with a check state, one click hiding or showing it, then
+  Reset statusbar - the last row, and the one write that clears the
+  whole hidden set (an id-level toggle per hidden entry, so every stat
+  shows again; dimmed when nothing is hidden). `checked` IS visibility.
 - **Hiding is a flag, never a close.** A hidden sidebar chip keeps its
   seat, its ref and its pane; only the chip stops rendering (the pane body
   follows the active visible chip, so a hide never blanks a pane). The
@@ -267,9 +270,20 @@ the store does the rest.
   `harness/kanban/ui/board/cardMenu.ts`): Open (the card's own click -
   the detail drawer), Copy id (client-side through the one clipboard
   path; the notice follows the copy's own answer, so a refused copy
-  never reads as "copied") and Archive, which is the lane arrow's own
-  PATCH to the archived lane. A card already archived carries no Archive
-  row: the verb cannot act, so the row is absent.
+  never reads as "copied"), Archive, which is the lane arrow's own
+  PATCH to the archived lane, and Delete, the drawer's DELETE
+  /tasks/{id}. A card already archived carries no Archive row: the verb
+  cannot act, so the row is absent. Delete is irreversible, so it arms
+  on the first pick (the row reads Confirm delete on the next open) and
+  only fires on the second - the drawer's own armed confirm stays its
+  door's, one confirm per pick.
+- **The board surface is the fifth** (`boardMenuItems` in
+  `harness/kanban/ui/board/boardMenu.ts`): Rename and Delete, the board
+  dropdown's own two picks (PATCH and DELETE /boards/{name}). Delete
+  shares the dropdown's ONE arm state, so the same destructive verb
+  never grows a second confirm. A right-click on a card, in the drawer
+  or in a text field keeps that surface's own menu, and no board
+  selected means no rows at all.
 - **The canvas has no rows to register.** In 0.17.4 the canvas
   view-model has no rendered node surface - the generic panel renderer
   left with the canvas tab fold (`canvas.test.ts` pins its absence), so

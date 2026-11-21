@@ -40,12 +40,16 @@ export function parseHiddenStats(raw: unknown): string[] {
 /**
  * THE STAT MENU: every stat with its check state, so the menu is the bar's own inventory.
  * `checked` IS visibility (a check means the segment is on the bar); a click flips it.
+ *
+ * Reset is the last row and the one write that clears the WHOLE hidden set - it un-toggles
+ * every hidden id through the same toggle writer (unknown ids included: the set is the
+ * layout record's, not this build's catalog), so every stat shows again.
  */
 export function statMenuItems(
   hidden: readonly string[],
   toggle: (id: string, hidden: boolean) => void,
 ): ContextMenuEntry[] {
-  return STATUS_STATS.map((stat) => {
+  const items: ContextMenuEntry[] = STATUS_STATS.map((stat) => {
     const visible = statVisible(hidden, stat.id);
     return {
       id: "stat:" + stat.id,
@@ -54,4 +58,15 @@ export function statMenuItems(
       run: () => toggle(stat.id, visible),
     };
   });
+  items.push({ kind: "separator" });
+  items.push({
+    id: "stat:reset",
+    label: "Reset statusbar",
+    // nothing hidden = nothing to reset: the row stays in the inventory, dimmed
+    disabled: hidden.length === 0,
+    run: () => {
+      for (const id of hidden) toggle(id, false);
+    },
+  });
+  return items;
 }
