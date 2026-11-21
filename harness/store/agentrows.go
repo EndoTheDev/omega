@@ -64,7 +64,6 @@ const sessionSelectCols = `id,
 	pinned, archived, title_state, last_read_at,
 	agent, last_run, model, workspace, summary, listed, context_start, context_summary`
 
-// moveAgentRows performs one agent's copy-verify-delete move.
 func moveAgentRows(mainDSN, name, agentDSN string) error {
 	agentStore, err := Open(agentDSN)
 	if err != nil {
@@ -94,7 +93,7 @@ func moveAgentRows(mainDSN, name, agentDSN string) error {
 		WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name); err != nil {
 		return fmt.Errorf("agent rows migration: %s: copy messages: %w", name, err)
 	}
-	// Verify before deleting: moved row counts must equal the source counts, message.
+	// Verify before deleting: moved row counts must equal the source counts.
 	var movedSessions, sourceSessions, movedMessages, sourceMessages int
 	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&movedSessions); err != nil {
 		return fmt.Errorf("agent rows migration: %s: count moved: %w", name, err)

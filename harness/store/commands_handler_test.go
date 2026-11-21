@@ -12,10 +12,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ------------------------------------------------------------------------
-// HandleSessionsCommand
-// ------------------------------------------------------------------------
-
 func TestHandleSessionsCommandNilStore(t *testing.T) {
 	res, err := HandleSessionsCommand(context.Background(), nil, "")
 	if err == nil {
@@ -79,7 +75,6 @@ func TestHandleSessionsCommandPopulated(t *testing.T) {
 	if !strings.Contains(res.Text, "3") {
 		t.Fatalf("Text missing message count '3':\n%s", res.Text)
 	}
-	// Session IDs present.
 	if !strings.Contains(res.Text, "s1") || !strings.Contains(res.Text, "s2") {
 		t.Fatalf("Text missing session ids:\n%s", res.Text)
 	}
@@ -87,10 +82,6 @@ func TestHandleSessionsCommandPopulated(t *testing.T) {
 		t.Fatalf("Text missing '#' column:\n%s", res.Text)
 	}
 }
-
-// ------------------------------------------------------------------------
-// HandleTreeCommand
-// ------------------------------------------------------------------------
 
 func TestHandleTreeCommandNilStore(t *testing.T) {
 	res, err := HandleTreeCommand(context.Background(), nil)
@@ -152,7 +143,6 @@ func TestHandleTreeCommandWithParentChild(t *testing.T) {
 	if !strings.Contains(res.Text, "otherlabel") {
 		t.Fatalf("Text missing 'otherlabel':\n%s", res.Text)
 	}
-	// Tree glyphs present (child rows use ├─ or └─).
 	if !strings.Contains(res.Text, "└─") && !strings.Contains(res.Text, "├─") {
 		t.Fatalf("Text missing tree glyphs:\n%s", res.Text)
 	}
@@ -160,10 +150,6 @@ func TestHandleTreeCommandWithParentChild(t *testing.T) {
 		t.Fatalf("Text missing session ids:\n%s", res.Text)
 	}
 }
-
-// ------------------------------------------------------------------------
-// HandleSearchCommand
-// ------------------------------------------------------------------------
 
 func TestHandleSearchCommandNilStore(t *testing.T) {
 	res, err := HandleSearchCommand(context.Background(), nil, "query")
@@ -231,10 +217,6 @@ func TestHandleSearchCommandMatchingWithLabel(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------
-// HandleInsightsCommand
-// ------------------------------------------------------------------------
-
 func TestHandleInsightsCommandNilStore(t *testing.T) {
 	res, err := HandleInsightsCommand(context.Background(), nil, "")
 	if err == nil {
@@ -287,7 +269,6 @@ func TestHandleInsightsCommandPopulated(t *testing.T) {
 	if res.Text == "" {
 		t.Fatal("Text empty, want insights output")
 	}
-	// Should NOT be the empty-store message.
 	if strings.Contains(res.Text, "[no sessions in the last") {
 		t.Fatalf("Text says no sessions, but store is populated:\n%s", res.Text)
 	}
@@ -301,10 +282,6 @@ func TestHandleInsightsCommandPopulated(t *testing.T) {
 		t.Fatalf("Text missing 'Activity by Day':\n%s", res.Text)
 	}
 }
-
-// ------------------------------------------------------------------------
-// HandleResumeCommand
-// ------------------------------------------------------------------------
 
 func TestHandleResumeCommandNilStore(t *testing.T) {
 	res, err := HandleResumeCommand(context.Background(), nil, "1")
@@ -406,10 +383,6 @@ func TestHandleResumeCommandNotFound(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------
-// HandleBranchCommand
-// ------------------------------------------------------------------------
-
 func TestHandleBranchCommandNilStore(t *testing.T) {
 	res, err := HandleBranchCommand(context.Background(), nil, "parent", "")
 	if err == nil {
@@ -444,7 +417,7 @@ func TestHandleBranchCommandCreatesChild(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleBranchCommand: %v", err)
 	}
-	// the answer names the child it created - no branch_session intent (t_146d3133)
+	// the answer names the child it created
 	if len(res.Actions) != 0 {
 		t.Fatalf("actions = %+v, want none - branch_session has no executor", res.Actions)
 	}
@@ -479,10 +452,6 @@ func TestHandleBranchCommandMissingParent(t *testing.T) {
 		t.Fatalf("err = %q, want 'branch:' error", err.Error())
 	}
 }
-
-// ------------------------------------------------------------------------
-// HandleLabelCommand
-// ------------------------------------------------------------------------
 
 func TestHandleLabelCommandNilStore(t *testing.T) {
 	res, err := HandleLabelCommand(context.Background(), nil, "s1", "label")
@@ -558,10 +527,6 @@ func TestHandleLabelCommandClearLabel(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------
-// HandleExportCommand
-// ------------------------------------------------------------------------
-
 func TestHandleExportCommandNilStore(t *testing.T) {
 	res, err := HandleExportCommand(context.Background(), nil, "s1", "")
 	if err == nil {
@@ -625,7 +590,6 @@ func TestHandleExportCommandDefaultPath(t *testing.T) {
 	if len(lines) != 2 {
 		t.Fatalf("expected 2 JSONL lines, got %d", len(lines))
 	}
-	// Validate each line is JSON with role + content.
 	var first, second map[string]string
 	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
 		t.Fatalf("unmarshal line 1: %v", err)
@@ -701,8 +665,5 @@ func TestHandleExportCommandEmptySession(t *testing.T) {
 		t.Fatalf("file size = %d, want 0", info.Size())
 	}
 }
-
-// ------------------------------------------------------------------------
-// Compile-time: *Store satisfies agent.StoreProvider.
 
 var _ agent.StoreProvider = (*Store)(nil)

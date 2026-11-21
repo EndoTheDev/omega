@@ -6,8 +6,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The pending-calls ledger.
-
 // Register records one dispatched call (agent.YieldLedger). A same-key (session, call
 // id) re-registration replaces - the clean idempotent retry.
 func (s *Store) Register(pc agent.PendingCall) error {
@@ -52,7 +50,6 @@ func (s *Store) All() []agent.PendingCall {
 	return scanPendingCalls(rows)
 }
 
-// scanPendingCalls drains a pending-calls rowset.
 func scanPendingCalls(rows *sql.Rows) []agent.PendingCall {
 	var out []agent.PendingCall
 	for rows.Next() {

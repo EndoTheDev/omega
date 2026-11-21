@@ -12,7 +12,6 @@ func Default() Config {
 const (
 	DefaultRetentionDays = 90
 
-	// DefaultSummarizeAfterHours is how old a session must be before the summarizer.
 	DefaultSummarizeAfterHours = 24
 )
 

@@ -94,7 +94,6 @@ func TestMigrateAgentRowsMovesHistoryWhole(t *testing.T) {
 		t.Errorf("main session messages = %d, want 1 (the move must not touch main rows)", len(msgs))
 	}
 
-	// idempotent: a second migration is a no-op.
 	if err := MigrateAgentRows(mainDSN, map[string]string{"scout": agentDSN}); err != nil {
 		t.Fatalf("second migrate: %v", err)
 	}
@@ -140,7 +139,6 @@ func TestMigrateAgentRowsKeepsNativeDestRows(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// the move must succeed despite the pre-existing row.
 	if err := MigrateAgentRows(mainDSN, map[string]string{"scout": agentDSN}); err != nil {
 		t.Fatalf("migrate with native dest rows: %v", err)
 	}

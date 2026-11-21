@@ -35,7 +35,6 @@ func TestCreateAgentSessionBinds(t *testing.T) {
 	if sess.Agent != "scout" {
 		t.Errorf("session agent = %q, want scout", sess.Agent)
 	}
-	// empty agent creation binds default.
 	if err := s.CreateAgentSession(ctx, "def-a", "", "", ""); err != nil {
 		t.Fatalf("create default-bound: %v", err)
 	}
@@ -93,7 +92,6 @@ func TestLegacyRowsNormalizeToDefault(t *testing.T) {
 	}
 }
 
-// ids is the test projection helper.
 func ids(sessions []core.Session) []string {
 	out := make([]string, len(sessions))
 	for i, s := range sessions {
@@ -102,10 +100,9 @@ func ids(sessions []core.Session) []string {
 	return out
 }
 
-// HandleNewCommand is gone (t_146d3133): its only output was a new_session intent no host
-// executed, so /new now lives where it can actually open a conversation - the webui's shell
-// (a chat tab) and the terminal loop (a session on the first message). This pin keeps the
-// name from returning to the capsule registry without a door behind it.
+// /new lives where it can open a conversation - the webui's shell (a chat tab) and the
+// terminal loop (a session on the first message). This pin keeps the name from returning
+// to the capsule registry without a door behind it.
 func TestNewCommandIsNotRegistered(t *testing.T) {
 	for _, c := range sessionCommands() {
 		if c.Name == "/new" {

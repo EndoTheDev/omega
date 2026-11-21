@@ -12,12 +12,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// SetHome names the omega home this store belongs.
 func (s *Store) SetHome(home string) {
 	s.home = filepath.ToSlash(home)
 }
 
-// Compile-time assertion that Store carries the optional home-routing face the chat.
 var _ agent.SessionOwnerStore = (*Store)(nil)
 
 // isRouter reports whether this store is its home's MAIN store. A process running AS an
@@ -83,7 +81,6 @@ func (s *Store) hasSession(ctx context.Context, id string) bool {
 	return s.db.QueryRowContext(ctx, `SELECT 1 FROM sessions WHERE id = ?`, id).Scan(&one) == nil
 }
 
-// probeHomes walks the home's agent directories and reports the first store holding.
 func (s *Store) probeHomes(ctx context.Context, id string) *Store {
 	entries, err := os.ReadDir(filepath.Join(s.home, "agents"))
 	if err != nil {
@@ -135,7 +132,6 @@ func (s *Store) homeStore(name string) *Store {
 	return st
 }
 
-// closeHomes releases every agent store this router opened.
 func (s *Store) closeHomes() error {
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
@@ -152,7 +148,6 @@ func (s *Store) closeHomes() error {
 	return first
 }
 
-// Compile-time assertion for the delete verb's release face.
 var _ agent.AgentHomeForgetter = (*Store)(nil)
 
 // ForgetHome implements the agent.AgentHomeForgetter need face the roster's DELETE.

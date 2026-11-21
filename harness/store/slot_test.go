@@ -8,8 +8,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The summarizer's model slot.
-
 // newSlotSession seeds ONE settled aged session so the pass has one candidate.
 func newSlotSession(t *testing.T) (context.Context, *Store) {
 	t.Helper()

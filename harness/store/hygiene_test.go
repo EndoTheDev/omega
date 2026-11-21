@@ -34,7 +34,6 @@ func newFileStore(t *testing.T) *Store {
 	return s
 }
 
-// ageSession backdates a session's updated_at.
 func ageSession(t *testing.T, s *Store, id string, daysAgo int) {
 	t.Helper()
 	if _, err := s.db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
@@ -354,9 +353,6 @@ func TestInsightsCarriesFileSizes(t *testing.T) {
 	}
 	// A WAL that exists after the migrate writes shows up too; do not pin the value.
 }
-
-// ------------------------------------------------------------------------ Hygiene goes
-// live.
 
 // spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {

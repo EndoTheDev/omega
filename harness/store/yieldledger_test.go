@@ -18,7 +18,6 @@ func openLedgerStore(t *testing.T) *Store {
 	return st
 }
 
-// TestYieldLedgerShape: register, pending, all, settle.
 func TestYieldLedgerShape(t *testing.T) {
 	st := openLedgerStore(t)
 	rows := []agent.PendingCall{

@@ -407,7 +407,6 @@ func TestSessionCounts(t *testing.T) {
 	}
 }
 
-// TestMigrationAddsTokenColumns upgrades a pre-migration database and verifies.
 func TestMigrationAddsTokenColumns(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -490,7 +489,6 @@ CREATE TABLE IF NOT EXISTS messages (
 	}
 }
 
-// TestMigrationAddsPinnedColumn upgrades a database that predates the pinned flag.
 func TestMigrationAddsPinnedColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -559,7 +557,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestMigrationAddsArchivedColumn upgrades a database that predates the archived flag.
 func TestMigrationAddsArchivedColumn(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -624,7 +621,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSessionReadAndUnread covers the server-side unread state.
 func TestSessionReadAndUnread(t *testing.T) {
 	dir := t.TempDir()
 	dsn := dir + "/old.db"
@@ -728,7 +724,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSessionModels covers the read-time last-model map.
 func TestSessionModels(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -796,7 +791,6 @@ func assertToolResult(t *testing.T, m core.Message, wantContent, wantID string, 
 	}
 }
 
-// TestDeleteSessionCascades verifies deleting a session removes its messages.
 func TestDeleteSessionCascades(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -830,7 +824,6 @@ func TestDeleteSessionCascades(t *testing.T) {
 	}
 }
 
-// TestDeleteSessionMissingIsNoOp verifies deleting a nonexistent session is not.
 func TestDeleteSessionMissingIsNoOp(t *testing.T) {
 	s := newTestStore(t)
 	if err := s.DeleteSession(context.Background(), "nope"); err != nil {
@@ -921,7 +914,6 @@ func TestSearchMessages(t *testing.T) {
 	}
 }
 
-// helperSessionWithContent creates a session and appends one user message.
 func helperSessionWithContent(t *testing.T, s *Store, id, label, content string) {
 	t.Helper()
 	if err := s.CreateSession(context.Background(), id, "", label); err != nil {
@@ -1025,7 +1017,6 @@ func TestSearchSessions(t *testing.T) {
 	}
 }
 
-// helperAssistantWithTools builds an Assistant message with tool calls.
 func helperAssistantWithTools(content string, calls ...core.ToolCall) core.Assistant {
 	a := core.NewAssistant(content)
 	a.ToolCalls = calls
@@ -1111,7 +1102,6 @@ func TestComputeInsightsAllTime(t *testing.T) {
 	if len(insights.Tools) != 2 {
 		t.Fatalf("Tools len = %d, want 2", len(insights.Tools))
 	}
-	// Verify sorted by count desc.
 	if !sort.SliceIsSorted(insights.Tools, func(i, j int) bool {
 		return insights.Tools[i].Count > insights.Tools[j].Count
 	}) {
@@ -1183,7 +1173,6 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 	if insights.Messages != 1 {
 		t.Errorf("Messages = %d, want 1", insights.Messages)
 	}
-	// PeriodStart should be set (cutoff date).
 	if insights.PeriodStart == "" {
 		t.Error("PeriodStart empty, should be set for days > 0")
 	}
@@ -1261,7 +1250,6 @@ func TestComputeInsightsSingleUserTurn(t *testing.T) {
 		t.Errorf("PeriodStart/End = %q/%q, want both set", insights.PeriodStart, insights.PeriodEnd)
 	}
 
-	// The Overview: the session counts, the turn is the only message, and there are no.
 	if insights.Sessions != 1 {
 		t.Errorf("Sessions = %d, want 1", insights.Sessions)
 	}
@@ -1383,7 +1371,6 @@ CREATE TABLE IF NOT EXISTS sessions (
 	}
 }
 
-// TestSetSessionTitleTransitions covers the title_state state machine end to end.
 func TestSetSessionTitleTransitions(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

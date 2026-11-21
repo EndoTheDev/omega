@@ -55,7 +55,6 @@ func HandleSessionsCommand(ctx context.Context, store agent.StoreProvider, args 
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// HandleTreeCommand renders the session tree.
 func HandleTreeCommand(ctx context.Context, store agent.StoreProvider) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -180,10 +179,8 @@ func sessionDisplayName(label, id string) string {
 
 // HandleResumeCommand resolves the argument to a session ID using the store.
 //
-// The answer is TEXT, not a CmdAction: `load_session` had no executor on any surface
-// (the webui opens a tab itself, the terminal loop switches with /session), so the wire
-// shipped an intent nobody ran and the command read as a no-op. The resolve is the real
-// work, and the line names what it resolved.
+// The answer is TEXT, not a CmdAction: the resolve is the real work, and the line names
+// what it resolved.
 func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -207,7 +204,6 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(sessions) {
 		return resolved(sessions[n-1])
 	}
-	// Try exact ID match.
 	for _, s := range sessions {
 		if s.ID == arg {
 			return resolved(s)
@@ -227,9 +223,9 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 
 // HandleBranchCommand creates a child session and answers with what it created.
 //
-// Same law as /resume: `branch_session` had no executor, so it is gone. The child row is
-// the real work and the line names both ends - a surface that can open a tab (the webui)
-// opens it through its own REST parity POST /sessions/{id}/branch instead.
+// Same law as /resume: the child row is the real work and the line names both ends - a
+// surface that can open a tab (the webui) opens it through its own REST parity
+// POST /sessions/{id}/branch instead.
 func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -240,7 +236,6 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 	if _, err := store.GetSession(ctx, parentID); err != nil {
 		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
-	// Generate a new session ID.
 	id, err := agent.NewSessionID()
 	if err != nil {
 		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
@@ -255,8 +250,7 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 
 // HandleLabelCommand updates the session label in the store and answers with what it set.
 //
-// `set_label` had no executor (the webui writes the row through PUT /sessions/{id}), so
-// the action is gone and the store's own write is the whole result.
+// The store's own write is the whole result.
 func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")

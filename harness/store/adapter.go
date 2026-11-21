@@ -10,12 +10,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// searchToolProvider provides the sessions.search tool.
 type searchToolProvider struct {
 	store agent.StoreProvider
 }
 
-// Tools returns the sessions.search tool definition.
 func (p *searchToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"sessions.search": {
@@ -35,7 +33,6 @@ func (p *searchToolProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runSearch executes the sessions.search tool.
 func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any) (string, error) {
 	query, _ := args["query"].(string)
 	results, err := p.store.SearchMessages(ctx, query)
@@ -56,14 +53,12 @@ func (p *searchToolProvider) runSearch(ctx context.Context, args map[string]any)
 	return out, nil
 }
 
-// hygieneToolProvider provides the sessions.hygiene tool.
 type hygieneToolProvider struct {
 	store *Store
 	// providerFn is the live provider reader, wired at mount.
 	providerFn func() agent.Provider
 }
 
-// provider resolves the live provider seam at call time.
 func (p *hygieneToolProvider) provider() agent.Provider {
 	if p.providerFn == nil {
 		return nil
@@ -71,7 +66,6 @@ func (p *hygieneToolProvider) provider() agent.Provider {
 	return p.providerFn()
 }
 
-// Tools returns the sessions.hygiene tool definition.
 func (p *hygieneToolProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"sessions.hygiene": {
@@ -94,7 +88,6 @@ func (p *hygieneToolProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runHygiene executes one tool call.
 func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]any) (string, error) {
 	if p.store == nil {
 		return "", fmt.Errorf("sessions.hygiene: no store")
@@ -134,12 +127,10 @@ func (p *hygieneToolProvider) runHygiene(ctx context.Context, args map[string]an
 	}
 }
 
-// hygiene returns the store's live hygiene config snapshot: the tool never holds.
 func (p *hygieneToolProvider) hygiene() HygieneConfig {
 	return p.store.HygieneConfig()
 }
 
-// consultLine names the model slot the summarizer consulted.
 func (p *hygieneToolProvider) consultLine(cfg HygieneConfig) string {
 	slot := cfg.SummarizerModel
 	if slot == "" {
@@ -154,7 +145,6 @@ func (p *hygieneToolProvider) consultLine(cfg HygieneConfig) string {
 	return "\nsummarizer model: " + slot
 }
 
-// formatHygieneReport renders the counts the agent turn relays.
 func formatHygieneReport(rep HygieneReport) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "hygiene: %d summarized, %d pending, %d pruned, vacuum %v",

@@ -17,34 +17,27 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Routes is the capsule's management REST face, built on the store instance.
 type Routes struct {
 	store *Store
 	ctx   *core.Context
 }
 
-// newRoutes builds the face.
 func newRoutes(ctx *core.Context, s *Store) *Routes {
 	return &Routes{store: s, ctx: ctx}
 }
 
-// writeJSON renders one 200-family response.
 func (rt *Routes) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// httpError renders one failure.
 func (rt *Routes) httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
 }
 
-// routes returns the REST registrations in mount order. Patterns are
-// exactly the ones the pre-move base set served (the wave-2 proof: no
-// behavior change on a normal boot, only ownership).
 func (rt *Routes) registrationRows() []struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
@@ -82,13 +75,11 @@ type ChatRunsReader interface {
 	Active(id string) bool
 }
 
-// chatRuns resolves the live-run read per request.
 func (rt *Routes) chatRuns() ChatRunsReader {
 	svc, _ := rt.ctx.Services().Resolve("chat-runs").(ChatRunsReader)
 	return svc
 }
 
-// running stamps the row's running flag through the chat-runs service.
 func (rt *Routes) running(id string) bool {
 	if reader := rt.chatRuns(); reader != nil {
 		return reader.Active(id)
@@ -179,7 +170,6 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 	rt.writeJSON(w, http.StatusOK, out)
 }
 
-// slicesCut drops the elements the keep-predicate rejects.
 func slicesCut[T any](s []T, drop func(T) bool) []T {
 	out := make([]T, 0, len(s))
 	for _, v := range s {
@@ -202,7 +192,6 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 		rt.httpError(w, http.StatusNotFound, "session not found: %v", err)
 		return
 	}
-	// New child id - the same fallback the POST /sessions flow uses.
 	childID, err := agent.NewSessionID()
 	if err != nil {
 		childID = fmt.Sprintf("sess-%d", time.Now().UnixNano())
@@ -268,7 +257,6 @@ func (rt *Routes) handleSessionExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// insightsRow shapes one tools-count row / day row / notable row of the insights.
 type insightsRow struct {
 	Name  string `json:"name,omitempty"`
 	Count int    `json:"count"`
@@ -284,7 +272,6 @@ type insightsNotableRow struct {
 	Detail string `json:"detail"`
 }
 
-// insightsPayload is the wire shape of one GET /insights response.
 type insightsPayload struct {
 	Period         string             `json:"period"`
 	PeriodStart    string             `json:"period_start"`
