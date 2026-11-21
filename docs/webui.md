@@ -263,6 +263,21 @@ the store does the rest.
   set lives in the layout record beside the tree, so it survives a reload,
   and the strip - the surface that stays visible - carries the restore
   list. Opening a view from the palette or the menubar clears its flag.
+- **Board cards are the fourth** (`cardMenuItems` in
+  `harness/kanban/ui/board/cardMenu.ts`): Open (the card's own click -
+  the detail drawer), Copy id (client-side through the one clipboard
+  path; the notice follows the copy's own answer, so a refused copy
+  never reads as "copied") and Archive, which is the lane arrow's own
+  PATCH to the archived lane. A card already archived carries no Archive
+  row: the verb cannot act, so the row is absent.
+- **The canvas has no rows to register.** In 0.17.4 the canvas
+  view-model has no rendered node surface - the generic panel renderer
+  left with the canvas tab fold (`canvas.test.ts` pins its absence), so
+  each panel's rows ride its capsule's own UI and the chat transcript.
+  The panel action vocabulary (chat stop/retry, cron refresh, kanban
+  complete_task/switch_board, notifications mark_read/mark_all) holds no
+  node rename and no node delete, so a canvas node menu would have
+  nothing to fire. Adding those verbs is backend work, not menu wiring.
 
 ## Motion
 
