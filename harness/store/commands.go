@@ -178,41 +178,12 @@ func sessionDisplayName(label, id string) string {
 	return id
 }
 
-// HandleNewCommand returns a new_session action.
-func HandleNewCommand(args string) (core.CommandResult, error) {
-	ephemeral := ""
-	var agentName string
-	fields := strings.Fields(args)
-	for i := 0; i < len(fields); i++ {
-		f := fields[i]
-		switch {
-		case f == "--ephemeral":
-			ephemeral = "--ephemeral"
-		case f == "--agent" || strings.HasPrefix(f, "--agent="):
-			if f == "--agent" {
-				if i+1 >= len(fields) {
-					return core.CommandResult{}, fmt.Errorf("usage: /new --agent <name>")
-				}
-				i++
-				agentName = fields[i]
-			} else {
-				agentName = strings.TrimPrefix(f, "--agent=")
-			}
-		}
-	}
-	res := core.CommandResult{
-		Actions: []core.CmdAction{{Type: "new_session", Value: ephemeral}},
-	}
-	if agentName != "" {
-		if err := agent.ValidAgentName(agentName); err != nil {
-			return res, fmt.Errorf("/new --agent: %w", err)
-		}
-		res.Actions[0].List = []string{agentName}
-	}
-	return res, nil
-}
-
-// HandleResumeCommand resolves the argument to a session ID using the store,.
+// HandleResumeCommand resolves the argument to a session ID using the store.
+//
+// The answer is TEXT, not a CmdAction: `load_session` had no executor on any surface
+// (the webui opens a tab itself, the terminal loop switches with /session), so the wire
+// shipped an intent nobody ran and the command read as a no-op. The resolve is the real
+// work, and the line names what it resolved.
 func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -225,37 +196,40 @@ func HandleResumeCommand(ctx context.Context, store agent.StoreProvider, args st
 	if err != nil {
 		return core.CommandResult{}, fmt.Errorf("list sessions: %w", err)
 	}
+	resolved := func(s core.Session) (core.CommandResult, error) {
+		name := s.ID
+		if s.Label != "" {
+			name = fmt.Sprintf("%s (%s)", s.Label, s.ID)
+		}
+		return core.CommandResult{Text: "[resume: " + name + "]"}, nil
+	}
 	numStr := strings.TrimPrefix(arg, "#")
 	if n, err := strconv.Atoi(numStr); err == nil && n >= 1 && n <= len(sessions) {
-		return core.CommandResult{
-			Actions: []core.CmdAction{{Type: "load_session", Value: sessions[n-1].ID}},
-		}, nil
+		return resolved(sessions[n-1])
 	}
 	// Try exact ID match.
 	for _, s := range sessions {
 		if s.ID == arg {
-			return core.CommandResult{
-				Actions: []core.CmdAction{{Type: "load_session", Value: s.ID}},
-			}, nil
+			return resolved(s)
 		}
 	}
 	lower := strings.ToLower(arg)
 	for _, s := range sessions {
 		if s.Label != "" && strings.HasPrefix(strings.ToLower(s.Label), lower) {
-			return core.CommandResult{
-				Actions: []core.CmdAction{{Type: "load_session", Value: s.ID}},
-			}, nil
+			return resolved(s)
 		}
 	}
-	if _, err := store.GetSession(ctx, arg); err == nil {
-		return core.CommandResult{
-			Actions: []core.CmdAction{{Type: "load_session", Value: arg}},
-		}, nil
+	if s, err := store.GetSession(ctx, arg); err == nil {
+		return resolved(s)
 	}
 	return core.CommandResult{}, fmt.Errorf("session not found: %s", arg)
 }
 
-// HandleBranchCommand creates a child session and returns a branch_session action.
+// HandleBranchCommand creates a child session and answers with what it created.
+//
+// Same law as /resume: `branch_session` had no executor, so it is gone. The child row is
+// the real work and the line names both ends - a surface that can open a tab (the webui)
+// opens it through its own REST parity POST /sessions/{id}/branch instead.
 func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -275,11 +249,14 @@ func HandleBranchCommand(ctx context.Context, store agent.StoreProvider, parentI
 		return core.CommandResult{}, fmt.Errorf("branch: %w", err)
 	}
 	return core.CommandResult{
-		Actions: []core.CmdAction{{Type: "branch_session", Value: id}},
+		Text: fmt.Sprintf("[branched %s from %s]", id, parentID),
 	}, nil
 }
 
-// HandleLabelCommand updates the session label in the store and returns a set_label.
+// HandleLabelCommand updates the session label in the store and answers with what it set.
+//
+// `set_label` had no executor (the webui writes the row through PUT /sessions/{id}), so
+// the action is gone and the store's own write is the whole result.
 func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil {
 		return core.CommandResult{}, fmt.Errorf("no store available")
@@ -292,15 +269,9 @@ func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionI
 		return core.CommandResult{}, fmt.Errorf("label: %w", err)
 	}
 	if label == "" {
-		return core.CommandResult{
-			Text:    "[label cleared]",
-			Actions: []core.CmdAction{{Type: "set_label", Value: ""}},
-		}, nil
+		return core.CommandResult{Text: "[label cleared]"}, nil
 	}
-	return core.CommandResult{
-		Text:    "[label: " + label + "]",
-		Actions: []core.CmdAction{{Type: "set_label", Value: label}},
-	}, nil
+	return core.CommandResult{Text: "[label: " + label + "]"}, nil
 }
 
 // HandleExportCommand reads messages from the store and writes them as JSONL.

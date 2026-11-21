@@ -37,8 +37,11 @@ func TestSessionCommandsUseTheBoundSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/label: %v", err)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "set_label" || res.Actions[0].Value != "from the palette" {
-		t.Fatalf("/label actions = %+v, want the whole args as the label", res.Actions)
+	if res.Text != "[label: from the palette]" {
+		t.Fatalf("/label text = %q, want the label it set", res.Text)
+	}
+	if len(res.Actions) != 0 {
+		t.Fatalf("/label actions = %+v, want none - set_label has no executor", res.Actions)
 	}
 	got, err := s.GetSession(ctx, "tab-1")
 	if err != nil {
@@ -64,10 +67,10 @@ func TestSessionCommandsUseTheBoundSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/branch: %v", err)
 	}
-	if len(res.Actions) != 1 || res.Actions[0].Type != "branch_session" {
-		t.Fatalf("/branch actions = %+v", res.Actions)
+	if len(res.Actions) != 0 {
+		t.Fatalf("/branch actions = %+v, want none - branch_session has no executor", res.Actions)
 	}
-	child, err := s.GetSession(ctx, res.Actions[0].Value)
+	child, err := s.GetSession(ctx, childIDFromLine(t, res.Text, "tab-1"))
 	if err != nil {
 		t.Fatalf("get child: %v", err)
 	}
@@ -82,7 +85,7 @@ func TestSessionCommandsUseTheBoundSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("/branch other: %v", err)
 	}
-	child, err = s.GetSession(ctx, res.Actions[0].Value)
+	child, err = s.GetSession(ctx, childIDFromLine(t, res.Text, "other"))
 	if err != nil {
 		t.Fatalf("get child: %v", err)
 	}

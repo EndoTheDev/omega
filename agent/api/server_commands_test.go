@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -370,13 +371,31 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 	if code != http.StatusOK || !strings.Contains(out.Text, "from the palette") {
 		t.Fatalf("/label with the wire session: %d %q", code, raw)
 	}
-	if len(out.Actions) != 1 || out.Actions[0].Type != "set_label" || out.Actions[0].Value != "from the palette" {
-		t.Fatalf("/label actions = %+v, want set_label with the whole args as the label", out.Actions)
+	if len(out.Actions) != 0 {
+		t.Fatalf("/label actions = %+v, want none - set_label is an intent no surface executes", out.Actions)
 	}
 
 	code, out, raw = dispatch(t, body("/branch", "", "tab-sess"))
-	if code != http.StatusOK || len(out.Actions) != 1 || out.Actions[0].Type != "branch_session" || out.Actions[0].Value == "" {
-		t.Fatalf("/branch with the wire session: %d %q actions=%+v", code, raw, out.Actions)
+	if code != http.StatusOK || !strings.Contains(out.Text, "[branched ") {
+		t.Fatalf("/branch with the wire session: %d %q", code, raw)
+	}
+	if len(out.Actions) != 0 {
+		t.Fatalf("/branch actions = %+v, want none - branch_session is an intent no surface executes", out.Actions)
+	}
+
+	code, out, raw = dispatch(t, body("/resume", "#1", ""))
+	if code != http.StatusOK || !strings.Contains(out.Text, "[resume: ") {
+		t.Fatalf("/resume: %d %q, want the resolved session's line", code, raw)
+	}
+	if len(out.Actions) != 0 {
+		t.Fatalf("/resume actions = %+v, want none - load_session is an intent no surface executes", out.Actions)
+	}
+
+	// /new is NOT a store command any more: it declared new_session, nothing ran it, and
+	// the two surfaces that can open a conversation do it themselves (t_146d3133).
+	code, _, raw = dispatch(t, body("/new", "", ""))
+	if code != http.StatusNotFound {
+		t.Fatalf("/new: %d %q, want 404 - the store cannot open a conversation", code, raw)
 	}
 
 	// no session on the wire: the owner's honest refusal, never
@@ -391,6 +410,48 @@ func TestCommandDispatchSessionCommandsActOnTheTab(t *testing.T) {
 		code, _, got := dispatch(t, body(name, "", ""))
 		if strings.Contains(got, "no handler for") {
 			t.Fatalf("%s read as an unclaimed name: %d %q", name, code, got)
+		}
+	}
+}
+
+// TestDispatchShipsOnlyExecutedActions is the executor law (t_146d3133): an intent may
+// leave /commands/dispatch only when a host in THIS repo runs it. The dispatch consumes
+// run_compact itself (it owns the session shape), so that is the whole allowed set -
+// new_session, load_session, branch_session and set_label had no executor, rode a wire the
+// client had no field for, and turned a command into a silent no-op.
+func TestDispatchShipsOnlyExecutedActions(t *testing.T) {
+	s := realChainServer(t)
+	s.seams.mu.RLock()
+	names := make([]string, 0, len(s.seams.commands))
+	for _, c := range s.seams.commands {
+		names = append(names, c.Name)
+	}
+	s.seams.mu.RUnlock()
+	if len(names) == 0 {
+		t.Fatal("the real chain registered no commands - the law would pass vacuously")
+	}
+
+	for _, name := range names {
+		args := ""
+		if name == "/export" {
+			// the only command that writes: keep its output in the test's own temp dir
+			args = filepath.Join(t.TempDir(), "export.jsonl")
+		}
+		req, _ := json.Marshal(commandDispatchRequest{Name: name, Args: args, SessionID: "law-sess"})
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/commands/dispatch",
+			strings.NewReader(string(req))))
+		if rec.Code != http.StatusOK {
+			continue // a refusal carries no action - the next surface answers it
+		}
+		var out commandDispatchResponse
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatalf("%s: decode: %v", name, err)
+		}
+		for _, a := range out.Actions {
+			if a.Type != "run_compact" {
+				t.Fatalf("%s shipped action %q - nothing in this repo executes that type", name, a.Type)
+			}
 		}
 	}
 }

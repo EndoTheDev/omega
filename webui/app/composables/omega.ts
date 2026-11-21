@@ -1344,6 +1344,14 @@ export function serializeCollapsedKeys(set: Iterable<string>): string {
 // the only labels a section can take; anything else persisted is stale or corrupt and drops.
 export const SIDEBAR_BUCKETS = ["pinned", "today", "yesterday", "earlier", "archived"];
 
+// listedSessions flattens the buckets in the order the pane RENDERS them (SIDEBAR_BUCKETS,
+// newest first inside each). /resume's #N counts these rows, so a number a human typed
+// lands on the row they were looking at - never on the sessions-table's created_at order.
+export function listedSessions(sessions: Session[], now: Date = new Date()): Session[] {
+  const buckets = bucketSessions(sessions, now);
+  return SIDEBAR_BUCKETS.flatMap((key) => buckets[key as keyof SessionBuckets]);
+}
+
 export function parseCollapsedLabels(raw: string | null): Set<string> {
   const all = parseCollapsedKeys(raw);
   return new Set([...all].filter((v) => SIDEBAR_BUCKETS.includes(v)));

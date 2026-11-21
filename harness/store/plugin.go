@@ -130,7 +130,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// sessionCommands returns the eleven session commands in registration order.
+// sessionCommands returns the ten session commands in registration order.
+//
+// There is no /new here: the store cannot open a conversation on any surface (the webui's
+// /new opens a tab, the terminal loop starts one on its first message), and the intent it
+// used to declare - `new_session` - had no executor anywhere, so the palette row was a
+// second door that could never open.
 func sessionCommands() []core.ExtensionCommand {
 	return []core.ExtensionCommand{
 		{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
@@ -139,8 +144,7 @@ func sessionCommands() []core.ExtensionCommand {
 		{Name: "/tree", Description: "show session tree with nesting and message counts"},
 		{Name: "/search", Description: "search past session messages by keyword"},
 		{Name: "/insights", Description: "show cross-session usage analytics"},
-		{Name: "/new", Description: "start a fresh conversation (--ephemeral for no persistence, --agent <name> to bind it)"},
-		{Name: "/resume", Description: "resume a session by #, id, or label"},
+		{Name: "/resume", Description: "resolve a session by #, id, or label"},
 		{Name: "/branch", Description: "branch a new session from the current (or given) one"},
 		{Name: "/label", Description: "set a label on the current session (no text clears it)"},
 		{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
@@ -163,8 +167,6 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 		return HandleSearchCommand(c, s, args)
 	case "/insights":
 		return HandleInsightsCommand(c, s, args)
-	case "/new":
-		return HandleNewCommand(args)
 	case "/resume":
 		return HandleResumeCommand(c, s, args)
 	case "/branch":

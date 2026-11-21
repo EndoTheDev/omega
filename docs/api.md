@@ -897,6 +897,10 @@ same registration seams:
   registered extension command executes through the chain-on-miss
   `ctx.CommandHandler` (rewired at boot and on every live module
   toggle) and answers `{"kind":"command","text":...,"actions":[...]}`;
+  `actions` carries only intents a host in this repo RUNS (the dispatch
+  consumes `run_compact` itself - every other intent a capsule used to
+  declare was dead, so the store's session verbs now answer text and
+  ship none);
   if no command matches and the name resolves to a skill, it answers
   `{"kind":"skill","name":...,"content":...}` - the content the client
   arms as a System preamble on its next send. Unknown names are 404,

@@ -14,6 +14,7 @@ export interface PaletteItem {
 
 // the webui's shell set: /exit is deliberately absent (nothing to quit)
 export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
+  { name: "/branch", description: "branch a new chat tab from this session (or a given id)", kind: "shell" },
   { name: "/copy", description: "copy the last response to the clipboard", kind: "shell" },
   { name: "/modules", description: "open settings > modules (inventory + toggles + expansion)", kind: "shell" },
   { name: "/extensions", description: "open settings > modules (alias of /modules)", kind: "shell" },
@@ -21,8 +22,10 @@ export const WEBUI_SHELL_COMMANDS: PaletteItem[] = [
   // /help opens the command palette and answers with one line; the description points
   // there, so the reference and the row never disagree.
   { name: "/help", description: "open the command palette - every command, searchable", kind: "shell" },
+  { name: "/label", description: "set this session's label (no text clears it)", kind: "shell" },
   { name: "/new", description: "start a new chat tab", kind: "shell" },
   { name: "/panels", description: "open the canvas panels tab", kind: "shell" },
+  { name: "/resume", description: "open a session here: /resume <#|id|label>", kind: "shell" },
   { name: "/retry", description: "re-run the last user turn as a new response variant", kind: "shell" },
   { name: "/sessions", description: "open the sessions sidebar", kind: "shell" },
   { name: "/theme", description: "apply a theme: dark, light, auto, or a user theme name", kind: "shell" },
@@ -35,11 +38,17 @@ export function paletteCommands(
 ): PaletteItem[] {
   return [
     ...WEBUI_SHELL_COMMANDS,
-    ...extensions.map((e) => ({
-      name: e.name,
-      description: e.description || "module command",
-      kind: "extension" as const,
-    })),
+    // ONE row per name: the host routes a shell name to the app's own handler BEFORE any
+    // dispatch (chat.ts), so a module command of the same name is a second row over a
+    // door that can never open - the store capsule's /new, /resume, /branch and /label
+    // (and /sessions) read as dead duplicates precisely because of this.
+    ...extensions
+      .filter((e) => !SHELL_COMMAND_NAMES.has(e.name))
+      .map((e) => ({
+        name: e.name,
+        description: e.description || "module command",
+        kind: "extension" as const,
+      })),
     ...skills.map((s) => ({
       name: "/" + s.name,
       description: s.description || "inject this skill's content into the next send",
@@ -156,6 +165,35 @@ export interface PaletteExtensionCommand {
   name: string;
   description?: string;
   args?: string[];
+}
+
+// SessionRefRow is the slice of a sessions row /resume resolves against - the list the
+// sessions pane already holds, so the answer names a row the human can see.
+export interface SessionRefRow {
+  id: string;
+  label?: string;
+}
+
+// resolveSessionRef answers what `/resume <arg>` names: #N is 1-based in the ROWS PASSED IN
+// (the caller hands the order its own surface renders), then an exact id, then a
+// case-insensitive label PREFIX. The id/label fall-through is the store's
+// HandleResumeCommand rule, so a reference resolves to the same session on every surface.
+// Pure: the caller owns the list and the open.
+export function resolveSessionRef(rows: SessionRefRow[], arg: string): SessionRefRow | null {
+  const want = arg.trim();
+  if (!want) return null;
+  const digits = want.startsWith("#") ? want.slice(1) : want;
+  if (/^\d+$/.test(digits)) {
+    const n = Number(digits);
+    if (n >= 1 && n <= rows.length) return rows[n - 1] ?? null;
+  }
+  const exact = rows.find((r) => r.id === want);
+  if (exact) return exact;
+  const lower = want.toLowerCase();
+  return (
+    rows.find((r) => (r.label ?? "") !== "" && (r.label ?? "").toLowerCase().startsWith(lower)) ??
+    null
+  );
 }
 
 // POST /commands/dispatch's answer
