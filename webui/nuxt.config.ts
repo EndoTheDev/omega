@@ -128,6 +128,10 @@ export default defineNuxtConfig({
       [
         "/health", "/models", "/tools", "/chat", "/sessions", "/tasks",
         "/files", "/cron", "/skills", "/logs", "/settings", "/themes",
+        // the terminal tab's claim/stream/input/resize/kill face: without this the dev
+        // lane answers the SPA's terminal calls with SSR HTML and the pane never leaves
+        // "connecting...", so no journey can exercise the shell in dev
+        "/terminal",
         "/commands", "/commands/dispatch", //: the palette's GET
         // /commands (extension registry rows) and POST /commands/dispatch.
         "/modules", //: the settings tab's modules group fetches

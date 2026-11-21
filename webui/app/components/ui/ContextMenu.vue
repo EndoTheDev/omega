@@ -84,10 +84,15 @@
     setContextMenuSize(el.offsetWidth, el.offsetHeight);
   });
 
-  // Escape / arrows / Enter ride the window: a menu never steals the caret from the composer.
+  // Escape / arrows / Enter ride the window in the CAPTURE phase: a menu never steals the
+  // caret from the composer, but a focused child that owns its keys - a terminal's xterm
+  // forwards the key to the shell and stops it from bubbling - cannot swallow the menu's
+  // own grammar on its way up. A consumed chord stops there.
   function onKey(e: KeyboardEvent) {
     if (!contextMenuOpen.value) return;
-    if (handleContextMenuKey(e.key)) e.preventDefault();
+    if (!handleContextMenuKey(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   // click anywhere outside closes. pointerdown, not click: it lands before the opening
@@ -101,11 +106,11 @@
   }
 
   onMounted(() => {
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", onDocPointer);
   });
   onBeforeUnmount(() => {
-    window.removeEventListener("keydown", onKey);
+    window.removeEventListener("keydown", onKey, true);
     document.removeEventListener("pointerdown", onDocPointer);
   });
 </script>
