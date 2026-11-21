@@ -1,6 +1,8 @@
 <template>
   <!-- the webui Terminal tab - the integrated shell, VS Code-style with zero. -->
-  <section class="terminal-pane">
+  <section
+    class="terminal-pane"
+    @contextmenu.capture="onContextMenu">
     <div class="terminal-toolbar">
       <span class="terminal-state" :class="{ dead }">{{ stateLine }}</span>
       <span class="terminal-tools">
@@ -33,6 +35,9 @@
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import type { ITheme } from "@xterm/xterm";
+  import { openContextMenu } from "../../../webui/app/composables/contextMenu";
+  import { copyText, readClipboardText } from "../../../webui/app/composables/clipboard";
+  import { terminalMenuItems } from "./terminalMenu";
 
   // The shell's spawn workspace follows the focused chat session. The SHELL ONLY reads
   // it at claim time; a later focus change never re-roots a living shell.
@@ -216,6 +221,50 @@
     dead.value = true;
     stateLine.value = "exited";
     sessionId.value = "";
+  }
+
+  // THE TERMINAL MENU: an omega surface (chrome by the design line), so right-click is the
+  // terminal's own menu, never the browser's. Copy rides the ONE copy path; Paste asks the
+  // clipboard and hands the text to xterm's own paste (it never fabricates keystrokes);
+  // Clear drops the scrollback and keeps the live line.
+  function copySelection() {
+    const t = term.value;
+    if (!t) return;
+    const text = t.getSelection();
+    if (text) void copyText(text);
+  }
+
+  async function pasteClipboard() {
+    const t = term.value;
+    if (!t) return;
+    const text = await readClipboardText();
+    if (text) {
+      t.focus();
+      t.paste(text);
+      return;
+    }
+    t.focus();
+    try {
+      document.execCommand("paste");
+    } catch {
+      // the browser refuses the deprecated paste door; nothing was pasted
+    }
+  }
+
+  function clearScreen() {
+    term.value?.clear();
+  }
+
+  function onContextMenu(e: MouseEvent) {
+    const t = term.value;
+    if (!t) return;
+    const rows = terminalMenuItems({
+      hasSelection: t.hasSelection(),
+      copy: copySelection,
+      paste: pasteClipboard,
+      clear: clearScreen,
+    });
+    if (openContextMenu(e.clientX, e.clientY, rows)) e.preventDefault();
   }
 
   onMounted(() => {

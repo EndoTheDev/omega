@@ -4,6 +4,7 @@
       ref="rootEl"
       class="settings aside pane inspector-panel"
       :class="{ open: open, narrow: narrow }"
+      @contextmenu="onSettingsContextMenu"
       @keydown="onDrawerKey">
 
     <!--
@@ -503,6 +504,8 @@
   import ModulesSection from "./ModulesSection.vue";
   import { useSettingsJump } from "~/composables/settingsJump";
   import { useNarrow } from "~/composables/narrow";
+  import { openContextMenu } from "~/composables/contextMenu";
+  import { settingsMenuItems } from "./settingsMenu";
   import { DEFAULT_TOOL_DISPLAY, type ToolDisplay } from "~/composables/toolDisplay";
   import { DEFAULT_THINKING_DISPLAY, type ThinkingDisplay } from "~/composables/thinkingDisplay";
   import Icon from "../ui/Icon.vue";
@@ -524,6 +527,9 @@
     userThemes: UserTheme[];
     /** the mobile drawer's overlay state (desktop never toggles it) */
     open?: boolean;
+    /** whether this tab can close right now - app.vue reads the dock's own refusal (the
+     *  locked last tab), so the menu can never offer a Close the tab's X would deny */
+    canClose?: boolean;
   }>();
 
   const rootEl = ref<HTMLElement | null>(null);
@@ -537,8 +543,20 @@
     (e: "set-color-mode", mode: ColorMode): void;
     (e: "set-theme", id: string): void;
     (e: "open-module", moduleId: string): void;
+    (e: "close"): void;
   }>();
 
+
+  // THE SETTINGS TAB'S ONE STANDARD ROW: Close, offered only where the tab can close. A
+  // right-click inside an editable field keeps the browser's own menu - paste lives there -
+  // and the config editor's dialog is the same kind of ground.
+  function onSettingsContextMenu(e: MouseEvent) {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest?.("input, textarea, select, [contenteditable], dialog")) return;
+    const rows = settingsMenuItems(props.canClose === true, () => emit("close"));
+    if (rows.length === 0) return;
+    if (openContextMenu(e.clientX, e.clientY, rows)) e.preventDefault();
+  }
 
   const groups = ref<SettingGroup[]>([]);
   const loaded = ref<Record<string, unknown>>({});

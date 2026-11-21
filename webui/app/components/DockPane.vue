@@ -17,6 +17,7 @@
     ]"
     :style="cellStyle"
     :data-pane-id="node.id"
+    @contextmenu="onPaneContextMenu"
     @dragover="onPaneDragOver"
     @dragleave="onPaneDragLeave"
     @drop="onPaneDrop">
@@ -227,7 +228,7 @@
   } from "../composables/dockables";
   import { openContextMenu } from "../composables/contextMenu";
   import { endGesture, onGestureEnd, tabDrag, zoneForPointer, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
-  import { splitFitsZone, type SplitDirection } from "../composables/panes";
+  import { splitFitsZone, paneMenuItems, type SplitDirection } from "../composables/panes";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
   import DockGhost from "./DockGhost.vue";
   import Icon from "./ui/Icon.vue";
@@ -313,6 +314,25 @@
           : {}),
       }),
     );
+  }
+
+  // THE PANE AREA: the pane's own chrome (its strip's empty band, an empty pane's body)
+  // menus the verbs the pane's actions popup already carries. Content keeps the browser's
+  // native menu (chat text, previews, links - the chrome line), a tab chip opens its own,
+  // and a pinned pane (a sidebar, the bottom shell) has no close and no split action at
+  // all, so it registers nothing.
+  function onPaneContextMenu(e: MouseEvent) {
+    if (e.defaultPrevented) return; // an inner chrome surface (the terminal) already claimed it
+    if (pinned.value) return;
+    const el = e.target as HTMLElement | null;
+    if (el?.closest?.(".dock-content, .dock-tab, .dock-menu")) return;
+    const rows = paneMenuItems({
+      closePane: api.canRemovePane(props.node.id) ? () => api.remove(props.node.id) : null,
+      splitRight: canSplit("row") ? () => api.split(props.node.id, "row", "after") : null,
+      splitDown: canSplit("column") ? () => api.split(props.node.id, "column", "after") : null,
+    });
+    if (rows.length === 0) return;
+    if (openContextMenu(e.clientX, e.clientY, rows)) e.preventDefault();
   }
 
   // THE SIDEBAR TITLE BAR: a sidebar's strip is the surface that stays visible when its

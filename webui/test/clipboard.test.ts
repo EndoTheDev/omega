@@ -85,7 +85,7 @@ function stubGlobals(opts: {
   return calls;
 }
 
-import { copyText } from "../app/composables/clipboard.ts";
+import { copyText, readClipboardText } from "../app/composables/clipboard.ts";
 
 describe("copyText: the secure path", () => {
   it("navigator.clipboard.writeText resolving returns true", async () => {
@@ -251,6 +251,33 @@ describe("the sessions row's copy-id action (card t_61cc8762)", () => {
     assert.match(sidebar, /verdict: ok \? "ok" : "failed"/);
     assert.match(sidebar, /title: ok \? `copied session id \$\{id\}` : "copy failed/);
     assert.doesNotMatch(sidebar, /toasts?\s*=\s*ref/, "no private toast stack");
+  });
+});
+
+// the read path: a refused or absent clipboard answers "", never a rejected promise.
+describe("readClipboardText: the ONE clipboard read path", () => {
+  it("returns the clipboard's text on a granted read", async () => {
+    installNavigator({ clipboard: { readText: () => Promise.resolve("ls -la\n") } });
+    try {
+      assert.equal(await readClipboardText(), "ls -la\n");
+    } finally {
+      uninstallGlobals();
+    }
+  });
+
+  it("answers empty on a refused read, and on a plain-http navigator with no clipboard", async () => {
+    installNavigator({ clipboard: { readText: () => Promise.reject(new Error("denied")) } });
+    try {
+      assert.equal(await readClipboardText(), "");
+    } finally {
+      uninstallGlobals();
+    }
+    installNavigator({});
+    try {
+      assert.equal(await readClipboardText(), "");
+    } finally {
+      uninstallGlobals();
+    }
   });
 });
 

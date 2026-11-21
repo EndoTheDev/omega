@@ -278,6 +278,19 @@ the store does the rest.
   complete_task/switch_board, notifications mark_read/mark_all) holds no
   node rename and no node delete, so a canvas node menu would have
   nothing to fire. Adding those verbs is backend work, not menu wiring.
+- **The long tail is chrome too** (`paneMenuItems` in
+  `composables/panes.ts`, `components/settings/settingsMenu.ts`,
+  `harness/terminal/ui/terminalMenu.ts`). A main pane's own area - its
+  strip's free band, an empty pane's body - menus Close pane where the
+  pane's actions popup offers remove, then the popup's split verbs below
+  a rule; a pinned pane (a sidebar, the bottom shell) registers nothing,
+  and content keeps the browser's menu. The settings tab's one standard
+  row is Close, offered only where the dock would let its X close, and a
+  right-click inside an editable field (or the config editor dialog)
+  stays native so paste keeps working there. The terminal is chrome by
+  the design line, so its right-click is Copy / Paste / Clear - Copy
+  disabled on an empty selection, Paste handing the clipboard to xterm's
+  own paste through the one clipboard read path.
 
 ## Motion
 

@@ -148,9 +148,10 @@
         <!-- settings is an ON-DEMAND main-area tab: the gear opens it, it closes like any
              tab, and the pane renders wherever the tab lives (mobile included - the main
              pane is the one surface that never collapses) -->
-        <template #pane-settings>
+        <template #pane-settings="{ pane }">
           <SettingsTab
             class="pane"
+            :can-close="settingsClosable(pane)"
             v-model:show-thinking="showThinking"
             v-model:appearance="appearance"
             v-model:tool-display="toolDisplay"
@@ -159,6 +160,7 @@
             :theme-id="themeId"
             :user-themes="userThemes"
             @open-module="openModuleTab"
+            @close="closeSettingsTab(pane)"
             @set-color-mode="setColorMode"
             @set-theme="setTheme" />
         </template>
@@ -483,6 +485,7 @@
     findEdgePane,
     findComponentTab,
     isPinnedPane,
+    lastTabLocked,
     firstChatMainPaneId,
     chatForegroundPlan,
     DOCK_API_KEY,
@@ -1804,6 +1807,22 @@
     const focused = lastPaneId.value ? findPane(dock.tree.value, lastPaneId.value) : null;
     const paneId = focused && !focused.edge ? focused.id : dock.ensureMainPane();
     dock.openSingleton(paneId, "settings");
+  }
+
+  // the settings tab's own right-click Close: the SAME refusal its X reads - a pane holding
+  // only Settings is the locked last tab, so no row is offered there.
+  function settingsClosable(paneId: string): boolean {
+    const pane = findPane(dock.tree.value, paneId);
+    if (!pane || lastTabLocked(pane)) return false;
+    return pane.tabs.some((t) => t.component === "settings");
+  }
+
+  function closeSettingsTab(paneId: string) {
+    const pane = findPane(dock.tree.value, paneId);
+    if (!pane || lastTabLocked(pane)) return;
+    const index = pane.tabs.findIndex((t) => t.component === "settings");
+    if (index < 0) return;
+    dock.closeTab(pane.id, index);
   }
 
   function openRecentSessionTab() {

@@ -1,5 +1,7 @@
 // pure pane math shared by the divider and the app shell.
 
+import type { ContextMenuEntry } from "./contextMenu";
+
 // the sidebars' snap ladder is every +320 from 320
 export const SNAP_STEP = 320;
 export const SNAP_ZONE = 15;
@@ -62,6 +64,31 @@ export type SplitDirection = "row" | "column";
  */
 export function splitFitsZone(zone: PaneZone, direction: SplitDirection): boolean {
   return direction === "column" || !isSidebarZone(zone);
+}
+
+export interface PaneMenuDeps {
+  /** a pane's own close: `null` where no close exists today (the last main pane, a sidebar) */
+  closePane: (() => void) | null;
+  splitRight: (() => void) | null;
+  splitDown: (() => void) | null;
+}
+
+/**
+ * THE PANE AREA'S ROWS: the standard close first, then the verbs the pane's own actions
+ * menu already carries, below a rule. An action the pane cannot take is ABSENT, never a
+ * dead row - so a sidebar pane (no close, and the shape law forbids a side-by-side split)
+ * registers nothing and its right-click stays the browser's.
+ */
+export function paneMenuItems(deps: PaneMenuDeps): ContextMenuEntry[] {
+  const standard: ContextMenuEntry[] = [];
+  if (deps.closePane) {
+    standard.push({ id: "pane:close", label: "Close pane", danger: true, run: deps.closePane });
+  }
+  const own: ContextMenuEntry[] = [];
+  if (deps.splitRight) own.push({ id: "pane:split-right", label: "Split right", run: deps.splitRight });
+  if (deps.splitDown) own.push({ id: "pane:split-down", label: "Split down", run: deps.splitDown });
+  if (standard.length > 0 && own.length > 0) standard.push({ kind: "separator" });
+  return standard.concat(own);
 }
 
 /** the zone's name in the UI's voice, for refusal lines ("primary sidebar", never "left") */

@@ -15,6 +15,20 @@ export async function copyText(text: string): Promise<boolean> {
   return execCommandCopy(text ?? "");
 }
 
+// The ONE clipboard READ path: readText is secure-context and permission gated (it throws
+// on plain http and after a refused prompt), so a refusal answers "" - the caller decides
+// whether its own deprecated door is worth a try. Never a voided rejection.
+export async function readClipboardText(): Promise<string> {
+  if (typeof navigator === "undefined" || typeof navigator.clipboard?.readText !== "function") {
+    return "";
+  }
+  try {
+    return await navigator.clipboard.readText();
+  } catch {
+    return "";
+  }
+}
+
 // The insecure-context fallback; focus is restored for the caller.
 export function execCommandCopy(text: string): boolean {
   if (typeof document === "undefined" || !document.body) return false;
