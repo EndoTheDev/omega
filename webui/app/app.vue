@@ -343,6 +343,10 @@
       :commands="paletteCommands"
       @close="paletteOpen = false" />
 
+    <!-- THE context menu: exactly one instance for the window. Surfaces register their rows
+         into the store; nothing here is surface-specific. -->
+    <ContextMenu />
+
     <div
       v-if="deleteId"
       class="confirm-scrim"
@@ -558,6 +562,7 @@
   } from "./components/shell/notificationFeed";
   import ChatTab from "./components/ChatTab.vue";
   import CommandPalette from "./components/nav/CommandPalette.vue";
+  import ContextMenu from "./components/ui/ContextMenu.vue";
   import {
     createNavHistory,
     locateEntry,

@@ -51,6 +51,7 @@
             :title="tabTitle(t)"
             :draggable="true"
             @click="api.focus(node.id, i)"
+            @contextmenu.prevent="onTabContextMenu($event, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
@@ -213,11 +214,13 @@
   } from "../composables/dock";
   import {
     COMPONENT_TITLES,
+    dockTabMenuItems,
     dockableIcon,
     dockableOf,
     isClosableTab,
     type DockComponentName,
   } from "../composables/dockables";
+  import { openContextMenu } from "../composables/contextMenu";
   import { endGesture, onGestureEnd, tabDrag, zoneForPointer, zoneRectFractions, type DragZone, type ZoneRect } from "../composables/dockdnd";
   import { splitFitsZone, type SplitDirection } from "../composables/panes";
   import { ghostPreview, ghostRegistry, type GhostPreview } from "../composables/dockghost";
@@ -267,6 +270,30 @@
   function onTabClose(index: number) {
     if (lastTabLocked.value) return;
     api.closeTab(props.node.id, index);
+  }
+
+  // The right-click SELECTS the tab it menus, so the verbs land on the tab the user pointed
+  // at. The item closures capture that index, never the active tab.
+  function onTabContextMenu(e: MouseEvent, index: number) {
+    api.focus(props.node.id, index);
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      dockTabMenuItems(props.node, index, {
+        close: () => api.closeTab(props.node.id, index),
+        closeOthers: () => closeOtherTabs(index),
+      }),
+    );
+  }
+
+  // Descending, so every index not yet visited is still the one the store holds: closeTab
+  // refuses an uncloseable tab and the locked last tab, so the pane never empties.
+  function closeOtherTabs(index: number) {
+    const count = props.node.tabs.length;
+    for (let i = count - 1; i >= 0; i -= 1) {
+      if (i === index) continue;
+      api.closeTab(props.node.id, i);
+    }
   }
 
   const outletName = computed(() => {

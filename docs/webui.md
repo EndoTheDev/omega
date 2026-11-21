@@ -214,6 +214,37 @@ is gone (rows speak transport + live state from GET /mcp/servers). The
 default agent's pill is locked-on and non-interactive - the default
 agent cannot be disabled (api.md's 409).
 
+## The context menu
+
+One menu for the whole window. `composables/contextMenu.ts` owns the
+store and the laws; `components/ui/ContextMenu.vue` is the only
+surface, mounted once by `app.vue`. A surface never keeps a menu of its
+own: it registers a flat row list (`openContextMenu(x, y, rows)`) and
+the store does the rest.
+
+- **Chrome only.** Omega menus fire on omega chrome (tabs, panes,
+  sidebars, cards, the statusbar, the canvas). Browser-rendered content
+  (chat text, file and preview text, links, images) keeps the browser's
+  native menu, so `contextmenu` is only prevented where a surface
+  registers rows.
+- **Rows are verbs that can act.** Separators are spacing, not verbs,
+  and a list with no fireable row opens nothing at all - the right-click
+  does nothing rather than showing a menu that lies. Leading, trailing
+  and doubled separators are trimmed at registration.
+- **Placement.** The menu opens at the cursor, flips up/left when the
+  measured box would run past the viewport edge, then clamps to a 4px
+  margin, so it is always fully on screen.
+- **Keys.** Escape closes, ArrowUp/ArrowDown move the selection over the
+  fireable rows (wrapping, skipping separators), Enter fires. A press
+  outside closes; the surface is invisible for the frame before its own
+  box is measured so it never paints at the wrong spot.
+- **Selects what it menus.** A right-click on a row selects that row
+  first, so the verbs act on the thing the user pointed at.
+- **Dock tabs are the first surface** (`dockTabMenuItems` in
+  `composables/dockables.ts`): Close and Close others. Close follows the
+  tab's own X - absent on an uncloseable component and on the locked
+  last tab; Close others appears only when another closable tab exists.
+
 ## Motion
 
 main.css's header states the law: "Motion: streaming cursor + message

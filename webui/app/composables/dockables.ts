@@ -2,6 +2,7 @@
 // never dockable; dock.ts re-exports this inventory.
 
 import type { PaneZone } from "./panes.ts";
+import type { ContextMenuEntry, ContextMenuItem } from "./contextMenu.ts";
 
 // Component names a dock pane may host, in tab order. nuxt.config.ts's module-tabs scan
 // generates the manifest app.vue's outlets bind from.
@@ -346,6 +347,37 @@ export function classMembers(zone: DockArea): readonly DockComponentName[] {
 export function isClosableTab(id: DockComponentName): boolean {
   const d = safeEntry(id);
   return d !== null && d.closable;
+}
+
+/** what a dock tab's right-click menu can DO - the surface passes its own writers */
+export interface DockTabMenuDeps {
+  close: () => void;
+  closeOthers: () => void;
+}
+
+/**
+ * THE DOCK TAB MENU (the shared context menu's first surface). A row is offered only where it
+ * would act: Close is the tab's own X, so it follows the X's two refusals (an uncloseable
+ * component, and the locked last tab), and Close others needs another closable tab to close.
+ * An empty answer means no menu - the right-click does nothing.
+ */
+export function dockTabMenuItems(
+  pane: { tabs: readonly { component: string }[] },
+  index: number,
+  deps: DockTabMenuDeps,
+): ContextMenuEntry[] {
+  const tab = pane.tabs[index];
+  if (!tab) return [];
+  const items: ContextMenuItem[] = [];
+  const closable = (component: string) => isClosableTab(component as DockComponentName);
+  if (closable(tab.component) && pane.tabs.length > 1) {
+    items.push({ id: "tab:close", label: "Close", run: deps.close });
+  }
+  const others = pane.tabs.some((t, i) => i !== index && closable(t.component));
+  if (others) {
+    items.push({ id: "tab:close-others", label: "Close others", run: deps.closeOthers });
+  }
+  return items;
 }
 
 export const COMPONENT_TITLES: Record<DockComponentName, string> =
