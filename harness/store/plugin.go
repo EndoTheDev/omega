@@ -10,12 +10,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Plugin implements agent.Plugin for the store seam.
 type Plugin struct {
 	store *Store // nil until MountWithAPI; Dismount releases it
 }
 
-// Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string { return "store" }
@@ -31,7 +29,6 @@ func (p *Plugin) ConfigKey() string { return "store" }
 func (p *Plugin) Provides() []string { return []string{"store", "tools"} }
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable opts the store into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
 // Dismount releases the mounted store (the open sqlite handle): beyond-Context state
@@ -133,9 +130,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // sessionCommands returns the ten session commands in registration order.
 //
 // There is no /new here: the store cannot open a conversation on any surface (the webui's
-// /new opens a tab, the terminal loop starts one on its first message), and the intent it
-// used to declare - `new_session` - had no executor anywhere, so the palette row was a
-// second door that could never open.
+// /new opens a tab, the terminal loop starts one on its first message).
 func sessionCommands() []core.ExtensionCommand {
 	return []core.ExtensionCommand{
 		{Name: "/sessions", Description: "list, resume, branch, label, or delete sessions"},
@@ -151,7 +146,6 @@ func sessionCommands() []core.ExtensionCommand {
 	}
 }
 
-// handleSessionCommand dispatches one session command.
 func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/sessions":
@@ -159,7 +153,6 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	case "/agents":
 		return HandleAgentsCommand(c, s)
 	case "/agent":
-		// TUI passes the raw args; the agent name is the first word.
 		return HandleAgentDetailCommand(c, s, args)
 	case "/tree":
 		return HandleTreeCommand(c, s)
@@ -183,7 +176,6 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	return core.CommandResult{}, core.CommandMiss(name)
 }
 
-// sessionTarget resolves the session a command acts.
 func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	head, tail, _ := strings.Cut(strings.TrimSpace(args), " ")
 	if head != "" {
@@ -204,5 +196,4 @@ func sessionPayload(c context.Context, args string) (sessionID, payload string) 
 	return id, strings.TrimSpace(rest)
 }
 
-// NewPlugin returns a store Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }

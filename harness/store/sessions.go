@@ -88,10 +88,7 @@ func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) er
 	return err
 }
 
-// CanonicalChatLabel is the label a canonical chat's row carries.
 const CanonicalChatLabel = "canonical"
-
-// aiNowISO removed: core.NowISO is the store-wide timestamp helper.
 
 // HandleAgentsCommand renders the /agents table. Needs OMEGA_HOME - the same env main
 // sets for every process - and an AgentSessionStore (a store without the optional
@@ -119,7 +116,6 @@ func HandleAgentsCommand(ctx context.Context, st agent.StoreProvider) (core.Comm
 	return core.CommandResult{Text: sb.String()}, nil
 }
 
-// HandleAgentDetailCommand renders the /agent <name>.
 func HandleAgentDetailCommand(ctx context.Context, st agent.StoreProvider, arg string) (core.CommandResult, error) {
 	home := os.Getenv("OMEGA_HOME")
 	arg = strings.TrimSpace(arg)

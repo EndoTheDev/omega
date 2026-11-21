@@ -18,14 +18,12 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeChatRuns is the ChatRunsReader double for the running-flag law.
 type fakeChatRuns struct {
 	live map[string]bool
 }
 
 func (f fakeChatRuns) Active(id string) bool { return f.live[id] }
 
-// newRoutesFixture opens an in-memory store, mounts the capsule's registrationRows.
 func newRoutesFixture(t *testing.T) (*Routes, *Store, *http.ServeMux, *core.Context) {
 	t.Helper()
 	st, err := Open(":memory:")
@@ -42,7 +40,6 @@ func newRoutesFixture(t *testing.T) (*Routes, *Store, *http.ServeMux, *core.Cont
 	return rt, st, mux, ctx
 }
 
-// serve runs one request through the registered mux.
 func serve(t *testing.T, mux *http.ServeMux, method, target, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	var rd io.Reader
@@ -69,8 +66,6 @@ func createFixtureSession(t *testing.T, st *Store, id, label string) {
 		t.Fatalf("create %s: %v", id, err)
 	}
 }
-
-// the sessions list ----------------------------------------------
 
 func TestSessionsListRows(t *testing.T) {
 	_, st, mux, ctx := newRoutesFixture(t)
@@ -130,8 +125,6 @@ func TestSessionsListRows(t *testing.T) {
 // the list answers running=false everywhere, the honest empty state, never a fault.
 func TestSessionsListNoChatRunsOffer(t *testing.T) {
 	rt, st, mux, _ := newRoutesFixture(t)
-	// no serving channel up: drop the offer before the read - the reader resolves nil and
-	// the list answers running=false everywhere, the honest empty state, never a fault
 	rt.ctx.ApplyOffer("chat-runs", "test", fakeChatRuns{live: map[string]bool{}})
 	rt.ctx.DropOffer("chat-runs", "test")
 	createFixtureSession(t, st, "solo", "")
@@ -145,8 +138,6 @@ func TestSessionsListNoChatRunsOffer(t *testing.T) {
 		t.Fatalf("rows = %+v, want running false with no chat-runs offer", rows)
 	}
 }
-
-// the search seat -------------------------------------------------
 
 func TestSessionsSearchCapsule(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
@@ -212,8 +203,6 @@ func TestSessionsSearchCapsule(t *testing.T) {
 		t.Fatalf("archived=include hits = %v, want both", visible)
 	}
 }
-
-// branch -----------------------------------------------------------
 
 func TestBranchEndpointCreatesChild(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
@@ -305,8 +294,6 @@ func TestBranchChildInheritsAncestorPath(t *testing.T) {
 	}
 }
 
-// export ------------------------------------------------------------
-
 // TestExportJSONLShape: one {"role","content"} line per active-path message.
 func TestExportJSONLShape(t *testing.T) {
 	_, st, mux, _ := newRoutesFixture(t)
@@ -381,8 +368,6 @@ func TestExportHead(t *testing.T) {
 		t.Fatalf("head body = %q, want empty", body)
 	}
 }
-
-// insights ----------------------------------------------------------
 
 // seedInsightsRows writes the known rows into the scratch store: two
 // sessions, 3 user messages, 2 assistants carrying 3 tool calls (the
@@ -475,8 +460,6 @@ func TestInsightsParity(t *testing.T) {
 		t.Fatalf("days=-5 -> %d, want the 30-day default", p.Days)
 	}
 }
-
-// the mux patterns themselves (the mount is the proof) ---------------
 
 func TestRoutePatternsAreMethodScoped(t *testing.T) {
 	_, _, mux, _ := newRoutesFixture(t)

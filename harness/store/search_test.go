@@ -111,7 +111,6 @@ func TestResolveSnippet(t *testing.T) {
 	}
 }
 
-// TestSearchSessionsVerbatim: the unified lane.
 func TestSearchSessionsVerbatim(t *testing.T) {
 	s := searchFixture(t)
 	ctx := context.Background()
@@ -157,7 +156,6 @@ func TestSearchSessionsVerbatim(t *testing.T) {
 	}
 }
 
-// TestSearchToolSnippetVerbatim: the agent-facing sessions.search tool output renders.
 func TestSearchToolSnippetVerbatim(t *testing.T) {
 	s := searchFixture(t)
 	ctx := context.Background()

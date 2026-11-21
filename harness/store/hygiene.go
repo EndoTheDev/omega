@@ -28,7 +28,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// HygieneReport is one pass's outcome.
 type HygieneReport struct {
 	Summarized int `json:"summarized"`
 	Pending int `json:"pending"`
@@ -45,7 +44,6 @@ type HygieneReport struct {
 // summarizerMaxChars caps the transcript the summarizer reads per consultation.
 const summarizerMaxChars = 12000
 
-// maxSummariesPerPass bounds one hygiene run.
 const maxSummariesPerPass = 5
 
 // RunSummarizer summarizes sessions older than afterHours that lack a summary. prov may
@@ -293,7 +291,6 @@ func (s *Store) RunVacuum(ctx context.Context) error {
 	return nil
 }
 
-// DBFileSizes reads the main database and WAL file sizes off disk.
 func (s *Store) DBFileSizes() (db, wal int64) {
 	if s.dbPath == ":memory:" || s.dbPath == "" {
 		return 0, 0

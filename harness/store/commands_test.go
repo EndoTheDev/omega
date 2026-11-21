@@ -10,8 +10,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// sessionDisplayName
-
 func TestSessionDisplayName(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -36,8 +34,6 @@ func TestSessionDisplayName(t *testing.T) {
 		})
 	}
 }
-
-// agent.FormatNumber
 
 func TestFormatNumber(t *testing.T) {
 	cases := []struct {
@@ -66,8 +62,6 @@ func TestFormatNumber(t *testing.T) {
 	}
 }
 
-// newSessionID
-
 func TestNewSessionID(t *testing.T) {
 	id, err := agent.NewSessionID()
 	if err != nil {
@@ -76,7 +70,6 @@ func TestNewSessionID(t *testing.T) {
 	if len(id) != 32 {
 		t.Fatalf("len = %d, want 32", len(id))
 	}
-	// Must be valid lowercase hex.
 	if _, err := hex.DecodeString(id); err != nil {
 		t.Fatalf("not valid hex: %q (%v)", id, err)
 	}
@@ -89,8 +82,6 @@ func TestNewSessionID(t *testing.T) {
 		t.Fatalf("two IDs collided: %q", id)
 	}
 }
-
-// messageRole
 
 func TestMessageRole(t *testing.T) {
 	cases := []struct {
@@ -119,8 +110,6 @@ func TestMessageRole(t *testing.T) {
 		}
 	})
 }
-
-// messageContent
 
 func TestMessageContent(t *testing.T) {
 	cases := []struct {
@@ -153,10 +142,8 @@ func TestMessageContent(t *testing.T) {
 
 // Session commands answer TEXT and declare no actions
 //
-// t_146d3133: new_session, load_session, branch_session and set_label had no executor on
-// any surface - the dispatch relayed them, the webui's wire had no field for them, and a
-// command whose Text was empty read as a silent no-op. The intents are gone; the store
-// answers the real result, and this pin fails the day one comes back without an executor.
+// The intents are gone; the store answers the real result, and this pin fails the day one
+// comes back without an executor.
 func TestSessionCommandsShipNoActions(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -185,8 +172,6 @@ func TestSessionCommandsShipNoActions(t *testing.T) {
 		}
 	}
 }
-
-// agent.FormatInsights
 
 func TestFormatInsightsPopulated(t *testing.T) {
 	in := &core.Insights{
@@ -247,7 +232,6 @@ func TestFormatInsightsEmpty(t *testing.T) {
 
 	got := agent.FormatInsights(in)
 
-	// Empty PeriodStart path uses the "Through:" line.
 	if !strings.Contains(got, "Through: ") {
 		t.Errorf("empty insights missing 'Through:' line\ngot:\n%s", got)
 	}

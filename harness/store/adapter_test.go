@@ -9,12 +9,10 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// TestPluginImplementsInterface verifies the Plugin type satisfies agent.Plugin.
 func TestPluginImplementsInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestOpenOpensAndSearches verifies the store opens, accepts messages, and FTS5.
 func TestOpenOpensAndSearches(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -42,7 +40,6 @@ func TestOpenOpensAndSearches(t *testing.T) {
 	}
 }
 
-// TestSearchTool verifies the sessions.search tool returns formatted results.
 func TestSearchTool(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -73,7 +70,6 @@ func TestSearchTool(t *testing.T) {
 	}
 }
 
-// TestSearchToolNoResults verifies the tool returns "no results" when the query.
 func TestSearchToolNoResults(t *testing.T) {
 	s, err := Open(":memory:")
 	if err != nil {
@@ -93,7 +89,6 @@ func TestSearchToolNoResults(t *testing.T) {
 	}
 }
 
-// TestPluginMount verifies Mount populates ctx.Store and adds a sessions.search tool.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{

@@ -13,7 +13,6 @@ func conversationRole(role string) bool {
 	return role == "user" || role == "assistant" || role == "tool"
 }
 
-// loadRows reads a session's messages (id, role, payload, created_at) in append.
 func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, role, payload, created_at FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
@@ -76,7 +75,6 @@ func (s *Store) loadViewRows(ctx context.Context, sessionID string) ([]core.Stor
 	return out, nil
 }
 
-// GetActiveView returns the session's tree-derived active view.
 func (s *Store) GetActiveView(ctx context.Context, sessionID string) (core.ActiveView, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.GetActiveView(ctx, sessionID)
@@ -107,7 +105,6 @@ func (s *Store) GetActiveMessages(ctx context.Context, sessionID string) ([]core
 	return out, nil
 }
 
-// resolveParent computes the parent pointer a conversation message carries.
 func (s *Store) resolveParent(ctx context.Context, sessionID string, msg core.Message) (string, error) {
 	view, err := s.GetActiveView(ctx, sessionID)
 	if err != nil {

@@ -19,13 +19,10 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// ErrNotFound is returned when a session does not exist.
 var ErrNotFound = errors.New("session not found")
 
-// Compile-time assertion that Store implements agent.StoreProvider.
 var _ agent.StoreProvider = (*Store)(nil)
 
-// Compile-time assertion that Store carries the optional health probe.
 var _ agent.StorePinger = (*Store)(nil)
 
 // Ping is the store health probe (agent.StorePinger). Deliberately NOT a PRAGMA
@@ -154,7 +151,6 @@ func (s *Store) DBPath() string {
 	return s.dbPath
 }
 
-// migrate creates the schema if it does not exist.
 func (s *Store) migrate() error {
 	_, err := s.db.Exec(`
 CREATE TABLE IF NOT EXISTS sessions (
@@ -198,7 +194,6 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
 	content='messages',
 	content_rowid='id'
 );
--- Triggers keep the FTS index in sync with the messages table.
 CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
 	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
 END;
@@ -229,11 +224,10 @@ CREATE TABLE IF NOT EXISTS image_captions (
 	caption    TEXT NOT NULL,
 	created_at TEXT NOT NULL
 );
--- The pending-calls table (async agent loop phase 1, card
--- t_f3f953d0): yield-class tool calls dispatched and awaiting their
--- result. Durable across restarts - the serve-start boot recovery
--- sweep reads it (All) and injects a synthetic timeout result per
--- entry. Rows are keyed (session, call id); Settle deletes.
+-- The pending-calls table: yield-class tool calls dispatched and awaiting their
+-- result. Durable across restarts - the serve-start boot recovery sweep reads it
+-- (All) and injects a synthetic timeout result per entry. Rows are keyed
+-- (session, call id); Settle deletes.
 CREATE TABLE IF NOT EXISTS pending_calls (
 	session_id    TEXT NOT NULL,
 	call_id       TEXT NOT NULL,
@@ -349,7 +343,6 @@ INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary F
 	return nil
 }
 
-// CreateSession creates a session with the given id.
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
 	now := core.NowISO()
 	// An empty parentID is stored as NULL so the FK constraint does not try to match.
@@ -364,7 +357,6 @@ func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) e
 	return err
 }
 
-// CreateDelegateSession creates a session carrying DELEGATE lineage.
 func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error {
 	now := core.NowISO()
 	var parent any
@@ -377,7 +369,6 @@ func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, l
 	return err
 }
 
-// scanSession scans one session row into s, tolerating NULL parent_id /.
 func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) {
 	var sess core.Session
 	var parent, delegate sql.NullString
@@ -491,7 +482,6 @@ func (s *Store) GetSession(ctx context.Context, id string) (core.Session, error)
 	return sess, nil
 }
 
-// storeAgentIdentity resolves the store's agent binding at open.
 func storeAgentIdentity() string {
 	name := strings.TrimSpace(os.Getenv("OMEGA_AGENT"))
 	if name == "default" {
@@ -571,7 +561,6 @@ func (s *Store) GetSessionTree(ctx context.Context) ([]*core.SessionNode, error)
 	return roots, nil
 }
 
-// GetAncestorMessages returns the messages of a session and all its ancestors up.
 func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Message, error) {
 	if o := s.owner(ctx, id); o != nil {
 		return o.GetAncestorMessages(ctx, id)
@@ -658,7 +647,6 @@ func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Messa
 	return out, rows.Err()
 }
 
-// GetMessagesWithTimes returns a session's messages in append order, each paired.
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.GetMessagesWithTimes(ctx, sessionID)
@@ -666,7 +654,6 @@ func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]c
 	return s.loadRows(ctx, sessionID)
 }
 
-// CountMessages returns the number of messages in a session.
 func (s *Store) CountMessages(ctx context.Context, sessionID string) (int, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.CountMessages(ctx, sessionID)
@@ -700,7 +687,6 @@ func (s *Store) SessionCounts(ctx context.Context) (map[string]core.SessionCount
 	return out, rows.Err()
 }
 
-// SetSessionPinned sets the pinned flag on a session row.
 func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionPinned(ctx, sessionID, pinned)
@@ -711,7 +697,6 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	return err
 }
 
-// SetSessionArchived sets the archived flag on a session row.
 func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archived bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionArchived(ctx, sessionID, archived)
@@ -722,7 +707,6 @@ func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archiv
 	return err
 }
 
-// SetSessionRead stamps the session's last-read time to now, so unread.
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionRead(ctx, sessionID)
@@ -788,7 +772,6 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	return out, rows.Err()
 }
 
-// GetImageCaption returns the persisted caption for an image id.
 func (s *Store) GetImageCaption(ctx context.Context, imageID string) (caption string, ok bool, err error) {
 	err = s.db.QueryRowContext(ctx,
 		`SELECT caption FROM image_captions WHERE image_id = ?`, imageID).
@@ -813,10 +796,8 @@ func (s *Store) SaveImageCaption(ctx context.Context, imageID, caption string) e
 	return err
 }
 
-// Compile-time assertion that Store implements agent.CaptionStore.
 var _ agent.CaptionStore = (*Store)(nil)
 
-// boolToInt maps a bool to its SQLite 0/1 integer representation.
 func boolToInt(b bool) int {
 	if b {
 		return 1
@@ -839,12 +820,10 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	return err
 }
 
-// quoteFTS wraps a user-supplied search term in FTS5 double quotes so it matches.
 func quoteFTS(term string) string {
 	return `"` + strings.ReplaceAll(term, `"`, `""`) + `"*`
 }
 
-// SearchMessages performs a full-text search across all session messages.
 func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.SearchResult, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
@@ -874,7 +853,6 @@ func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.Search
 const (
 	ftsMatchOpen  = "\x01"
 	ftsMatchClose = "\x02"
-	// ftsSentinels is both bytes together, for the contains check.
 	ftsSentinels = ftsMatchOpen + ftsMatchClose
 )
 
@@ -1005,7 +983,6 @@ func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.Search
 	return out, crows.Err()
 }
 
-// sessionStats accumulates per-session counters that feed into Insights.
 type sessionStats struct {
 	msgs       int
 	userMsgs   int
@@ -1014,14 +991,12 @@ type sessionStats struct {
 	toolCounts map[string]int
 }
 
-// notableTracker tracks the running maximum for each notable stat.
 type notableTracker struct {
 	maxMsgs   int
 	maxTokens int
 	maxTools  int
 }
 
-// countMessages iterates over a session's messages, incrementing the global message.
 func countMessages(msgs []core.Message, in *core.Insights, st *sessionStats) {
 	for _, msg := range msgs {
 		switch msg.(type) {
@@ -1041,7 +1016,6 @@ func countMessages(msgs []core.Message, in *core.Insights, st *sessionStats) {
 	}
 }
 
-// updateNotables updates the notable stats if the current session exceeds the running.
 func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, detail string) {
 	if st.msgs > nt.maxMsgs {
 		nt.maxMsgs = st.msgs
@@ -1057,7 +1031,6 @@ func updateNotables(in *core.Insights, st *sessionStats, nt *notableTracker, det
 	}
 }
 
-// processSession fetches messages for one session and accumulates its stats.
 func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.Insights, st *sessionStats, nt *notableTracker, dayCounts *[7]int) bool {
 	t, err := time.Parse(time.RFC3339, sess.CreatedAt)
 	if err != nil {
@@ -1091,7 +1064,6 @@ func (s *Store) processSession(ctx context.Context, sess core.Session, in *core.
 	return true
 }
 
-// buildDailyActivity fills the Daily [7]DayStat array from dayCounts, computing.
 func buildDailyActivity(daily *[7]core.DayStat, dayCounts [7]int, weekdays []string) {
 	maxDay := 0
 	for _, c := range dayCounts {
@@ -1111,7 +1083,6 @@ func buildDailyActivity(daily *[7]core.DayStat, dayCounts [7]int, weekdays []str
 	}
 }
 
-// ComputeInsights aggregates session data over the last N days.
 func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, error) {
 	sessions, err := s.ListSessions(ctx)
 	if err != nil {
@@ -1153,7 +1124,6 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, 
 		in.AvgSessionMsgs = float64(in.Messages) / float64(in.Sessions)
 	}
 
-	// Build tool breakdown sorted by count desc.
 	for name, count := range toolCounts {
 		in.Tools = append(in.Tools, core.ToolStat{Name: name, Count: count})
 	}
@@ -1163,7 +1133,6 @@ func (s *Store) ComputeInsights(ctx context.Context, days int) (*core.Insights, 
 
 	buildDailyActivity(&in.Daily, dayCounts, weekdays)
 
-	// The store's on-disk shape: db + WAL file sizes.
 	in.DBSizeBytes, in.WALSizeBytes = s.DBFileSizes()
 
 	if days > 0 {

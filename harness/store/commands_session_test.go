@@ -16,7 +16,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// sessionCommandsThrough drives handleSessionCommand the way the registered handler.
 func sessionCommandsThrough(t *testing.T, ctx context.Context, s *Store, name, args string) (core.CommandResult, error) {
 	t.Helper()
 	return (&Plugin{}).handleSessionCommand(s, ctx, name, args)
