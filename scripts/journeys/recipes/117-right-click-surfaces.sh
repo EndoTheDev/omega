@@ -7,12 +7,12 @@
 # this step adds, through the REAL input pipeline - a real right-button press, the real
 # rows, and a real verb fired from each:
 #
-#   rows      a session row menus New session / Branch / Export (Stop only on a running
-#             row), an agent row menus New agent (Delete only off the locked default), a
-#             cron row menus Pause-or-Resume / Delete - and Branch, Pause, Delete and
-#             New agent each DO their thing.
-#   statusbar every stat is a checked row; a click hides one, a reload keeps it hidden,
-#             and the menu that stays on the bar shows it again.
+#   rows      a session row menus New session / Branch / Export / Copy id (Stop only on a
+#             running row), an agent row menus New agent (Delete only off the locked
+#             default), a cron row menus Pause-or-Resume / Delete - and Branch, Pause,
+#             Delete and New agent each DO their thing.
+#   statusbar every stat is a checked row, then the Reset row; a click hides one, a reload
+#             keeps it hidden, and the menu that stays on the bar shows it again.
 #   tabs      a secondary-sidebar chip hides (the strip keeps the rest), the hide
 #             survives a reload, and the strip's own right-click lists it for restore.
 #
@@ -110,7 +110,7 @@ row_js="(() => {const row=[...document.querySelectorAll('.session-list li')].fin
 right_click_js "$row_js"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
 rows=$(menu_rows)
-assert_eq "$rows" "New session|Branch|Export" "an idle session row menus New session, Branch, Export - no Stop"
+assert_eq "$rows" "New session|Branch|Export|Copy id" "an idle session row menus New session, Branch, Export, Copy id - no Stop"
 step "ok: the session row's right-click opens the shared menu"
 
 ab press Escape >/dev/null 2>&1
@@ -133,7 +133,7 @@ step "ok: Branch forked the session (the row carries its branch mark)"
 # --- 2. the statusbar ----------------------------------------------------
 right_click_js "(() => {const b=document.querySelector('.statusbar'); const r=b.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10
-assert_eq "$(menu_count)" "7" "the bar lists every one of its seven stats"
+assert_eq "$(menu_count)" "8" "the bar lists its seven stats plus the Reset row"
 checks=$(jsq '[...document.querySelectorAll(".context-menu-item .context-menu-check")].map(e=>e.textContent.trim()==="\u2713"?1:0).join("")')
 assert_eq "${checks//\"/}" "1111111" "every stat opens checked - none is hidden yet"
 step "ok: the statusbar's right-click lists every stat with its check state"

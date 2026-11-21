@@ -3,7 +3,8 @@
     ref="boardEl"
     class="board"
     :class="{ narrow: narrow }"
-    :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }">
+    :style="{ '--card-clamp': `${CARD_CLAMP_LINES}` }"
+    @contextmenu="onBoardMenu">
     <!-- the UNIVERSAL band (shared TabBand): the columns start BELOW it, so scrolling never moves it,
          and it keeps the family contract - title + board chip + count | filter. -->
     <TabBand title="Kanban">
@@ -331,6 +332,7 @@
   import { openContextMenu } from "~/composables/contextMenu";
   import DetailDrawer from "./board/DetailDrawer.vue";
   import { cardMenuItems } from "./board/cardMenu";
+  import { boardMenuItems } from "./board/boardMenu";
   import {
     BOARD_STATUSES,
     BOARDS_PATH,
@@ -424,6 +426,7 @@
     const name = want.name;
     if (!name || name === boardName.value) return;
     disarmRemove(); // an armed confirm points at the old board: reset it
+    disarmCardDelete(); // and the card menu's arm points at a card of the old board
     cancelRename();
     boardName.value = name;
     selected.value = null; // the drawer's card belongs to the old board
@@ -551,7 +554,7 @@
     if (!canRemoveBoard(boardName.value)) return;
     if (!confirmingRemove.value) {
       confirmingRemove.value = true;
-      armNotice = `click "confirm remove" in the board menu again to remove "${boardName.value}"`;
+      armNotice = `pick "Confirm delete" again to remove "${boardName.value}" - the board and its cards go with it`;
       setNotice(armNotice);
       // disarm on timeout: the second click lands only while the warning still shows
       if (disarmTimer) clearTimeout(disarmTimer);
@@ -989,8 +992,39 @@
     setNotice(ok ? `card ${id} copied` : "copy failed - the clipboard is unavailable", !ok);
   }
 
+  // armed delete: a card is irreversible (no undo resurrects it), so the menu's Delete row
+  // only arms; the second pick - the row reading "Confirm delete" - fires. The drawer's own
+  // confirm stays its own door's: one confirm per door, never two stacked on one pick.
+  const CARD_DELETE_ARM_MS = 10000;
+  const armedCardDelete = ref("");
+  let cardDeleteTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function disarmCardDelete() {
+    armedCardDelete.value = "";
+    if (cardDeleteTimer) {
+      clearTimeout(cardDeleteTimer);
+      cardDeleteTimer = undefined;
+    }
+  }
+
+  function onCardDeleteRow(t: BoardTask) {
+    if (armedCardDelete.value !== t.id) {
+      disarmCardDelete();
+      armedCardDelete.value = t.id;
+      cardDeleteTimer = setTimeout(disarmCardDelete, CARD_DELETE_ARM_MS);
+      setNotice(
+        `right-click card ${t.id} again and pick "Confirm delete" to remove it - a deleted card does not come back`,
+      );
+      return;
+    }
+    disarmCardDelete();
+    setNotice("");
+    void deleteCard(t.id, boardOf(t, boardName.value));
+  }
+
   // The right-click menus the card under the pointer (the closures capture it), never the
-  // drawer's selection. Archive rides moveBoard, the lane arrow's own PATCH.
+  // drawer's selection. Archive rides moveBoard, the lane arrow's own PATCH; Delete is the
+  // drawer's DELETE, behind the arm above.
   function onCardMenu(e: MouseEvent, t: BoardTask) {
     e.preventDefault();
     void openContextMenu(
@@ -1002,7 +1036,26 @@
           open: () => openDetail(t),
           copyId: () => void copyCardId(t.id),
           archive: () => void moveBoard(t, "archived"),
+          remove: () => onCardDeleteRow(t),
         },
+        armedCardDelete.value === t.id,
+      ),
+    );
+  }
+
+  // The board surface's right-click: Rename and Delete, the board dropdown's own two verbs.
+  // A card, the drawer or a text field under the pointer keeps its own menu - the card row
+  // handler above, the drawer's content, and paste inside the filter/rename inputs.
+  function onBoardMenu(e: MouseEvent) {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest?.(".card, .drawer, input, textarea")) return;
+    e.preventDefault();
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      boardMenuItems(
+        { name: boardName.value, armed: confirmingRemove.value },
+        { rename: startRename, remove: removeBoardClick },
       ),
     );
   }
@@ -1072,13 +1125,12 @@
     }
   }
 
-  // armed delete: the drawer confirmed a NAMED card.
-  async function onDrawerDelete() {
-    if (!selected.value) return;
-    const id = selected.value.id;
-    const board = boardOf(selected.value, boardName.value);
-    selected.value = null;
+  // THE delete path: DELETE /tasks/{id} on the board the card belongs to, with the row gone
+  // from the grid first (the server's refusal text restores it through fetchBoard). The
+  // drawer's armed confirm and the card menu's arm both land here.
+  async function deleteCard(id: string, board: string) {
     tasks.value = tasks.value.filter((t) => t.id !== id);
+    if (selected.value?.id === id) selected.value = null;
     try {
       const res = await fetch(withBoard(taskDeletePath(id), board), {
         method: "DELETE",
@@ -1094,6 +1146,16 @@
       setNotice(e instanceof Error ? e.message : String(e), true);
       await fetchBoard();
     }
+  }
+
+  // armed delete: the drawer confirmed a NAMED card.
+  async function onDrawerDelete() {
+    if (!selected.value) return;
+    const id = selected.value.id;
+    const board = boardOf(selected.value, boardName.value);
+    selected.value = null;
+    disarmCardDelete(); // the menu's arm points at the same card: the drawer just spent it
+    await deleteCard(id, board);
   }
 
   function moveSelected(status: string) {

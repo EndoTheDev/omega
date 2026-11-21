@@ -37,7 +37,7 @@ class MemoryStorage {
 }
 
 function ids(entries: readonly unknown[]): string[] {
-  return entries.map((e) => (e as { id: string }).id);
+  return entries.map((e) => (e as { id?: string }).id ?? "separator");
 }
 
 describe("the stat catalog", () => {
@@ -54,15 +54,56 @@ describe("the stat catalog", () => {
 
   it("every catalogued stat is one checked row on the bar's menu", () => {
     const items = statMenuItems([], () => {});
-    assert.deepEqual(ids(items), STATUS_STATS.map((s) => "stat:" + s.id));
     assert.deepEqual(
-      items.map((i) => (i as { checked: boolean }).checked),
+      ids(items),
+      [...STATUS_STATS.map((s) => "stat:" + s.id), "separator", "stat:reset"],
+      "the catalog first, then the rule, then the one reset row",
+    );
+    assert.deepEqual(
+      items.slice(0, STATUS_STATS.length).map((i) => (i as { checked: boolean }).checked),
       STATUS_STATS.map(() => true),
       "nothing hidden = every row checked",
     );
-    for (const item of items) {
+    for (const item of items.slice(0, STATUS_STATS.length)) {
       assert.equal(typeof (item as { run: unknown }).run, "function");
     }
+  });
+
+  it("Reset statusbar is the LAST row and clears the whole hidden set", () => {
+    const calls: [string, boolean][] = [];
+    const items = statMenuItems(["tokens", "context", "gone-in-a-later-build"], (id, hidden) =>
+      calls.push([id, hidden]),
+    );
+    const last = items[items.length - 1] as {
+      id: string;
+      label: string;
+      checked?: boolean;
+      disabled?: boolean;
+      run: () => void;
+    };
+    assert.equal(last.id, "stat:reset");
+    assert.equal(last.label, "Reset statusbar");
+    assert.equal(last.checked, undefined, "Reset is a verb, not a switch");
+    assert.equal(last.disabled, false, "a hidden stat makes it fireable");
+    last.run();
+    assert.deepEqual(
+      calls,
+      [
+        ["tokens", false],
+        ["context", false],
+        ["gone-in-a-later-build", false],
+      ],
+      "every hidden id rides the same toggle write back to visible",
+    );
+  });
+
+  it("Reset with nothing hidden is still listed, and dimmed", () => {
+    const items = statMenuItems([], () => {
+      throw new Error("a disabled reset must not write");
+    });
+    const last = items[items.length - 1] as { disabled?: boolean; run: () => void };
+    assert.equal(last.disabled, true);
+    last.run();
   });
 
   it("a click flips the ONE stat it names, and only that stat", () => {

@@ -27,17 +27,46 @@ function calls() {
     newSession: () => log.push("new"),
     branch: () => log.push("branch"),
     exportSession: () => log.push("export"),
+    copyId: () => log.push("copy"),
     stop: () => log.push("stop"),
   };
 }
 
-describe("session rows: New session, Branch, Export, Stop", () => {
-  it("offers the three stable verbs on an idle row, and no Stop", () => {
+describe("session rows: New session, Branch, Export, Copy id, Stop", () => {
+  it("offers the four stable verbs on an idle row, and no Stop", () => {
     const d = calls();
     const items = sessionMenuItems({ id: "s1", running: false }, d);
-    assert.deepEqual(ids(items), ["session:new", "session:branch", "session:export"]);
+    assert.deepEqual(ids(items), [
+      "session:new",
+      "session:branch",
+      "session:export",
+      "session:copy-id",
+    ]);
     for (const item of items) (item as { run: () => void }).run();
-    assert.deepEqual(d.log, ["new", "branch", "export"]);
+    assert.deepEqual(d.log, ["new", "branch", "export", "copy"]);
+  });
+
+  it("Copy id is client-side and not destructive", () => {
+    const log: string[] = [];
+    const items = sessionMenuItems(
+      { id: "s_42", running: false },
+      {
+        newSession: () => {},
+        branch: () => {},
+        exportSession: () => {},
+        copyId: () => log.push("copy s_42"),
+        stop: () => {},
+      },
+    );
+    const row = items.find((e) => (e as { id?: string }).id === "session:copy-id") as {
+      label: string;
+      run: () => void;
+      danger?: boolean;
+    };
+    assert.equal(row.label, "Copy id");
+    assert.equal(row.danger, undefined, "a copy is not destructive");
+    row.run();
+    assert.deepEqual(log, ["copy s_42"], "the row is the row's own copy path");
   });
 
   it("adds Stop on a running row - the route 404s on an idle one, so idle offers none", () => {
@@ -47,6 +76,7 @@ describe("session rows: New session, Branch, Export, Stop", () => {
       "session:new",
       "session:branch",
       "session:export",
+      "session:copy-id",
       "separator",
       "session:stop",
     ]);
@@ -121,6 +151,7 @@ describe("the wiring: each row surface registers into the ONE shared menu", () =
   it("the sessions row right-clicks into the session builder", () => {
     assert.match(sidebar, /@contextmenu="onRowMenu\(\$event, s\)"/);
     assert.match(sidebar, /sessionMenuItems\(/);
+    assert.match(sidebar, /copyId: \(\) => void copySessionId\(s\.id\)/, "Copy id rides the row's one copy path");
     assert.match(sidebar, /stopSessionRun\(/);
   });
 

@@ -497,6 +497,7 @@
           newSession: () => emit("new"),
           branch: () => emit("branch", s.id),
           exportSession: () => exportSession(s.id),
+          copyId: () => void copySessionId(s.id),
           stop: () => void stopSession(s.id),
         },
       ),

@@ -323,7 +323,7 @@ export function boardMenuOptions(
     { value: BOARD_MENU_RENAME, label: "rename board" },
     {
       value: BOARD_MENU_REMOVE,
-      label: armed ? "confirm remove" : "remove board",
+      label: armed ? "confirm delete" : "delete board",
       cls: armed ? "armed" : undefined,
     },
   ];

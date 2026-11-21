@@ -225,7 +225,9 @@
 
   const shows = (id: string) => statVisible(props.hiddenStats ?? [], id);
 
-  // the bar's whole inventory in one menu; a right-click is always the same door
+  // the bar's whole inventory in one menu; a right-click is always the same door. The
+  // Reset row rides the SAME toggle writer - one emit per hidden id, so the host's single
+  // setStatHidden persists the cleared set exactly as a manual un-toggle would.
   function onStatMenu(e: MouseEvent) {
     e.preventDefault();
     void openContextMenu(

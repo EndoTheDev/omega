@@ -10,6 +10,8 @@
 #            own answer, so a refused copy never reads as "copied"
 #   Archive  the lane arrow's own PATCH: the card's status moves to the archived lane. A
 #            card ALREADY archived carries no Archive row - the verb cannot act.
+#   Delete   the drawer's own DELETE /tasks/{id}, armed: the first pick warns, the second
+#            (the row reading "Confirm delete") fires. Recipe 119 proves the two picks.
 #
 # The right-click is a MENU, not a click: the drawer must stay shut until the Open row
 # fires it. Escape closes, and the rows are placed inside the viewport.
@@ -154,7 +156,7 @@ step "ok: seeded $A (triage) and $B (archived) on $BOARD"
 wait_card_settled "$A"
 open_card_menu "$A"
 rows=$(menu_rows)
-assert_eq "$rows" "Open|Copy id|Archive" "a live card menus Open, Copy id, Archive"
+assert_eq "$rows" "Open|Copy id|Archive|Delete" "a live card menus Open, Copy id, Archive, Delete"
 
 role=$(jsq '(() => {const m=document.querySelector(".context-menu"); return m?m.getAttribute("role")+"/"+m.getAttribute("aria-label"):""})()')
 assert_eq "${role//\"/}" "menu/context menu" "the surface is the shared role=menu dialog"
@@ -200,7 +202,7 @@ scroll_lane archived
 wait_card_settled "$B"
 open_card_menu "$B"
 rows=$(menu_rows)
-assert_eq "$rows" "Open|Copy id" "an archived card offers no Archive row (the verb cannot act)"
+assert_eq "$rows" "Open|Copy id|Delete" "an archived card offers no Archive row (the verb cannot act)"
 ab press Escape >/dev/null 2>&1
 wait_js '(() => !document.querySelector(".context-menu"))()' 10 || die "Escape did not close the archived card's menu"
 step "ok: an archived card's menu holds only the verbs that can act"
@@ -232,7 +234,7 @@ scroll_lane archived
 wait_card_settled "$A"
 open_card_menu "$A"
 rows=$(menu_rows)
-assert_eq "$rows" "Open|Copy id" "the just-archived card dropped its Archive row"
+assert_eq "$rows" "Open|Copy id|Delete" "the just-archived card dropped its Archive row"
 ab press Escape >/dev/null 2>&1
 step "ok: the menu follows the card's state, not a cached row list"
 
