@@ -9,7 +9,6 @@ import (
 	"strings"
 )
 
-// skillsContentRow is one GET /skills/content body.
 type skillsContentRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
@@ -31,18 +30,14 @@ func validSkillRequestName(name string) bool {
 	return !strings.HasPrefix(name, ".") && strings.TrimSpace(name) == name
 }
 
-// skillReadCap is the viewer's SKILL.md preview cap.
 const skillReadCap = 64 * 1024
 
-// Routes is the capsule's REST face over the mounted provider.
 type Routes struct {
 	svc *SkillsProvider
 }
 
-// newRoutes builds the content-view face on the mount's provider handle.
 func newRoutes(sp *SkillsProvider) *Routes { return &Routes{svc: sp} }
 
-// getOnly is the GET-only guard.
 func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -51,14 +46,12 @@ func getOnly(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
-// fileError writes the structured JSON error envelope.
 func fileError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-// writeJSON serves the JSON response.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)

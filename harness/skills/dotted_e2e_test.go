@@ -1,7 +1,5 @@
 package skills
 
-// dotted_e2e_test.go: the split's acceptance witness.
-
 import (
 	"context"
 	"os"

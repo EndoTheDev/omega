@@ -7,27 +7,22 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// NewSkillsProvider creates a SkillsProvider configured to scan dir.
 func NewSkillsProvider(dir string) *SkillsProvider {
 	return &SkillsProvider{Dir: dir}
 }
 
-// Plugin is the agent.Plugin adapter for the skills extension.
 type Plugin struct {
 	routes *Routes
 }
 
-// NewPlugin returns a skills Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string { return "skills" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "skills: reusable procedure files agents can invoke in a sub-agent"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "skills" }
 
 func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudger"} }
@@ -37,10 +32,8 @@ func (p *Plugin) Provides() []string { return []string{"skills", "tools", "promp
 // into the log file. Logging must mount first or the edge is meaningless.
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
-// Toggleable opts skills into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["skills"].(Config); ok {
@@ -54,7 +47,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	sp := NewSkillsProvider(dir)
 	sp.SharedDir = cfg.SharedDir
 	sp.SetDisabled(cfg.Disabled)
-	// The explicit allowlist (0.17.3 make-over).
 	sp.Allow, sp.AllowSet = cfg.Allow, cfg.AllowSet
 	// The curator reads the provider seam LIVE at consult time.
 	sp.SetProviderFn(func() agent.Provider { return seam[agent.Provider](ctx, "provider") })
@@ -76,7 +68,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		},
 		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
 		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
-		// The CLI face of the curator pass and of the registry editor.
 		func() error { return p.registerCuratorCLI(api, sp) },
 		func() error { return p.registerSkillsCLI(api, sp) },
 		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },

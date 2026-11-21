@@ -1,7 +1,7 @@
 package skills
 
-// edit.go: the webui skill editor's write face
-// skills tab CRUD capsule round). The tab showed the inventory and
+// edit.go: the webui skill editor's write face (the skills tab's CRUD).
+// The tab showed the inventory and
 // opened one SKILL.md in the viewer tab; the editor creates, rewrites
 // and removes skills - the human's own surface for the skill folders
 // the agent could only touch through the domain tool.
@@ -16,7 +16,7 @@ package skills
 //           editor owns the markdown, never the whole frontmatter.
 //           The merge-winner rule picks the file (shared first), the
 //           same file the reader tool and the runUpdate action patch.
-// Delete backs the folder up into.curator/backups, ledger row
+// Delete backs the folder up into .curator/backups, ledger row
 //           attached, and removes it - a removal is receipted, never
 //           a silent rm.
 
@@ -29,7 +29,6 @@ import (
 	"strings"
 )
 
-// SaveSkill upserts one skill from the editor's voice.
 func (sp *SkillsProvider) SaveSkill(name, description, body string) ([]Skill, error) {
 	name = strings.TrimSpace(name)
 	if !validSkillName(name) {
@@ -93,7 +92,6 @@ func (sp *SkillsProvider) DeleteSkill(name string) ([]Skill, error) {
 	return sp.DeleteSkillAs(name, ActorWebui, "removed from the skills tab")
 }
 
-// DeleteSkillAs is the same removal with the caller's ledger attribution.
 func (sp *SkillsProvider) DeleteSkillAs(name, actor, reason string) ([]Skill, error) {
 	name = strings.TrimSpace(name)
 	if !validSkillName(name) {
@@ -121,19 +119,15 @@ func (sp *SkillsProvider) DeleteSkillAs(name, actor, reason string) ([]Skill, er
 	return sp.ListSkills()
 }
 
-// ActorWebui is the ledger actor class for the tab editor's own writes.
 const ActorWebui = "webui"
 
-// ActorCLI is the ledger actor class for the terminal face.
 const ActorCLI = "cli"
 
-// SkillsEditor is the write face the tab's editor rides, separate from the reader.
 type SkillsEditor interface {
 	SaveSkill(name, description, body string) ([]Skill, error)
 	DeleteSkill(name string) ([]Skill, error)
 }
 
-// frontmatterOf composes the loader's frontmatter shape over one description.
 func frontmatterOf(description string) string {
 	return fmt.Sprintf("---\ndescription: %s\n---\n", description)
 }
@@ -164,25 +158,21 @@ func replaceDescription(front, description string) string {
 	return strings.Join(out, "\n") + "\n"
 }
 
-// skillSaveRequest is the POST /skills/save body.
 type skillSaveRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Content     string `json:"content"`
 }
 
-// skillDeleteRequest is the POST /skills/delete body: the name the row carries.
 type skillDeleteRequest struct {
 	Name string `json:"name"`
 }
 
-// skillListingRow is one save/delete response row.
 type skillListingRow struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
-// serveEditorAction is the POST-only wire helper the two handlers share.
 func serveEditorAction[reqT any](w http.ResponseWriter, r *http.Request, label string, act func(reqT) ([]Skill, error)) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -210,7 +200,6 @@ func serveEditorAction[reqT any](w http.ResponseWriter, r *http.Request, label s
 	_ = json.NewEncoder(w).Encode(lrows)
 }
 
-// handleSkillsSave serves POST /skills/save.
 func (rt *Routes) handleSkillsSave(w http.ResponseWriter, r *http.Request) {
 	serveEditorAction(w, r, "skills save", func(req skillSaveRequest) ([]Skill, error) {
 		return rt.svc.SaveSkill(req.Name, req.Description, req.Content)
@@ -223,5 +212,4 @@ func (rt *Routes) handleSkillsDelete(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// compile-time: the provider satisfies the editor face the wire rides.
 var _ SkillsEditor = (*SkillsProvider)(nil)

@@ -7,14 +7,12 @@
 
 import type { SkillInfo } from "./refresh";
 
-// SkillDraft is the form shape as the editor fields bind it.
 export interface SkillDraft {
   name: string;
   description: string;
   content: string;
 }
 
-// fetchSkillDraft prefills the form from the real file.
 export async function fetchSkillDraft(name: string): Promise<SkillDraft> {
   const res = await fetch(`/skills/content?name=${encodeURIComponent(name)}`);
   if (!res.ok) throw new Error(`GET /skills/content: ${res.status}`);
@@ -26,12 +24,10 @@ export async function fetchSkillDraft(name: string): Promise<SkillDraft> {
   };
 }
 
-// emptyDraft: a new skill starts nameless, undescribed, empty-bodied.
 export function emptyDraft(): SkillDraft {
   return { name: "", description: "", content: "" };
 }
 
-// skillNameLaw is the mirrored folder-name law.
 export function skillNameLaw(name: string): string {
   const n = name.trim();
   if (n === "") return "name is required";
@@ -41,7 +37,6 @@ export function skillNameLaw(name: string): string {
   return "";
 }
 
-// validateDraft returns "" when the draft obeys the laws the Go provider enforces.
 export function validateDraft(d: SkillDraft): string {
   const nameMsg = skillNameLaw(d.name);
   if (nameMsg) return nameMsg;
@@ -54,7 +49,6 @@ export function validateDraft(d: SkillDraft): string {
   return "";
 }
 
-// saveSkill POSTs the draft to /skills/save.
 export async function saveSkill(d: SkillDraft): Promise<SkillInfo[]> {
   const res = await fetch("/skills/save", {
     method: "POST",
@@ -72,8 +66,8 @@ export async function saveSkill(d: SkillDraft): Promise<SkillInfo[]> {
   return (await res.json()) as SkillInfo[];
 }
 
-// deleteSkill removes one skill (POST /skills/delete. The fresh listing answers; an
-// unknown name throws with the 404 - never a silent no-op.
+// deleteSkill removes one skill (POST /skills/delete). An unknown name throws with the
+// 404 - never a silent no-op.
 export async function deleteSkill(name: string): Promise<SkillInfo[]> {
   const res = await fetch("/skills/delete", {
     method: "POST",

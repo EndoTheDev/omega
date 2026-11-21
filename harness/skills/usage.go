@@ -14,20 +14,17 @@ import (
 // last_used_at is the freshest real activity, state is the staleness phase the
 // deterministic pass moved the skill.
 
-// Usage states (Hermes skill_usage vocabulary).
 const (
 	StateActive   = "active"
 	StateStale    = "stale"
 	StateArchived = "archived"
 )
 
-// Staleness constants: a skill with no activity for staleAfterDays is marked stale.
 const (
 	StaleAfterDays   = 14
 	ArchiveAfterDays = 30
 )
 
-// UsageRecord is one skill's activity record.
 type UsageRecord struct {
 	CreatedAt  string `json:"created_at,omitempty"`   // anchored at creation/first sight
 	LastUsed   string `json:"last_used_at,omitempty"` // freshest read/write/update
@@ -39,12 +36,11 @@ type UsageRecord struct {
 	ArchivedAt string `json:"archived_at,omitempty"`
 }
 
-// usageFile is the per-directory state path: <dir>/.curator/usage.json.
 func usageFile(dir string) string {
 	return filepath.Join(dir, ".curator", "usage.json")
 }
 
-// usageStore is the in-process gate over the JSON file. One provider,
+// usageMu is the in-process gate over the JSON file. One provider,
 // one skills dir, one goroutine at a time is the common case, but the
 // tool runs concurrent reads - a mutex beats a corrupt file.
 var usageMu sync.Mutex
@@ -123,7 +119,6 @@ func TouchUsage(dir, name, kind, author string) {
 	writeUsageLocked(dir, m)
 }
 
-// StaleSkillNames returns the names currently marked stale in dir, sorted.
 func (sp *SkillsProvider) StaleSkillNames() []string {
 	var out []string
 	for dir := range sp.usageDirs() {
@@ -140,7 +135,6 @@ func (sp *SkillsProvider) StaleSkillNames() []string {
 	return out
 }
 
-// usageDirs returns the provider's write-home (Dir) keyed by itself.
 func (sp *SkillsProvider) usageDirs() map[string]bool {
 	if sp.Dir == "" {
 		return nil

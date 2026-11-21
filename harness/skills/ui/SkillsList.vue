@@ -272,7 +272,6 @@
     editor.value = null;
   }
 
-  // the commit: validate against the mirrored Go law first.
   async function commitEditor(): Promise<void> {
     if (!editor.value || editor.value.busy) return;
     const msg = validateDraft(editor.value.draft);
@@ -355,7 +354,6 @@
     loaded.value = true;
   });
 
-  // the toggle: PUT answers the fresh fold.
   async function onToggle(name: string, enabled: boolean): Promise<void> {
     if (busy.value !== null) return;
     busy.value = name;

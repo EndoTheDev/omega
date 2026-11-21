@@ -18,7 +18,6 @@ type TurnNudger struct {
 	wrote bool // a write-class call landed in this same window
 }
 
-// NewTurnNudger builds the nudger from the skills config.
 func NewTurnNudger(interval int) *TurnNudger {
 	return &TurnNudger{Interval: interval}
 }
@@ -42,7 +41,6 @@ func (n *TurnNudger) ObserveToolRun(name string, args map[string]any, _ error) {
 	}
 }
 
-// skillsPersistedLesson reports whether one executed tool call was a skills write.
 func skillsPersistedLesson(name string, _ map[string]any) bool {
 	switch name {
 	case "skills.write", "skills.update":
@@ -67,8 +65,6 @@ var writeClassVerbs = map[string]bool{
 	"pin": true, "upload": true, "commit": true, "post": true, "put": true,
 }
 
-// isWriteClass reports whether one tool name is write-class (mutates state): any name
-// token that is exactly a writeClassVerbs entry wins.
 func isWriteClass(name string) bool {
 	tokens := strings.FieldsFunc(name, func(r rune) bool {
 		switch r {
@@ -85,7 +81,6 @@ func isWriteClass(name string) bool {
 	return false
 }
 
-// NudgeLine returns the reminder line due for the next turn prep ("" = none).
 func (n *TurnNudger) NudgeLine() string {
 	if n == nil || n.Interval <= 0 {
 		return ""

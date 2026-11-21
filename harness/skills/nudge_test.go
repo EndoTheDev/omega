@@ -5,17 +5,14 @@ import (
 	"testing"
 )
 
-// nudgeObs feeds n observations of one tool call named tool.
 func nudgeObs(n *TurnNudger, tool string, count int) {
 	for range count {
 		n.ObserveToolRun(tool, map[string]any{}, nil)
 	}
 }
 
-// nudgeWrites feeds n observations of an ordinary write-class tool call.
 func nudgeWrites(n *TurnNudger, count int) { nudgeObs(n, "files.edit", count) }
 
-// nudgeReads feeds n observations of a read-class tool call and checks, on EVERY one.
 func nudgeReads(t *testing.T, n *TurnNudger, count int) {
 	t.Helper()
 	for i := range count {
@@ -26,7 +23,6 @@ func nudgeReads(t *testing.T, n *TurnNudger, count int) {
 	}
 }
 
-// TestNudgeFiresAtFifteen: the default cadence.
 func TestNudgeFiresAtFifteen(t *testing.T) {
 	n := NewTurnNudger(DefaultNudgeInterval)
 	nudgeWrites(n, DefaultNudgeInterval-1)
@@ -46,7 +42,6 @@ func TestNudgeFiresAtFifteen(t *testing.T) {
 	}
 }
 
-// nudgeLinePrefix is the stable head of the reminder line.
 func nudgeLinePrefix() string { return "Learning loop:" }
 
 func TestNudgeSilentInReadOnlyPass(t *testing.T) {
@@ -62,7 +57,6 @@ func TestNudgeSilentInReadOnlyPass(t *testing.T) {
 	}
 }
 
-// TestNudgeFiresAfterReadStretchEnds: the counter keeps running while the nudge is.
 func TestNudgeFiresAfterReadStretchEnds(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeReads(t, n, 40)
@@ -73,8 +67,6 @@ func TestNudgeFiresAfterReadStretchEnds(t *testing.T) {
 	nudgeReads(t, n, 30)
 }
 
-// TestNudgeQuietAgainAfterWriteWindow: once a nudge fires, a stretch of plain reads
-// does not produce another - the reminder is armed by writing, never by probing.
 func TestNudgeQuietAgainAfterWriteWindow(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeWrites(n, 15)
@@ -112,7 +104,6 @@ func TestWriteClass(t *testing.T) {
 	}
 }
 
-// TestNudgeResetsOnSkillsWrite: a skills write or update is the persisted lesson.
 func TestNudgeResetsOnSkillsWrite(t *testing.T) {
 	n := NewTurnNudger(15)
 	nudgeWrites(n, 14)
@@ -139,8 +130,6 @@ type errFake struct{}
 
 func (errFake) Error() string { return "no" }
 
-// TestNudgeOffAtZero: interval 0 is the off switch - observation
-// acccounts nothing, the line never comes.
 func TestNudgeOffAtZero(t *testing.T) {
 	n := NewTurnNudger(0)
 	nudgeWrites(n, 500)
@@ -149,8 +138,6 @@ func TestNudgeOffAtZero(t *testing.T) {
 	}
 }
 
-// TestNudgeConcurrentObservation: the loop executes tool calls in goroutines - the
-// counters must survive a fan without tearing (run with -race in CI).
 func TestNudgeConcurrentObservation(t *testing.T) {
 	n := NewTurnNudger(100)
 	done := make(chan struct{})
@@ -170,5 +157,4 @@ func TestNudgeConcurrentObservation(t *testing.T) {
 	}
 }
 
-// TestTurnNudgerMeetsSeam: the compile-time shape the loop consumes.
 var _ agent.TurnNudger = (*TurnNudger)(nil)

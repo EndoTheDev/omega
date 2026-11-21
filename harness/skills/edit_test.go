@@ -1,7 +1,5 @@
 package skills
 
-// edit_test.go: the webui editor's write-face self-check.
-
 import (
 	"encoding/json"
 	"net/http"
@@ -212,8 +210,6 @@ func TestDeleteSkillUnknownIsTheNotFoundLaw(t *testing.T) {
 	}
 }
 
-// the wire handlers ------------------------------------------------
-
 func editorRoutes(t *testing.T) (*Routes, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -235,7 +231,6 @@ func TestSkillsSaveRouteLaws(t *testing.T) {
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("bad name = %d (%s), want 400", rec.Code, rec.Body.String())
 	}
-	// the happy save answers the fresh listing in GET /skills row shape
 	rec = httptest.NewRecorder()
 	req = httptest.NewRequest(http.MethodPost, "/skills/save",
 		strings.NewReader(`{"name":"fresh","description":"fresh row","content":"# fresh\n\nbody\n"}`))

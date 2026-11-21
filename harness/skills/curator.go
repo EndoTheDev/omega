@@ -14,7 +14,6 @@ import (
 )
 
 // The weekly curator pass
-// agent/curator.py). Division of labor is the card's law:
 //
 // Deterministic parts are CODE: staleness by last_used (stale at
 //     14d, archived at 30d), archive moves, whole-folder backups,
@@ -31,7 +30,6 @@ import (
 // everything else but are never rewritten by a proposal. Pinned
 // skills are untouchable.
 
-// DistillMinChars is the body size a skill must exceed before the curator may distill.
 const DistillMinChars = 24000
 
 // proposal caps keep one weekly pass bounded.
@@ -40,7 +38,6 @@ const (
 	maxDistillsPerPass = 3
 )
 
-// CuratorReport is the pass's outcome, one row per applied mutation.
 type CuratorReport struct {
 	MarkedStale   int      `json:"marked_stale"`
 	Reactivated   int      `json:"reactivated"`
@@ -184,7 +181,6 @@ func anchorTime(rec UsageRecord, now time.Time) time.Time {
 	return now
 }
 
-// onDiskSkillNames lists the skill folders in the write home, sorted.
 func (sp *SkillsProvider) onDiskSkillNames() ([]string, error) {
 	entries, err := os.ReadDir(sp.Dir)
 	if err != nil {
@@ -204,8 +200,6 @@ func (sp *SkillsProvider) onDiskSkillNames() ([]string, error) {
 	return names, nil
 }
 
-// archiveOne moves <dir>/<name> to.archive/<name> with backup + ledger, inside the. The
-// usage record the caller carries is already archived-state.
 func (sp *SkillsProvider) archiveOne(name string, rec UsageRecord, usage map[string]UsageRecord) (string, error) {
 	skillFile := filepath.Join(sp.Dir, name, "SKILL.md")
 	before := ""
@@ -235,26 +229,22 @@ func (sp *SkillsProvider) archiveOne(name string, rec UsageRecord, usage map[str
 	return id, nil
 }
 
-// mergeProposal is one LLM-proposed consolidation.
 type mergeProposal struct {
 	Source string `json:"source"`
 	Into   string `json:"into"`
 	Reason string `json:"reason"`
 }
 
-// distillProposal is one LLM-proposed oversized body.
 type distillProposal struct {
 	Name   string `json:"name"`
 	Reason string `json:"reason"`
 }
 
-// proposalSet is the LLM's one-call answer.
 type proposalSet struct {
 	Merges   []mergeProposal   `json:"merges"`
 	Distills []distillProposal `json:"distills"`
 }
 
-// proposeMutations runs the single proposal call.
 func (sp *SkillsProvider) proposeMutations(ctx context.Context, prov agent.Provider) ([]mergeProposal, []distillProposal, string, error) {
 	usage := readUsage(sp.Dir)
 	var sb strings.Builder
@@ -313,7 +303,6 @@ func oneLine(s string, max int) string {
 	return s
 }
 
-// applyMerge validates one merge candidate and applies it.
 func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m mergeProposal) (string, error) {
 	m.Source, m.Into = strings.TrimSpace(m.Source), strings.TrimSpace(m.Into)
 	if m.Source == "" || m.Into == "" || m.Source == m.Into {
@@ -365,7 +354,6 @@ func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m
 	if err := moveDir(filepath.Join(sp.Dir, m.Source), filepath.Join(arch, m.Source)); err != nil {
 		return "", fmt.Errorf("archive source: %w", err)
 	}
-	// Usage: source retired, target gains the patches.
 	usageMu.Lock()
 	usage := readUsageLocked(sp.Dir)
 	rec := usage[m.Source]
@@ -390,9 +378,6 @@ func (sp *SkillsProvider) applyMerge(ctx context.Context, prov agent.Provider, m
 	return id, err
 }
 
-// applyDistill validates one distill candidate (over the threshold
-// only) and applies it: the LLM drafts a tighter body, frontmatter is
-// kept byte-for-byte, backup + ledger ride along.
 func (sp *SkillsProvider) applyDistill(ctx context.Context, prov agent.Provider, d distillProposal) (string, error) {
 	name := strings.TrimSpace(d.Name)
 	if name == "" {
@@ -477,7 +462,6 @@ func (sp *SkillsProvider) isPinned(name string) bool {
 	return readUsageLocked(sp.Dir)[name].Pinned
 }
 
-// mergeIntoBody appends one absorbed section to the umbrella body.
 func mergeIntoBody(content, title, source, body string) string {
 	if title == "" {
 		title = source
@@ -489,7 +473,6 @@ func mergeIntoBody(content, title, source, body string) string {
 	return content + sep + "\n## " + title + " (absorbed from " + source + ")\n\n" + strings.TrimRight(body, "\n") + "\n"
 }
 
-// splitFrontmatter divides a SKILL.md into (frontmatter-with-fences, body).
 func splitFrontmatter(content string) (front, body string) {
 	lines := strings.SplitAfterN(content, "\n", -1)
 	if len(lines) == 0 || strings.TrimRight(lines[0], "\n\r") != "---" {
@@ -520,7 +503,6 @@ func loadSkillFromContent(name, content string) (Skill, error) {
 	return s, err
 }
 
-// moveDir renames a folder, falling back to copy+delete across filesystems.
 func moveDir(src, dst string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err

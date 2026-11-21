@@ -1,10 +1,5 @@
 package skills
 
-// skills_shared_test.go: the shared-skills resolution - root skills/shared first (every
-// agent sees it), then the agent's own dir, name collisions resolving to the agent's
-// copy (first-wins after the merge order: shared is scanned first, so the agent's own
-// dir must WIN - see the scan order note in LoadSkills).
-
 import (
 	"os"
 	"path/filepath"
@@ -101,7 +96,6 @@ func names(skills []Skill) []string {
 	return out
 }
 
-// TestAllowlistFiltersTheRegistry pins the skills allowlist (0.17.3 make-over).
 func TestAllowlistFiltersTheRegistry(t *testing.T) {
 	home := t.TempDir()
 	shared := filepath.Join(home, "skills", "shared")

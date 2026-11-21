@@ -14,13 +14,11 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Compile-time interface checks.
 var (
 	_ core.ToolProvider = (*SkillsProvider)(nil)
 	_ agent.Plugin      = (*Plugin)(nil)
 )
 
-// makeSkillDir creates a temp skills directory with one skill in the contracted shape.
 func makeSkillDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -67,7 +65,6 @@ func TestLoadSkillsMissingDir(t *testing.T) {
 	}
 }
 
-// TestLoadSkillsLegacyShapeNotLoaded pins the retired format.
 func TestLoadSkillsLegacyShapeNotLoaded(t *testing.T) {
 	dir := t.TempDir()
 	legacy := filepath.Join(dir, "old-skill", "old-skill.md")
@@ -92,7 +89,6 @@ func TestLoadSkillsLegacyShapeNotLoaded(t *testing.T) {
 	}
 }
 
-// TestWarnLegacyShape covers the boot warning.
 func TestWarnLegacyShape(t *testing.T) {
 	dir := t.TempDir()
 	writeProperSkill(t, dir, "proper-skill")
@@ -124,8 +120,6 @@ func TestWarnLegacyShape(t *testing.T) {
 	}
 }
 
-// TestPluginMountWarnsLegacyShape covers the mount-time hook: a legacy folder under the
-// configured dir surfaces the boot warning through the context logger.
 func TestPluginMountWarnsLegacyShape(t *testing.T) {
 	dir := t.TempDir()
 	legacyDir := filepath.Join(dir, "old-skill")
@@ -151,7 +145,6 @@ func TestPluginMountWarnsLegacyShape(t *testing.T) {
 	}
 }
 
-// writeProperSkill seeds dir with <name>/SKILL.md in the contracted shape.
 func writeProperSkill(t *testing.T, dir, name string) {
 	t.Helper()
 	skillDir := filepath.Join(dir, name)
@@ -164,7 +157,6 @@ func writeProperSkill(t *testing.T, dir, name string) {
 	}
 }
 
-// captureLogger is a agent.LoggerProvider test double.
 type captureLogger struct {
 	msgs []string
 }
@@ -264,9 +256,7 @@ func TestPluginMountWithConfig(t *testing.T) {
 	}
 }
 
-// Coverage tests for uncovered branches
 
-// TestRunReadDirNotConfigured covers the sp.Dir == "" branch of runRead.
 func TestRunReadDirNotConfigured(t *testing.T) {
 	sp := &SkillsProvider{Dir: ""}
 	tools := sp.Tools()
@@ -279,7 +269,6 @@ func TestRunReadDirNotConfigured(t *testing.T) {
 	}
 }
 
-// TestRunReadSkillNotFound covers the os.IsNotExist path of runRead, including.
 func TestRunReadSkillNotFound(t *testing.T) {
 	dir := makeSkillDir(t)
 	sp := NewSkillsProvider(dir)
@@ -296,7 +285,6 @@ func TestRunReadSkillNotFound(t *testing.T) {
 	}
 }
 
-// TestRunReadSkillNotFoundEmptyDir covers the os.IsNotExist path when the skills.
 func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -310,7 +298,6 @@ func TestRunReadSkillNotFoundEmptyDir(t *testing.T) {
 	}
 }
 
-// TestRunReadNonNotExistError covers the non-NotExist error path from loadSkill.
 func TestRunReadNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -325,7 +312,8 @@ func TestRunReadNonNotExistError(t *testing.T) {
 	if err := os.MkdirAll(mdPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Remove read permission on the.md "file" (which is a dir).
+	// SKILL.md here is a directory, not a file: revoke read on it so the open fails
+	// with something other than IsNotExist.
 	if err := os.Chmod(mdPath, 0o000); err != nil {
 		t.Fatal(err)
 	}
@@ -339,13 +327,11 @@ func TestRunReadNonNotExistError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for non-NotExist loadSkill failure")
 	}
-	// The error should NOT be a "not found" error.
 	if strings.Contains(err.Error(), "not found") {
 		t.Fatalf("expected non-NotExist error, got 'not found': %v", err)
 	}
 }
 
-// TestScanSkillsNonNotExistError covers the non-NotExist error on os.ReadDir.
 func TestScanSkillsNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -371,7 +357,6 @@ func TestScanSkillsNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestScanSkillsLoadSkillNonNotExistError covers the non-NotExist error.
 func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("permission-based tests are unreliable on Windows")
@@ -405,7 +390,6 @@ func TestScanSkillsLoadSkillNonNotExistError(t *testing.T) {
 	}
 }
 
-// TestLoadSkillNoFrontmatter covers the branch in loadSkill where the first line is.
 func TestLoadSkillNoFrontmatter(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nofrontmatter.md")
@@ -428,7 +412,6 @@ func TestLoadSkillNoFrontmatter(t *testing.T) {
 	}
 }
 
-// TestHandleCommandEmptySkills covers the [no skills loaded] path in HandleCommand.
 func TestHandleCommandEmptySkills(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -441,7 +424,6 @@ func TestHandleCommandEmptySkills(t *testing.T) {
 	}
 }
 
-// TestPluginMountWithDirConfig covers the Mount path where ctx.Configs has a skills.
 func TestPluginMountWithDirConfig(t *testing.T) {
 	dir := makeSkillDir(t)
 	p := NewPlugin()
@@ -474,8 +456,6 @@ func TestPluginMountWithDirConfig(t *testing.T) {
 	}
 }
 
-// TestPromptSections verifies the skills provider contributes the
-// Available Skills section, and nil when no skills are installed.
 func TestPromptSections(t *testing.T) {
 	sp := NewSkillsProvider(makeSkillDir(t))
 	secs := sp.PromptSections(core.PromptBuildOptions{})
@@ -500,12 +480,10 @@ func TestPromptSections(t *testing.T) {
 	}
 }
 
-// TestSkillsProviderImplementsPromptSectioner verifies the seam contract.
 func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
 	var _ core.PromptSectioner = (*SkillsProvider)(nil)
 }
 
-// inspector snapshot
 
 func TestListSkillsSortedAndLive(t *testing.T) {
 	dir := t.TempDir()
@@ -537,14 +515,12 @@ func TestListSkillsMissingDirIsEmpty(t *testing.T) {
 	}
 }
 
-// Compile-time proof that the provider satisfies the std-typed faces the consumers.
 func TestSkillsProviderImplementsSkillsLister(t *testing.T) {
 	var _ interface {
 		SkillsEntries() (index map[string]string, contents map[string]string, err error)
 	} = (*SkillsProvider)(nil)
 }
 
-// the write + update actions
 
 func TestToolsWriteCreatesSkill(t *testing.T) {
 	dir := t.TempDir()
@@ -719,7 +695,6 @@ func TestToolsUpdatePatchesSharedWinner(t *testing.T) {
 	}
 }
 
-// TestDottedWirePin pins the split's registry shape: exactly the four dotted skills.
 func TestDottedWirePin(t *testing.T) {
 	sp := NewSkillsProvider(t.TempDir())
 	tools := sp.Tools()
@@ -762,7 +737,6 @@ func TestDottedWirePin(t *testing.T) {
 	}
 }
 
-// stubProvides satisfies the logging Requires edge in the mount set without.
 type stubProvides struct {
 	plugin agent.Plugin
 	seam   string
@@ -777,7 +751,6 @@ func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) e
 	return nil
 }
 
-// stubProviderPlugin mounts the provider seam with a fake provider.
 type stubProviderPlugin struct{ prov agent.Provider }
 
 func (stubProviderPlugin) Name() string       { return "stub-provider" }
@@ -791,6 +764,6 @@ func (s stubProviderPlugin) MountWithAPI(ctx *core.Context, api *agent.Extension
 	return api.Offer("provider", s.prov)
 }
 
-// Mount satisfies the interface until phase F retires it; the stub
-// never registers and is never dispatched (the API mount wins).
+// Mount is a deliberate no-op: the stub never registers and is never dispatched
+// (the API mount wins).
 func (s stubProvides) Mount(ctx *core.Context) error { return nil }

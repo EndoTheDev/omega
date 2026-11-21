@@ -1,12 +1,7 @@
 package skills
 
-// cli.go: the module's CLI face (v0.12 phase D Q6 - the capsule
-// registers its own names at mount and owns its argv):
-//
-// omega curator the weekly skills curator pass
-// omega skills the registry editor - list | read | write | delete
-//
-//	                tab's CRUD round)
+// cli.go: the module's CLI face: the capsule registers its own names at
+// mount and owns its argv.
 //
 // Every `omega skills` verb rides this capsule's own faces, never a
 // second implementation: list renders the /skills command's table
@@ -29,7 +24,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// curatorHelp documents the curator subcommand.
 const curatorHelp = `omega curator - the weekly skills curator pass
 
 Usage:
@@ -40,10 +34,8 @@ Usage:
   omega curator rollback <id>  roll back one ledger entry
 `
 
-// skillsSummary is the one-line entry the global `omega --help` module section shows.
 const skillsSummary = "the skills registry: list, read, write, delete (see: omega skills --help)"
 
-// skillsHelp is the module's own help: `omega skills --help` prints it.
 const skillsHelp = `omega skills - the skills registry (SKILL.md folders)
 
 Usage:
@@ -68,7 +60,6 @@ and the agent's own directory resolves to the shared copy - the same
 winner the tab edits.
 `
 
-// registerCuratorCLI claims the `omega curator` subcommand.
 func (p *Plugin) registerCuratorCLI(api *agent.ExtensionAPI, sp *SkillsProvider) error {
 	return api.RegisterSubcommand("curator", "run the weekly skills curator pass (verbs: run | stale | ledger | rollback <id>)",
 		func(argv []string) error {
@@ -96,7 +87,6 @@ func (p *Plugin) registerCuratorCLI(api *agent.ExtensionAPI, sp *SkillsProvider)
 		})
 }
 
-// registerSkillsCLI claims the `omega skills` subcommand.
 func (p *Plugin) registerSkillsCLI(api *agent.ExtensionAPI, sp *SkillsProvider) error {
 	return api.RegisterSubcommand("skills", skillsSummary, func(argv []string) error {
 		if _, err := resolveSkillsDirs(sp); err != nil {
@@ -128,7 +118,6 @@ func resolveSkillsDirs(sp *SkillsProvider) (string, error) {
 	return sp.Dir, nil
 }
 
-// stripCLIConfigFlag drops the global --config flag pair.
 func stripCLIConfigFlag(argv []string) []string {
 	out := make([]string, 0, len(argv))
 	for i := 0; i < len(argv); i++ {
@@ -182,7 +171,6 @@ func runSkillsCLI(sp *SkillsProvider, args []string, stdout io.Writer, stdin io.
 	}
 }
 
-// isHelpToken reports the three spellings of the module help.
 func isHelpToken(arg string) bool {
 	return arg == "--help" || arg == "-h" || arg == "help"
 }
@@ -240,7 +228,6 @@ func skillsRead(sp *SkillsProvider, stdout io.Writer, args []string) error {
 	return nil
 }
 
-// skillsWriteFlags is the parsed flag set of `omega skills write`.
 type skillsWriteFlags struct {
 	description string
 	file        string
@@ -300,7 +287,6 @@ func skillsWrite(sp *SkillsProvider, stdout io.Writer, stdin io.Reader, args []s
 	return nil
 }
 
-// skillBody resolves the markdown body from --content, --file or stdin.
 func skillBody(f *skillsWriteFlags, stdin io.Reader) (string, error) {
 	if f.content != "" && f.file != "" {
 		return "", fmt.Errorf("--content and --file are mutually exclusive")
