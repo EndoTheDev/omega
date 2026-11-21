@@ -47,7 +47,7 @@ var censusNouns = []string{
 	"cron", "skills", "mcp", "files", "memory", "trust", "verdicts",
 	"store", "sessions", "agents", "insights", "provider", "compactor",
 	"prompt", "delegate", "process", "datadir",
-	// the 0.17.3 module fold renamed the folded logging+observability capsule.
+	// "observability" is the merged logging+observability capsule's name.
 	"observability",
 }
 

@@ -216,7 +216,7 @@ func (r *Registry) toggleOn(ctx *core.Context, name string, deps core.StartDeps)
 	}
 	before := core.Census(ctx)
 	if err := r.Mount(ctx, p, deps); err != nil {
-		r.logRefusal(name, "toggle.enable", err) // Q11: the roll-back rejection rides the ledger
+		r.logRefusal(name, "toggle.enable", err) // the roll-back rejection rides the ledger
 		return err
 	}
 	after := core.Census(ctx)

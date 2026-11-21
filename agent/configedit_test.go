@@ -1,7 +1,6 @@
 package agent
 
-// agent/configedit_test.go: the definition layer's laws (0.17.3
-// make-over, ). What is pinned here:
+// agent/configedit_test.go: the definition layer's laws. What is pinned here:
 //
 // the node-preserving write (comments and unknown keys survive);
 // SECRET-FREE: no host, api_key or type can be written, and the

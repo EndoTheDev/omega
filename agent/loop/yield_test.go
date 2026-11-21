@@ -1,6 +1,6 @@
 package loop
 
-// The async agent loop phase 1 behavior tests.
+// The async agent loop's behavior tests.
 
 import (
 	"context"

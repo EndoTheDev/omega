@@ -143,7 +143,7 @@ func TestModulesEngineToggleRejected(t *testing.T) {
 }
 
 func TestModulesAlwaysOnTierRejectedAtTheSeam(t *testing.T) {
-	// extended by the 0.17.3 tier re-law. The refusal lives HERE - the settings row is a
+	// The refusal lives HERE - the settings row is a
 	// mirror, never the gate - so both directions are refused before the seam is called
 	// and the body names the reason.
 	tier := []string{"agent-loop", "provider", "observability"}
@@ -214,7 +214,6 @@ func TestModuleToggleMalformedBody(t *testing.T) {
 	}
 }
 
-// The live re-wire (v0.12 E2).
 func TestRewireSeamsFollowsTheContext(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)
 	served := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

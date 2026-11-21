@@ -87,7 +87,7 @@ func TestWriteDisabledEmptyRemovesKey(t *testing.T) {
 	}
 }
 
-// The live re-wire wiring (v0.12 E2): the host's Toggle must push the changed Context
+// The live re-wire wiring: the host's Toggle must push the changed Context
 // onto every LiveSeams-capable channel - the serving surface cannot follow the live
 // Context on its own, the channel only read it once at mount.
 type rewireProbe struct {

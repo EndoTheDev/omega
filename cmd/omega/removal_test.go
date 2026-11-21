@@ -1484,10 +1484,9 @@ func terminalMuxOf(ctx *core.Context) *http.ServeMux {
 	return mux
 }
 
-// TestTerminalRemovalProof is the terminal capsule's removal proof (the v0.15
-// arc's terminal proof, folded by the 0.17.3 modules
-// fold, the agent's tool family and the webui's
-// integrated terminal are ONE registration named "terminal"). Its whole
+// TestTerminalRemovalProof is the terminal capsule's removal proof (the agent's
+// tool family and the webui's integrated terminal are ONE registration named
+// "terminal"). Its whole
 // surface is the four shell.* tools, six /terminal routes and the
 // lifecycle fence that owns the shells. The two mounts are the proof:
 //
