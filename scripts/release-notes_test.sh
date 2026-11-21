@@ -40,6 +40,24 @@ fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
 
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
+
 # fixture_error <msg>: the named cause plus the stake. Every fixture is a real
 # git repo driven with `git -C "$root"`, and `git -C ""` resolves to the CWD -
 # so an empty fixture root turns the suite into a commit generator for the
@@ -186,7 +204,7 @@ merge_commit "$fx" "Merge branch 'wt/x' into dev" "chore(x): side scaffolding"
 c "$fx" "feat(main): the landing lane"
 run_notes "$fx"
 grep -qF "1 feature, 0 refactors, 1 fix, 1 tune, 1 doc update, 1 merge across main, x, side, core" <<<"$OUT" \
-	&& ok || bad "N1: counts line wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+	&& ok || bad "N1: counts line wrong: $(grep -m1 'features' <<<"$OUT")"
 expect_body_bullets "$fx" N1 \
 	"feat(main): the landing lane" \
 	"fix(side): a race in the send path" \
@@ -214,7 +232,7 @@ c "$fx" "feat(webui): reference pills for tokens"
 run_notes "$fx"
 # counts: 4 feats, 1 fix, 0 tunes, 0 docs, 2 merges
 grep -qF "4 features, 0 refactors, 1 fix, 0 tunes, 0 doc updates, 2 merges across webui, sessions, core" <<<"$OUT" \
-	&& ok || bad "N2: counts line wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+	&& ok || bad "N2: counts line wrong: $(grep -m1 'features' <<<"$OUT")"
 expect_body_bullets "$fx" N2 \
 	"feat(webui): reference pills for tokens" \
 	"feat(webui): command palette" \
@@ -266,7 +284,7 @@ c "$fx" "style: two"
 c "$fx" "wip: three"
 run_notes "$fx"
 grep -qF "0 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates" <<<"$OUT" \
-	&& ok || bad "N5: noise-only counts wrong: $(printf '%s' "$OUT" | grep -m1 'features')"
+	&& ok || bad "N5: noise-only counts wrong: $(grep -m1 'features' <<<"$OUT")"
 [ "$(bullets "$fx")" -eq 0 ] && ok || bad "N5: noise must not highlight"
 [ "$(body_bullets "$fx")" -eq 0 ] && ok || bad "N5: noise must not reach the record"
 [ "$RC" -eq 0 ] && ok || bad "N5: exit $RC"
@@ -662,7 +680,7 @@ grep -qF "takes over the bar's time field in place" <<<"$(md "$fx")" \
 grep -qF "disjoint cards" <<<"$(md "$fx")" && bad "N22: factory vocabulary reached the post" || ok
 grep -qF "interaction vocabulary" <<<"$(md "$fx")" && bad "N22: factory vocabulary reached the post" || ok
 grep -qF "3 features, 0 refactors, 0 fixes, 0 tunes, 0 doc updates across factory, agents, webui" <<<"$OUT" \
-	&& ok || bad "N22: the stats line must stay the commit log's, got [$(printf '%s' "$OUT" | grep -m1 'features')]"
+	&& ok || bad "N22: the stats line must stay the commit log's, got [$(grep -m1 'features' <<<"$OUT")]"
 # the shipped file itself: one section per release, plain hyphens only
 [ -f "$SHIPPED_OVERRIDES" ] && ok || bad "N22: scripts/release-notes.overrides.md must ship"
 grep -qE '^## v0\.17\.3$' "$SHIPPED_OVERRIDES" && ok || bad "N22: the shipped file must carry a v0.17.3 section"
@@ -670,22 +688,5 @@ grep -qF "$EM" "$SHIPPED_OVERRIDES" && bad "N22: the shipped override carries an
 grep -qF "$EN" "$SHIPPED_OVERRIDES" && bad "N22: the shipped override carries an en-dash" || ok
 
 echo
-# --- the pin: no line here may pipe a writer into an early-exit grep --------
-# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
-# SIGPIPE when grep leaves at the first match, so a needle that IS present
-# reads as missing - and the negated form reads it as absent, which is a false
-# green that hides a defect. A herestring has no writer, so grep's early exit
-# costs nothing. This file scans its own live lines; comments may name the
-# shape, so they are skipped.
-_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
-_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
-[ -z "$_pin_hits" ] && ok \
-	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
-_PIN_TOKEN='|'
-_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
-grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
-	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
-
 echo "release-notes_test: $pass ok, $fail fail"
 [ "$fail" -eq 0 ]

@@ -30,6 +30,24 @@ pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1"; }
+
+# --- the pin: no line here may pipe a writer into an early-exit grep --------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep leaves at the first match, so a needle that IS present
+# reads as missing - and the negated form reads it as absent, which is a false
+# green that hides a defect. A herestring has no writer, so grep's early exit
+# costs nothing. This file scans its own live lines; comments may name the
+# shape, so they are skipped.
+_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
+_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
+[ -z "$_pin_hits" ] && ok \
+	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
+_PIN_TOKEN='|'
+_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
+	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
+
 check() { # check <desc> <condition-exit>
   if [ "$2" -eq 0 ]; then ok; else bad "$1"; fi
 }
@@ -167,23 +185,6 @@ check "T8 every real-map line has the three-field shape with a reach step" "$map
 check "T8 every real-map glob prefixes a real repo dir" "$map_glob"
 
 # --- summary ----------------------------------------------------------------
-# --- the pin: no line here may pipe a writer into an early-exit grep --------
-# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
-# SIGPIPE when grep leaves at the first match, so a needle that IS present
-# reads as missing - and the negated form reads it as absent, which is a false
-# green that hides a defect. A herestring has no writer, so grep's early exit
-# costs nothing. This file scans its own live lines; comments may name the
-# shape, so they are skipped.
-_PIN_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
-_PIN_SELF="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/$(basename "${BASH_SOURCE[0]}")"
-_pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || true)"
-[ -z "$_pin_hits" ] && ok \
-	|| bad "PIN: an assertion pipes a writer into grep -q (SIGPIPE under pipefail): $_pin_hits"
-_PIN_TOKEN='|'
-_pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
-grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
-	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
-
 printf 'eyeball-pack_test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0
