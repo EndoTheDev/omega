@@ -48,14 +48,14 @@ type commandDispatchResponse struct {
 
 // compactAction is the /compact intent, declared once in core so both hosts read the same
 // name. The capsule declares it (it owns the summarizer, no store); the host holding the
-// session runs it through agent.FoldSession.
+// session runs it through agent.CompactSession.
 const compactAction = core.CmdRunCompact
 
-// runCompact folds the session a dispatch names and answers with what the fold actually
-// did. The fold and its wording live in agent.FoldSession/agent.CompactLine - the CLI loop
-// runs the SAME helper, so the two surfaces cannot answer differently.
+// runCompact compacts the session a dispatch names and answers with what the compact
+// actually did. The compact and its wording live in agent.CompactSession/agent.CompactLine -
+// the CLI loop runs the SAME helper, so the two surfaces cannot answer differently.
 func (s *Server) runCompact(ctx context.Context, sessionID string) (string, error) {
-	out, err := agent.FoldSession(ctx, s.store, s.manualCompactor(), sessionID)
+	out, err := agent.CompactSession(ctx, s.store, s.manualCompactor(), sessionID)
 	if err != nil {
 		return "", err
 	}
@@ -124,24 +124,24 @@ func (s *Server) handleCommandDispatch(w http.ResponseWriter, r *http.Request) {
 		}
 		text := result.Text
 		// The host interprets the directive: a capsule owns the summarizer and no store,
-		// so /compact declares the fold and this surface - which owns session shape - runs
+		// so /compact declares the compact and this surface - which owns session shape - runs
 		// it. The action is consumed here; nothing downstream has an executor for it.
 		actions := make([]core.CmdAction, 0, len(result.Actions))
-		runFold := false
+		runCompaction := false
 		for _, a := range result.Actions {
 			if a.Type == compactAction {
-				runFold = true
+				runCompaction = true
 				continue
 			}
 			actions = append(actions, a)
 		}
-		if runFold {
+		if runCompaction {
 			line, fErr := s.runCompact(ctx, req.SessionID)
 			if fErr != nil {
 				// A store with no boundary surface is a missing capability, the same 501 the
-				// sibling handlers answer; every other fold failure is a 500.
+				// sibling handlers answer; every other compact failure is a 500.
 				status := http.StatusInternalServerError
-				if errors.Is(fErr, errNoFoldFace) {
+				if errors.Is(fErr, errNoCompactFace) {
 					status = http.StatusNotImplemented
 				}
 				http.Error(w, "command failed: "+fErr.Error(), status)

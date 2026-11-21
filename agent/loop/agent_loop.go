@@ -125,8 +125,8 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Logger.Printf("agent loop starting, model=%s, turns=%d", start.ModelName, maxTurns)
 	}
 
-	// Publish the ledger on the run ctx: downstream consumers (the compactor's never-fold law)
-	// read the same live table.
+	// Publish the ledger on the run ctx: downstream consumers (the compactor's never-compact
+	// law) read the same live table.
 	if opts.YieldLedger != nil {
 		ctx = agent.WithYieldLedger(ctx, opts.YieldLedger)
 	}
@@ -766,7 +766,7 @@ func deliverYieldResult(opts agent.LoopOptions, sessionID string, res core.Yield
 	if opts.Stop.Stopped() {
 		// The user ended this turn, so the settled call is an ORPHAN: its result never re-enters,
 		// because a wake turn would resurrect the conversation the human just stopped. The row is
-		// settled FIRST so the never-fold law and the pending placeholders both see a dry home.
+		// settled FIRST so the never-compact law and the pending placeholders both see a dry home.
 		if opts.Logger != nil {
 			opts.Logger.Printf("yield result for %s (%s) discarded: the run was stopped by the user", res.ToolName, res.ToolCallID)
 		}

@@ -36,8 +36,8 @@ func (c *Compactor) window() int {
 	return c.autoWindow
 }
 
-// Compact compacts the message history. The never-fold law: a turn whose calls are
-// still pending is NEVER folded - the fold boundary skips past it. The run context
+// Compact compacts the message history. The never-compact law: a turn whose calls are
+// still pending is NEVER compacted - the compact boundary skips past it. The run context
 // carries the pending-calls table (agent.WithYieldLedger, threaded by the loop); the
 // earliest pending call's assistant message anchors the boundary, so middle never
 // contains it and everything from that turn on stays verbatim.
@@ -75,26 +75,26 @@ func (c *Compactor) Compact(ctx context.Context, messages []core.Message) ([]cor
 
 	result := make([]core.Message, 0, keepFirst+len(messages)-end+1)
 	result = append(result, messages[:keepFirst]...)
-	result = append(result, core.NewSystem(core.ContextFoldPrefix+summary+core.ContextFoldSuffix))
+	result = append(result, core.NewSystem(core.ContextCompactPrefix+summary+core.ContextCompactSuffix))
 	result = append(result, messages[end:]...)
 	return result, nil
 }
 
-// FoldNow folds because a human asked, not because the budget ran out: the token gate
+// CompactNow compacts because a human asked, not because the budget ran out: the token gate
 // is the automatic trigger and does not apply here. It answers the messages the NEW
-// context should carry - the summary first, then the tail the fold keeps verbatim - so
+// context should carry - the summary first, then the tail the compact keeps verbatim - so
 // a caller holding a session can move its context boundary to the last len(out)-1 rows.
 // The boundary a session store holds is a summary plus ONE tail, so everything before
 // that tail is summarized: a head row kept nowhere would leave the live context with the
-// reply still counting it as folded. nil means there was nothing to summarize (a
+// reply still counting it as compacted. nil means there was nothing to summarize (a
 // conversation no longer than the keep-first/keep-last floor, a disabled compactor): the
-// caller must not move its boundary for a fold that kept nothing.
-func (c *Compactor) FoldNow(ctx context.Context, messages []core.Message) ([]core.Message, error) {
+// caller must not move its boundary for a compact that kept nothing.
+func (c *Compactor) CompactNow(ctx context.Context, messages []core.Message) ([]core.Message, error) {
 	if !c.config.Enabled {
 		return nil, nil
 	}
-	// keep_first floors the fold here; it is not a kept head, because the boundary cannot
-	// represent one - a conversation this short is all floor and has no fold to make.
+	// keep_first floors the compact here; it is not a kept head, because the boundary cannot
+	// represent one - a conversation this short is all floor and has no compact to make.
 	keepFirst := c.config.KeepFirst
 	keepLast := c.config.KeepLast
 	start := len(messages) - keepLast
@@ -106,7 +106,7 @@ func (c *Compactor) FoldNow(ctx context.Context, messages []core.Message) ([]cor
 		return nil, fmt.Errorf("compactor: %w", err)
 	}
 	out := make([]core.Message, 0, len(messages)-start+1)
-	out = append(out, core.NewSystem(core.ContextFoldPrefix+summary+core.ContextFoldSuffix))
+	out = append(out, core.NewSystem(core.ContextCompactPrefix+summary+core.ContextCompactSuffix))
 	return append(out, messages[start:]...), nil
 }
 
@@ -114,10 +114,10 @@ func (c *Compactor) FoldNow(ctx context.Context, messages []core.Message) ([]cor
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
 	// The summarization prompt carries the billion-context doctrine (idea-level. The
-	// summary is the only thing that survives a fold, so the classes below tell the model
+	// summary is the only thing that survives a compact, so the classes below tell the model
 	// what must not be lost.
-	b.WriteString("Summarize the conversation below for a context fold. " +
-		"The summary is the only thing that survives the fold; messages outside the ones below ride along verbatim, so everything below must be represented in the summary.\n" +
+	b.WriteString("Summarize the conversation below for a context compaction. " +
+		"The summary is the only thing that survives a compaction; messages outside the ones below ride along verbatim, so everything below must be represented in the summary.\n" +
 		"\n" +
 		"KEEP VERBATIM: file paths with line numbers; function/type signatures and load-bearing code lines; " +
 		"exact error strings; decisions WITH their rationale; exact values (names, ids, versions, flags); " +

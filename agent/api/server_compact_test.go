@@ -1,8 +1,8 @@
 package api
 
-// server_compact_test.go: /compact is a real fold, never a placebo. The capsule
-// declares the intent; this surface owns the session, so it runs the fold and answers
-// what the fold actually did. The session persists - the transcript keeps every row
+// server_compact_test.go: /compact is a real compact, never a placebo. The capsule
+// declares the intent; this surface owns the session, so it runs the compact and answers
+// what the compact actually did. The session persists - the transcript keeps every row
 // and only the context boundary moves.
 
 import (
@@ -18,22 +18,22 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// foldCompactor is the manual fold face: it answers a fixed fold and records what it
-// was handed.
-type foldCompactor struct {
+// compactCompactor is the manual compact face: it answers a fixed compact and records what
+// it was handed.
+type compactCompactor struct {
 	out   []core.Message
 	err   error
 	calls int
 	got   []core.Message
 }
 
-func (f *foldCompactor) FoldNow(_ context.Context, messages []core.Message) ([]core.Message, error) {
+func (f *compactCompactor) CompactNow(_ context.Context, messages []core.Message) ([]core.Message, error) {
 	f.calls++
 	f.got = messages
 	return f.out, f.err
 }
 
-// mountCompactor offers the fold face and registers /compact's intent handler on the
+// mountCompactor offers the compact face and registers /compact's intent handler on the
 // server's own seams (after offerServices, which rewires them from a fresh Context).
 func mountCompactor(t *testing.T, s *Server, c any) {
 	t.Helper()
@@ -86,15 +86,15 @@ func seedSession(t *testing.T, s *Server, st interface {
 	}
 }
 
-// TestCompactFoldsTheSession is the card's law: a manual fold moves the boundary to
+// TestCompactMovesTheSession is the card's law: a manual compact moves the boundary to
 // the row the compactor kept verbatim, writes its summary, keeps every transcript row,
 // and answers with the real numbers - never a bare "done".
-func TestCompactFoldsTheSession(t *testing.T) {
+func TestCompactMovesTheSession(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	seedSession(t, s, st, "s-1", "one", "two", "three")
-	c := &foldCompactor{out: []core.Message{
-		core.NewSystem(core.ContextFoldPrefix + "the middle of it" + core.ContextFoldSuffix),
+	c := &compactCompactor{out: []core.Message{
+		core.NewSystem(core.ContextCompactPrefix + "the middle of it" + core.ContextCompactSuffix),
 		core.NewUser("three"),
 	}}
 	mountCompactor(t, s, c)
@@ -104,7 +104,7 @@ func TestCompactFoldsTheSession(t *testing.T) {
 		t.Fatalf("status = %d, want 200 (%s)", code, body)
 	}
 	if c.calls != 1 || len(c.got) != 3 {
-		t.Fatalf("fold was handed %d rows in %d calls, want all 3 in one", len(c.got), c.calls)
+		t.Fatalf("compact was handed %d rows in %d calls, want all 3 in one", len(c.got), c.calls)
 	}
 
 	view, err := st.GetActiveView(ctx, "s-1")
@@ -129,7 +129,7 @@ func TestCompactFoldsTheSession(t *testing.T) {
 	if row.ContextSummary != "the middle of it" {
 		t.Fatalf("context_summary = %q, want the compactor's summary", row.ContextSummary)
 	}
-	// The session PERSISTS: a fold is not /new.
+	// The session PERSISTS: a compact is not /new.
 	msgs, err := st.GetMessages(ctx, "s-1")
 	if err != nil {
 		t.Fatalf("messages: %v", err)
@@ -139,13 +139,13 @@ func TestCompactFoldsTheSession(t *testing.T) {
 	}
 }
 
-// TestCompactRefusesAFoldWithNothingToSay pins the honest no-op: a boundary that drops
-// the middle and keeps nothing in its place is worse than no fold.
-func TestCompactRefusesAFoldWithNothingToSay(t *testing.T) {
+// TestCompactRefusesACompactWithNothingToSay pins the honest no-op: a boundary that drops
+// the middle and keeps nothing in its place is worse than no compact.
+func TestCompactRefusesACompactWithNothingToSay(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	seedSession(t, s, st, "s-2", "one", "two")
-	c := &foldCompactor{}
+	c := &compactCompactor{}
 	mountCompactor(t, s, c)
 
 	code, got, body := compactCall(t, s, "s-2")
@@ -160,7 +160,7 @@ func TestCompactRefusesAFoldWithNothingToSay(t *testing.T) {
 		t.Fatalf("session row: %v", err)
 	}
 	if row.ContextStart != "" || row.ContextSummary != "" {
-		t.Fatalf("a refused fold wrote a boundary (start=%q summary=%q)", row.ContextStart, row.ContextSummary)
+		t.Fatalf("a refused compact wrote a boundary (start=%q summary=%q)", row.ContextStart, row.ContextSummary)
 	}
 }
 
@@ -177,7 +177,7 @@ func TestCompactNeedsASession(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := newTestServerWithStore(t)
-			c := &foldCompactor{out: []core.Message{core.NewSystem(core.ContextFoldPrefix + "s" + core.ContextFoldSuffix)}}
+			c := &compactCompactor{out: []core.Message{core.NewSystem(core.ContextCompactPrefix + "s" + core.ContextCompactSuffix)}}
 			mountCompactor(t, s, c)
 			code, got, body := compactCall(t, s, tt.sessionID)
 			if code != http.StatusOK {
@@ -193,7 +193,7 @@ func TestCompactNeedsASession(t *testing.T) {
 	}
 }
 
-// TestCompactWithoutACompactor pins the unmounted module: the fold says so instead of
+// TestCompactWithoutACompactor pins the unmounted module: the answer says so instead of
 // silently moving the boundary.
 func TestCompactWithoutACompactor(t *testing.T) {
 	s, st := newTestServerWithStore(t)
@@ -213,7 +213,7 @@ func TestCompactWithoutACompactor(t *testing.T) {
 		t.Fatalf("session row: %v", err)
 	}
 	if row.ContextStart != "" {
-		t.Fatalf("a fold with no compactor wrote a boundary (%q)", row.ContextStart)
+		t.Fatalf("a compact with no compactor wrote a boundary (%q)", row.ContextStart)
 	}
 }
 
@@ -223,7 +223,7 @@ func TestCompactSurfacesTheCompactorError(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	seedSession(t, s, st, "s-4", "one", "two", "three")
-	mountCompactor(t, s, &foldCompactor{err: errors.New("compactor: upstream is down")})
+	mountCompactor(t, s, &compactCompactor{err: errors.New("compactor: upstream is down")})
 
 	code, _, body := compactCall(t, s, "s-4")
 	if code != http.StatusInternalServerError {
@@ -237,12 +237,12 @@ func TestCompactSurfacesTheCompactorError(t *testing.T) {
 		t.Fatalf("session row: %v", err)
 	}
 	if row.ContextStart != "" {
-		t.Fatalf("a failed fold wrote a boundary (%q)", row.ContextStart)
+		t.Fatalf("a failed compact wrote a boundary (%q)", row.ContextStart)
 	}
 }
 
 // boundarylessStore serves sessions but holds no context boundary: a store without the
-// session-context surface. The capability is MISSING, so the fold answers 501 like the
+// session-context surface. The capability is MISSING, so the compact answers 501 like the
 // sibling handlers, never a 500 that reads as a failure of the request.
 type boundarylessStore struct{ agent.StoreProvider }
 
@@ -252,8 +252,8 @@ func TestCompactWithoutABoundarySurface(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	seedSession(t, s, st, "s-6", "one", "two", "three")
 	s.store = boundarylessStore{StoreProvider: st}
-	mountCompactor(t, s, &foldCompactor{out: []core.Message{
-		core.NewSystem(core.ContextFoldPrefix + "sum" + core.ContextFoldSuffix),
+	mountCompactor(t, s, &compactCompactor{out: []core.Message{
+		core.NewSystem(core.ContextCompactPrefix + "sum" + core.ContextCompactSuffix),
 	}})
 
 	code, _, body := compactCall(t, s, "s-6")
@@ -265,13 +265,13 @@ func TestCompactWithoutABoundarySurface(t *testing.T) {
 	}
 }
 
-// TestCompactLeavesOtherActionsAlone pins the filter: only the fold intent is consumed,
+// TestCompactLeavesOtherActionsAlone pins the filter: only the compact intent is consumed,
 // so a command that also carries a set_model keeps it on the wire.
 func TestCompactLeavesOtherActionsAlone(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	seedSession(t, s, st, "s-5", "one", "two", "three")
-	offerServices(t, s, map[string]any{"compactor": &foldCompactor{out: []core.Message{
-		core.NewSystem(core.ContextFoldPrefix + "sum" + core.ContextFoldSuffix),
+	offerServices(t, s, map[string]any{"compactor": &compactCompactor{out: []core.Message{
+		core.NewSystem(core.ContextCompactPrefix + "sum" + core.ContextCompactSuffix),
 		core.NewUser("three"),
 	}}})
 	s.seams.mu.Lock()

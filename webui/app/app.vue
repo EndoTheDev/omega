@@ -968,7 +968,7 @@
               method: "POST",
             });
             if (res.ok) {
-              const body = (await res.json()) as { kind?: string; folded?: number; summary?: boolean };
+              const body = (await res.json()) as { kind?: string; compacted?: number; summary?: boolean };
               if (body.kind === "compacted") {
                 note(
                   body.summary
@@ -980,7 +980,7 @@
               }
             }
           } catch {
-            /* a fold that never landed falls through to the fork */
+            /* a compact that never landed falls through to the fork */
           }
         }
         openChatTab(null);

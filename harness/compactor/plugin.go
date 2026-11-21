@@ -57,8 +57,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 }
 
 // handleCompact declares the intent. A capsule owns the summarizer and no store, so it
-// cannot fold a session itself: it answers `run_compact` and the host holding the
-// session runs the fold and replies with its real result.
+// cannot compact a session itself: it answers `run_compact` and the host holding the
+// session runs the compact and replies with its real result.
 func (p *Plugin) handleCompact(ctx context.Context, name, args string) (core.CommandResult, error) {
 	if name != "/compact" {
 		return core.CommandResult{}, core.CommandMiss(name)

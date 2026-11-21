@@ -1,10 +1,10 @@
 // Package continuous owns WHAT an agent wake means. Cron owns WHEN (harness/cron reads
 // each agent home's config/crons.yaml and fires ticks); this capsule consumes them as
 // event-spine payloads and runs the wake: home machinery (folder-as-registration), the
-// canonical chat (one permanent session per agent, compaction folds it, never forks it),
-// the wake subprocess (one budgeted omega binary invoked against the agent home - process
-// death IS the sleep, a wedged wake never touches the main daemon), the runtime-owned
-// evidence ledger, and the roster shape.
+// canonical chat (one permanent session per agent, compaction rewrites its context, never
+// forks it), the wake subprocess (one budgeted omega binary invoked against the agent home
+// - process death IS the sleep, a wedged wake never touches the main daemon), the
+// runtime-owned evidence ledger, and the roster shape.
 package continuous
 
 import (
@@ -16,7 +16,7 @@ import (
 )
 
 // CanonicalSessionID is the fixed id of the DEFAULT agent's one permanent chat. The
-// home's own store holds its chat plus the wake runs that ride it; compaction folds it
+// home's own store holds its chat plus the wake runs that ride it; compaction rewrites it
 // in place - the id never changes, so the wake subprocess re-joins the same row.
 const CanonicalSessionID = "canonical"
 

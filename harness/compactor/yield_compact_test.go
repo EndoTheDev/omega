@@ -1,6 +1,6 @@
 package compactor
 
-// The never-fold law: a turn whose tool calls are still pending NEVER folds.
+// The never-compact law: a turn whose tool calls are still pending NEVER compacts.
 
 import (
 	"context"
@@ -26,7 +26,7 @@ func pendingAnchor(callID string) core.Assistant {
 
 func summarizingCompactor() *Compactor {
 	provider := agent.NewFakeProvider("test",
-		core.ResponseChunk{Type: "response_chunk", Content: "summary of the foldable middle"},
+		core.ResponseChunk{Type: "response_chunk", Content: "summary of the compactable middle"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	return &Compactor{
@@ -46,7 +46,7 @@ func pendingHistory() []core.Message {
 	a := pendingAnchor("c2")
 	return []core.Message{
 		core.NewUser("first message long enough to exceed tiny budget"),
-		core.NewUser("middle message - foldable"),
+		core.NewUser("middle message - compactable"),
 		a,
 		core.NewUser("last message also long enough"),
 	}
@@ -70,18 +70,18 @@ func TestCompactSkipsPendingTurn(t *testing.T) {
 	}
 	as, ok := out[2].(core.Assistant)
 	if !ok {
-		t.Fatalf("the pending call's assistant turn did not survive the fold: %s", messageDump(out))
+		t.Fatalf("the pending call's assistant turn did not survive the compact: %s", messageDump(out))
 	}
 	if len(as.ToolCalls) == 0 || as.ToolCalls[0].ID != "c2" {
 		t.Fatalf("the surviving turn lost the pending call: %+v", as.ToolCalls)
 	}
-	if out[1].(core.System).Content != "[compacted: summary of the foldable middle]" {
-		t.Fatalf("no summary row where the fold boundary sat: %s", messageDump(out))
+	if out[1].(core.System).Content != "[compacted: summary of the compactable middle]" {
+		t.Fatalf("no summary row where the compact boundary sat: %s", messageDump(out))
 	}
 }
 
-// TestCompactFoldsAfterSettle: the same history with the call settled folds normally.
-func TestCompactFoldsAfterSettle(t *testing.T) {
+// TestCompactAfterSettle: the same history with the call settled compacts normally.
+func TestCompactAfterSettle(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	_ = ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()})
 	if err := ledger.Settle("s1", "c2"); err != nil {
@@ -112,7 +112,7 @@ func TestCompactPendingOtherSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("another session's pending call fenced the fold, got %d: %s", len(out), messageDump(out))
+		t.Fatalf("another session's pending call fenced the compact, got %d: %s", len(out), messageDump(out))
 	}
 }
 
@@ -134,7 +134,7 @@ func TestCompactFullyPendingHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("a fully-fenced history folded anyway: %s", messageDump(out))
+		t.Fatalf("a fully-fenced history compacted anyway: %s", messageDump(out))
 	}
 }
 

@@ -26,7 +26,7 @@ type PendingCall struct {
 // YieldLedger is the durable pending-calls table: the loop Registers a call at dispatch
 // (the record is durable in the table BEFORE the result can arrive - the
 // flush-before-result order) and Settles it when the result is injected; Pending feeds
-// the wake turn's still-pending sibling placeholders and the never-fold law; All is the
+// the wake turn's still-pending sibling placeholders and the never-compact law; All is the
 // boot recovery sweep. Dispatched goroutines and turns never share sequencing, so every
 // method must be safe for concurrent calls.
 type YieldLedger interface {
@@ -128,7 +128,7 @@ func splitLedgerKey(key string) (sessionID, callID string, ok bool) {
 }
 
 // yieldLedgerKey carries the run's YieldLedger so the downstream consumers (the
-// compactor's never-fold law) read the live table off the run context.
+// compactor's never-compact law) read the live table off the run context.
 type yieldLedgerKey struct{}
 
 // WithYieldLedger returns a child context carrying the pending-calls table.

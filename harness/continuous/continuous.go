@@ -244,7 +244,7 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	}
 	// The one permanent chat, in the agent's OWN store (rulings 4+6). It is seeded through
 	// the MACHINERY-OWNED door, not the ordinary agent-session one (round-1 finding): the
-	// `listed = 0` bit is what makes the row machine-owned, and the /new fold keys on
+	// `listed = 0` bit is what makes the row machine-owned, and the /new compact keys on
 	// exactly that bit.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {

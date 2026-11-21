@@ -89,11 +89,11 @@ func TestCompactSummarizes(t *testing.T) {
 	}
 }
 
-// TestFoldNowIgnoresBudget pins the manual fold's trigger. The token gate exists for
-// the LOOP's automatic fold; a human typing /compact is the trigger, so the same short
-// conversation the budget leaves alone still folds - and the rows it keeps verbatim are
+// TestCompactNowIgnoresBudget pins the manual compact's trigger. The token gate exists for
+// the LOOP's automatic compact; a human typing /compact is the trigger, so the same short
+// conversation the budget leaves alone still compacts - and the rows it keeps verbatim are
 // the tail the caller's context boundary has to land on.
-func TestFoldNowIgnoresBudget(t *testing.T) {
+func TestCompactNowIgnoresBudget(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "manual summary"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -117,21 +117,21 @@ func TestFoldNowIgnoresBudget(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(auto) != len(msgs) {
-		t.Fatalf("automatic fold = %d rows, want the budget to leave all %d alone", len(auto), len(msgs))
+		t.Fatalf("automatic compact = %d rows, want the budget to leave all %d alone", len(auto), len(msgs))
 	}
 
-	out, err := c.FoldNow(context.Background(), msgs)
+	out, err := c.CompactNow(context.Background(), msgs)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("manual fold = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
+		t.Fatalf("manual compact = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
 	}
 	if got := agent.MessageText(out[0]); !strings.Contains(got, "manual summary") {
-		t.Fatalf("fold head = %q, want the summary the provider answered", got)
+		t.Fatalf("compact head = %q, want the summary the provider answered", got)
 	}
 	if _, ok := out[0].(core.System); !ok {
-		t.Fatalf("fold head is %T, want the system summary row", out[0])
+		t.Fatalf("compact head is %T, want the system summary row", out[0])
 	}
 	for i, want := range []string{"four", "five"} {
 		if got := agent.MessageText(out[i+1]); got != want {
@@ -140,10 +140,11 @@ func TestFoldNowIgnoresBudget(t *testing.T) {
 	}
 }
 
-// TestFoldNowFoldsTheHead pins what the manual fold hands the summarizer: the boundary a
-// session store holds is a summary plus ONE tail, so every row before the tail must be
-// folded - a keep-first head kept nowhere is context lost while the reply counts it.
-func TestFoldNowFoldsTheHead(t *testing.T) {
+// TestCompactNowCompactsTheHead pins what the manual compact hands the summarizer: the
+// boundary a session store holds is a summary plus ONE tail, so every row before the tail
+// must be compacted - a keep-first head kept nowhere is context lost while the reply counts
+// it.
+func TestCompactNowCompactsTheHead(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "manual summary"},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
@@ -156,17 +157,17 @@ func TestFoldNowFoldsTheHead(t *testing.T) {
 		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
 		core.NewAssistant("four"), core.NewUser("five"), core.NewUser("six"),
 	}
-	out, err := c.FoldNow(context.Background(), msgs)
+	out, err := c.CompactNow(context.Background(), msgs)
 	if err != nil {
-		t.Fatalf("FoldNow: %v", err)
+		t.Fatalf("CompactNow: %v", err)
 	}
 	if len(out) != 3 {
-		t.Fatalf("manual fold = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
+		t.Fatalf("manual compact = %d rows, want 3 (the summary + the 2 kept verbatim)", len(out))
 	}
 	prompt := summarizerPrompt(t, provider)
 	for _, want := range []string{"- [user] one", "- [assistant] two", "- [user] three", "- [assistant] four"} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("the fold left %q out of the summary\nprompt:\n%s", want, prompt)
+			t.Errorf("the compact left %q out of the summary\nprompt:\n%s", want, prompt)
 		}
 	}
 	for _, banned := range []string{"- [user] five", "- [user] six"} {
@@ -189,40 +190,40 @@ func summarizerPrompt(t *testing.T, provider *agent.FakeProvider) string {
 	return user.Content
 }
 
-// TestFoldNowFloor pins the refusal: a conversation whose whole length is the keep-first/
-// keep-last floor has no middle, so there is no summary to be had and no fold to write.
-func TestFoldNowFloor(t *testing.T) {
+// TestCompactNowFloor pins the refusal: a conversation whose whole length is the keep-first/
+// keep-last floor has no middle, so there is no summary to be had and no compact to write.
+func TestCompactNowFloor(t *testing.T) {
 	c := &Compactor{
 		provider: agent.NewFakeProvider("test"),
 		config: agent.CompactionConfig{
 			Enabled: true, KeepFirst: 1, KeepLast: 2,
 		},
 	}
-	out, err := c.FoldNow(context.Background(), []core.Message{
+	out, err := c.CompactNow(context.Background(), []core.Message{
 		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
 	})
 	if err != nil {
-		t.Fatalf("FoldNow: %v", err)
+		t.Fatalf("CompactNow: %v", err)
 	}
 	if len(out) != 0 {
-		t.Fatalf("fold = %d rows, want nothing to fold (1+2 keeps the whole 3-row conversation)", len(out))
+		t.Fatalf("compact = %d rows, want nothing to compact (1+2 keeps the whole 3-row conversation)", len(out))
 	}
 }
 
-// TestFoldNowDisabled pins the switched-off compactor: no summary, so no fold.
-func TestFoldNowDisabled(t *testing.T) {
+// TestCompactNowDisabled pins the switched-off compactor: no summary, so no compact.
+func TestCompactNowDisabled(t *testing.T) {
 	c := &Compactor{
 		provider: agent.NewFakeProvider("test"),
 		config:   agent.CompactionConfig{Enabled: false, KeepFirst: 1, KeepLast: 1},
 	}
-	out, err := c.FoldNow(context.Background(), []core.Message{
+	out, err := c.CompactNow(context.Background(), []core.Message{
 		core.NewUser("one"), core.NewAssistant("two"), core.NewUser("three"),
 	})
 	if err != nil {
-		t.Fatalf("FoldNow: %v", err)
+		t.Fatalf("CompactNow: %v", err)
 	}
 	if len(out) != 0 {
-		t.Fatalf("fold = %d rows, want nothing (compaction is off)", len(out))
+		t.Fatalf("compact = %d rows, want nothing (compaction is off)", len(out))
 	}
 }
 
@@ -232,7 +233,7 @@ func TestFoldNowDisabled(t *testing.T) {
 // fill percentage must go red HERE, not in production summaries.
 func TestSummarizeDoctrinePrompt(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
-		core.ResponseChunk{Type: "response_chunk", Content: "folded."},
+		core.ResponseChunk{Type: "response_chunk", Content: "compacted."},
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	)
 	c := &Compactor{
@@ -261,14 +262,14 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 
 	idx := strings.Index(prompt, "- [user]")
 	if idx < 0 {
-		t.Fatalf("prompt carries no folded message lines: %q", prompt)
+		t.Fatalf("prompt carries no compacted message lines: %q", prompt)
 	}
 	header := prompt[:idx]
 
 	// Every KEEP class and every DROP class of the doctrine.
 	for _, want := range []string{
-		"Summarize the conversation below for a context fold",
-		"the only thing that survives the fold",
+		"Summarize the conversation below for a context compaction",
+		"the only thing that survives a compaction",
 		"KEEP VERBATIM:",
 		"file paths with line numbers",
 		"signatures and load-bearing code lines",
@@ -302,7 +303,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 
 	for _, want := range []string{"- [user] middle alpha", "- [user] middle beta"} {
 		if !strings.Contains(prompt, want) {
-			t.Errorf("prompt lost folded line %q\nprompt:\n%s", want, prompt)
+			t.Errorf("prompt lost summarized line %q\nprompt:\n%s", want, prompt)
 		}
 	}
 }

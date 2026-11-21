@@ -62,8 +62,8 @@ type CmdAction struct {
 }
 
 // CmdRunCompact is the /compact intent. The capsule declares it - it owns the summarizer
-// and no store - and every host that holds a session runs the fold itself through
-// agent.FoldSession, so the intent has an executor on every surface a human can type on.
+// and no store - and every host that holds a session runs the compact itself through
+// agent.CompactSession, so the intent has an executor on every surface a human can type on.
 const CmdRunCompact = "run_compact"
 
 // ToolInfo is a tool name and description pair, for display in the system prompt.
