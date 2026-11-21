@@ -1,7 +1,5 @@
 package cron
 
-// Module-owned command surface.
-
 import (
 	"context"
 	"fmt"
@@ -91,7 +89,6 @@ func lastText(j JobInfo) string {
 	return fmt.Sprintf("%s %s", j.Status, t.Format("01-02 15:04"))
 }
 
-// cadenceText renders the row's firing cadence.
 func cadenceText(j JobInfo) string {
 	if j.Kind == "interval" {
 		return fmt.Sprintf("%dm", j.Minutes)

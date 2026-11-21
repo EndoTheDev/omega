@@ -1,7 +1,5 @@
 package cron
 
-// schema_test.go: the async cron overhaul.
-
 import (
 	"context"
 	"os"
@@ -17,8 +15,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/store"
 )
-
-// schema: kinds, minutes, schedule laws
 
 func TestIntervalKindParses(t *testing.T) {
 	raw := `jobs:
@@ -77,8 +73,6 @@ func TestIntervalKindValidation(t *testing.T) {
 	}
 }
 
-// schema: the deliver enum + legacy aliases
-
 func TestDeliverEnumResolution(t *testing.T) {
 	cases := []struct{ raw, want string }{
 		{"", deliverNewSession},
@@ -98,14 +92,13 @@ func TestDeliverEnumResolution(t *testing.T) {
 	if _, err := ParseConfig([]byte("jobs:\n  - name: x\n    schedule: \"0 8 * * *\"\n    prompt: p\n    deliver: smoke-signal\n")); err == nil {
 		t.Error("unknown deliver accepted")
 	}
-	// legacy journal keeps its byte-identical shape: empty file, the journal date naming
+	// legacy journal keeps its byte-identical shape: an empty file field, the journal
+	// date naming at fire time
 	j := Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p", Deliver: deliverJournal}
 	if j.DeliverTarget() != deliverAppendToFile || j.File != "" {
 		t.Errorf("journal alias target = %q, want append-to-file with empty file", j.DeliverTarget())
 	}
 }
-
-// schema: agent + model fields, the defaulting law
 
 func TestAgentDefaultLaw(t *testing.T) {
 	if got := (Job{Name: "x", Schedule: "0 8 * * *", Prompt: "p"}).ResolveAgent(); got != agent.DefaultAgentName {
@@ -159,8 +152,6 @@ func TestFileFieldValidation(t *testing.T) {
 	}
 }
 
-// the interval schedule
-
 func TestEveryScheduleNext(t *testing.T) {
 	// the grid is aligned to epoch minutes: an exact boundary returns
 	// the NEXT boundary (the robfig contract: strictly after t)
@@ -173,7 +164,6 @@ func TestEveryScheduleNext(t *testing.T) {
 	if got := s.Next(mid); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("Next(mid-interval) = %v, want the next grid point", got)
 	}
-	// sub-second noise truncates onto the grid, never drifts
 	noisy := base.Add(4*time.Minute + 59*time.Second + 500*time.Millisecond)
 	if got := s.Next(noisy); !got.Equal(base.Add(5 * time.Minute)) {
 		t.Errorf("Next(noisy) = %v, want the next grid point", got)
@@ -262,9 +252,6 @@ func TestIntervalJobNextFireInInspector(t *testing.T) {
 	}
 }
 
-// the defaulting law at fire time: model override
-
-// streamSpy records the ModelName of the provider each Stream rides, into a recorder.
 type modelLog struct {
 	mu   sync.Mutex
 	seen []string
@@ -327,7 +314,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 	if got := spawner.log.last(); got != "session-model" {
 		t.Fatalf("inherited model = %q, want session-model", got)
 	}
-	// a named model derives a per-run provider via WithModel
 	if _, err := r.agentTurn(context.Background(), "s2", Job{Name: "m", Prompt: "p", Model: "cron-model"}, "p"); err != nil {
 		t.Fatal(err)
 	}
@@ -344,8 +330,6 @@ func TestFireModelOverrideAndInherit(t *testing.T) {
 		t.Fatalf("session provider model mutated: %q", got)
 	}
 }
-
-// wake-target dispatch
 
 func TestWakeTickCarriesModel(t *testing.T) {
 	var got wakeTickPayload
@@ -402,7 +386,6 @@ func TestContinuousAgentTargetWakeAndBadAgent(t *testing.T) {
 		t.Errorf("wrong-target error not logged: %v", rec.snapshot())
 	}
 
-	// in-process fires with an EMPTY agent field just run.
 	r.store = nil
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) { return "ok", nil }
 	r.fire(ctx, Job{Name: "plain", Schedule: "0 8 * * *", Prompt: "go", Enabled: boolPtr()}, r.now())

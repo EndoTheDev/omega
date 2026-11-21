@@ -1,9 +1,9 @@
 package cron
 
 // cli.go: the crons subcommand. The capsule registers the name at mount
-// (RegisterSubcommand, v0.12 phase D Q6: the module owns its argv), exactly like kanban
+// (RegisterSubcommand: the module owns its argv), exactly like kanban
 // and curator. The CLI adds no second writer: an `omega crons add` and a webui editor
-// save land byte- identically in crons.yaml. Agent-home ownership: SaveJob/DeleteJob
+// save land byte-identically in crons.yaml. Agent-home ownership: SaveJob/DeleteJob
 // already refuse a wake job by name (that file belongs to another home); the CLI only
 // surfaces the refusal - it never crosses homes.
 
@@ -47,7 +47,6 @@ and style survive); an agent home's wake job is owned by that home's own
 config/crons.yaml and is refused here.
 `
 
-// cmdCrons builds the subcommand handler.
 func cmdCrons(p *Plugin) func([]string) error {
 	return func(args []string) error {
 		if len(args) == 0 {
@@ -76,7 +75,6 @@ func cmdCrons(p *Plugin) func([]string) error {
 	}
 }
 
-// cliRunner returns the mount-time runner.
 func (p *Plugin) cliRunner() (*Runner, error) {
 	if p.runner == nil {
 		return nil, fmt.Errorf("crons: no cron runner mounted")
@@ -84,7 +82,6 @@ func (p *Plugin) cliRunner() (*Runner, error) {
 	return p.runner, nil
 }
 
-// cronsList renders the job table.
 func cronsList(p *Plugin, w io.Writer) error {
 	r, err := p.cliRunner()
 	if err != nil {
@@ -99,7 +96,6 @@ func cronsList(p *Plugin, w io.Writer) error {
 	return nil
 }
 
-// cronsFlags is the parsed flag set of add/edit.
 type cronsFlags struct {
 	kind     string
 	schedule string
@@ -168,7 +164,6 @@ func splitSkills(v string) []string {
 	return out
 }
 
-// cronsAdd creates one job.
 func cronsAdd(p *Plugin, args []string) error {
 	r, err := p.cliRunner()
 	if err != nil {
@@ -283,7 +278,6 @@ func cronsEdit(p *Plugin, args []string) error {
 	return nil
 }
 
-// cronsDelete removes one main-home job.
 func cronsDelete(p *Plugin, args []string) error {
 	r, err := p.cliRunner()
 	if err != nil {

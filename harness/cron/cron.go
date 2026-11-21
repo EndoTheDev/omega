@@ -18,7 +18,6 @@ import (
 // scheduleParser is the ONLY accepted schedule grammar.
 var scheduleParser = cron.NewParser(cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
-// namePattern restricts job names to [a-z0-9-].
 var namePattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
 // Deliver targets (ONE enum - the curator,
@@ -43,7 +42,6 @@ const (
 	deliverMemory       = "memory"
 )
 
-// Job kinds.
 const (
 	kindCron     = "cron"
 	kindInterval = "interval"
@@ -148,7 +146,6 @@ type Config struct {
 	Jobs []Job `yaml:"jobs"`
 }
 
-// readCronFile reads one crons.yaml.
 func readCronFile(path string) (data []byte, existed bool, err error) {
 	data, err = os.ReadFile(path)
 	if err != nil {
@@ -195,7 +192,6 @@ func loadAllConfigsForReload(home string) (*Config, error) {
 	return loadAllConfigs(home, true)
 }
 
-// loadAllConfigs is the one home walk.
 func loadAllConfigs(home string, strictEmpty bool) (*Config, error) {
 	cfg, err := loadConfig(homeFile(home), strictEmpty)
 	if err != nil {
@@ -288,7 +284,6 @@ func ParseConfig(data []byte) (*Config, error) {
 	return cfg, nil
 }
 
-// jobFields are the only allowed keys in a job entry.
 var jobFields = map[string]bool{
 	"name": true, "kind": true, "schedule": true, "minutes": true,
 	"prompt": true, "deliver": true, "file": true, "model": true,
@@ -310,7 +305,7 @@ func parseJob(node *yaml.Node) (*Job, error) {
 	if err := node.Decode(job); err != nil {
 		return nil, fmt.Errorf("line %d: bad job: %w", node.Line, err)
 	}
-	// The skills list normalizes here, the one place a yaml-authored value takes its. The
+	// The skills list normalizes here, the one place a yaml-authored value takes its shape. The
 	// name grammar and the duplicates reject in validateJob with the line in the error
 	// (the schema keeps its one rejection voice).
 	job.Skills = normalizeSkills(job.Skills)
@@ -321,7 +316,6 @@ func parseJob(node *yaml.Node) (*Job, error) {
 	return job, nil
 }
 
-// normalizeSkills trims whitespace, drops empty entries, keeps order.
 func normalizeSkills(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, s := range in {
@@ -335,7 +329,6 @@ func normalizeSkills(in []string) []string {
 	return out
 }
 
-// validateJob enforces the schema.
 func validateJob(job Job, line int) error {
 	if job.Name == "" {
 		return fmt.Errorf("line %d: job at line %d is missing a name", line, line)

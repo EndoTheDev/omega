@@ -18,7 +18,6 @@ type Plugin struct {
 	capsule *capsule // the canvas surface; nil = not mounted
 }
 
-// Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
 
 // NewPlugin creates the cron plugin.
@@ -37,14 +36,13 @@ func (p *Plugin) Description() string {
 	return "cron: schedules omega prompts on cron expressions, one agent turn per fire"
 }
 
-// Provides lists the seams this plugin mounts.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"cron"} }
 
-// Requires: notifications. The runner's notifier arrives through CronDeps.Ctx at Start
+// Requires: notifications. The runner's notifier arrives through runnerDeps.Ctx at Start
 // (host wiring, post-mount) - the edge is the presence declaration: with notifications
-// toggled off, cron must fail the boot (Q3), not silently drop its finished-things
+// toggled off, cron must fail the boot, not silently drop its finished-things
 // records.
 func (p *Plugin) Requires() []string { return []string{"notifications"} }
 
@@ -69,7 +67,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.Offer("cron", r); err != nil {
 		return err
 	}
-	// The goroutine fence (v0.12 E1). Runner.Start blocks until cancellation or Stop, so
+	// The goroutine fence. Runner.Start blocks until cancellation or Stop, so
 	// the handle arms it on its own goroutine (the fence Start law: Start returns
 	// promptly) and Stop ends it.
 	if err := api.RegisterLifecycle(
@@ -94,7 +92,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		return err
 	}
 	// The crons subcommand: the terminal face of the same editor the Cron tab writes. The
-	// module owns its argv (v0.12 phase D Q6); every write rides SaveJob/DeleteJob above,
+	// module owns its argv; every write rides SaveJob/DeleteJob above,
 	// so `omega crons add` and a tab save land byte-identically.
 	if err := api.RegisterSubcommand("crons", cronsSummary, cmdCrons(p)); err != nil {
 		return err
@@ -118,7 +116,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.RegisterPanelProvider(p.capsule)
 }
 
-// homeFile returns the crons.yaml path inside home.
 func homeFile(home string) string {
 	root := filepath.Join(home, stateFileName)
 	if _, err := os.Stat(root); err == nil {
@@ -127,5 +124,5 @@ func homeFile(home string) string {
 	return filepath.Join(home, "config", stateFileName)
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule as a module capsule.
 func (p *Plugin) Toggleable() bool { return true }

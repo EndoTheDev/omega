@@ -16,15 +16,12 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newTestRunner builds a Runner with stubbed time and turn hooks, pointed at a temp.
 func newTestRunner(t *testing.T, home string, jobs ...Job) *Runner {
 	t.Helper()
 	r := NewRunner(&Config{Jobs: jobs}, home)
 	r.now = func() time.Time { return mustLocal(2026, 10, 17, 10, 0) }
 	return r
 }
-
-// test doubles
 
 // fakeMemory records Add calls (core.MemoryProvider).
 type fakeMemory struct {
@@ -62,7 +59,6 @@ func (l *recordingLogger) Warnf(format string, args ...any)  { l.add(format, arg
 func (l *recordingLogger) Errorf(format string, args ...any) { l.add(format, args...) }
 func (l *recordingLogger) Close() error                      { return nil }
 
-// has reports whether any captured line contains substr.
 func (l *recordingLogger) has(substr string) bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -76,8 +72,6 @@ func (l *recordingLogger) has(substr string) bool {
 
 // noop is the waitFor trigger for a wait that only observes.
 func noop() error { return nil }
-
-// guard (single instance per job)
 
 func TestFireGuardSkipsConcurrentSameJobOthersStillRun(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(),
@@ -159,7 +153,6 @@ func TestFireGuardLogsSkip(t *testing.T) {
 	fired.Wait()
 }
 
-// logRecorder is a race-safe LoggerProvider.
 type logRecorder struct {
 	mu   sync.Mutex
 	logs []string
@@ -192,8 +185,6 @@ func (l *logRecorder) waitContains(sub string, limit time.Duration) bool {
 	}
 	return false
 }
-
-// catch-up
 
 func TestCatchUpFiresOnceWithin24h(t *testing.T) {
 	home := t.TempDir()
@@ -276,8 +267,6 @@ func TestCatchUpSkipsNeverFiredJob(t *testing.T) {
 	}
 }
 
-// regular fire + state
-
 func TestFirePersistsSessionAndState(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "jt", Schedule: "0 8 * * *", Prompt: "hello", Deliver: "none"})
@@ -351,8 +340,6 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	}
 }
 
-// deliver targets
-
 func TestDeliverJournalCreatesFileAndAppends(t *testing.T) {
 	home := t.TempDir()
 	r := newTestRunner(t, home, Job{Name: "daily-journal", Schedule: "0 8 * * *", Prompt: "p", Deliver: "journal"})
@@ -421,8 +408,6 @@ func TestDeliverSkipsEmptyFinal(t *testing.T) {
 		t.Fatalf("journal written for empty final message: %v", err)
 	}
 }
-
-// hot reload
 
 func TestHotReloadAddsAndDisablesWithoutRestart(t *testing.T) {
 	home := t.TempDir()
@@ -645,8 +630,6 @@ func waitFor(t *testing.T, limit time.Duration, cond func() bool, trigger func()
 	t.Fatalf("condition not reached within %s", limit)
 }
 
-// plugin mount
-
 // notificationsPlugin provides the presence the cron Requires edge declares (Q3).
 type notificationsPlugin struct{}
 
@@ -655,7 +638,6 @@ func (notificationsPlugin) Provides() []string                                  
 func (notificationsPlugin) Requires() []string                                            { return nil }
 func (notificationsPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error { return nil }
 
-// TestPluginMountSetsCronSeam pins the api mount.
 func TestPluginMountSetsCronSeam(t *testing.T) {
 	p := NewPluginWithConfig(&Config{Jobs: []Job{{Name: "a", Schedule: "0 8 * * *", Prompt: "p"}}}, t.TempDir())
 	ctx := &core.Context{}
@@ -706,15 +688,12 @@ func TestPluginMountInvalidConfigIsError(t *testing.T) {
 	}
 }
 
-// inspector snapshot
-
 // enabledOff returns the disabled flag a crons.yaml `enabled: false` decodes.
 func enabledOff() *bool {
 	b := false
 	return &b
 }
 
-// Compile-time proof that the Runner satisfies the read-only inspector seam.
 var _ = (*Runner)(nil)
 
 func TestJobsInspectorSnapshot(t *testing.T) {
@@ -726,14 +705,12 @@ func TestJobsInspectorSnapshot(t *testing.T) {
 	if len(jobs) != 2 {
 		t.Fatalf("jobs = %d, want 2", len(jobs))
 	}
-	// sorted by name regardless of config order
 	if jobs[0].Name != "aa-minute" || jobs[1].Name != "zz-daily" {
 		t.Fatalf("order = %s,%s, want aa-minute,zz-daily", jobs[0].Name, jobs[1].Name)
 	}
 	if jobs[0].Enabled || jobs[0].Next != "" {
 		t.Fatalf("disabled job = %+v", jobs[0])
 	}
-	// enabled job: next fire parses as RFC3339 and is after now
 	if !jobs[1].Enabled {
 		t.Fatalf("enabled job flag missing: %+v", jobs[1])
 	}
@@ -841,7 +818,6 @@ func TestFireTurnCapHostPushWins(t *testing.T) {
 	}
 }
 
-// firedTurnCap runs one fire and returns the wall-clock cap the turn actually ran.
 func firedTurnCap(t *testing.T, r *Runner) time.Duration {
 	t.Helper()
 	var got time.Duration

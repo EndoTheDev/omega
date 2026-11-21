@@ -54,7 +54,6 @@ func jobByName(jobs []JobInfo, name string) *JobInfo {
 	return nil
 }
 
-// TestCronsCLIRoundTrip drives add -> list -> edit -> delete through the handler.
 func TestCronsCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliTestCrons)
 	cmd := cmdCrons(p)

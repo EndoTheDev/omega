@@ -73,7 +73,7 @@ func (r *Runner) SaveJob(job Job) ([]JobInfo, error) {
 		return nil, fmt.Errorf("marshal job: %w", err)
 	}
 	// The one validation law: the editor-authored yaml re-parses like any operator yaml,
-	// rejections name the field (a bad kind, a schedule on an interval job.) and never
+	// rejections name the field (a bad kind, a schedule on an interval job) and never
 	// reach the disk.
 	cfg, err := ParseConfig(data)
 	if err != nil {
@@ -150,7 +150,6 @@ func (r *Runner) DeleteJob(name string) ([]JobInfo, error) {
 	return r.reloadAfterWrite()
 }
 
-// reloadAfterWrite lands the write.
 func (r *Runner) reloadAfterWrite() ([]JobInfo, error) {
 	cfg, err := LoadAllConfigs(r.home)
 	if err != nil {
@@ -186,8 +185,8 @@ func upsertJobNode(path string, job Job, data []byte) error {
 	return writeJobsYAML(path, doc)
 }
 
-// removeJobNode removes the entry named name from the crons.yaml at
-// path. Missing file or missing entry error here, never silently.
+// removeJobNode removes the entry named name. A missing file or a missing entry errors
+// here, never silently.
 func removeJobNode(path, name string) error {
 	doc, seq, err := jobsDocument(path)
 	if err != nil {
@@ -202,7 +201,8 @@ func removeJobNode(path, name string) error {
 	return UnknownJobError{Key: name}
 }
 
-// jobsDocument reads the crons.yaml at path and returns its document node plus.
+// jobsDocument reads the crons.yaml at path and returns its document node plus the
+// jobs: sequence (creating both on a missing file).
 func jobsDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -269,7 +269,6 @@ func jobEntryNode(data []byte) (*yaml.Node, error) {
 	return entry, nil
 }
 
-// findJobsSeq returns the jobs: sequence under a mapping root, or nil.
 func findJobsSeq(root *yaml.Node) *yaml.Node {
 	if root == nil || root.Kind != yaml.MappingNode {
 		return nil
@@ -283,7 +282,6 @@ func findJobsSeq(root *yaml.Node) *yaml.Node {
 	return nil
 }
 
-// namedEntry matches a job mapping by its name: scalar, the value.
 func namedEntry(item *yaml.Node, name string) bool {
 	for i := 0; i+1 < len(item.Content); i += 2 {
 		k := item.Content[i]
@@ -341,8 +339,6 @@ func (p *Plugin) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Same nil-pointer guard the save handler carries (a nil *Runner
-	// converts to a non-nil interface).
 	if p.runner == nil {
 		http.Error(w, "cron delete: no cron runner mounted", http.StatusNotImplemented)
 		return

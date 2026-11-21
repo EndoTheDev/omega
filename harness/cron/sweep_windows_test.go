@@ -2,10 +2,11 @@
 
 package cron
 
-// sweep_windows_test.go: the Windows-only pin for. saveCronState's atomic swap (tmp +
-// os.Rename) opens cronstate.json with DELETE access and no read-share for the length
-// of the rename; a poller stepping into that window gets a sharing violation from
-// os.ReadFile. waitForState must treat that as a retry, never a verdict.
+// sweep_windows_test.go: the Windows-only pin for waitForState's retry. saveCronState's
+// atomic swap (tmp + os.Rename) opens cronstate.json with DELETE access and no
+// read-share for the length of the rename; a poller stepping into that window gets a
+// sharing violation from os.ReadFile. waitForState must treat that as a retry, never a
+// verdict.
 
 import (
 	"path/filepath"
@@ -33,5 +34,4 @@ func TestWaitForStateRetriesThroughPinnedFile(t *testing.T) {
 	waitForState(t, home, func(st cronState) bool {
 		return len(st.Jobs) == 0
 	})
-	// waitForState returned, so a read landed - the pin is released.
 }

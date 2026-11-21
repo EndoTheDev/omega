@@ -234,12 +234,10 @@ func TestSchedulePrevNoOccurrence(t *testing.T) {
 	}
 }
 
-// mustLocal builds a fixed time.Date in the local zone.
 func mustLocal(y, m, d, hh, mm int) time.Time {
 	return time.Date(y, time.Month(m), d, hh, mm, 0, 0, time.Local)
 }
 
-// TestHomeFileRootWins verifies the legacy home-root crons.yaml is preferred when.
 func TestHomeFileRootWins(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {
@@ -256,7 +254,6 @@ func TestHomeFileRootWins(t *testing.T) {
 	}
 }
 
-// TestHomeFileConfigSubdirFallback verifies crons.yaml in <home>/config/ is used when.
 func TestHomeFileConfigSubdirFallback(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {

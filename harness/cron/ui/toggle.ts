@@ -10,7 +10,6 @@ export interface CronJobWire {
   agent_owned?: boolean;
 }
 
-// setCronJobEnabled persists one job's enabled flag the ruled way.
 export async function setCronJobEnabled(
   key: string,
   enabled: boolean,
@@ -21,7 +20,6 @@ export async function setCronJobEnabled(
     body: JSON.stringify({ key, enabled }),
   });
   if (!res.ok) throw new Error(`POST /cron/toggle: ${res.status}`);
-  // the toggle response IS the fresh job set.
   await res.json();
   const list = await fetch("/cron/jobs");
   if (!list.ok) throw new Error(`GET /cron/jobs: ${list.status}`);

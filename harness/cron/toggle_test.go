@@ -1,7 +1,5 @@
 package cron
 
-// toggle_test.go: the per-job `enabled:` flag write.
-
 import (
 	"bytes"
 	"errors"
@@ -40,7 +38,6 @@ func newToggleTestRunner(t *testing.T, mainYAML string) (*Runner, string) {
 	return NewRunner(cfg, home), path
 }
 
-// TestToggleJobWritesFlagAndKeepsStyle: disabling a job appends the `enabled: false`.
 func TestToggleJobWritesFlagAndKeepsStyle(t *testing.T) {
 	r, path := newToggleTestRunner(t, toggleTestCrons)
 	before, err := os.ReadFile(path)
@@ -207,7 +204,6 @@ func TestToggleJobAgentHomeWrite(t *testing.T) {
 	}
 }
 
-// TestHandleToggleWire: the route answers the fresh job set as JSON, unknown keys are.
 func TestHandleToggleWire(t *testing.T) {
 	r, _ := newToggleTestRunner(t, toggleTestCrons)
 	p := &Plugin{runner: r}
