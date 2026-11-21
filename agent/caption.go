@@ -11,7 +11,8 @@ import (
 // visionCapability is the registry flag a model carries when it accepts image input.
 const visionCapability = "vision"
 
-// captionSwitch is the consumer-owned face a captioner MAY satisfy to report whether.
+// captionSwitch is the consumer-owned face a captioner MAY satisfy to report whether
+// captioning is enabled.
 // The host installs the captioner from boot so the vision_model knob can flip live,
 // which makes "off" a state rather than a missing pointer: a captioner that answers
 // false is skipped exactly like a nil one (images ride to the main provider and a blind

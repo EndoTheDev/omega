@@ -624,7 +624,7 @@ providers:
 	}
 }
 
-// part 2: a row's host and api_key are config.yaml's property - the settings PUT may
+// A row's host and api_key are config.yaml's property - the settings PUT may
 // keep (masked round trip), rename, retype or remove rows, never plant a host
 // config.yaml does not carry or set/wipe a secret.
 func TestApplyProviderInstancesGate(t *testing.T) {
@@ -917,8 +917,8 @@ func (rr *recordingRunTimeout) SetRunTimeout(d time.Duration) {
 	rr.got, rr.pushed = d, true
 }
 
-// TestHotApplyPushesCronRunTimeout pins the host half of. The capsule is reached
-// through its offered seam - never an import.
+// TestHotApplyPushesCronRunTimeout pins the host half of the cron run-timeout push.
+// The capsule is reached through its offered seam - never an import.
 func TestHotApplyPushesCronRunTimeout(t *testing.T) {
 	stub := &recordingRunTimeout{}
 	pctx := &agent.Context{}

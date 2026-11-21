@@ -13,10 +13,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestChatPanelRegistersThroughTheStartSeam: the plugin's Mount only CREATES the. One
-// chat panel per live frontend: a serve-less process never reaches Start, so its canvas
-// carries no dead http chat panel; here the channel-start handoff registers it with the
-// canvas seam, and the pipe routes to the capsule's handler.
+// TestChatPanelRegistersThroughTheMountSeam: the plugin's Mount only CREATES the panel.
+// One chat panel per live frontend: a serve-less process never reaches Start, so its
+// canvas carries no dead http chat panel; here the channel-start handoff registers it
+// with the canvas seam, and the pipe routes to the capsule's handler.
 func TestChatPanelRegistersThroughTheMountSeam(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	plugin := NewPlugin()

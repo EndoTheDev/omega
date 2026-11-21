@@ -34,8 +34,8 @@ type ActionTally struct {
 	Refused  int
 }
 
-// ActionTallies returns the accept counters of every action id that crossed this. Copy
-// under the canvas lock: the live map never escapes.
+// ActionTallies returns the accept counters of every action id that crossed this canvas.
+// Copy under the canvas lock: the live map never escapes.
 func (c *Canvas) ActionTallies() map[string]ActionTally {
 	c.mu.Lock()
 	defer c.mu.Unlock()

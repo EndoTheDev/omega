@@ -214,8 +214,6 @@ func TestEphemeralInvisibleToStoreSurfaces(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	ephID, _ := ephemeralChat(t, s, "", "ephemeral hello", nil)
 
-	// search (FTS5) + export invisibility rode the store capsule out with wave 2.
-
 	req := httptest.NewRequest(http.MethodPatch, "/sessions/"+ephID, bytes.NewReader([]byte(`{"read":true}`)))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, req)

@@ -1,6 +1,6 @@
 package main
 
-// The CLI homecoming proof (v0.12 phase D, grill Q6 - the module owns its argv).
+// The CLI homecoming proof (the module owns its argv).
 
 import (
 	"os"

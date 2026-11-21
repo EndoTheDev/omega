@@ -41,7 +41,8 @@ func contains(calls []string, substr string) bool {
 	return false
 }
 
-// drainEvents runs the loop in a goroutine and blocks until the events channel is.
+// drainEvents runs the loop in a goroutine and blocks until the events channel is
+// closed.
 func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 	t.Helper()
 	var endEvent *core.AgentEnd
@@ -57,7 +58,8 @@ func drainEvents(t *testing.T, events chan core.Event) core.AgentEnd {
 	return *endEvent
 }
 
-// TestLoopWithLogger verifies the logger records "agent loop starting" and "agent.
+// TestLoopWithLogger verifies the logger records "agent loop starting" and "agent
+// ended".
 func TestLoopWithLogger(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "hello"},
@@ -88,7 +90,8 @@ func TestLoopWithLogger(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerMaxTurns verifies the logger records "max turns reached" when.
+// TestLoopLoggerMaxTurns verifies the logger records "max turns reached" when the cap
+// trips.
 func TestLoopLoggerMaxTurns(t *testing.T) {
 	provider := agent.NewFakeProviderScripts("test",
 		[]core.ProviderStreamEvent{
@@ -134,7 +137,8 @@ func TestLoopLoggerMaxTurns(t *testing.T) {
 	}
 }
 
-// TestLoopLoggerStreamError verifies the logger records "stream error" when.
+// TestLoopLoggerStreamError verifies the logger records "stream error" when the
+// provider ends with an error.
 func TestLoopLoggerStreamError(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: "something broke"},

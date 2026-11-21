@@ -345,8 +345,8 @@ func (a *Agent) SetYieldLedger(l YieldLedger) {
 	a.yieldLedger = l
 }
 
-// SetYieldWake installs the wake injector the dispatched executor hands a settled. Nil
-// = the harness is off.
+// SetYieldWake installs the wake injector the dispatched executor hands a settled
+// result to. Nil = the harness is off.
 func (a *Agent) SetYieldWake(wake func(sessionID string, res core.YieldResult)) {
 	a.yieldWake = wake
 }

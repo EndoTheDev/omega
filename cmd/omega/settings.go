@@ -1159,9 +1159,9 @@ func configFromYAML(text string) (Config, error) {
 	return cfg, nil
 }
 
-// settleSecretsFromDisk pins the credential layer a raw save writes against the. An
-// unreadable document is an ERROR and never a skip: with nothing to keep, a submitted
-// mask ("****") would be written out as the literal credential.
+// settleSecretsFromDisk pins the credential layer a raw save writes against the
+// document on disk. An unreadable document is an ERROR and never a skip: with nothing
+// to keep, a submitted mask ("****") would be written out as the literal credential.
 func settleSecretsFromDisk(path string, cfg *Config, doc *Config) error {
 	onDisk, err := fileConfig(path)
 	if err != nil {

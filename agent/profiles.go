@@ -783,8 +783,8 @@ func VisibleSkillDirs(home, name string, inheritMain bool) []string {
 	return dirs
 }
 
-// scanProfileSkillNames walks the ordered dirs for <name>/<name>.md layouts and. The
-// shared root is a container of skills, never a skill itself.
+// scanProfileSkillNames walks the ordered dirs for <name>/<name>.md layouts and dedupes
+// by name. The shared root is a container of skills, never a skill itself.
 func scanProfileSkillNames(dirs []string) []string {
 	seen := map[string]bool{}
 	var out []string

@@ -31,7 +31,7 @@ type cronRow struct {
 	Next     string `json:"next"`
 }
 
-// fakeCronRows is the cron capsule's wire face (part 3).
+// fakeCronRows is the cron capsule's wire face.
 type fakeCronRows struct{ rows []json.RawMessage }
 
 func (f *fakeCronRows) JobRows() []json.RawMessage { return f.rows }
@@ -42,7 +42,7 @@ type cronNoRows struct{}
 
 func (cronNoRows) Stop() error { return nil }
 
-// fakeSkillEntries serves the std-typed inventory face (part 3).
+// fakeSkillEntries serves the std-typed inventory face.
 type fakeSkillEntries struct {
 	index map[string]string
 	err   error

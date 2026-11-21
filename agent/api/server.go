@@ -101,7 +101,7 @@ type seamSet struct {
 	commandHandler func(ctx context.Context, name, args string) (core.CommandResult, error)
 }
 
-// LiveServices returns the live universal seam registry (part 3). Nil-safe.
+// LiveServices returns the live universal seam registry. Nil-safe.
 func (s *Server) LiveServices() *core.Services {
 	s.seams.mu.RLock()
 	defer s.seams.mu.RUnlock()
@@ -111,7 +111,7 @@ func (s *Server) LiveServices() *core.Services {
 	return s.seams.ctx.Services()
 }
 
-// Consumers' local faces (part 3).
+// Consumers' local faces.
 
 // skillFaces is the skill inventory face the content/atmention consumers hold.
 type skillFaces interface {
@@ -606,7 +606,8 @@ type chatRequest struct {
 	// the same prepareRun pipe but never fires the title kick (it is agent-speech, not a
 	// conversation start) and never resets the runaway guard.
 	wake bool
-	// branchFloor is the session's max store row id observed at run start, set alongside.
+	// branchFloor is the session's max store row id observed at run start, set alongside
+	// branch.
 	// Unexported: never part of the request wire.
 	branchFloor int64
 	// persistInput is the send's incoming messages. Unexported: never part of the request
@@ -1459,9 +1460,10 @@ func (s *Server) persistAssistant(ctx context.Context, prov agent.Provider, req 
 	return nil
 }
 
-// maybeTitleSession generates a short session title with a cheap model call and. The
-// state machine gate: provisional only for an untitled session (state 0), final only
-// while the title is missing or provisional (state 0 or 1) - and a manually set label
+// maybeTitleSession generates a short session title with a cheap model call and never
+// fails the turn (every error path returns without one). The state machine gate:
+// provisional only for an untitled session (state 0), final only while the title is
+// missing or provisional (state 0 or 1) - and a manually set label
 // (PUT /sessions/{id}, /label) is never overwritten by a generated one.
 func (s *Server) maybeTitleSession(ctx context.Context, prov agent.Provider, req chatRequest, lastAssistant string, final bool) {
 	// title_model knob: when set, BOTH title calls route through it.

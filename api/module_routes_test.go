@@ -8,7 +8,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// The module-rest dispatcher (v0.12 phase F). The shell never imports the module: the
+// The module-rest dispatcher. The shell never imports the module: the
 // route rides the live Context.
 func TestModuleRouterServesAndFallsThrough(t *testing.T) {
 	s := NewServer(nil, nil, nil, nil, nil, nil)

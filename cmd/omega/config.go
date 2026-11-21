@@ -878,7 +878,7 @@ func (c Config) ConfigSection(name string) (any, bool) {
 		return kanbanModule.Config{DBPath: c.Kanban.DBPath}, true
 	case "continuous":
 		cont := c.Continuous
-		cont.Disabled = slices.Clone(c.Disabled.Agents) // v0.14.1: the disabled.agents fold rides the section
+		cont.Disabled = slices.Clone(c.Disabled.Agents) // the disabled.agents fold rides the section
 		return cont, true
 	case "approvals":
 		return approvalSection(c), true

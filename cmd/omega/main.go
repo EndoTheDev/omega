@@ -270,9 +270,9 @@ func printModuleSubcommands(subs []agent.Subcommand, w io.Writer) {
 	}
 }
 
-// mountRegistry builds and mounts the plugin set with the API mount, returning the. The
-// context is returned so a caller can drain seams; the CLI dispatch only needs the
-// registry.
+// mountRegistry builds and mounts the plugin set with the API mount, returning the
+// registry and the mounted context. The context is returned so a caller can drain
+// seams; the CLI dispatch only needs the registry.
 func mountRegistry(cfg Config) (*agent.Registry, *agent.Context, error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {
@@ -519,9 +519,9 @@ func buildPlugins(cfg Config) ([]agent.Plugin, error) {
 	}, nil
 }
 
-// newAgent wires config into a provider, agent, store, and extensions via the. The
-// store and plugin context are returned so the caller can close the store and start
-// channels.
+// newAgent wires config into a provider, agent, store, and extensions via the mount
+// surface. The store and plugin context are returned so the caller can close the store
+// and start channels.
 func newAgent(cfg Config, configPath string, appendPrompts []string, trust trustFlags) (*agent.Agent, agent.StoreProvider, agent.LoggerProvider, *agent.Context, *agent.Registry, func([]string), func(string), func(string), func(string), func(string, int), error) {
 	plugins, err := buildPlugins(cfg)
 	if err != nil {

@@ -29,9 +29,9 @@ func homeForExe(envHome, exePath, userHome string) string {
 	return canonPath(dir)
 }
 
-// isPathBinInstall reports whether dir is a known PATH-style bin directory where.
-// Both sides compare on canon spelling: the callers' fakes and the real exe path carry
-// different separators.
+// isPathBinInstall reports whether dir is a known PATH-style bin directory (go/bin,
+// .local/bin, bin, /usr/local/bin). Both sides compare on canon spelling: the callers'
+// fakes and the real exe path carry different separators.
 func isPathBinInstall(dir, userHome string) bool {
 	dir = canonPath(dir)
 	return dir == canonPath(filepath.Join(userHome, "go", "bin")) ||

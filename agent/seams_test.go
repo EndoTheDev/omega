@@ -12,9 +12,9 @@ import (
 	"testing"
 )
 
-// The bind-time assertion law (part 3 wave 2, the seam constitution). A wrong-shaped
-// offer under a need key fails at boot naming the need - never a silent nil discovered
-// mid-turn, never a lazy resolve.
+// The bind-time assertion law: a wrong-shaped offer under a need key fails at
+// boot naming the need - never a silent nil discovered mid-turn, never a lazy
+// resolve.
 func TestBindWrongShapeDiesLoud(t *testing.T) {
 	// The store key is bound by the serving surface, not NewFromContext.
 	for _, key := range []string{"provider", "loop", "prompt", "logger", "compactor", "approvals", "nudger"} {
@@ -66,7 +66,7 @@ var needKeys = []string{
 	"approvals",
 }
 
-// capsuleServiceKeys are the non-need class of the closed namespace (part 3 wave 1).
+// capsuleServiceKeys are the non-need class of the closed namespace.
 // chat-runs is the first SHELL-offered key: owner = the serving shell, offered through
 // the proper api.Offer surface at channel wire time; consumers = any capsule reading
 // live-run state through its own interface; a missing offer = honest never-running.
@@ -94,7 +94,7 @@ func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 	}
 }
 
-// TestClassANounsLeaveTheSubstrate is the wave-2 noun law (part 3, the seam. The scan
+// TestClassANounsLeaveTheSubstrate is the Class A noun law. The scan
 // is identifier-level (go/ast), so comments and the accepted residual string keys
 // ("store", "provider" as data in the census and resolve calls) never trip it.
 func TestClassANounsLeaveTheSubstrate(t *testing.T) {
@@ -107,7 +107,7 @@ func TestClassANounsLeaveTheSubstrate(t *testing.T) {
 		"ApprovalProvider":   true,
 		"TurnNudger":         true,
 		"LoopProvider":       true,
-		// Class B owner faces (part 3 wave 1) plus the slot-era types that referenced them.
+		// Class B owner faces plus the slot-era types that referenced them.
 		"CronProvider":          true,
 		"SkillsProvider":        true,
 		"MemoryProvider":        true,
@@ -204,8 +204,8 @@ func TestClassANounsLiveAtTheirConsumers(t *testing.T) {
 	}
 }
 
-// TestCapsuleOwnerFacesLeaveTheTree is the deletability proof-as-test (part 3, the seam
-// constitution): the Class B owner-face names and the slot-era types they referenced
+// TestCapsuleOwnerFacesLeaveTheTree is the deletability proof-as-test: the Class B
+// owner-face names and the slot-era types they referenced
 // must be dead in every ring outside harness/ - core, llm, agent (loop + base endpoints
 // included), api and the host. Comments and string keys are data (go/ast) and never
 // trip.

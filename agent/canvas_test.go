@@ -424,10 +424,10 @@ func TestCanvasResyncDetachesAndRestores(t *testing.T) {
 	}
 }
 
-// TestResyncReinstallsSink: the sink rides the same registration that declares the. A
-// provider a live re-enable re-registered gets its PanelUpdateSink closure installed
-// again - a module enabled live pushes to the canvas exactly like one mounted at boot
-// (the Oct-27 incident's surviving half: handlers returned, pushes stayed dead).
+// TestResyncReinstallsSink: the sink rides the same registration that declares the
+// provider. A live re-enable re-registers it, and its PanelUpdateSink closure is
+// installed again - a module enabled live pushes to the canvas exactly like one
+// mounted at boot (handlers returned, pushes stayed dead).
 func TestResyncReinstallsSink(t *testing.T) {
 	kb := &sinkProviderStub{panelProviderStub: &panelProviderStub{name: "kanban", panels: []core.Panel{
 		panel("board", "kanban.board", act("refresh", "kanban")),
@@ -468,7 +468,7 @@ func TestResyncReinstallsSink(t *testing.T) {
 	}
 }
 
-// TestResyncKeepsLateRegistrantsThroughChurn pins the Oct-27 incident shape. A module's
+// TestResyncKeepsLateRegistrantsThroughChurn pins the toggle-storm shape. A module's
 // live disable and re-enable must never touch an unrelated late registrant's handlers,
 // sink or panel state (the old journal truncation undo chopped exactly this:
 // handlers["http_channel"] died in a toggle storm and every push logged "unknown

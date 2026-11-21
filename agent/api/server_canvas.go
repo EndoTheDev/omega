@@ -1,4 +1,4 @@
-// The canvas transport (arc 3b): http_channel translates the canvas contract.
+// The canvas transport: http_channel translates the canvas contract.
 package api
 
 import (

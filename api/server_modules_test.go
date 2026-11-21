@@ -1,8 +1,8 @@
 package api
 
-// The E2 /modules handler tests bind at the wire shape the settings pane consumes: the
-// shell never appears (tier law), the pane's toggle applies through the seam, and a
-// rejection comes back 400 carrying the ledger text (Q11/Q12).
+// The /modules handler tests bind at the wire shape the settings pane consumes:
+// the shell never appears (tier law), the pane's toggle applies through the seam,
+// and a rejection comes back 400 carrying the ledger text.
 
 import (
 	"context"

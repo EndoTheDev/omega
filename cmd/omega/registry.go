@@ -78,7 +78,7 @@ func (r *omegaRegistries) applyLive() {
 	}
 }
 
-// skillDisabler is the host registry's own need face of the skills capsule (part 3).
+// skillDisabler is the host registry's own need face of the skills capsule.
 type skillDisabler interface {
 	SetDisabled(names []string)
 }

@@ -150,10 +150,10 @@ func TestToggleRewiresChannels(t *testing.T) {
 	}
 }
 
-// TestToggleConcurrentSharedFoldLock pins the v0.14.0 release-gate
-// must-fix 1: toggles racing through the SHARED mutex (the same pointer
-// omegaRegistries takes) must never lose a write or tear the fold -
-// every disabled module survives in the fold AND in config.yaml.
+// TestToggleConcurrentSharedFoldLock pins the shared-mutex law: toggles
+// racing through the SHARED mutex (the same pointer omegaRegistries takes)
+// must never lose a write or tear the fold - every disabled module
+// survives in the fold AND in config.yaml.
 func TestToggleConcurrentSharedFoldLock(t *testing.T) {
 	pctx := &agent.Context{}
 	names := make([]string, 8)

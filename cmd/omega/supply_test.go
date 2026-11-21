@@ -93,12 +93,13 @@ func TestFreshChatPersistsAcrossRestart(t *testing.T) {
 	}
 }
 
-// TestCapsuleDeletedRoutesDieWithIt: the MANAGEMENT face mounts and dies with the. No
-// store capsule = no management routes on the serving mux (the newRoutes face never
-// registers) - the deleted capsule's 404 law; nothing to 404-guard in the base set.
+// TestCapsuleDeletedRoutesDieWithIt: the MANAGEMENT face mounts and dies with the
+// capsule. No store capsule = no management routes on the serving mux (the newRoutes
+// face never registers) - the deleted capsule's 404 law; nothing to 404-guard in the
+// base set.
 func TestCapsuleDeletedRoutesDieWithIt(t *testing.T) {
 	pctx := mountedContextSansStore()
-	// the boot's mount has no store offer: the management face never mounts,.
+	// the boot's mount has no store offer: the management face never mounts.
 	if pctx.Services().Resolve("store") != nil {
 		t.Fatal("the removed mount resolved a capsule store offer - the fixture is broken")
 	}

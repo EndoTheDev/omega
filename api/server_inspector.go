@@ -98,7 +98,7 @@ func (s *Server) handleSkills(w http.ResponseWriter, r *http.Request) {
 	if !getOnly(w, r) {
 		return
 	}
-	// The consumer face (part 3): rows built server-side from the
+	// The consumer face: rows built server-side from the
 	// std-typed inventory view - same name+description rows, same
 	// name sort, same empty-list degradation for an unmounted module.
 	out := []skillListing{}

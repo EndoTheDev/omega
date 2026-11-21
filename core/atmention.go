@@ -18,7 +18,7 @@ type AtMentionEnv struct {
 	// Store backs @session:<id> history injection. Nil leaves those tokens untouched. The
 	// neutral `any` carrier: the caller passes the store service it resolved from the
 	// universal registry; the consult below asserts the one face THIS expansion needs
-	// (consumer-side, part 3) - no named store contract in core.
+	// (consumer-side) - no named store contract in core.
 	Store any
 	// Docs backs @skill:<name> content injection - name/content pairs the caller.
 	// Nil/empty leaves those tokens untouched.

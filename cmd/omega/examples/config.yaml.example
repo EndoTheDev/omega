@@ -26,10 +26,9 @@ provider:
     #   host: https://api.openai.com/v1
     #   api_key: sk-...
 
-# Auxiliary model fields (card t_70c28128: model slots are typed
-# pickers in the webui settings pane - the vision slot's dropdown lists
-# vision-capable models only; the decision-model slot the approval gate
-# uses arrives with that card). Both empty by default.
+# Auxiliary model fields: model slots are typed pickers in the webui
+# settings pane - the vision slot's dropdown lists vision-capable models
+# only. Both empty by default.
 # Captioner model for image messages. Empty = images reach the main
 # model unchanged and may fail loudly.
 # vision_model: gemma4:31b
@@ -130,7 +129,7 @@ memory:
   file: memory.md
   user_file: user.md
 
-# Approval gate (card t_c2b52cb5): shell commands with write, network
+# Approval gate: shell commands with write, network
 # or system effects pass an approval check before they run. The
 # reviewer in smart mode is a decision model (the dropdown lists
 # decision-capable models only); the audit log appends one JSONL

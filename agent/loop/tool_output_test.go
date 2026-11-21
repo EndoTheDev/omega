@@ -35,8 +35,9 @@ func TestTruncateToolOutputShortContentUntouched(t *testing.T) {
 	}
 }
 
-// TestTruncateToolOutputRuneBoundary: the cut backs off a multi-byte rune instead of. A
-// byte cut in a path reaches the provider as U+FFFD in the middle of a filename.
+// TestTruncateToolOutputRuneBoundary: the cut backs off a multi-byte rune instead of
+// splitting it. A byte cut in a path reaches the provider as U+FFFD in the middle of a
+// filename.
 func TestTruncateToolOutputRuneBoundary(t *testing.T) {
 	// Each "→" is 3 bytes: cutting at any byte that is not a rune start must step back.
 	content := strings.Repeat("→", 40) // 120 bytes

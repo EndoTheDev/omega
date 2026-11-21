@@ -568,8 +568,8 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 	return lines
 }
 
-// verdictSink is the CLI loop's own need face of the verdicts capsule (part 3, the. The
-// key is data; the owner capsule never knows a loop exists.
+// verdictSink is the CLI loop's own need face of the verdicts capsule - the key is
+// data; the owner capsule never knows a loop exists.
 type verdictSink interface {
 	Pending(sessionID string) []core.QuestionPrompt
 	Answer(sessionID, cardID string, v core.QuestionAnswer) (core.QuestionAnswer, error)

@@ -1,6 +1,6 @@
 package agent
 
-// The E1 dismount proofs (implementation sketches 1 and 2).
+// The dismount proofs.
 
 import (
 	"context"
@@ -95,7 +95,7 @@ func (p *classicWithProof) Dismount(ctx *core.Context) error {
 	return nil
 }
 
-// dependentCapsule requires a seam, for the Q3 edge test.
+// dependentCapsule requires a seam, for the Requires edge test.
 type dependentCapsule struct {
 	name     string
 	requires []string

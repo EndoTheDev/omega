@@ -26,7 +26,8 @@ func isStdlib(path string) bool {
 	return first != "" && !strings.ContainsAny(first, ".")
 }
 
-// TestCoreImportsStdlibOnly parses every core/*.go file and fails if any import is.
+// TestCoreImportsStdlibOnly parses every core/*.go file and fails if any import is
+// outside the standard library.
 func TestCoreImportsStdlibOnly(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {
@@ -55,18 +56,16 @@ func TestCoreImportsStdlibOnly(t *testing.T) {
 	}
 }
 
-// TestCoreCarriesNoCapsuleNouns is the substrate noun law (part 3, the
-// seam constitution): core carries zero capsule nouns - wire types,
-// mount machinery, the registry, nothing capsule-shaped. The ban
-// covers both noun classes plus the slot-era types that rode out with
-// them:
+// TestCoreCarriesNoCapsuleNouns is the substrate noun law: core carries
+// zero capsule nouns - wire types, mount machinery, the registry, nothing
+// capsule-shaped. The ban covers both noun classes plus the slot-era types
+// that rode out with them:
 //
-// Class A need faces (wave 2): the loop's needs live with their
-//     consumers (agent/seams.go, agent/api, the host); suppliers offer
-//     under need keys and never import these names.
-// Class B owner faces (wave 1): deleted everywhere; a consumer
-//     declares its own local interface and resolves by the string key.
-// the slot-era types that referenced them (CronDeps, Frontend,.).
+// Class A need faces: the loop's needs live with their consumers
+//     (agent/seams.go, agent/api, the host); suppliers offer under need
+//     keys and never import these names.
+// Class B owner faces: deleted everywhere; a consumer declares its own
+//     local interface and resolves by the string key.
 //
 // Identifier-level via go/ast: comments and the accepted residual
 // string keys never trip. The complement (the faces pinned at their

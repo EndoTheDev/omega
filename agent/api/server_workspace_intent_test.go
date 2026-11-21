@@ -1,7 +1,7 @@
 package api
 
 // The draft workspace intent. Refusal paths answer loudly and create nothing (never a
-// half-pinned row); a create without an intent keeps the pre-card behavior.
+// half-pinned row); a create without an intent is left alone.
 
 import (
 	"bufio"

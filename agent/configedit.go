@@ -99,8 +99,9 @@ type AgentInherit struct {
 // Any reports whether at least one artifact kind is enabled.
 func (i AgentInherit) Any() bool { return i.Skills || i.Soul || i.User || i.Memory }
 
-// AgentConfigUpdates is the PUT /agents/{name} write set, one field per item of the. A
-// nil field is untouched - the endpoint writes only what the request carries. MaxTurns
+// AgentConfigUpdates is the PUT /agents/{name} write set, one field per item of the
+// request. A nil field is untouched - the endpoint writes only what the request
+// carries. MaxTurns
 // writes a yaml INT node: the layer's max_turns is unmarshalled straight into
 // Config.MaxTurns int at the next wake, so a quoted "42" would be a boot error, and 0
 // ("no cap") is a real value: nil is what means unset.

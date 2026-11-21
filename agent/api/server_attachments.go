@@ -213,9 +213,9 @@ func (s *Server) handleAttachFile(w http.ResponseWriter, r *http.Request) {
 // errUploadTooLarge separates the size refusal from the other write errors.
 var errUploadTooLarge = errors.New("file too large")
 
-// saveUpload streams one multipart part into the target directory and returns its. The
-// size cap is enforced WHILE writing (one byte over the cap aborts and removes the
-// partial file), so an oversized upload never sits on disk.
+// saveUpload streams one multipart part into the target directory and returns the
+// attachment record. The size cap is enforced WHILE writing (one byte over the cap
+// aborts and removes the partial file), so an oversized upload never sits on disk.
 func saveUpload(root, sessionID string, part multipartFilePart) (*core.Attachment, error) {
 	rawName := part.FileName()
 	if strings.TrimSpace(rawName) == "" {

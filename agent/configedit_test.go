@@ -387,7 +387,7 @@ func TestLoadHostDefinition(t *testing.T) {
 	}
 }
 
-// TestMalformedDisabledFoldIsLoud pins Nit 2 of the review: a fold that will not parse
+// TestMalformedDisabledFoldIsLoud pins the loud parse: a fold that will not parse
 // must not read as "nothing is disabled".
 func TestMalformedDisabledFoldIsLoud(t *testing.T) {
 	home := t.TempDir()
@@ -407,8 +407,8 @@ func TestMalformedDisabledFoldIsLoud(t *testing.T) {
 	}
 }
 
-// TestSkillsAllowlistRefusesAHostDisabledSkill pins Important 4: the
-// subset law binds skills exactly as it binds toggles. A host-disabled
+// TestSkillsAllowlistRefusesAHostDisabledSkill pins the subset law: skills bind
+// exactly as toggles do. A host-disabled
 // skill used to be accepted 200 into the allowlist and then silently
 // dropped at wake - an enabled skill that never loads.
 func TestSkillsAllowlistRefusesAHostDisabledSkill(t *testing.T) {

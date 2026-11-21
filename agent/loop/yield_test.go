@@ -537,7 +537,7 @@ func TestLoopFastToolRunsInlineZeroOverhead(t *testing.T) {
 // TestLoopEscalatedPendingMarkerWording: the marker the model sees on a still-pending
 // call is unmistakable - a scripted-provider pin that the next turn's context carries
 // the do-not-work-around instruction for the escalated call (the old "dispatched"
-// wording sent a live agent to spawn a duplicate, session bf0fa2a2).
+// wording sent a live agent to spawn a duplicate).
 func TestLoopEscalatedPendingMarkerWording(t *testing.T) {
 	shrinkBudget(t, 20*time.Millisecond)
 	provider := agent.NewFakeProviderScripts("test",

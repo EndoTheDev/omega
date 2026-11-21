@@ -43,7 +43,8 @@ func TestOmegaHomeBinaryDir(t *testing.T) {
 	}
 }
 
-// TestOmegaHomeFallback verifies that omegaHome returns a non-empty string when.
+// TestOmegaHomeFallback verifies that omegaHome returns a non-empty string when
+// OMEGA_HOME is empty.
 func TestOmegaHomeFallback(t *testing.T) {
 	t.Setenv("OMEGA_HOME", "")
 	got := omegaHome()
