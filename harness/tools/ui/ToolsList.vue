@@ -49,6 +49,7 @@
       :error="toggleError"
       :loaded="loaded"
       :toggleable="toggleable"
+      :row-menu="rowMenu"
       :empty-text="query.trim() ? 'no matching tools' : 'no tools registered'"
       @toggle="onToggle" />
     </div>
@@ -61,6 +62,8 @@
   import { nativeTools, toggleTargets, toolRows, type ToolWire } from "./toolRows";
   // the band search's filter (name / description on the GROUPED rows), pure.
   import { filterToolRows } from "./search";
+  import type { ContextMenuEntry } from "~/composables/contextMenu";
+  import { toolMenuItems } from "./toolMenu";
 
   // Module-owned UI canary, now the inspector's Tools tab content.
   interface ToolInfo extends ToolWire {}
@@ -83,6 +86,20 @@
   // the in-band search - CLIENT-SIDE on the grouped rows (no new backend route), name.
   const query = ref("");
   const visibleRows = computed(() => filterToolRows(rows.value, query.value));
+
+  // THE ROW MENU: the tab's only verb is the pill's write, so an untoggleable registry
+  // registers nothing and the browser's own menu stays. The row face is local: module UI
+  // imports no shell client.
+  function rowMenu(row: { name: string; disabled: boolean; noToggle?: boolean }): ContextMenuEntry[] {
+    return toolMenuItems(
+      {
+        disabled: !!row.disabled,
+        toggleable: toggleable.value && !row.noToggle,
+      },
+      // the target direction IS the row's disabled flag (RegistryList's own emit)
+      { toggle: () => void onToggle(row.name, !!row.disabled) },
+    );
+  }
 
   async function load(): Promise<void> {
     // the fold-aware management read. The bare GET /tools stays the executable registry

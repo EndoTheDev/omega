@@ -95,7 +95,9 @@
           :depth="0"
           :narrow="narrow"
           @open="openFile"
-          @select="onSelect" />
+          @select="onSelect"
+          @create="onCreateNode"
+          @notice="(m) => (toolError = m)" />
       </div>
     </div>
   </aside>
@@ -195,6 +197,13 @@
 
   function onSelect(sel: SelectedNode) {
     selected.value = sel;
+  }
+
+  // the tree row menu's New: the row IS the target, then the tab's one form opens (the
+  // band's add-folder button flips the same form to POST /files/mkdir).
+  function onCreateNode(node: SelectedNode) {
+    selected.value = node;
+    startCreate("file");
   }
 
   // create buttons only: a refused root listing is "no workspace under

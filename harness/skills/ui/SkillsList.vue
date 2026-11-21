@@ -108,6 +108,7 @@
         :loaded="loaded"
         :toggleable="toggleable"
         openable
+        :row-menu="rowMenu"
         :empty-text="query.trim() ? 'no matching skills' : 'no skills installed'"
         @toggle="onToggle"
         @open="openSkill">
@@ -132,6 +133,8 @@
   import { isNarrowWidth } from "./narrow";
   import { refreshSkills, type SkillInfo } from "./refresh";
   import { filterSearchableRows } from "./search";
+  import type { ContextMenuEntry } from "~/composables/contextMenu";
+  import { skillMenuItems } from "./skillMenu";
   // the editor chain is a pure module, like the cron tab's edit.ts.
   import {
     deleteSkill,
@@ -180,6 +183,24 @@
     );
   }
 
+  // THE ROW MENU: Open is the row's own click (the viewer tab), Enable or Disable is
+  // the pill's own write, and Delete arms the editor's one confirm - never a second
+  // confirm dialog beside it. The row face is local: module UI imports no shell client.
+  function rowMenu(row: { name: string; disabled: boolean; noToggle?: boolean }): ContextMenuEntry[] {
+    return skillMenuItems(
+      {
+        disabled: !!row.disabled,
+        toggleable: toggleable.value && !row.noToggle,
+      },
+      {
+        open: () => openSkill(row),
+        // the target direction IS the row's disabled flag (RegistryList's own emit)
+        toggle: () => void onToggle(row.name, !!row.disabled),
+        remove: () => void startEdit(row.name, true),
+      },
+    );
+  }
+
   async function load(): Promise<void> {
     applyInventory(await refreshSkills());
   }
@@ -224,7 +245,7 @@
     };
   }
 
-  async function startEdit(name: string): Promise<void> {
+  async function startEdit(name: string, armedDelete = false): Promise<void> {
     editor.value = {
       creating: false,
       loadingDraft: true,
@@ -235,6 +256,9 @@
     };
     try {
       editor.value.draft = await fetchSkillDraft(name);
+      // the row menu's Delete lands on the editor's own confirm: arm only once the
+      // draft really loaded, so a failed fetch can never leave a delete holding ""
+      if (armedDelete) editor.value.armedDelete = true;
     } catch (e) {
       if (editor.value) {
         editor.value.error = e instanceof Error ? e.message : String(e);

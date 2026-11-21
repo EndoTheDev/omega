@@ -20,6 +20,12 @@ export const MCP_EMPTY_TEXT = "no MCP servers configured";
 export const MCP_EMPTY_HINT =
   "add a servers: array to mcp.yaml (or set MCP_SERVERS)";
 
+// the row detail's edit note: the panel owns TWO writes (the enabled flag and a delete),
+// and the entry's other keys never reach the wire - so the detail says where to edit
+// instead of pretending a form here would be lossless.
+export const MCP_DETAIL_NOTE =
+  "config: mcp.yaml - args, env and headers are authored there; this panel toggles and deletes entries";
+
 export function serverEnabled(s: McpServerWire): boolean {
   return s.enabled !== false;
 }

@@ -74,7 +74,8 @@
         :key="n.id"
         class="notif-row"
         :class="{ unread: !n.read, failed: n.verdict === 'failed' }"
-        @click="openRecord(n)">
+        @click="openRecord(n)"
+        @contextmenu="onRowMenu($event)">
         <span
           class="notif-kind"
           :data-kind="n.kind">{{ kindGlyph(n.kind) }}</span>
@@ -114,6 +115,8 @@
     type PendingVerdictCard,
   } from "~/composables/omega";
   import type { OmegaNotification } from "~/composables/notifications";
+  import { openContextMenu } from "~/composables/contextMenu";
+  import { notificationMenuItems } from "./notificationMenu";
 
   const emit = defineEmits<{
     // navigation intent: app.vue routes task -> board, cron -> the cron inspector.
@@ -196,6 +199,18 @@
     } finally {
       clearingAll.value = false;
     }
+  }
+
+  // THE ROW MENU: one row on every record row, because the verb is the whole feed's.
+  // An empty feed registers nothing, so the right-click leaves the browser's own menu.
+  function onRowMenu(e: MouseEvent) {
+    const items = notificationMenuItems(
+      { count: notificationsList.value.length, clearing: clearingAll.value },
+      { clearAll: () => void clearAllRecords() },
+    );
+    if (items.length === 0) return;
+    e.preventDefault();
+    void openContextMenu(e.clientX, e.clientY, items);
   }
 
   onMounted(async () => {
