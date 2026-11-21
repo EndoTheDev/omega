@@ -1,7 +1,5 @@
 package continuous
 
-// continuous.go: the home machinery and the cross-home reads.
-
 import (
 	"context"
 	"fmt"
@@ -28,23 +26,21 @@ type canonicalChatWriter interface {
 	CreateCanonicalChat(ctx context.Context, id, agentName string) error
 }
 
-// chatMessagesTail is the chat view's message cap.
 const chatMessagesTail = 100
 
-// previewRuneCap truncates the report preview for the pane.
 const previewRuneCap = 160
 
 // Machine is the capsule's home machinery, one per process.
 type Machine struct {
 	home string
 	cfg  Config
-	// mu guards the live-wake map (rulings 7+9: one live wake per agent; the guard skips,
-	// never queues).
+	// mu guards the live-wake map: one live wake per agent, and the guard skips rather
+	// than queues.
 	mu   sync.Mutex
 	live map[string]func()
-	// disabled is the config.yaml disabled.agents fold (v0.14.1), the soft toggle: a name
-	// here stays registered (folder presence IS registration - never removed from disk)
-	// but vanishes from the roster and every wake trigger.
+	// disabled is the config.yaml disabled.agents fold, the soft toggle: a name here
+	// stays registered (folder presence IS registration - never removed from disk) but
+	// vanishes from the roster and every wake trigger.
 	disabledMu sync.RWMutex
 	disabled   map[string]bool
 	// spawnExe resolves the binary a wake child runs. os.Executable is
@@ -55,7 +51,6 @@ type Machine struct {
 	storeFn func() agent.StoreProvider
 }
 
-// SetDisabledAgents swaps the soft-disable list live.
 func (m *Machine) SetDisabledAgents(names []string) {
 	m.disabledMu.Lock()
 	defer m.disabledMu.Unlock()
@@ -70,24 +65,20 @@ func (m *Machine) SetDisabledAgents(names []string) {
 	m.disabled = set
 }
 
-// agentDisabled reports one agent's soft-disable state.
 func (m *Machine) agentDisabled(name string) bool {
 	m.disabledMu.RLock()
 	defer m.disabledMu.RUnlock()
 	return m.disabled[name]
 }
 
-// setSpawnExe swaps the child-binary resolver (tests only).
 func (m *Machine) setSpawnExe(fn func() (string, error)) {
 	m.spawnExe = fn
 }
 
-// SetStoreResolver wires the store seam.
 func (m *Machine) SetStoreResolver(fn func() agent.StoreProvider) {
 	m.storeFn = fn
 }
 
-// mountStore resolves the store seam for one call, or nil.
 func (m *Machine) mountStore() agent.StoreProvider {
 	if m.storeFn == nil {
 		return nil
@@ -125,7 +116,6 @@ func (m *Machine) sessionRows(name string) ([]core.Session, error) {
 	return ast.ListAgentSessions(ctx, name)
 }
 
-// CurrentCanonicalSession picks agentName's live canonical chat out.
 func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Session, bool) {
 	var best core.Session
 	found := false
@@ -133,7 +123,6 @@ func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Se
 		if sess.Archived || !IsCanonicalSessionID(agentName, sess.ID) {
 			continue
 		}
-		// newest by created_at, then by generation NUMBER.
 		if !found || sess.CreatedAt > best.CreatedAt ||
 			(sess.CreatedAt == best.CreatedAt &&
 				canonicalGeneration(agentName, sess.ID) > canonicalGeneration(agentName, best.ID)) {
@@ -169,7 +158,6 @@ func (m *Machine) EnsureCanonical(name string) (core.Session, error) {
 	return core.Session{ID: id, Label: store.CanonicalChatLabel, Agent: name, CreatedAt: now, UpdatedAt: now, LastReadAt: now, MachineOwned: true}, nil
 }
 
-// createCanonical writes one canonical chat row in the store that OWNS the home.
 func (m *Machine) createCanonical(name, id string) error {
 	if name == agent.DefaultAgentName {
 		st := m.mountStore()
@@ -215,7 +203,6 @@ func previewOf(msgs []core.Message) string {
 	return ""
 }
 
-// NewMachine builds the machinery for the omega home.
 func NewMachine(home string, cfg Config) *Machine {
 	m := &Machine{home: home, cfg: cfg, live: map[string]func(){}}
 	m.SetDisabledAgents(cfg.Disabled) // the boot-time disabled.agents fold
@@ -242,10 +229,9 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 			return fmt.Errorf("seed schedule: %w", err)
 		}
 	}
-	// The one permanent chat, in the agent's OWN store (rulings 4+6). It is seeded through
-	// the MACHINERY-OWNED door, not the ordinary agent-session one (round-1 finding): the
-	// `listed = 0` bit is what makes the row machine-owned, and the /new compact keys on
-	// exactly that bit.
+	// The one permanent chat, in the agent's OWN store. It is seeded through the
+	// MACHINERY-OWNED door, not the ordinary agent-session one: the `listed = 0` bit is
+	// what makes the row machine-owned, and the /new compact keys on exactly that bit.
 	st, err := store.Open(filepath.Join(dir, "data", "omega.db"))
 	if err != nil {
 		return fmt.Errorf("open %s store: %w", name, err)
@@ -259,7 +245,6 @@ func (m *Machine) CreateHome(name, directive, schedule string) error {
 	return nil
 }
 
-// seedSystemPrompt appends the directive as the agent layer's system_prompt.
 func seedSystemPrompt(dir, directive string) error {
 	configPath := filepath.Join(dir, "config", "config.yaml")
 	existing, err := os.ReadFile(configPath)
@@ -273,7 +258,6 @@ func seedSystemPrompt(dir, directive string) error {
 	return os.WriteFile(configPath, []byte(text), 0o644)
 }
 
-// seedWakeSchedule writes the agent's own crons.yaml.
 func seedWakeSchedule(dir, schedule, directive string) error {
 	prompt := directive
 	if prompt == "" {
@@ -283,7 +267,6 @@ func seedWakeSchedule(dir, schedule, directive string) error {
 	return os.WriteFile(filepath.Join(dir, "config", "crons.yaml"), []byte(jobs), 0o644)
 }
 
-// yamlScalar renders one safe yaml scalar.
 func yamlScalar(v string) string {
 	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`, "\n", "\\n").Replace(v) + `"`
 }
@@ -318,12 +301,10 @@ func (m *Machine) Roster() []RosterRow {
 	return rows
 }
 
-// canonicalView opens an agent's own store for the canonical chat.
 func canonicalView(agentDir string) (agent.StoreProvider, error) {
 	return store.Open(filepath.Join(agentDir, "data", "omega.db"))
 }
 
-// agentSessions lists agentName's rows off an open store provider.
 func agentSessions(ctx context.Context, st agent.StoreProvider, agentName string) ([]core.Session, error) {
 	as, ok := st.(agent.AgentSessionStore)
 	if !ok {
@@ -332,7 +313,6 @@ func agentSessions(ctx context.Context, st agent.StoreProvider, agentName string
 	return as.ListAgentSessions(ctx, agentName)
 }
 
-// canonicalPreview returns the roster's preview facts from the agent's canonical chat.
 func (m *Machine) canonicalPreview(agentDir, agentName string) (preview, reportAt string, unread bool) {
 	st, err := canonicalView(agentDir)
 	if err != nil {
@@ -400,7 +380,6 @@ func (m *Machine) CanonicalChat(name string) (ChatView, error) {
 	return ChatView{Name: name, Session: sess, Messages: msgs}, nil
 }
 
-// truncateRunes caps a preview at n runes.
 func truncateRunes(s string, n int) string {
 	s = strings.TrimSpace(s)
 	runes := []rune(s)
@@ -460,7 +439,6 @@ type schedule struct {
 	expr   string
 }
 
-// Next resolves the next fire time after the given instant.
 func (s *schedule) Next(after time.Time) (time.Time, error) {
 	id, err := s.parser.Parse(s.expr)
 	if err != nil {

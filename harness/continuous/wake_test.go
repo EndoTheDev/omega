@@ -68,7 +68,6 @@ func waitFile(t *testing.T, outPath string, pred func(string) bool) string {
 	return ""
 }
 
-// testAgent scaffolds scout into home.
 func testAgent(t *testing.T, home string) agent.Profile {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, "scout", "test agent"); err != nil {

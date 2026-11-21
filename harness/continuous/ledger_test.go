@@ -1,7 +1,5 @@
 package continuous
 
-// ledger_test.go: the evidence ledger self-checks.
-
 import (
 	"context"
 	"encoding/json"

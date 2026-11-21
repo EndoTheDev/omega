@@ -1,7 +1,5 @@
 package continuous
 
-// agentsrest_test.go: the /agents roster face's gates.
-
 import (
 	"bytes"
 	"context"
@@ -19,7 +17,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// newAgentsFixture mounts the roster REST face on a real listener with a scratch home.
 func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -56,7 +53,6 @@ func getJSON(t *testing.T, url string) (int, []byte) {
 	return res.StatusCode, body
 }
 
-// postAny posts a JSON body and returns the status only.
 func postAny(t *testing.T, url string, payload any) (int, error) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -71,7 +67,6 @@ func postAny(t *testing.T, url string, payload any) (int, error) {
 	return res.StatusCode, nil
 }
 
-// putAny PUTs a JSON body and returns the status + body head.
 func putAny(t *testing.T, url string, payload any) (int, string) {
 	t.Helper()
 	data, err := json.Marshal(payload)
@@ -137,7 +132,6 @@ func TestScaffoldEndpoint(t *testing.T) {
 	}
 }
 
-// TestCloneEndpoint pins the CLONE law on the wire.
 func TestCloneEndpoint(t *testing.T) {
 	srv, st, home := newAgentsFixture(t)
 	ctx := context.Background()
@@ -200,8 +194,8 @@ func TestCloneEndpoint(t *testing.T) {
 	}
 }
 
-// TestCloneEndpointRetagFailureLeavesNoPhantom pins Important 3 on the wire. A copy
-// that lands and then fails to re-tag its rows must not leave a registered folder
+// TestCloneEndpointRetagFailureLeavesNoPhantom: a copy that lands and then fails to
+// re-tag its rows must not leave a registered folder
 // behind - the source's rows would read as the source's session AND the roster would
 // list an agent nobody finished creating.
 func TestCloneEndpointRetagFailureLeavesNoPhantom(t *testing.T) {
@@ -374,7 +368,6 @@ func TestAgentsListCarriesSessionCounts(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpoint pins the roster's edit affordance.
 func TestAgentUpdateEndpoint(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 	seedHostProviders(t, home)
@@ -424,7 +417,6 @@ func TestAgentUpdateEndpoint(t *testing.T) {
 	}
 }
 
-// seedHostProviders gives the fixture home a settings file with one named provider.
 func seedHostProviders(t *testing.T, home string) {
 	t.Helper()
 	body := "provider:\n  type: ollama\n  model_name: glm\nproviders:\n  work:\n    type: openai\n    host: http://localhost:9000\n    api_key: sk-test\n"
@@ -436,7 +428,6 @@ func seedHostProviders(t *testing.T, home string) {
 	}
 }
 
-// TestAgentUpdateEndpointMaxTurns pins the wire shape of the first additive field.
 func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 
@@ -479,7 +470,6 @@ func TestAgentUpdateEndpointMaxTurns(t *testing.T) {
 	}
 }
 
-// TestAgentUpdateEndpointUnset pins the second additive field.
 func TestAgentUpdateEndpointUnset(t *testing.T) {
 	srv, _, home := newAgentsFixture(t)
 
@@ -708,7 +698,7 @@ func TestAgentsRosterCanonicalChat(t *testing.T) {
 	}
 }
 
-// TestCreateHomeSeedsTheRosterCanonical pins the round-1 fix on the path a real agent.
+// TestCreateHomeSeedsTheRosterCanonical pins the seed on the path a real agent takes.
 func TestCreateHomeSeedsTheRosterCanonical(t *testing.T) {
 	home := t.TempDir()
 	st, err := store.Open(":memory:")

@@ -1,5 +1,3 @@
-// omega webui: the agents surface model.
-
 import { rowStatus, type OmegaContinuousRow } from "./continuousRows.ts";
 
 // the row is SECRET-FREE (agent/configedit.go): an agent names a provider INSTANCE,
