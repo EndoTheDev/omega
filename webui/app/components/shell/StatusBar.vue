@@ -1,6 +1,9 @@
 <template>
-  <!-- The status bar, TWO zones. -->
-  <footer class="statusbar">
+  <!-- The status bar, TWO zones. A right-click anywhere on the bar opens the stat menu
+       (statusStats.ts): every stat with its check state, one click to hide or show it. -->
+  <footer
+    class="statusbar"
+    @contextmenu="onStatMenu">
     <div class="zone left">
       <!--
         health leads the bar: the dot (and its word on wide) stays visible on narrow.
@@ -31,6 +34,7 @@
         the OPEN SESSION's pending calls: the count is the focused chat's own
         transcript, never a machine-wide number.
       -->
+      <template v-if="shows('pending')">
       <button
         v-if="pending > 0"
         class="seg seg-btn pending hide-sm"
@@ -40,18 +44,24 @@
         @click="$emit('focus-pending')">
         {{ pending }} pending
       </button>
+      </template>
+      <template v-if="shows('tokens')">
       <span
         v-if="tokens"
         class="seg hide-sm"
         title="tokens used, active session">
         {{ tokensEstimated ? "~" : "" }}{{ tokens }} tok
       </span>
+      </template>
+      <template v-if="shows('context')">
       <span
         v-if="contextSize"
         class="seg hide-sm"
         title="model context window">
         {{ formatCtx }} ctx
       </span>
+      </template>
+      <template v-if="shows('throughput')">
       <span
         v-if="streaming && liveDeltasPerSecond"
         class="seg hide-sm"
@@ -64,12 +74,16 @@
         title="chunks per second, last run">
         {{ lastChunksPerSecond }} ch/s
       </span>
+      </template>
+      <template v-if="shows('speed')">
       <span
         v-if="tokensPerSecond"
         class="seg hide-sm"
         title="generation speed, last run">
         {{ tokensPerSecond }} tok/s
       </span>
+      </template>
+      <template v-if="shows('messages')">
       <span class="seg hide-sm">
         <span
           v-if="streaming"
@@ -78,18 +92,21 @@
         >
         <span v-else>{{ messageCount }} messages</span>
       </span>
+      </template>
       <!--
         version LAST: the rightmost thing on the bar.
         The cap rides the inner span, never this.seg: a display declaration here would
         out-rule.hide-sm and put the build back on the narrow bar (the seg itself stays
         flex + hide-sm).
       -->
+      <template v-if="shows('version')">
       <span
         v-if="version"
         class="seg hide-sm"
         :title="`server build - ${version}`">
         <span class="build-text">{{ shortVersion(version) }}</span>
       </span>
+      </template>
 
       <div
         v-if="healthOpen"
@@ -163,6 +180,8 @@
     formatDurationMs,
     shortVersion,
   } from "../../composables/omega";
+  import { openContextMenu } from "../../composables/contextMenu";
+  import { statMenuItems, statVisible } from "./statusStats";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
 
   const props = defineProps<{
@@ -184,6 +203,8 @@
     workdirTarget: boolean;
     pending: number;
     socket: string;
+    /** the persisted hidden stat ids (the layout record's set); absent = every stat shows */
+    hiddenStats?: readonly string[];
     providerReachable?: boolean | null;
     providerCheckedAt?: number;
     providerDetail?: string;
@@ -193,12 +214,28 @@
     lastErrorAt?: number;
   }>();
 
-  defineEmits<{
+  const emits = defineEmits<{
     (e: "update:workdir", value: string): void;
     (e: "focus-pending"): void;
+    /** the stat menu's one write: the host persists the hidden set in the layout record */
+    (e: "toggle-stat", id: string, hidden: boolean): void;
   }>();
 
   const NOT_REPORTED = "not reported";
+
+  const shows = (id: string) => statVisible(props.hiddenStats ?? [], id);
+
+  // the bar's whole inventory in one menu; a right-click is always the same door
+  function onStatMenu(e: MouseEvent) {
+    e.preventDefault();
+    void openContextMenu(
+      e.clientX,
+      e.clientY,
+      statMenuItems(props.hiddenStats ?? [], (id, hidden) => {
+        emits("toggle-stat", id, hidden);
+      }),
+    );
+  }
 
   const providerSourced = computed(() => typeof props.providerReachable === "boolean");
   const databaseSourced = computed(() => typeof props.databaseHealthy === "boolean");

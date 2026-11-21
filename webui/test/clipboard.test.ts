@@ -238,7 +238,8 @@ describe("the sessions row's copy-id action (card t_61cc8762)", () => {
 
   it("confirms on the shell's local toast funnel - no second toast stack", () => {
     assert.match(sidebar, /import \{ emitLocalToast \} from "~\/composables\/canvas"/);
-    assert.equal((sidebar.match(/emitLocalToast\(/g) ?? []).length, 1, "one emit, the shared funnel");
+    // two sites, ONE funnel: the copy receipt and the row menu's stop refusal
+    assert.equal((sidebar.match(/emitLocalToast\(/g) ?? []).length, 2, "every receipt rides the shared funnel");
     // the payload is the record shape the funnel's consumer decodes.
     assert.match(sidebar, /kind: "chat"/);
     assert.match(sidebar, /source_id: "session-copy"/);

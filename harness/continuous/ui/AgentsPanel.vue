@@ -121,6 +121,7 @@
         class="agents-status">loading…</p>
       <RegistryList
         v-else
+        ref="listEl"
         kind="agents"
         :rows="rows"
         :busy="busy"
@@ -131,6 +132,7 @@
         feel="sessions"
         expander="chevron"
         :active-name="activeAgentName"
+        :row-menu="rowMenu"
         empty-text="no agents registered"
         @toggle="onToggle"
         @open="openAgentChat"
@@ -499,7 +501,9 @@ import {
   type OmegaEvidenceRow,
 } from "./continuousRows.ts";
 import type { RegistryRow } from "~/composables/omega";
+import type { ContextMenuEntry } from "~/composables/contextMenu";
 import Icon from "~/components/ui/Icon.vue";
+import { agentMenuItems } from "./agentMenu";
 
 const profiles = ref<OmegaAgent[]>([]);
 const fold = ref<string[]>([]);
@@ -625,6 +629,28 @@ function sessionCountOf(name: string): number {
 const deleting = ref<string | null>(null);
 const removing = ref<string | null>(null);
 const deleteError = reactive<Record<string, string>>({});
+
+// the list's exposed fold, so the menu's Delete can land on the row's own confirm
+const listEl = ref<{ openDetail: (name: string) => void } | null>(null);
+
+/** THE ROW MENU: New agent opens the panel's one create form; Delete opens the row's own
+    confirm (never a second confirm), and the locked default agent offers neither danger nor
+    a duplicate home. */
+function rowMenu(row: RegistryRow): ContextMenuEntry[] {
+  return agentMenuItems(
+    { name: row.name, deletable: row.name !== DefaultAgentName },
+    {
+      newAgent: () => {
+        showCreate.value = true;
+        createError.value = "";
+      },
+      remove: () => {
+        listEl.value?.openDetail(row.name);
+        deleting.value = row.name;
+      },
+    },
+  );
+}
 
 /** voices the delete's own count - the same number the confirm dialog promised. */
 function agentSessionReceipt(n?: number): string {

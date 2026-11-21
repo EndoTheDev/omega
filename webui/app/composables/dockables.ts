@@ -2,7 +2,7 @@
 // never dockable; dock.ts re-exports this inventory.
 
 import type { PaneZone } from "./panes.ts";
-import type { ContextMenuEntry, ContextMenuItem } from "./contextMenu.ts";
+import type { ContextMenuEntry } from "./contextMenu.ts";
 
 // Component names a dock pane may host, in tab order. nuxt.config.ts's module-tabs scan
 // generates the manifest app.vue's outlets bind from.
@@ -353,13 +353,22 @@ export function isClosableTab(id: DockComponentName): boolean {
 export interface DockTabMenuDeps {
   close: () => void;
   closeOthers: () => void;
+  /**
+   * present ONLY on the secondary sidebar's strip: hiding is a visibility flag, never a
+   * close - the tab keeps its seat and its state, the chip just stops rendering.
+   */
+  hide?: () => void;
+  /** how many chips the strip still shows; hiding the last visible one is refused */
+  visibleCount?: number;
 }
 
 /**
  * THE DOCK TAB MENU (the shared context menu's first surface). A row is offered only where it
  * would act: Close is the tab's own X, so it follows the X's two refusals (an uncloseable
  * component, and the locked last tab), and Close others needs another closable tab to close.
- * An empty answer means no menu - the right-click does nothing.
+ * Hide rides the same law on the other axis: a strip always keeps one chip, so the surface
+ * that restores the rest stays on screen. An empty answer means no menu - the right-click
+ * does nothing.
  */
 export function dockTabMenuItems(
   pane: { tabs: readonly { component: string }[] },
@@ -368,7 +377,7 @@ export function dockTabMenuItems(
 ): ContextMenuEntry[] {
   const tab = pane.tabs[index];
   if (!tab) return [];
-  const items: ContextMenuItem[] = [];
+  const items: ContextMenuEntry[] = [];
   const closable = (component: string) => isClosableTab(component as DockComponentName);
   if (closable(tab.component) && pane.tabs.length > 1) {
     items.push({ id: "tab:close", label: "Close", run: deps.close });
@@ -377,7 +386,34 @@ export function dockTabMenuItems(
   if (others) {
     items.push({ id: "tab:close-others", label: "Close others", run: deps.closeOthers });
   }
+  if (deps.hide && (deps.visibleCount ?? 0) > 1) {
+    // the rule only separates verbs; a strip with no other row starts on Hide
+    if (items.length > 0) items.push({ kind: "separator" });
+    items.push({ id: "tab:hide", label: "Hide this tab", run: deps.hide });
+  }
   return items;
+}
+
+/**
+ * THE STRIP'S RESTORE LIST: the hidden chips of this pane, one row each. Returns nothing
+ * when nothing is hidden, so a right-click on the bare strip keeps the browser's menu.
+ */
+export function hiddenTabMenuItems(
+  pane: { tabs: readonly { component: string }[] },
+  hidden: readonly string[],
+  title: (component: DockComponentName) => string,
+  show: (component: DockComponentName) => void,
+): ContextMenuEntry[] {
+  return pane.tabs
+    .filter((t) => hidden.includes(t.component))
+    .map((t) => {
+      const component = t.component as DockComponentName;
+      return {
+        id: "tab:show:" + component,
+        label: "Show " + title(component),
+        run: () => show(component),
+      };
+    });
 }
 
 export const COMPONENT_TITLES: Record<DockComponentName, string> =

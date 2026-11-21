@@ -88,7 +88,7 @@ describe("the wiring: one surface, selected row, no local menu", () => {
   const menu = read("webui", "app", "components", "ui", "ContextMenu.vue");
 
   it("the tab's right-click prevents the native menu and opens the shared one", () => {
-    assert.match(pane, /@contextmenu\.prevent="onTabContextMenu\(\$event, i\)"/);
+    assert.match(pane, /@contextmenu\.prevent\.stop="onTabContextMenu\(\$event, i\)"/);
     assert.match(pane, /function onTabContextMenu\(e: MouseEvent, index: number\)/);
     assert.match(
       pane,

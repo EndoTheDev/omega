@@ -12,6 +12,11 @@ export interface ContextMenuItem {
   label: string;
   /** the chord that would do the same thing; text only, never a binding */
   shortcut?: string;
+  /**
+   * a row that mirrors a persisted toggle (the statusbar's stat set): it carries the
+   * state it flips, so the menu reads as a switch, never as a one-way verb.
+   */
+  checked?: boolean;
   /** destructive rows wear the error color */
   danger?: boolean;
   disabled?: boolean;

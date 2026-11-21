@@ -3169,6 +3169,16 @@ export async function streamChat(
   await consumeSSE(resp, handlers);
 }
 
+// stopSessionRun is the REST stop (POST /sessions/{id}/stop): the user's hard stop of the
+// session's live run. It refuses an idle session (404 "session not active"), which is why
+// the menu offers it only on a running row.
+export async function stopSessionRun(id: string): Promise<void> {
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/stop`, {
+    method: "POST",
+  });
+  if (!r.ok) throw new Error(`stop: ${r.status}`);
+}
+
 // stopSession is gone with the REST stop affordance (chat-last 2a). Returns false when
 // the session has no live run (404 "session not active") - the caller renders settled
 // history instead.

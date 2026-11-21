@@ -24,18 +24,21 @@
     <div
       ref="tabsEl"
       class="dock-tabbar"
-      v-if="!node.grown">
+      v-if="!node.grown"
+      @contextmenu="onStripContextMenu">
       <template v-if="node.tabs.length">
         <div
           class="dock-tabs"
           role="tablist"
           aria-label="pane tabs">
-          <div
+          <template
             v-for="(t, i) in node.tabs"
-            :key="i"
+            :key="i">
+          <div
+            v-if="!tabHidden(t)"
             class="dock-tab"
             :class="{
-              active: i === node.active,
+              active: i === activeIndex,
               'caret-before': dropIdx === i,
               'drop-refused': refusedIdx === i,
               /*
@@ -46,12 +49,12 @@
             }"
             :data-index="i"
             role="tab"
-            :aria-selected="i === node.active"
+            :aria-selected="i === activeIndex"
             :aria-label="iconTabs ? tabTitle(t) : undefined"
             :title="tabTitle(t)"
             :draggable="true"
             @click="api.focus(node.id, i)"
-            @contextmenu.prevent="onTabContextMenu($event, i)"
+            @contextmenu.prevent.stop="onTabContextMenu($event, i)"
             @dragstart="onTabDragStart($event, i)"
             @dragover="onTabbarDragOver"
             @drop="onTabbarDrop">
@@ -79,6 +82,7 @@
               ×
             </button>
           </div>
+          </template>
           <button
             v-if="!pinned"
             class="dock-tab-new"
@@ -142,7 +146,7 @@
       <slot
         :name="outletName"
         :pane="node.id"
-        :tab="node.tabs[node.active]" />
+        :tab="activeTab" />
     </div>
 
     <!--
@@ -217,6 +221,7 @@
     dockTabMenuItems,
     dockableIcon,
     dockableOf,
+    hiddenTabMenuItems,
     isClosableTab,
     type DockComponentName,
   } from "../composables/dockables";
@@ -254,6 +259,22 @@
     return z === "left" || z === "right";
   });
   const pinned = computed(() => props.node.edge !== undefined || inSidebarZone.value);
+
+  // THE HIDDEN CHIP: hiding is a visibility flag, never a close - the tab keeps its seat,
+  // its ref and its pane. The strip renders only visible chips, and the pane body follows
+  // the ACTIVE chip when it is visible, else the first that is, so hiding never blanks a pane.
+  const hiddenTabs = computed(() => api.hiddenTabs.value);
+  function tabHidden(tab: DockTab): boolean {
+    return hiddenTabs.value.includes(tab.component);
+  }
+  const visibleCount = computed(() => props.node.tabs.filter((t) => !tabHidden(t)).length);
+  const activeIndex = computed(() => {
+    const active = props.node.tabs[props.node.active];
+    if (active && !tabHidden(active)) return props.node.active;
+    const first = props.node.tabs.findIndex((t) => !tabHidden(t));
+    return first >= 0 ? first : props.node.active;
+  });
+  const activeTab = computed(() => props.node.tabs[activeIndex.value]);
   // THE SHAPE LAW: which split actions this pane may OFFER. A sidebar stacks, so its panes
   // offer no side-by-side split at all - the entry point is gone, never a greyed-out button.
   function canSplit(direction: SplitDirection): boolean {
@@ -273,17 +294,40 @@
   }
 
   // The right-click SELECTS the tab it menus, so the verbs land on the tab the user pointed
-  // at. The item closures capture that index, never the active tab.
+  // at. The item closures capture that index, never the active tab. Hide is the secondary
+  // sidebar's own axis: the strip keeps one chip, and that chip's right-click restores the rest.
   function onTabContextMenu(e: MouseEvent, index: number) {
     api.focus(props.node.id, index);
+    const secondary = paneZone.value === "right";
     void openContextMenu(
       e.clientX,
       e.clientY,
       dockTabMenuItems(props.node, index, {
         close: () => api.closeTab(props.node.id, index),
         closeOthers: () => closeOtherTabs(index),
+        ...(secondary
+          ? {
+              hide: () => api.setTabHidden(props.node.tabs[index]!.component, true),
+              visibleCount: visibleCount.value,
+            }
+          : {}),
       }),
     );
+  }
+
+  // THE SIDEBAR TITLE BAR: a sidebar's strip is the surface that stays visible when its
+  // chips go, so it holds the restore list. Nothing hidden = no menu (the browser's own).
+  function onStripContextMenu(e: MouseEvent) {
+    if (paneZone.value !== "right") return;
+    const rows = hiddenTabMenuItems(
+      props.node,
+      api.hiddenTabs.value,
+      (component) => COMPONENT_TITLES[component],
+      (component) => api.setTabHidden(component, false),
+    );
+    if (rows.length === 0) return;
+    e.preventDefault();
+    void openContextMenu(e.clientX, e.clientY, rows);
   }
 
   // Descending, so every index not yet visited is still the one the store holds: closeTab
@@ -297,14 +341,14 @@
   }
 
   const outletName = computed(() => {
-    const c = props.node.tabs[props.node.active]?.component;
+    const c = activeTab.value?.component;
     // an EMPTY pane (a fresh split group, a shell drained by a drag) has no outlet.
     if (!c) return null;
     return "pane-" + c as `pane-${DockComponentName}`;
   });
 
   const kindClass = computed(
-    () => "kind-" + (props.node.tabs[props.node.active]?.component ?? "empty"),
+    () => "kind-" + (activeTab.value?.component ?? "empty"),
   );
 
   function newSession() {

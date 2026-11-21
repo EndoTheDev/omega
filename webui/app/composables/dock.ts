@@ -2034,6 +2034,9 @@ export function serialize(
   containerPx: number = V2_NOMINAL_CONTAINER_PX,
   /** the closed shells' stowed panes; omitted when empty so stow-free records keep their shape. */
   hiddenEdges?: HiddenEdgeState,
+  /** the hidden-tab / hidden-stat visibility sets; omitted when empty, like the stows. */
+  hiddenTabs: readonly string[] = [],
+  hiddenStats: readonly string[] = [],
 ): string {
   const stowed = hiddenEdges && Object.keys(hiddenEdges).length
     ? Object.fromEntries(
@@ -2045,6 +2048,8 @@ export function serialize(
     tree: recordTree(tree, containerPx),
     closedEdges,
     ...(stowed ? { hiddenEdges: stowed } : {}),
+    ...(hiddenTabs.length ? { hiddenTabs } : {}),
+    ...(hiddenStats.length ? { hiddenStats } : {}),
   });
 }
 
@@ -2053,6 +2058,9 @@ export interface LoadedLayout {
   version: 1 | 2 | 3 | 4;
   closedEdges?: DockEdgeComponent[];
   hiddenEdges?: HiddenEdgeState;
+  /** the persisted visibility sets: hidden secondary-sidebar tabs, hidden statusbar stats */
+  hiddenTabs?: string[];
+  hiddenStats?: string[];
 }
 
 /** validates a persisted layout; null for anything the loader cannot safely render. */
@@ -2065,7 +2073,14 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
     return null;
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
+  const rec = parsed as {
+    v?: unknown;
+    tree?: unknown;
+    closedEdges?: unknown;
+    hiddenEdges?: unknown;
+    hiddenTabs?: unknown;
+    hiddenStats?: unknown;
+  };
   if (rec.v !== 1 && rec.v !== 2 && rec.v !== 3 && rec.v !== 4) return null;
   const tree = validateNode(rec.tree);
   if (!tree) return null;
@@ -2076,7 +2091,19 @@ export function deserializeLayout(raw: string | null): LoadedLayout | null {
     version: rec.v as 1 | 2 | 3,
     ...(closedEdges ? { closedEdges } : {}),
     ...(hiddenEdges ? { hiddenEdges } : {}),
+    ...(stringList(rec.hiddenTabs).length ? { hiddenTabs: stringList(rec.hiddenTabs) } : {}),
+    ...(stringList(rec.hiddenStats).length ? { hiddenStats: stringList(rec.hiddenStats) } : {}),
   };
+}
+
+/** lenient reader for the visibility sets: a non-string entry drops, never rejects the record */
+function stringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const entry of raw) {
+    if (typeof entry === "string" && entry !== "" && !out.includes(entry)) out.push(entry);
+  }
+  return out;
 }
 
 export function deserialize(raw: string | null): DockNode | null {
@@ -2178,6 +2205,9 @@ export interface ParsedLayout {
   version: 1 | 2 | 3 | 4;
   closedEdges?: DockEdgeComponent[];
   hiddenEdges?: HiddenEdgeState;
+  /** the persisted visibility sets: hidden secondary-sidebar tabs, hidden statusbar stats */
+  hiddenTabs?: string[];
+  hiddenStats?: string[];
   repairs: string[];
 }
 
@@ -2196,7 +2226,14 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     return { tree: fallback(), version: 2, repairs: ["the record was not a layout object: booted the layout default"] };
   }
-  const rec = parsed as { v?: unknown; tree?: unknown; closedEdges?: unknown; hiddenEdges?: unknown };
+  const rec = parsed as {
+    v?: unknown;
+    tree?: unknown;
+    closedEdges?: unknown;
+    hiddenEdges?: unknown;
+    hiddenTabs?: unknown;
+    hiddenStats?: unknown;
+  };
   const v = rec.v === 1 || rec.v === 2 || rec.v === 3 || rec.v === 4 ? rec.v : 2;
   const repairs: string[] =
     typeof rec.v === "number" && rec.v !== v
@@ -2210,11 +2247,15 @@ export function parseAnyLayout(raw: string | null, fallback: () => DockNode): Pa
   }
   const closedEdges = validateClosedEdges(rec.closedEdges);
   const hiddenEdges = validateHiddenEdges(rec.hiddenEdges, repairs);
+  const hiddenTabs = stringList(rec.hiddenTabs);
+  const hiddenStats = stringList(rec.hiddenStats);
   return {
     tree,
     version: v,
     ...(closedEdges ? { closedEdges } : {}),
     ...(hiddenEdges ? { hiddenEdges } : {}),
+    ...(hiddenTabs.length ? { hiddenTabs } : {}),
+    ...(hiddenStats.length ? { hiddenStats } : {}),
     repairs,
   };
 }
@@ -2561,6 +2602,15 @@ export interface DockApi {
    *  its width so the toggle restores what the resize took. Never re-reveals. */
   narrowSqueeze: (contentPx: number) => void;
   revealRefused: Ref<"sidebar" | "inspector" | null>;
+  /**
+   * THE VISIBILITY SETS: hiding is a flag, never a close - the tab keeps its seat and its
+   * state, the chip just stops rendering. Both sets live in the layout record, so a reload
+   * keeps them. `openSingleton` clears a tab's flag: opening a view is asking to see it.
+   */
+  hiddenTabs: Ref<readonly string[]>;
+  setTabHidden: (component: string, hidden: boolean) => void;
+  hiddenStats: Ref<readonly string[]>;
+  setStatHidden: (id: string, hidden: boolean) => void;
   /** THE RUNTIME MODULE GATE: idempotent, safe on every module-state change. */
   setModuleGate: (gate: ModuleGate) => void;
 }
@@ -2670,15 +2720,42 @@ export function createDock(store: Storage): DockApi {
   if (stored && loaded.repairs.length > 0) {
     store.setItem(DOCK_LAYOUT_BAK_KEY, stored);
   }
+  // THE VISIBILITY SETS (hidden secondary-sidebar tabs, hidden statusbar stats): flags in
+  // the same record the tree persists to, so a reload keeps them.
+  const hiddenTabs = ref<readonly string[]>(loaded?.hiddenTabs ?? []);
+  const hiddenStats = ref<readonly string[]>(loaded?.hiddenStats ?? []);
   // the ONE gated writer: every record write re-reads through the total deserializer.
   const gatedPersist = (t: DockNode) => {
-    const candidate = serialize(t, closedEdges, V2_NOMINAL_CONTAINER_PX, hiddenState);
+    const candidate = serialize(
+      t,
+      closedEdges,
+      V2_NOMINAL_CONTAINER_PX,
+      hiddenState,
+      hiddenTabs.value,
+      hiddenStats.value,
+    );
     const back = parseAnyLayout(candidate, () => t);
     if (!treeShapesMatch(back.tree, t)) {
       console.warn("dock: layout round-trip mismatch - the write was refused, last-good kept");
       return;
     }
     store.setItem(DOCK_LAYOUT_KEY, candidate);
+  };
+  const setTabHidden = (component: string, hidden: boolean) => {
+    const flagged = hiddenTabs.value.includes(component);
+    if (hidden === flagged) return;
+    hiddenTabs.value = hidden
+      ? [...hiddenTabs.value, component]
+      : hiddenTabs.value.filter((c) => c !== component);
+    gatedPersist(tree.value);
+  };
+  const setStatHidden = (id: string, hidden: boolean) => {
+    const flagged = hiddenStats.value.includes(id);
+    if (hidden === flagged) return;
+    hiddenStats.value = hidden
+      ? [...hiddenStats.value, id]
+      : hiddenStats.value.filter((s) => s !== id);
+    gatedPersist(tree.value);
   };
   if (stored) gatedPersist(initial);
   // shallowRef: the tree stays PLAIN data (structuredClone rejects proxies).
@@ -2772,6 +2849,8 @@ export function createDock(store: Storage): DockApi {
   ): "created" | "focused" => {
     const res = openSingleton(tree.value, paneId, component);
     if (res.action !== "noop") tree.value = res.tree;
+    // opening a view is asking to SEE it: a hidden chip comes back with its pane
+    setTabHidden(component, false);
     return res.action === "created" ? "created" : "focused";
   };
 
@@ -2969,6 +3048,10 @@ export function createDock(store: Storage): DockApi {
     bottomFullscreen, toggleBottomFullscreen,
     narrowSqueeze,
     revealRefused,
+    hiddenTabs,
+    setTabHidden,
+    hiddenStats,
+    setStatHidden,
     undoLayout, beginResize: () => undoPush(tree.value),
     setModuleGate: syncModuleGate,
   };

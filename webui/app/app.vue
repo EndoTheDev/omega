@@ -394,6 +394,7 @@
       :workdir-target="barWorkdirTarget"
       :pending="pendingCount"
       :socket="socketStatus"
+      :hidden-stats="dock.hiddenStats.value"
       :provider-reachable="healthProviderReachable"
       :provider-checked-at="healthProviderCheckedAt"
       :provider-detail="healthProviderDetail"
@@ -402,6 +403,7 @@
       :last-error-message="healthLastErrorMessage"
       :last-error-at="healthLastErrorAt"
       @update:workdir="onBarWorkdir"
+      @toggle-stat="dock.setStatHidden"
       @focus-pending="focusPendingCalls" />
   </div>
 </template>
