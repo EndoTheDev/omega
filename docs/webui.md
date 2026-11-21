@@ -284,6 +284,21 @@ the store does the rest.
   never grows a second confirm. A right-click on a card, in the drawer
   or in a text field keeps that surface's own menu, and no board
   selected means no rows at all.
+- **The capsule interiors are the sixth** (`skillMenuItems`,
+  `toolMenuItems`, `mcpMenuItems`, `fileMenuItems`,
+  `notificationMenuItems`, one pure builder per capsule's `ui/` dir): a
+  skills row menus Open (its viewer tab), Enable or Disable and Delete
+  (the editor's one armed confirm); a tools row menus Enable or Disable
+  and nothing else, because that is the only verb the tab owns; an MCP
+  server row menus Open (its detail), Enable or Disable and Delete (the
+  detail's one confirm - the panel has no lossless save, so it carries no
+  Edit row); a file tree row menus New (the tab's own new-node form,
+  file mode, with the row as target) and, on a file, Open, Copy and Copy
+  path through the one clipboard path, plus Add file to chat through the
+  composer's own attach lane (absent without a bound chat tab), while a
+  directory row keeps New and Copy path; a notification record menus
+  Clear all, one row for the whole feed because the feed has no
+  per-entry clear.
 - **The canvas has no rows to register.** In 0.17.4 the canvas
   view-model has no rendered node surface - the generic panel renderer
   left with the canvas tab fold (`canvas.test.ts` pins its absence), so

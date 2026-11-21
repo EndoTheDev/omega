@@ -54,7 +54,8 @@
           v-for="s in visibleRows"
           :key="rowKey(s)"
           class="mcp-row reg-row"
-          :class="{ 'mcp-off': !serverEnabled(s) }">
+          :class="{ 'mcp-off': !serverEnabled(s) }"
+          @contextmenu="onRowMenu($event, s)">
           <div class="mcp-row-main reg-row-head">
             <div class="reg-row-main">
               <span
@@ -106,6 +107,36 @@
             class="mcp-none">
             no tools discovered
           </p>
+          <!--
+            THE ROW DETAIL (the menu's Open): the recorded failure in full - the state
+            label ellipsizes it - and where the entry is authored. The panel writes the
+            enabled flag and a delete only; the config's args/env/headers never reach the
+            wire, so editing here would drop them.
+          -->
+          <div
+            v-if="openName === s.name"
+            class="mcp-detail">
+            <p class="mcp-detail-note">{{ MCP_DETAIL_NOTE }}</p>
+            <p
+              v-if="s.error"
+              class="mcp-detail-error">{{ s.error }}</p>
+            <div
+              v-if="confirming === s.name"
+              class="mcp-confirm">
+              <p class="mcp-confirm-text">
+                delete {{ s.name }}? its mcp.yaml entry goes, and its connections close
+              </p>
+              <button
+                type="button"
+                class="mcp-confirm-go"
+                :disabled="busy !== null"
+                @click="removeServer(s)">delete</button>
+              <button
+                type="button"
+                class="mcp-confirm-cancel"
+                @click="confirming = ''">cancel</button>
+            </div>
+          </div>
         </li>
       </ul>
     </template>
@@ -117,10 +148,14 @@
   import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import { isNarrowWidth } from "./narrow";
   import { reloadMcpServers } from "./reload";
+  import { deleteMcpServer } from "./remove";
   import { setMcpServerEnabled } from "./toggle";
+  import { openContextMenu } from "~/composables/contextMenu";
+  import { mcpMenuItems } from "./mcpMenu";
   import {
     MCP_EMPTY_HINT,
     MCP_EMPTY_TEXT,
+    MCP_DETAIL_NOTE,
     serverEnabled,
     serverRows,
     statusDot,
@@ -164,9 +199,54 @@
   // the committing row's name so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
+  // the row detail (the menu's Open) is one at a time; `confirming` is the delete arm
+  // that detail carries, so a delete is never one click from a menu row.
+  const openName = ref("");
+  const confirming = ref("");
+
   function onToggle(s: McpServerWire) {
     if (busy.value !== null) return;
     apply(s);
+  }
+
+  /** THE ROW MENU: Open unfolds the detail, Enable/Disable IS the pill, Delete arms the
+      detail's one confirm. No Edit row - see mcpMenu's header for why the panel cannot
+      offer a lossless save. */
+  function onRowMenu(e: MouseEvent, s: McpServerWire) {
+    const items = mcpMenuItems(
+      { enabled: serverEnabled(s) },
+      {
+        open: () => {
+          openName.value = openName.value === s.name ? "" : s.name;
+          confirming.value = "";
+        },
+        toggle: () => onToggle(s),
+        remove: () => {
+          openName.value = s.name;
+          confirming.value = s.name;
+        },
+      },
+    );
+    if (items.length === 0) return;
+    e.preventDefault();
+    void openContextMenu(e.clientX, e.clientY, items);
+  }
+
+  // removeServer is the detail's confirm: POST /mcp/delete answers the fresh listing,
+  // so the panel re-renders from server truth and never from its own guess.
+  async function removeServer(s: McpServerWire): Promise<void> {
+    if (busy.value !== null) return;
+    busy.value = s.name;
+    try {
+      rows.value = serverRows(await deleteMcpServer(s.name));
+      openName.value = "";
+      confirming.value = "";
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
   }
 
   // the commit: POST the toggle chain (toggle.ts), then re-render from the fresh.
@@ -373,6 +453,55 @@
     margin: 0;
     font-size: 10.5px;
     opacity: 0.5;
+  }
+  /* the row detail: the same left gutter as the target/chips, one hairline above */
+  .mcp-detail {
+    margin-top: 4px;
+    padding-top: 4px;
+    border-top: 1px solid color-mix(in srgb, currentcolor 10%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mcp-detail-note {
+    margin: 0;
+    font-size: 10.5px;
+    opacity: 0.55;
+  }
+  .mcp-detail-error {
+    margin: 0;
+    font-size: 10.5px;
+    color: var(--err);
+    overflow-wrap: anywhere;
+  }
+  .mcp-confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+  }
+  .mcp-confirm-text {
+    margin: 0;
+    font-size: 10.5px;
+    opacity: 0.75;
+  }
+  .mcp-confirm-go,
+  .mcp-confirm-cancel {
+    font: inherit;
+    font-size: 10.5px;
+    color: inherit;
+    background: none;
+    border: 1px solid color-mix(in srgb, currentcolor 25%, transparent);
+    border-radius: var(--r-chip);
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+  .mcp-confirm-go:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .mcp-confirm-go {
+    color: var(--err);
   }
   .mcp-off .mcp-name,
   .mcp-off .mcp-state {
