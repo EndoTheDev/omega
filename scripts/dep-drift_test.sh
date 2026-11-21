@@ -75,43 +75,43 @@ run_case() {
 # S1: minor inside the same major -> MINOR
 printf 'fixture.example/minor|v2.42.0|v2.43.0|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/minor .*MINOR' && ok ||
+grep -q 'fixture.example/minor .*MINOR' <<<"$OUT" && ok ||
 	bad "S1: 2.43.0 vs 2.42.0 should be MINOR: $OUT"
 
 # S2: a new major -> MAJOR, and the count carries it
 printf 'fixture.example/major|v2.42.0|v3.0.0|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/major .*MAJOR' && ok ||
+grep -q 'fixture.example/major .*MAJOR' <<<"$OUT" && ok ||
 	bad "S2: 3.0.0 vs 2.42.0 should be MAJOR: $OUT"
-printf '%s' "$OUT" | grep -q '^DEP DRIFT: 1 outdated (1 major)$' && ok ||
+grep -q '^DEP DRIFT: 1 outdated (1 major)$' <<<"$OUT" && ok ||
 	bad "S2: verdict line should be 'DEP DRIFT: 1 outdated (1 major)': $OUT"
 
 # S3: patch inside the same minor -> PATCH
 printf 'fixture.example/patchy|v2.42.0|v2.42.1|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/patchy .*PATCH' && ok ||
+grep -q 'fixture.example/patchy .*PATCH' <<<"$OUT" && ok ||
 	bad "S3: 2.42.1 vs 2.42.0 should be PATCH: $OUT"
 
 # S4: identical -> no row, no finding
 printf 'fixture.example/same|v2.42.0|v2.42.0|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/same' && bad "S4: identical version produced a row" || ok
+grep -q 'fixture.example/same' <<<"$OUT" && bad "S4: identical version produced a row" || ok
 
 # S5: a pin AHEAD of upstream is not drift (never a permanent lie)
 printf 'fixture.example/ahead|v2.43.0|v2.42.0|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/ahead' && bad "S5: a pin ahead of upstream produced a row" || ok
+grep -q 'fixture.example/ahead' <<<"$OUT" && bad "S5: a pin ahead of upstream produced a row" || ok
 
 # S6: pseudo-version revision bump (identical core) -> PSEUDO
 printf 'fixture.example/pseudo|v0.0.0-20260101000000-aaaaaaaaaaaa|v0.0.0-20261111000000-bbbbbbbbbbbb|graph\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/pseudo .*PSEUDO' && ok ||
+grep -q 'fixture.example/pseudo .*PSEUDO' <<<"$OUT" && ok ||
 	bad "S6: pseudo-version bump should be PSEUDO: $OUT"
 
 # S7: prerelease -> its own release is a move forward, the least true class
 printf 'fixture.example/pre|v1.2.3-rc.1|v1.2.3|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'fixture.example/pre .*PATCH' && ok ||
+grep -q 'fixture.example/pre .*PATCH' <<<"$OUT" && ok ||
 	bad "S7: rc.1 -> release of the same core should be PATCH: $OUT"
 
 # --- line format ------------------------------------------------------------
@@ -123,14 +123,14 @@ printf '%s\n' \
 	'fixture.example/patchy|v1.0.0|v1.0.1|graph' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
 [ "$RC" -eq 0 ] && ok || bad "S8: findings must exit 0 (advisory), got $RC"
-printf '%s' "$OUT" | grep -q '^DEP DRIFT: 3 outdated (1 major)$' && ok ||
+grep -q '^DEP DRIFT: 3 outdated (1 major)$' <<<"$OUT" && ok ||
 	bad "S8: verdict line should be 'DEP DRIFT: 3 outdated (1 major)': $OUT"
-printf '%s' "$OUT" | grep -q '^source ' && ok || bad "S8: the drift table header is missing"
-printf '%s' "$OUT" | grep -q 'fixture.example/major .*MAJOR .*direct' && ok ||
+grep -q '^source ' <<<"$OUT" && ok || bad "S8: the drift table header is missing"
+grep -q 'fixture.example/major .*MAJOR .*direct' <<<"$OUT" && ok ||
 	bad "S8: the direct kind is missing from the row: $OUT"
-printf '%s' "$OUT" | grep -q 'fixture.example/minor .*MINOR .*indirect' && ok ||
+grep -q 'fixture.example/minor .*MINOR .*indirect' <<<"$OUT" && ok ||
 	bad "S8: the indirect kind is missing from the row: $OUT"
-printf '%s' "$OUT" | grep -q 'fixture.example/patchy .*PATCH .*graph' && ok ||
+grep -q 'fixture.example/patchy .*PATCH .*graph' <<<"$OUT" && ok ||
 	bad "S8: a module the graph pulls in should read 'graph': $OUT"
 
 # S9: n = 0 -> exactly one line, `DEP DRIFT OK`, exit 0
@@ -148,9 +148,9 @@ printf '%s\n' '{
 }' >"$NPM_IN"
 printf 'fixture.example/npm-quiet|v1.0.0|v1.0.1|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
-printf '%s' "$OUT" | grep -q 'webui .*fixture-left .*\^1\.0\.0 .*2\.0\.0 .*MAJOR' && ok ||
+grep -q 'webui .*fixture-left .*\^1\.0\.0 .*2\.0\.0 .*MAJOR' <<<"$OUT" && ok ||
 	bad "S10: webui row should be name|declared|latest|MAJOR: $OUT"
-printf '%s' "$OUT" | grep -q 'webui .*fixture-dev .*\^3\.0\.0 .*3\.0\.1 .*3\.0\.1 .*SAME' && bad "S10: a package already at its latest produced a row" || ok
+grep -q 'webui .*fixture-dev .*\^3\.0\.0 .*3\.0\.1 .*3\.0\.1 .*SAME' <<<"$OUT" && bad "S10: a package already at its latest produced a row" || ok
 
 # S11: an npm query with nothing in it is a clean webui half, not a failure
 printf '{}\n' >"$NPM_IN"
@@ -184,13 +184,13 @@ grep -q 'Nothing behind upstream' "$sum" && ok || bad "S13: clean-tree summary l
 # S14: no go -> the module graph is unknowable
 run_case DEP_DRIFT_GO=dep-drift-no-such-go DEP_DRIFT_NPM_INPUT="$NPM_IN"
 [ "$RC" -eq 2 ] && ok || bad "S14: missing go should exit 2, got $RC"
-printf '%s' "$OUT" | grep -q 'go not found' && ok || bad "S14: missing-go message did not name the cause: $OUT"
+grep -q 'go not found' <<<"$OUT" && ok || bad "S14: missing-go message did not name the cause: $OUT"
 
 # S15: no npm -> the webui half would be unmeasured
 printf 'fixture.example/one|v1.0.0|v1.0.1|direct\n' >"$GO_IN"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM=dep-drift-no-such-npm
 [ "$RC" -eq 2 ] && ok || bad "S15: missing npm should exit 2, got $RC"
-printf '%s' "$OUT" | grep -q 'npm not found' && ok || bad "S15: missing-npm message did not name the cause: $OUT"
+grep -q 'npm not found' <<<"$OUT" && ok || bad "S15: missing-npm message did not name the cause: $OUT"
 
 # S16: a query file that does not exist is a tool failure, never a silent pass
 run_case DEP_DRIFT_GO_INPUT="$ROOTDIR/no-such-input.txt" DEP_DRIFT_NPM_INPUT="$NPM_IN"
@@ -206,8 +206,26 @@ printf '{}\n' >"$NPM_IN"
 mv "$ROOTDIR/webui/package-lock.json" "$ROOTDIR/webui/package-lock.json.away"
 run_case DEP_DRIFT_GO_INPUT="$GO_IN" DEP_DRIFT_NPM_INPUT="$NPM_IN"
 [ "$RC" -eq 2 ] && ok || bad "S18: missing package-lock.json should exit 2, got $RC"
-printf '%s' "$OUT" | grep -q 'no package-lock.json' && ok || bad "S18: missing-lockfile message did not name the cause: $OUT"
+grep -q 'no package-lock.json' <<<"$OUT" && ok || bad "S18: missing-lockfile message did not name the cause: $OUT"
 mv "$ROOTDIR/webui/package-lock.json.away" "$ROOTDIR/webui/package-lock.json"
+
+# --- P1: no assertion may pipe into grep -q -------------------------------
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
+# SIGPIPE when grep exits at the FIRST match, so a row that IS in the table
+# reads as missing and the case goes red on a healthy SUT: nightly-only,
+# timing-dependent, and the debugging run always passes. A herestring has no
+# writer, so grep's early exit costs nothing. Same shape as docs-health_test
+# H21; each suite pins itself.
+PIPE_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+piped="$(grep -vE '^[[:space:]]*#' "$SELF" | grep -nE "$PIPE_SHAPE")"
+[ -z "$piped" ] && ok \
+	|| bad "P1: an assertion pipes into grep -q (writer SIGPIPE under pipefail): $piped"
+# assembled from PIPE_TOKEN, never written out: the detector scans THIS file
+PIPE_TOKEN='|'
+PIPE_SAMPLE="printf '%s' \"\$OUT\" $PIPE_TOKEN grep -q 'x'"
+grep -qE "$PIPE_SHAPE" <<<"$PIPE_SAMPLE" && ok \
+	|| bad "P1: the detector no longer sees the pre-fix pipe shape"
 
 echo
 echo "dep-drift_test: $pass ok, $fail fail"

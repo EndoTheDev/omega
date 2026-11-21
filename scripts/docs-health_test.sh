@@ -128,8 +128,8 @@ run_health() {
 }
 
 # has <text>: OUT contains the literal
-has() { printf '%s' "$OUT" | grep -qF -- "$1" && ok || bad "$2: missing [$1]"; }
-hasnt() { printf '%s' "$OUT" | grep -qF -- "$1" && bad "$2: unexpected [$1]" || ok; }
+has() { grep -qF -- "$1" <<<"$OUT" && ok || bad "$2: missing [$1]"; }
+hasnt() { grep -qF -- "$1" <<<"$OUT" && bad "$2: unexpected [$1]" || ok; }
 
 # --- H1: mapped code newer than the doc -> DUE ------------------------------
 fx=$(new_fixture 'docs/a.md|code/') || exit 1
@@ -137,8 +137,8 @@ ci "$fx" docs/a.md '# A' "docs: a"
 ci "$fx" code/x.go 'package code' "feat(code): newer than the doc"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
 [ "$RC" -eq 0 ] && ok || bad "H1: exit $RC (advisory must be 0)"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +coupled +[0-9]{4}-[0-9]{2}-[0-9]{2} +code [0-9]{4}-[0-9]{2}-[0-9]{2} +DUE$' \
-	&& ok || bad "H1: the due row is wrong: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
+grep -qE '^docs/a\.md +coupled +[0-9]{4}-[0-9]{2}-[0-9]{2} +code [0-9]{4}-[0-9]{2}-[0-9]{2} +DUE$' <<<"$OUT" \
+	&& ok || bad "H1: the due row is wrong: $(grep -m1 'docs/a.md' <<<"$OUT")"
 has 'DOCS WARNING: 1 due, 0 broken links' H1
 
 # --- H2: doc newer than its code -> not due, DOCS OK ----------------------
@@ -147,9 +147,9 @@ ci "$fx" code/x.go 'package code' "feat(code): first"
 ci "$fx" docs/a.md '# A' "docs: written after the code"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
 [ "$RC" -eq 0 ] && ok || bad "H2: exit $RC"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +coupled .* ok$' && ok \
-	|| bad "H2: expected ok: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
-printf '%s' "$OUT" | grep -qxF 'DOCS OK' && ok || bad "H2: DOCS OK missing"
+grep -qE '^docs/a\.md +coupled .* ok$' <<<"$OUT" && ok \
+	|| bad "H2: expected ok: $(grep -m1 'docs/a.md' <<<"$OUT")"
+grep -qxF 'DOCS OK' <<<"$OUT" && ok || bad "H2: DOCS OK missing"
 hasnt 'DOCS WARNING' H2
 
 # --- H3: same commit touches doc + code -> not due (strictly after only) ---
@@ -161,7 +161,7 @@ T=$((T + 60))
 GIT_COMMITTER_DATE="@$T" GIT_AUTHOR_DATE="@$T" \
 	"${GUSER[@]}" -C "$fx" commit -q -m "feat(code): doc lands with its code"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
-printf '%s' "$OUT" | grep -qxF 'DOCS OK' && ok \
+grep -qxF 'DOCS OK' <<<"$OUT" && ok \
 	|| bad "H3: a doc committed with its code must not be due: $(printf '%s' "$OUT" | tail -2)"
 
 # --- H4: age fallback - a stable release after the doc + 30d -> DUE -------
@@ -172,8 +172,8 @@ c "$fx" "chore: later work"
 doc_ct=$(git -C "$fx" log -1 --format=%ct -- docs/a.md)
 now=$((doc_ct + 45 * 86400))
 run_health "$fx" "DOCS_HEALTH_NOW=$now"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +age .* 45d, 1 rel +DUE$' && ok \
-	|| bad "H4: age rule row wrong: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
+grep -qE '^docs/a\.md +age .* 45d, 1 rel +DUE$' <<<"$OUT" && ok \
+	|| bad "H4: age rule row wrong: $(grep -m1 'docs/a.md' <<<"$OUT")"
 has 'DOCS WARNING: 1 due, 0 broken links' H4
 
 # --- H5: the age guard - a release exists but the doc is young ------------
@@ -183,9 +183,9 @@ c "$fx" "chore: later work"
 "${GUSER[@]}" -C "$fx" tag v1.1.0
 doc_ct=$(git -C "$fx" log -1 --format=%ct -- docs/a.md)
 run_health "$fx" "DOCS_HEALTH_NOW=$((doc_ct + 20 * 86400))"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +age .* 20d, 1 rel +ok$' && ok \
-	|| bad "H5: the 30-day guard did not hold: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
-printf '%s' "$OUT" | grep -qxF 'DOCS OK' && ok || bad "H5: DOCS OK missing"
+grep -qE '^docs/a\.md +age .* 20d, 1 rel +ok$' <<<"$OUT" && ok \
+	|| bad "H5: the 30-day guard did not hold: $(grep -m1 'docs/a.md' <<<"$OUT")"
+grep -qxF 'DOCS OK' <<<"$OUT" && ok || bad "H5: DOCS OK missing"
 
 # --- H6: age fallback - no release since the doc -> not due ---------------
 fx=$(new_fixture 'docs/a.md') || exit 1
@@ -194,8 +194,8 @@ ci "$fx" docs/a.md '# A' "docs: a"
 "${GUSER[@]}" -C "$fx" tag v1.0.0
 doc_ct=$(git -C "$fx" log -1 --format=%ct -- docs/a.md)
 run_health "$fx" "DOCS_HEALTH_NOW=$((doc_ct + 200 * 86400))"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +age .* 200d, 0 rel +ok$' && ok \
-	|| bad "H6: zero releases since must stay ok: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
+grep -qE '^docs/a\.md +age .* 200d, 0 rel +ok$' <<<"$OUT" && ok \
+	|| bad "H6: zero releases since must stay ok: $(grep -m1 'docs/a.md' <<<"$OUT")"
 
 # --- H7: a nightly prerelease tag never ages a doc ------------------------
 fx=$(new_fixture 'docs/a.md') || exit 1
@@ -204,8 +204,8 @@ c "$fx" "chore: later work"
 "${GUSER[@]}" -C "$fx" tag v1.1.0-nightly.20260101
 doc_ct=$(git -C "$fx" log -1 --format=%ct -- docs/a.md)
 run_health "$fx" "DOCS_HEALTH_NOW=$((doc_ct + 200 * 86400))"
-printf '%s' "$OUT" | grep -qE '^docs/a\.md +age .* 200d, 0 rel +ok$' && ok \
-	|| bad "H7: a nightly tag must not count as a release: $(printf '%s' "$OUT" | grep -m1 'docs/a.md')"
+grep -qE '^docs/a\.md +age .* 200d, 0 rel +ok$' <<<"$OUT" && ok \
+	|| bad "H7: a nightly tag must not count as a release: $(grep -m1 'docs/a.md' <<<"$OUT")"
 
 # --- H8: a broken internal link is found, and the run still exits 0 -------
 fx=$(new_fixture 'docs/a.md') || exit 1
@@ -226,7 +226,7 @@ T=$((T + 60))
 GIT_COMMITTER_DATE="@$T" GIT_AUTHOR_DATE="@$T" \
 	"${GUSER[@]}" -C "$fx" commit -q -m "docs: link the code"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
-printf '%s' "$OUT" | grep -qxF 'DOCS OK' && ok \
+grep -qxF 'DOCS OK' <<<"$OUT" && ok \
 	|| bad "H9: a tracked ../ target must resolve: $(printf '%s' "$OUT" | tail -2)"
 
 # --- H10: anchors - same-file, cross-file, GitHub slugging ----------------
@@ -270,13 +270,13 @@ fx=$(new_fixture 'docs/a.md') || exit 1
 ci "$fx" docs/a.md '# A' "docs: a"
 ci "$fx" docs/new.md '# New' "docs: a doc nobody mapped"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
-printf '%s' "$OUT" | grep -qE '^docs/new\.md +- .* +UNMAPPED$' && ok \
-	|| bad "H12: unmapped row missing: $(printf '%s' "$OUT" | grep -m1 'new.md')"
+grep -qE '^docs/new\.md +- .* +UNMAPPED$' <<<"$OUT" && ok \
+	|| bad "H12: unmapped row missing: $(grep -m1 'new.md' <<<"$OUT")"
 has 'DOCS WARNING: 1 unmapped tracked doc(s): docs/new.md' H12
 # the unmapped verdict REPLACES the DOCS OK - one verdict line, never both
 hasnt 'DOCS OK' H12
-[ "$(printf '%s' "$OUT" | grep -cE '^(DOCS OK|DOCS WARNING)')" -eq 1 ] && ok \
-	|| bad "H12: expected exactly one verdict line, got $(printf '%s' "$OUT" | grep -cE '^(DOCS OK|DOCS WARNING)')"
+[ "$(grep -cE '^(DOCS OK|DOCS WARNING)' <<<"$OUT")" -eq 1 ] && ok \
+	|| bad "H12: expected exactly one verdict line, got $(grep -cE '^(DOCS OK|DOCS WARNING)' <<<"$OUT")"
 
 # --- H13: mapping rot exits 2 - a path with no tracked files --------------
 fx=$(new_fixture 'docs/a.md|code/') || exit 1
@@ -327,12 +327,12 @@ grep -qF 'DOCS WARNING' "$SUM" && bad "H16: the verdict belongs to the log, not 
 OUT="$(cd "$REPO" && bash "$SUT" . 2>&1)"
 RC=$?
 [ "$RC" -eq 0 ] && ok || bad "H17: the real checkout must exit 0, got $RC"
-printf '%s' "$OUT" | grep -qE '^(DOCS OK|DOCS WARNING: [0-9]+ due, [0-9]+ broken links)$' && ok \
+grep -qE '^(DOCS OK|DOCS WARNING: [0-9]+ due, [0-9]+ broken links)$' <<<"$OUT" && ok \
 	|| bad "H17: no greppable verdict line: $(printf '%s' "$OUT" | tail -2)"
 hasnt 'UNMAPPED' H17
 tracked_md="$(cd "$REPO" && git ls-files '*.md' | wc -l | tr -d ' ')"
-printf '%s' "$OUT" | grep -qF "docs-health: ${tracked_md} doc(s)" && ok \
-	|| bad "H17: table covers ${tracked_md} tracked docs but reports $(printf '%s' "$OUT" | grep -m1 'docs-health:')"
+grep -qF "docs-health: ${tracked_md} doc(s)" <<<"$OUT" && ok \
+	|| bad "H17: table covers ${tracked_md} tracked docs but reports $(grep -m1 'docs-health:' <<<"$OUT")"
 
 # --- H18: findings + unmapped -> the contract line is the last DOCS line ---
 fx=$(new_fixture 'docs/a.md|code/') || exit 1
@@ -342,7 +342,7 @@ ci "$fx" docs/new.md '# New' "docs: unmapped"
 run_health "$fx" "DOCS_HEALTH_NOW=$T"
 has 'DOCS WARNING: 1 unmapped tracked doc(s): docs/new.md' H18
 has 'DOCS WARNING: 1 due, 0 broken links' H18
-last="$(printf '%s\n' "$OUT" | grep -E '^(DOCS OK|DOCS WARNING)' | tail -1)"
+last="$(grep -E '^(DOCS OK|DOCS WARNING)' <<<"$OUT" | tail -1)"
 [ "$last" = 'DOCS WARNING: 1 due, 0 broken links' ] && ok \
 	|| bad "H18: the contract line must come last, got [$last]"
 
@@ -367,8 +367,12 @@ PIPE_SHAPE='\|[[:space:]]*grep[[:space:]]+-[a-zA-Z]*q'
 # a comment can name the hazard (this file's own header does); only code counts
 piped="$(grep -vE '^[[:space:]]*#' "$SUT" | grep -nE "$PIPE_SHAPE")"
 [ -z "$piped" ] && ok || bad "H20: a membership test pipes into grep -q (writer SIGPIPE under pipefail): $piped"
-# the pin must stay red on the exact shape it exists to stop
-printf '%s\n' '  printf "%s\n" "$TRACKED" | grep -qxF -- "$1"' | grep -qE "$PIPE_SHAPE" && ok \
+# the pin must stay red on the exact shape it exists to stop. The sample is
+# assembled from PIPE_TOKEN, never written out: H21 scans THIS file, so a
+# literal pre-fix line here would be the pin's own first finding.
+PIPE_TOKEN='|'
+PIPE_SAMPLE="  printf '%s\\n' \"\$TRACKED\" $PIPE_TOKEN grep -qxF -- \"\$1\""
+grep -qE "$PIPE_SHAPE" <<<"$PIPE_SAMPLE" && ok \
 	|| bad "H20: the detector no longer sees the pre-fix pipe shape"
 
 is_tracked_src="$(awk '/^is_tracked\(\)/{f=1} f{print} f&&/^\}$/{exit}' "$SUT")"
@@ -397,6 +401,80 @@ races="$(
 	eval "$is_tracked_src"
 	is_tracked .agents/NOT-A-REAL-DOC.md
 ) && bad "H20: is_tracked accepted a path nobody tracks" || ok
+
+# --- H21: the assertion helpers cannot lose a match to a writer's SIGPIPE --
+# has()/hasnt() and every inline assertion here route $OUT through a pipeline.
+# `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's SIGPIPE
+# when grep exits at the FIRST match, so a needle that IS in $OUT reads as
+# missing (has: a false red) and a needle that IS there reads as absent
+# (hasnt: a false green, which hides a defect instead of burning a retry).
+# $OUT is the whole table now, so the odds are not theoretical. A herestring
+# has no writer: grep's early exit costs nothing.
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+piped="$(grep -vE '^[[:space:]]*#' "$SELF" | grep -nE "$PIPE_SHAPE")"
+[ -z "$piped" ] && ok || bad "H21: an assertion in this suite pipes into grep -q: $piped"
+# the detector must flag the pre-fix line and leave the herestring alone
+grep -qE "$PIPE_SHAPE" <<<"$PIPE_SAMPLE" && ok \
+	|| bad "H21: the detector no longer sees the pre-fix pipe shape"
+grep -qE "$PIPE_SHAPE" <<<"  grep -qxF -- \"\$1\" <<<\"\$OUT\"" \
+	&& bad "H21: the detector flags the fixed herestring shape" || ok
+
+# the behaviour, not the spelling: drive the helpers on a payload big enough to
+# outrun the pipe buffer with the needle on the FIRST line (the worst case).
+# 20 rounds is enough: once $OUT exceeds the buffer the loss is deterministic,
+# not probabilistic - 20/20 on this host, 0/20 for the herestring.
+BIG_TABLE="$(awk 'BEGIN{for(i=1;i<=4000;i++) printf "row %05d | coupled | DUE\n", i}')"
+has_src="$(awk '/^has\(\)/{print; exit}' "$SELF")"
+hasnt_src="$(awk '/^hasnt\(\)/{print; exit}' "$SELF")"
+[ -n "$has_src" ] && ok || bad "H21: has() not found in this suite"
+[ -n "$hasnt_src" ] && ok || bad "H21: hasnt() not found in this suite"
+races="$(
+	set -uo pipefail
+	export OUT="$BIG_TABLE"
+	fail=0
+	ok() { :; }
+	bad() { fail=$((fail + 1)); }
+	eval "$has_src"
+	eval "$hasnt_src"
+	# a reformatted helper extracts as a fragment and defines nothing, so the
+	# drive would pass vacuously - refuse instead of reporting a green
+	declare -F has >/dev/null && declare -F hasnt >/dev/null || { printf 'nodfn'; exit 0; }
+	i=0
+	while [ "$i" -lt 20 ]; do
+		has 'row 00001 |' drive
+		hasnt 'row 99999 |' drive
+		i=$((i + 1))
+	done
+	printf '%s' "$fail"
+)"
+case "$races" in
+0) ok ;;
+nodfn) bad "H21: the extracted has()/hasnt() defined no function (reformatted?)" ;;
+*) bad "H21: the assertion helpers lost a match $races/40 times on a $(( ${#BIG_TABLE} / 1024 )) KB payload" ;;
+esac
+# the hasnt direction fails the other way: a present needle must report bad()
+greens="$(
+	set -uo pipefail
+	export OUT="$BIG_TABLE"
+	fail=0
+	ok() { :; }
+	bad() { fail=$((fail + 1)); }
+	eval "$hasnt_src"
+	declare -F hasnt >/dev/null || { printf 'nodfn'; exit 0; }
+	i=0 lost=0
+	while [ "$i" -lt 20 ]; do
+		before=$fail
+		hasnt 'row 00001 |' probe
+		[ "$fail" -eq "$before" ] && lost=$((lost + 1))
+		i=$((i + 1))
+	done
+	printf '%s' "$lost"
+)"
+case "$greens" in
+0) ok ;;
+nodfn) bad "H21: the extracted hasnt() defined no function (reformatted?)" ;;
+*) bad "H21: hasnt() read a present needle as absent $greens/20 times" ;;
+esac
 
 echo
 echo "docs-health_test: $pass ok, $fail fail"
