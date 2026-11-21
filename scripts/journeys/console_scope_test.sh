@@ -207,7 +207,7 @@ STUB_CONSOLE="$TMP/p0.console"
 printf '%s\n' 'stub-identity-marker' > "$STUB_CONSOLE"
 p0_out="$(PATH="$TMP/bin:$PATH" STUB_CONSOLE="$STUB_CONSOLE" agent-browser console 2>&1)"
 case "$p0_out" in
-  *stub-identity-marker-MUTATED*) ok "P0 the suite drove the stub CLI" ;;
+  *stub-identity-marker*) ok "P0 the suite drove the stub CLI" ;;
   *) bad "P0 the stub CLI never answered (PATH=$TMP/bin, got: $(printf '%s' "$p0_out" | head -c 120))" ;;
 esac
 
