@@ -14,35 +14,46 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 	|| { printf '%s: pipes a writer into grep -q (SIGPIPE under pipefail): %s\n' "${_PIN_SELF##*/}" "$_pin_hits" >&2; exit 1; }
 
 
-# train-pass.sh - the merge train: ONE mechanical, no-LLM landing per pass.
+# train-pass.sh - the merge train: ONE mechanical, no-LLM landing pass.
 #
-# Picks the oldest review-approved card (status 'done', its wt/<task_id>
-# branch still alive and carrying commits that are not on dev yet),
-# rebases that branch onto the current dev tip, runs the full gate set on
-# the merged tree, lands with a merge commit, pushes dev, and writes a
-# MARKER REF: refs/train/<seq>-<task_id> at the merge commit. The marker
-# chain is the bisect ladder - regressions get walked mechanically by
-# scripts/train-bisect.sh, never by archaeology.
+# Picks the queued landing cards (status 'done', branch still alive and
+# carrying commits that are not on dev yet) - the WHOLE batch, oldest
+# first - rebases each onto the accumulating dev tip, merges all of them
+# with no gate between merges, runs the gate battery ONCE on the final
+# tip, pushes dev, and writes one MARKER REF per card
+# (refs/train/<seq>-<task_id>) at its merge commit. The marker chain is
+# the bisect ladder - regressions get walked mechanically by
+# scripts/train-bisect.sh, never by archaeology. The battery amortizes:
+# N cards cost one gate battery, not N.
 #
 # Failure laws:
-# - rebase conflict: abort, card untouched (still done + queued), one
-#   strike comment. Strike 2 = auto-demote (card back to ready with the
+# - rebase conflict: abort, the tree rolls back to the batch position
+#   BEFORE that card (the cards already merged stay), card untouched
+#   (still done + queued), one strike comment, and the batch carries on
+#   with the rest. Strike 2 = auto-demote (card back to ready with the
 #   conflict note; the worker rerun rebases onto the new dev tip). A third
 #   strike = reconciler agent card instead of another retry.
 # - replay anomaly: the rebase zero-replayed the branch's unique commits
 #   (fork-point fast-forward, dev already carrying the same patches) or the
 #   merge degenerated to a two-parent-less no-op. Both are LOUD: evidence
-#   comment, card demoted to ready, branch kept. The train never reports
-#   "landed" without a real merge commit with the branch's patches in it.
-# - red gate: un-land (reset to the pre-pass tip), failure evidence
-#   comment, card back to ready. The rebased branch is KEPT - the red is
-#   the work's problem against dev, not the rebase's.
+#   comment, card demoted to ready, branch kept, batch continues. The train
+#   never reports "landed" without a real merge commit carrying the branch's
+#   patches in it.
+# - red battery: the batch is walked by scripts/train-bisect.sh (--chain,
+#   CODE legs only - a probe checkout cannot measure the served lane) to
+#   name the offending card; a batch of one names its own card without a
+#   walk. That card un-lands with the red-gate semantics
+#   (dev reset to its pre-merge tip, evidence comment, card back to ready,
+#   rebased branch KEPT); the cards after it re-merge onto the new tip and
+#   the battery runs once more on THAT tree before anything is pushed. A red
+#   the bisect cannot attribute (a pre-existing red on dev, a served-lane
+#   red, a battery that breaks its own shape) un-lands the WHOLE batch:
+#   nothing is ever pushed ungated.
 # - race leg: -race needs a cgo toolchain. A host without one SKIPS the
 #   leg with one loud receipt and keeps gating (Endo 2026-11-10 ruling,
 #   card t_7cc44bf1: the signal stays on nightly/CI, where cgo exists) -
 #   never a red gate for an environment the host can never satisfy. The
 #   hard-fail stays exactly as-is where the toolchain exists.
-# - one landing per pass. Run it again for the next card.
 #
 # Board interaction: comments and result updates go through the hermes CLI
 # (override with HERMES); when that CLI is not available in the calling
@@ -54,6 +65,17 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 # Usage (from the main checkout, on dev):
 #
 #     scripts/train-pass.sh [--no-push]
+#
+#     scripts/train-pass.sh --gate-only [--no-push]
+#         Run the gate battery on THIS tree and exit with its status. The
+#         red-attribution seam: train-bisect.sh probes a candidate tree by
+#         running exactly the battery the pass runs, so a red can never be
+#         attributed by a proxy that gates something else. No board, no
+#         queue, no merge, no push. The probe gate keeps the CODE legs and
+#         SKIPS the legs a probe checkout cannot measure: the webui node
+#         suite (node_modules lives in the main checkout), the embed lane (the
+#         SPA build needs that same install) and the journeys (they drive the
+#         SERVED lane, which lags the tree).
 #
 # Environment:
 #
@@ -100,14 +122,26 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 #                              one. The pin is the review seat's entry
 #                              (scripts/factory-merge.sh): a pinned card
 #                              that is not a queued landing refuses loudly
-#                              instead of landing a neighbour.
+#                              instead of landing a neighbour. It also pins
+#                              the BATCH to one card.
+#   TRAIN_BISECT_CMD           the command train-bisect scores candidate
+#                              trees with when a battery goes red. Unset
+#                              (the real pass), it is this script's own
+#                              --gate-only battery, so the walk scores the
+#                              same code legs the pass just failed.
+#   TRAIN_GATE_ONLY_PRE        --gate-only only: the diff base for the
+#                              embed-lane and -race legs (default HEAD^1).
+#   TRAIN_GATE_ONLY_TID        --gate-only only: the card id the embed-lane
+#                              context line names (default gate-only).
 #
-# Exit codes: 0 landed (or empty queue), 2 usage/precondition (nothing
-# rebased, nothing merged, the card keeps its status), 3 rebase strike
-# (card stays queued), 4 demoted to ready (rebase strikes, replay
-# anomalies, no-op merges), 5 third strike -> reconciler card, 6 red gate
-# -> card back to ready, 7 the pinned card has nothing to land (already
-# merged, or no branch).
+# Exit codes: 0 the batch landed (or empty queue), 2 usage/precondition
+# (nothing rebased, nothing merged, every card keeps its status), 3 rebase
+# strike (the card stays queued), 4 demoted to ready (rebase strikes, replay
+# anomalies, no-op merges, red gates), 5 third strike -> reconciler card,
+# 6 red battery (a card or the whole batch un-landed), 7 the pinned card has
+# nothing to land (already merged, or no branch). A BATCH pass that landed
+# some cards and dropped others exits with the FIRST failure code - the
+# landed cards are durable (markers + pushed), the log names what landed.
 
 BASE="dev"
 PUSH=1
@@ -128,6 +162,9 @@ HERMES_BIN="${HERMES:-hermes}"
 JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh --regression}"
 RECONCILER_ASSIGNEE="${TRAIN_RECONCILER_ASSIGNEE:-default}"
 PIN="${TRAIN_CARD:-}"
+GATE_ONLY=0
+SELF="$_PIN_SELF"
+SELF_DIR="${SELF%/*}"
 
 
 die() { echo "FATAL: train-pass: $*" >&2; exit 2; }
@@ -135,9 +172,11 @@ note() { echo "==> train: $*"; }
 
 usage() {
   cat >&2 <<'EOF'
-usage: train-pass.sh [--no-push]
+usage: train-pass.sh [--no-push] [--gate-only]
 
-Run from the main checkout (~/dev/omega), on the dev branch, clean tree.
+Without --gate-only: run from the main checkout (~/dev/omega), on the dev
+branch, clean tree. --gate-only: run the gate battery on the current tree
+and exit with its status (the red-attribution probe seam).
 EOF
   exit 2
 }
@@ -145,11 +184,186 @@ EOF
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-push) PUSH=0 ;;
+    --gate-only) GATE_ONLY=1 ;;
     -h|--help) usage ;;
     *) usage ;;
   esac
   shift
 done
+
+# ---- the gate battery ---------------------------------------------------
+# The battery is ONE function, and it is the only thing the red-attribution
+# seam runs (--gate-only): a candidate tree is scored by exactly the code
+# legs the pass failed on, never by a proxy. `pre` is the battery's diff base
+# (the batch base) and is resolved at call time, so the same function serves
+# the pass and a probe.
+
+journeys_path="$JOURNEYS_CMD"
+# A command may carry flags, and a path may carry spaces: the WHOLE value is
+# the path when it names a real file, else the first token is.
+[ -f "$journeys_path" ] || journeys_path="${JOURNEYS_CMD%% *}"
+
+# Does this host have a cgo toolchain, i.e. can `go test -race` run at all?
+# `go env CGO_ENABLED` alone is not the answer (0 is also what a cgo file
+# reports as "no Go source files", and a CGO_ENABLED=1 host can still have an
+# unresolved CC), so the probe COMPILES a trivial cgo file - the same thing
+# -race needs. Verified both ways 2026-11-19: this host answers 1 ("no Go
+# source files" / "cgo: C compiler gcc not found"), a gcc host answers 0.
+# TRAIN_CGO_PROBE_CMD is the fixture seam: its exit status IS the verdict.
+cgo_toolchain_ok() {
+  if [ -n "${TRAIN_CGO_PROBE_CMD:-}" ]; then
+    bash -c "$TRAIN_CGO_PROBE_CMD" >/dev/null 2>&1
+    return $?
+  fi
+  local dir rc
+  # GOCACHE is a NATIVE absolute path (train-pass also runs from an MSYS
+  # shell on winbtw, where the native go exe cannot open a /tmp dir) and go
+  # guarantees it exists.
+  dir="$(go env GOCACHE 2>/dev/null || true)"
+  [ -n "$dir" ] || return 1
+  dir="$dir/omega-cgo-probe.$$"
+  mkdir -p "$dir" 2>/dev/null || return 1
+  printf 'package main\n\nimport "C"\n\nfunc main() {}\n' >"$dir/probe.go" 2>/dev/null || {
+    rm -rf "$dir"
+    return 1
+  }
+  rc=0
+  ( cd "$dir" && go build -o "$dir/probe.bin" probe.go ) >/dev/null 2>&1 || rc=$?
+  rm -rf "$dir"
+  return "$rc"
+}
+
+gates_pass() {
+  set -e
+  if [ -n "${TRAIN_GATES_CMD:-}" ]; then
+    echo "TEST GATE OVERRIDE ACTIVE (TRAIN_GATES_CMD): it is the ONLY gate"
+    bash -c "$TRAIN_GATES_CMD"
+    echo "FIN"
+    return 0
+  fi
+  if [ -f go.mod ] && command -v go >/dev/null 2>&1; then
+    pkglist="$(go list ./... | grep -v '/bin/' || true)"
+    if [ -n "$pkglist" ]; then
+      echo "==> go vet"
+      go vet $pkglist
+      echo "==> dep law"
+      ./scripts/gate-deps.sh
+      # worker fence eval (card t_8abdbb15): the regression set's
+      # landing eval. A worker session's push/landing must refuse or be
+      # mechanically blocked - the eval FAILS if the operation
+      # succeeds. Cheap (throwaway fixture repos, no network): it rides
+      # every train pass, like the journeys do.
+      if [ -f scripts/fence-test.sh ] && [ -f bin/shims/git ]; then
+        echo "==> worker fence eval"
+        bash scripts/fence-test.sh || exit 1
+      fi
+      echo "==> go test"
+      go test $pkglist
+      # -race on the package(s) the landing actually touches.
+      if grep -q '\.go$' <<<"$(git diff --name-only "$pre" HEAD)"; then
+        pkgmod="$(go list -m -f '{{.Path}}')"
+        raceargs=()
+        for d in $(git diff --name-only "$pre" HEAD | grep '\.go$' | xargs -n1 dirname | sort -u); do
+          want="$pkgmod/$d"
+          if grep -qFe "$want" <<<"$pkglist"; then
+            raceargs+=("./$d")
+          fi
+        done
+        if [ "${#raceargs[@]}" -gt 0 ]; then
+          if cgo_toolchain_ok; then
+            echo "==> go test -race on touched packages: ${raceargs[*]}"
+            go test -race "${raceargs[@]}"
+          else
+            echo "!!! race leg skipped: no cgo toolchain on this host (t_7cc44bf1, Endo 2026-11-10) - the -race signal stays on nightly/CI"
+          fi
+        fi
+      fi
+    fi
+  fi
+  # A probe checkout carries no node_modules (the main checkout does), so the
+  # node suite there measures a missing install, not the tree.
+  if [ "${GATE_PROBE:-0}" = "1" ]; then
+    echo "==> webui node suite: SKIPPED (probe gate: node_modules lives in the main checkout, not a probe tree)"
+  elif [ -d webui/test ] && command -v node >/dev/null 2>&1; then
+    echo "==> webui node suite"
+    (cd webui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
+      echo "webui suite failed - rerun (cd webui && node --test 'test/*.test.ts') for detail" >&2
+      exit 1
+    }
+  fi
+  echo "==> embed lane"
+  if [ "${GATE_PROBE:-0}" = "1" ]; then
+    echo "==> embed lane: SKIPPED (probe gate: a probe checkout has no node_modules for the SPA build)"
+  elif [ -f scripts/embed-lane.sh ]; then
+    scripts/embed-lane.sh --base "$pre" "card $tid"
+  else
+    echo "embed lane absent in this checkout - skipping (static/ change gate lives in the lane)"
+  fi
+  # The journeys measure the SERVED lane, which lags the tree it is gated
+  # against: a probe checkout cannot move that lane, so scoring a probe on it
+  # would read the same answer for every candidate.
+  if [ "${GATE_PROBE:-0}" = "1" ]; then
+    echo "==> validation journeys: SKIPPED (probe gate: the served lane measures the LANE, not this tree)"
+  elif [ -f "$journeys_path" ]; then
+    echo "==> validation journeys"
+    echo "    lane env: OMEGA_HOME=${OMEGA_HOME:-<unset>} OMEGA_BIN=${OMEGA_BIN:-<unset>} base ${JOURNEY_BASE_URL:-<run.sh default>}"
+    # An override whose WHOLE value is a path (spaces allowed) runs as one
+    # argument; anything else is a command line, flags included.
+    if [ "$JOURNEYS_CMD" = "$journeys_path" ]; then
+      bash "$journeys_path" || exit 1
+    else
+      bash -c "$JOURNEYS_CMD" || exit 1
+    fi
+  elif [ -n "${TRAIN_JOURNEYS_CMD:-}" ]; then
+    echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
+    exit 1
+  else
+    echo "==> validation journeys: SKIPPED - $journeys_path not present yet (the companion card wires it in)"
+  fi
+  echo "FIN"
+}
+
+# run_battery <base>: the battery over the CURRENT tree. Sets gates_log,
+# gates_rc and battery_secs. The -e must be OFF at the call: ON it kills the
+# whole pass on gate failure (no handler), and a `subshell ||` context
+# suspends -e inside the subshell (every red sailed through green).
+run_battery() {
+  pre="$1"
+  gates_log="$(mktemp "${TMPDIR:-/tmp}"/train-gates.XXXXXX.log)"
+  battery_start="$(date +%s)"
+  set +e
+  ( gates_pass ) >"$gates_log" 2>&1
+  gates_rc=$?
+  set -e
+  battery_secs=$(( $(date +%s) - battery_start ))
+  battery_total=$((battery_total + battery_secs))
+  battery_runs=$((battery_runs + 1))
+  return 0
+}
+battery_total=0
+battery_runs=0
+
+# ---- --gate-only: the probe seam (no board, no queue, no merge) --------
+# train-bisect.sh hands a candidate tree to this mode: the scored legs are
+# the pass's own, so a walk can only ever name a tree the pass would fail.
+if [ "$GATE_ONLY" = "1" ]; then
+  REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || die "--gate-only needs a checkout"
+  cd "$REPO"
+  pre="${TRAIN_GATE_ONLY_PRE:-$(git rev-parse -q --verify HEAD^1 2>/dev/null || git rev-parse HEAD)}"
+  tid="${TRAIN_GATE_ONLY_TID:-gate-only}"
+  GATE_PROBE=1
+  export GATE_PROBE
+  run_battery "$pre"
+  if [ "$gates_rc" != 0 ]; then
+    tail -25 "$gates_log" >&2 || true
+    exit "$gates_rc"
+  fi
+  grep -q '^FIN$' "$gates_log" \
+    || { echo "FATAL: train-pass: --gate-only broke the battery's own structure (no FIN marker)" >&2; exit 1; }
+  exit 0
+fi
+# A pass never runs probe-shaped: the skip flag is the probe's alone.
+unset GATE_PROBE
 
 REPO="$(git rev-parse --show-toplevel 2>/dev/null)" || die "run this inside the omega checkout"
 cd "$REPO"
@@ -432,17 +646,20 @@ else
 fi
 
 
-pick=""
+# The batch is every queued landing (oldest first) whose branch still exists
+# and still carries commits not on dev. TRAIN_CARD pins it to one card - the
+# review seat's landing, where "the oldest queued card" may well be somebody
+# else's.
+BATCH=()
 for cand in "${CANDIDATES[@]}"; do
   c="${cand%% *}"; b="${cand#* }"
   if git show-ref --verify --quiet "refs/heads/$b" \
      && ! git merge-base --is-ancestor "$b" "$BASE" 2>/dev/null; then
-    pick="$c|$b"
-    break
+    BATCH+=("$c|$b")
   fi
 done
 
-if [ -z "$pick" ]; then
+if [ "${#BATCH[@]}" -eq 0 ]; then
   if [ -n "$PIN" ]; then
     # The pin's card is done but its branch is already in dev (or gone).
     # "queue empty" would read as a landing to the caller - refuse instead.
@@ -452,24 +669,15 @@ if [ -z "$pick" ]; then
   echo "train: queue empty."
   exit 0
 fi
-tid="${pick%%|*}"
-bra="${pick#*|}"
 
-# Heal the row, not only this pass: a landing that leaves branch_name NULL is
-# the same stale row a human repaired by hand before it could queue.
-if [ -z "$(task_field "$tid" branch_name || true)" ]; then
-  sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name = '$(sqlq "$bra")'
-     WHERE id = '$(sqlq "$tid")' AND (branch_name IS NULL OR branch_name = '');" >/dev/null
-  note "card $tid carries no branch_name - resolved its wt branch $bra (row repaired)"
-fi
-
-title="$(task_field "$tid" "title" || true)"
-who="$(task_field "$tid" "assignee" || true)"
-[ -n "$who" ] || who="?"
+batch_ids=""
+for entry in "${BATCH[@]}"; do
+  batch_ids="${batch_ids:+$batch_ids,}${entry%%|*}"
+done
 if [ -n "$PIN" ]; then
-  note "pinned card: $tid ($title), branch $bra"
+  note "pinned card: ${BATCH[0]%%|*} ($(task_field "${BATCH[0]%%|*}" title || true)), branch ${BATCH[0]#*|}"
 else
-  note "oldest queued card: $tid ($title), branch $bra"
+  note "batch of ${#BATCH[@]} queued card(s): $batch_ids"
 fi
 
 # ---- gate preconditions (refuse BEFORE the merge, never mid-cycle) ------
@@ -482,10 +690,6 @@ fi
 # card was demoted on it. A gate that cannot run green is a PRECONDITION:
 # it refuses HERE, before anything is rebased or merged, and the card keeps
 # its status, its branch and its verdict.
-journeys_path="$JOURNEYS_CMD"
-# A command may carry flags, and a path may carry spaces: the WHOLE value is
-# the path when it names a real file, else the first token is.
-[ -f "$journeys_path" ] || journeys_path="${JOURNEYS_CMD%% *}"
 journeys_will_run() { [ -z "${TRAIN_GATES_CMD:-}" ] && [ -f "$journeys_path" ]; }
 
 lane_home_usable() {  # <dir>: a serving lane home - its config + serve binary
@@ -576,39 +780,48 @@ dir_is_empty() {  # <dir>: empty AND listable (a failed listing proves nothing)
   [ -z "$out" ]
 }
 
-ws="$(task_field "$tid" "workspace_path" || true)"
-wskind="$(task_field "$tid" "workspace_kind" || true)"
-if [ -n "$ws" ] && [ -d "$ws" ]; then
-  if wt_registered "$ws"; then
-    if [ -n "$(git -C "$ws" status --porcelain 2>/dev/null)" ]; then
-      echo "FATAL: train-pass: done card $tid has $ws dirty - uncommitted work in a closed card;" >&2
-      echo "       the train never destroys unclaimed state. A human looks at it." >&2
-      exit 2
-    fi
-    if ! git worktree remove -f "$ws" >/dev/null 2>&1; then
-      if ! wt_registered "$ws" && dir_is_empty "$ws"; then
-        note "card worktree $ws is held by a live session: git dropped the registration and every file, the empty husk stays for the pruner sweep - landing"
-      else
-        die "could not free the card worktree $ws (rm the worktree by hand)"
+free_card_tree() {  # <task_id> <branch>
+  local tid="$1" bra="$2" ws wskind
+  ws="$(task_field "$tid" "workspace_path" || true)"
+  wskind="$(task_field "$tid" "workspace_kind" || true)"
+  if [ -n "$ws" ] && [ -d "$ws" ]; then
+    if wt_registered "$ws"; then
+      if [ -n "$(git -C "$ws" status --porcelain 2>/dev/null)" ]; then
+        echo "FATAL: train-pass: done card $tid has $ws dirty - uncommitted work in a closed card;" >&2
+        echo "       the train never destroys unclaimed state. A human looks at it." >&2
+        exit 2
       fi
+      if ! git worktree remove -f "$ws" >/dev/null 2>&1; then
+        if ! wt_registered "$ws" && dir_is_empty "$ws"; then
+          note "card worktree $ws is held by a live session: git dropped the registration and every file, the empty husk stays for the pruner sweep - landing"
+        else
+          die "could not free the card worktree $ws (rm the worktree by hand)"
+        fi
+      else
+        note "freed card worktree $ws"
+      fi
+    elif [ "$wskind" = "worktree" ]; then
+      # Not a worktree of this checkout: the husk a held-cwd removal leaves
+      # behind, or an unregistered leftover. Nothing here is work this checkout
+      # claims - the card's commits are on branch $bra - so remove the plain
+      # directory and land. Only a HOLDER can refuse it (winbtw: "Device or
+      # resource busy" while a session's cwd is inside), and that die names it
+      # instead of sending a human to a worktree removal git cannot perform.
+      if ! rm -rf "$ws" 2>/dev/null; then
+        die "could not remove the leftover directory $ws - it is no worktree of this checkout (the card's commits are on $bra, nothing was rebased or merged), but a live process still holds it: a session spawned with its cwd at the workspace path is the usual one. End that session, then rerun the pass."
+      fi
+      note "removed unregistered leftover dir $ws (not a worktree of this checkout)"
     else
-      note "freed card worktree $ws"
+      note "card workspace $ws is not a worktree of this checkout and the card does not declare one (workspace_kind=${wskind:-unset}) - left untouched"
     fi
-  elif [ "$wskind" = "worktree" ]; then
-    # Not a worktree of this checkout: the husk a held-cwd removal leaves
-    # behind, or an unregistered leftover. Nothing here is work this checkout
-    # claims - the card's commits are on branch $bra - so remove the plain
-    # directory and land. Only a HOLDER can refuse it (winbtw: "Device or
-    # resource busy" while a session's cwd is inside), and that die names it
-    # instead of sending a human to a worktree removal git cannot perform.
-    if ! rm -rf "$ws" 2>/dev/null; then
-      die "could not remove the leftover directory $ws - it is no worktree of this checkout (the card's commits are on $bra, nothing was rebased or merged), but a live process still holds it: a session spawned with its cwd at the workspace path is the usual one. End that session, then rerun the pass."
-    fi
-    note "removed unregistered leftover dir $ws (not a worktree of this checkout)"
-  else
-    note "card workspace $ws is not a worktree of this checkout and the card does not declare one (workspace_kind=${wskind:-unset}) - left untouched"
   fi
-fi
+}
+
+# The whole batch's trees are freed BEFORE the first merge: a refusal here is
+# then a clean precondition (dev untouched, nothing half-merged).
+for entry in "${BATCH[@]}"; do
+  free_card_tree "${entry%%|*}" "${entry#*|}"
+done
 
 # ---- rebase + merge ----------------------------------------------------
 
@@ -624,213 +837,360 @@ branch_patchids() {
   done | sort
 }
 
-pre="$(git rev-parse HEAD)"
-pre_unique="$(branch_patchids "$bra" "$pre")"
+# branch_carried <tip> <branch> -> patch ids of the branch's commits whose
+# patch the tip ALREADY carries. A batch leaves each card rebased onto its
+# predecessor, so a retry's tip carries those copies under other shas; the
+# rebase drops them as empty and they are duplicates, never lost work.
+branch_carried() {
+  local mark sha
+  while read -r mark sha; do
+    [ "$mark" = "-" ] || continue
+    git show "$sha" | git patch-id | awk '{print $1}'
+  done < <(git cherry "$1" "$2")
+}
 
-conflict_step() {
+# branch_commit_count <branch> <tip>: commits unique to the branch. Counted,
+# not patch-id'd: an initially-empty commit has no patch at all and lands.
+branch_commit_count() { git rev-list --count --no-merges "$1" "^$2"; }
+
+conflict_step() {  # <task_id> <branch> <pre-tip>: strike bookkeeping, never exits
+  local tid="$1" bra="$2" pre="$3" files n body rc
   # Conflicted file list comes FIRST - the abort wipes the index state.
-  local files
   files="$(git diff --name-only --diff-filter=U 2>/dev/null | head -8 || true)"
   git rebase --abort 2>/dev/null || true
   git merge --abort 2>/dev/null || true
   git checkout -q -f "$BASE"
   git reset -q --hard "$pre" 2>/dev/null || true
-  local n body
   n=$(($(strike_count "$tid") + 1))
   body="train: rebase conflict (strike $n) on $bra vs $BASE - conflict in: ${files:-<n/a>}. Strike 2 demotes; strike 3 goes to the reconciler."
   board_comment "$tid" "$body"
-  note "rebase conflict, strike $n"
+  note "rebase conflict on $tid, strike $n"
   if [ "$n" -ge 3 ]; then
     note "third strike - reconciler card instead of another retry"
     reconcile_card "$tid" "$n" "$bra"
-    exit 5
+    CARD_RC=5
   elif [ "$n" -eq 2 ]; then
     note "strike 2 - auto-demote: card back to ready with the conflict note"
     demote_card "$tid" \
       "merge train: rebase conflict vs $BASE ($n strikes). On $bra - rebase onto the new dev tip in the rerun."
-    exit 4
+    CARD_RC=4
+  else
+    note "strike 1 - card stays queued, a later pass retries"
+    CARD_RC=3
   fi
-  note "strike 1 - card stays queued, the next pass retries"
-  exit 3
+  return 0
 }
 
-git checkout -q "$bra" 2>/dev/null || die "cannot check out $bra locally"
-# --no-fork-point: the replay set is merge-base-defined, no reflog guessing.
-# --reapply-cherry-picks: dev may already carry a SAME-PATCH-IDENTICAL commit
-# EARLIER in its history (applied, reverted, re-added by a later commit) -
-# cherry-pick suppression would silently skip the branch's real work and
-# fast-forward onto dev, landing nothing (found live on the 2nd landing).
-if ! git rebase --no-fork-point --reapply-cherry-picks "$BASE" >/dev/null 2>&1; then
-  git checkout -q "$BASE" 2>/dev/null || true
-  conflict_step
-fi
-git checkout -q "$BASE"
+two_parent() { git rev-parse -q --verify "$1^2" >/dev/null 2>&1; }
 
-# Replay-parity: the rebase must have replayed exactly what the branch
-# had. A zero-replay (fork-point fast-forward, patch already on dev) would
-# otherwise flow into an "already up to date" merge and land nothing.
-post_unique="$(branch_patchids "$bra" "$pre")"
-if [ "$pre_unique" != "$post_unique" ]; then
-  pre_n="$(awk 'END{print NR}' <<<"$pre_unique")"
-  post_n="$(awk 'END{print NR}' <<<"$post_unique")"
-  note "rebase replay anomaly: branch carried $pre_n unique commits, $post_n replayed - aborting"
-  board_comment "$tid" "train: rebase replay anomaly on $bra rebased onto $BASE - branch carried $pre_n unique commits, $post_n were replayed. Landing ABORTED, the branch is kept, card back to ready with this evidence."
-  demote_card "$tid" "merge train: rebase replay anomaly ($pre_n unique commits zero-replayed). On $bra - verify the branch content against dev, then rerun."
-  exit 4
-fi
-if ! git merge --no-ff -q -m "Merge card $tid: $(cut -c1-60 <<<"$title") (work by $who)" "$bra" 2>/dev/null; then
-  note "conflict at the merge stage (post-rebase)"
-  conflict_step
-fi
-mergesha="$(git rev-parse HEAD)"
-if [ "$mergesha" = "$pre" ] || ! git rev-parse -q --verify "$mergesha^2" >/dev/null 2>&1; then
-  git reset -q --hard "$pre" >/dev/null 2>&1 || true
-  note "landing aborted: merge of $bra produced no two-parent merge commit (mergesha was $mergesha)"
-  board_comment "$tid" "train: the merge of $bra degenerated to a no-op (mergesha = $mergesha = pre-pass tip or single-parent). Landing ABORTED, dev untouched, card back to ready with this evidence."
-  demote_card "$tid" "merge train: no-op merge detected. On $bra - a real merge commit is required to land."
-  exit 4
-fi
-note "merge commit $mergesha"
+# drop_card <rc>: a batch pass exits with its FIRST dropped card's code. The
+# cards that landed are durable (markers + push) and the log names them.
+drop_card() { if [ "$batch_rc" = "0" ]; then batch_rc="$1"; fi; return 0; }
 
-# ---- gates on the merged tree -----------------------------------------
+# ---- merge the batch (no gate between merges) --------------------------
+# Each branch is rebased onto the tip the previous merges left, then merged.
+# A card that cannot rebase or merge is dropped from the batch and the loop
+# carries on: one conflicted card never holds the rest hostage.
 
-gates_log="$(mktemp "${TMPDIR:-/tmp}"/train-gates.XXXXXX.log)"
+batch_base="$(git rev-parse HEAD)"
+B_LAND=()
+batch_rc=0
+CARD_RC=0
 
-# Does this host have a cgo toolchain, i.e. can `go test -race` run at all?
-# `go env CGO_ENABLED` alone is not the answer (0 is also what a cgo file
-# reports as "no Go source files", and a CGO_ENABLED=1 host can still have an
-# unresolved CC), so the probe COMPILES a trivial cgo file - the same thing
-# -race needs. Verified both ways 2026-11-19: this host answers 1 ("no Go
-# source files" / "cgo: C compiler gcc not found"), a gcc host answers 0.
-# TRAIN_CGO_PROBE_CMD is the fixture seam: its exit status IS the verdict.
-cgo_toolchain_ok() {
-  if [ -n "${TRAIN_CGO_PROBE_CMD:-}" ]; then
-    bash -c "$TRAIN_CGO_PROBE_CMD" >/dev/null 2>&1
-    return $?
+for entry in "${BATCH[@]}"; do
+  tid="${entry%%|*}"; bra="${entry#*|}"
+  title="$(task_field "$tid" "title" || true)"
+  who="$(task_field "$tid" "assignee" || true)"
+  [ -n "$who" ] || who="?"
+  # Heal the row, not only this pass: a landing that leaves branch_name NULL is
+  # the same stale row a human repaired by hand before it could queue.
+  if [ -z "$(task_field "$tid" branch_name || true)" ]; then
+    sqlite3 "$KANBAN_DB" "UPDATE tasks SET branch_name = '$(sqlq "$bra")'
+       WHERE id = '$(sqlq "$tid")' AND (branch_name IS NULL OR branch_name = '');" >/dev/null
+    note "card $tid carries no branch_name - resolved its wt branch $bra (row repaired)"
   fi
-  local dir rc
-  # GOCACHE is a NATIVE absolute path (train-pass also runs from an MSYS
-  # shell on winbtw, where the native go exe cannot open a /tmp dir) and go
-  # guarantees it exists.
-  dir="$(go env GOCACHE 2>/dev/null || true)"
-  [ -n "$dir" ] || return 1
-  dir="$dir/omega-cgo-probe.$$"
-  mkdir -p "$dir" 2>/dev/null || return 1
-  printf 'package main\n\nimport "C"\n\nfunc main() {}\n' >"$dir/probe.go" 2>/dev/null || {
-    rm -rf "$dir"
-    return 1
-  }
-  rc=0
-  ( cd "$dir" && go build -o "$dir/probe.bin" probe.go ) >/dev/null 2>&1 || rc=$?
-  rm -rf "$dir"
-  return "$rc"
-}
+  note "merging $tid ($title), branch $bra"
 
-gates_pass() {
+  pre="$(git rev-parse HEAD)"
+  pre_unique="$(branch_patchids "$bra" "$pre")"
+  pre_carried="$(branch_carried "$pre" "$bra")"
+  pre_n="$(branch_commit_count "$bra" "$pre")"
+  CARD_RC=0
+  git checkout -q "$bra" 2>/dev/null || die "cannot check out $bra locally"
+  # --no-fork-point: the replay set is merge-base-defined, no reflog guessing.
+  # --reapply-cherry-picks: dev may already carry a SAME-PATCH-IDENTICAL commit
+  # EARLIER in its history (applied, reverted, re-added by a later commit) -
+  # cherry-pick suppression would silently skip the branch's real work and
+  # fast-forward onto dev, landing nothing (found live on the 2nd landing).
+  if ! git rebase --no-fork-point --reapply-cherry-picks "$BASE" >/dev/null 2>&1; then
+    git checkout -q "$BASE" 2>/dev/null || true
+    conflict_step "$tid" "$bra" "$pre"
+    drop_card "$CARD_RC"
+    continue
+  fi
+  git checkout -q "$BASE"
+
+  # Replay-parity: the rebase must replay the branch's work. A commit it
+  # DROPS is only allowed to be a predecessor's copy the tip already carries
+  # (the batch rebased this branch onto its predecessor in an earlier pass);
+  # anything else dropped is lost work, and a branch left with nothing to
+  # replay is the silent empty landing the guard exists to stop.
+  post_unique="$(branch_patchids "$bra" "$pre")"
+  post_n="$(branch_commit_count "$bra" "$pre")"
+  lost_bad=0
+  if [ "$post_n" -eq 0 ]; then
+    lost_bad=1
+  else
+    while read -r pid; do
+      [ -n "$pid" ] || continue
+      case $'\n'"$pre_carried"$'\n' in
+        *$'\n'"$pid"$'\n'*) ;;
+        *)
+          lost_bad=1
+          break
+          ;;
+      esac
+    done < <(comm -23 <(printf '%s\n' "$pre_unique") <(printf '%s\n' "$post_unique"))
+  fi
+  if [ "$lost_bad" = "1" ]; then
+    note "rebase replay anomaly on $tid: branch carried $pre_n unique commits, $post_n replayed - dropped from the batch"
+    board_comment "$tid" "train: rebase replay anomaly on $bra rebased onto $BASE - branch carried $pre_n unique commits, $post_n were replayed. Landing ABORTED, the branch is kept, card back to ready with this evidence."
+    demote_card "$tid" "merge train: rebase replay anomaly ($pre_n unique commits zero-replayed). On $bra - verify the branch content against dev, then rerun."
+    drop_card 4
+    continue
+  fi
+  if ! git merge --no-ff -q -m "Merge card $tid: $(cut -c1-60 <<<"$title") (work by $who)" "$bra" 2>/dev/null; then
+    note "conflict at the merge stage (post-rebase) for $tid"
+    conflict_step "$tid" "$bra" "$pre"
+    drop_card "$CARD_RC"
+    continue
+  fi
+  mergesha="$(git rev-parse HEAD)"
+  if [ "$mergesha" = "$pre" ] || ! two_parent "$mergesha"; then
+    git reset -q --hard "$pre" >/dev/null 2>&1 || true
+    note "landing aborted: merge of $bra produced no two-parent merge commit (mergesha was $mergesha)"
+    board_comment "$tid" "train: the merge of $bra degenerated to a no-op (mergesha = $mergesha = pre-pass tip or single-parent). Landing ABORTED, dev untouched, card back to ready with this evidence."
+    demote_card "$tid" "merge train: no-op merge detected. On $bra - a real merge commit is required to land."
+    drop_card 4
+    continue
+  fi
+  B_LAND+=("$tid|$bra|$mergesha|$pre")
+  note "merged $tid at $mergesha"
+done
+
+if [ "${#B_LAND[@]}" -eq 0 ]; then
+  note "batch: nothing merged this pass (${#BATCH[@]} card(s) dropped before the battery)"
+  exit "$batch_rc"
+fi
+
+# ---- the battery: ONE gate run for the whole batch ---------------------
+# The battery's diff base is the BATCH base: the pass gates the whole batch,
+# not one card, so the embed-lane change gate and the -race package set cover
+# every merged card. Nothing is pushed before this is green on the final tree.
+
+# attribute_red: walk the batch with scripts/train-bisect.sh and set CULPRIT.
+# The walk scores trees with the pass's own battery (--gate-only), so a
+# candidate can only ever be judged by the legs the pass just failed on.
+# Empty CULPRIT = the walk could not name a card of this batch.
+attribute_red() {
+  local entry chain="" bad rc
+  for entry in "${B_LAND[@]}"; do
+    chain="${chain:+$chain,}${entry%%|*}=$(cut -d'|' -f3 <<<"$entry")"
+  done
+  bad="$(git rev-parse HEAD)"
+  if [ -n "${TRAIN_BISECT_CMD:-}" ]; then
+    bisect_cmd="$TRAIN_BISECT_CMD"
+  else
+    bisect_cmd="bash '$SELF' --gate-only"
+    export TRAIN_GATE_ONLY_PRE="$batch_base"
+  fi
+  bisect_log="$(mktemp "${TMPDIR:-/tmp}"/train-bisect.XXXXXX.log)"
+  note "train-bisect over ${#B_LAND[@]} candidate(s): $chain"
+  set +e
+  bash "$SELF_DIR/train-bisect.sh" "$bad" --cmd "$bisect_cmd" --chain "$chain" >"$bisect_log" 2>&1
+  rc=$?
   set -e
-  if [ -n "${TRAIN_GATES_CMD:-}" ]; then
-    echo "TEST GATE OVERRIDE ACTIVE (TRAIN_GATES_CMD): it is the ONLY gate"
-    bash -c "$TRAIN_GATES_CMD"
-    echo "FIN"
+  tail -6 "$bisect_log" 2>/dev/null || true
+  if [ "$rc" != "0" ]; then
+    echo "train-bisect refused the walk (rc $rc) - see $bisect_log" >&2
+  fi
+  CULPRIT="$(sed -n 's/^culprit: landing //p' "$bisect_log" | head -1)"
+  if [ -z "$CULPRIT" ]; then
     return 0
   fi
-  if [ -f go.mod ] && command -v go >/dev/null 2>&1; then
-    pkglist="$(go list ./... | grep -v '/bin/' || true)"
-    if [ -n "$pkglist" ]; then
-      echo "==> go vet"
-      go vet $pkglist
-      echo "==> dep law"
-      ./scripts/gate-deps.sh
-      # worker fence eval (card t_8abdbb15): the regression set's
-      # landing eval. A worker session's push/landing must refuse or be
-      # mechanically blocked - the eval FAILS if the operation
-      # succeeds. Cheap (throwaway fixture repos, no network): it rides
-      # every train pass, like the journeys do.
-      if [ -f scripts/fence-test.sh ] && [ -f bin/shims/git ]; then
-        echo "==> worker fence eval"
-        bash scripts/fence-test.sh || exit 1
-      fi
-      echo "==> go test"
-      go test $pkglist
-      # -race on the package(s) the landing actually touches.
-      if grep -q '\.go$' <<<"$(git diff --name-only "$pre" HEAD)"; then
-        pkgmod="$(go list -m -f '{{.Path}}')"
-        raceargs=()
-        for d in $(git diff --name-only "$pre" HEAD | grep '\.go$' | xargs -n1 dirname | sort -u); do
-          want="$pkgmod/$d"
-          if grep -qFe "$want" <<<"$pkglist"; then
-            raceargs+=("./$d")
-          fi
-        done
-        if [ "${#raceargs[@]}" -gt 0 ]; then
-          if cgo_toolchain_ok; then
-            echo "==> go test -race on touched packages: ${raceargs[*]}"
-            go test -race "${raceargs[@]}"
-          else
-            echo "!!! race leg skipped: no cgo toolchain on this host (t_7cc44bf1, Endo 2026-11-10) - the -race signal stays on nightly/CI"
-          fi
-        fi
-      fi
-    fi
-  fi
-  if [ -d webui/test ] && command -v node >/dev/null 2>&1; then
-    echo "==> webui node suite"
-    (cd webui && node --test 'test/*.test.ts' >/dev/null 2>&1) || {
-      echo "webui suite failed - rerun (cd webui && node --test 'test/*.test.ts') for detail" >&2
-      exit 1
-    }
-  fi
-  echo "==> embed lane"
-  if [ -f scripts/embed-lane.sh ]; then
-    scripts/embed-lane.sh --base "$pre" "card $tid"
-  else
-    echo "embed lane absent in this checkout - skipping (static/ change gate lives in the lane)"
-  fi
-  if [ -f "$journeys_path" ]; then
-    echo "==> validation journeys"
-    echo "    lane env: OMEGA_HOME=${OMEGA_HOME:-<unset>} OMEGA_BIN=${OMEGA_BIN:-<unset>} base ${JOURNEY_BASE_URL:-<run.sh default>}"
-    # An override whose WHOLE value is a path (spaces allowed) runs as one
-    # argument; anything else is a command line, flags included.
-    if [ "$JOURNEYS_CMD" = "$journeys_path" ]; then
-      bash "$journeys_path" || exit 1
-    else
-      bash -c "$JOURNEYS_CMD" || exit 1
-    fi
-  elif [ -n "${TRAIN_JOURNEYS_CMD:-}" ]; then
-    echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
-    exit 1
-  else
-    echo "==> validation journeys: SKIPPED - $journeys_path not present yet (the companion card wires it in)"
-  fi
-  echo "FIN"
+  case ",$batch_ids," in
+    *",$CULPRIT,"*) ;;
+    *)
+      note "train-bisect named $CULPRIT, which is not a card of this batch - unattributed"
+      CULPRIT=""
+      ;;
+  esac
+  return 0
 }
-# Run the gate list in a fresh subshell. The -e must be OFF at this
-# statement: ON it kills the whole pass on gate failure (no handler), and
-# a `subshell ||` context suspends -e inside the subshell (every red
-# sailed through green). Sandwich it instead.
-set +e
-( gates_pass ) >"$gates_log" 2>&1
-gates_rc=$?
-set -e
+
+# A card that cannot follow the culprit onto the new tip is dropped from the
+# batch: branch kept, card back to ready, evidence on the card.
+drop_reland() {  # <task_id> <branch> <reason>
+  local id="$1" bra="$2" why="$3"
+  note "re-land of $id failed: $why"
+  board_comment "$id" "train: red gate on the batch battery ($batch_ids), culprit $CULPRIT un-landed - this card's own commits on $bra did not re-land onto the culprit-free tip ($why). Dropped from the batch, branch kept, card back to ready."
+  demote_card "$id" "merge train: re-land after the red-battery culprit failed ($why). On $bra - rebase onto the new dev tip, then rerun."
+}
+
+# unland_culprit <card-id> <evidence-log>: dev back to the culprit's pre-merge
+# tip, the culprit back to ready with the evidence, and every card that came
+# AFTER it re-merged onto the new tip. Cards before it are untouched (their
+# merges are ancestors of that tip). Rewrites B_LAND to the surviving landings.
+unland_culprit() {
+  local culprit="$1" evid="$2" entry id bra oldsha newsha newpre
+  local culsha="" culbra="" pretip="" seen=0 prev_old
+  local pre_cards=() post_cards=() survivors=()
+  for entry in "${B_LAND[@]}"; do
+    id="${entry%%|*}"
+    if [ "$seen" = "0" ]; then
+      if [ "$id" = "$culprit" ]; then
+        seen=1
+        culbra="$(cut -d'|' -f2 <<<"$entry")"
+        culsha="$(cut -d'|' -f3 <<<"$entry")"
+        pretip="$(cut -d'|' -f4 <<<"$entry")"
+        continue
+      fi
+      pre_cards+=("$entry")
+      continue
+    fi
+    post_cards+=("$entry")
+  done
+  [ -n "$culsha" ] || die "train-bisect named $culprit but no merged card matches it"
+
+  git checkout -q "$BASE" 2>/dev/null || true
+  git reset -q --hard "$pretip"
+  git clean -qfd api/static >/dev/null 2>&1 || true
+  note "un-landed $culprit: $BASE back to ${pretip:0:12}"
+
+  board_comment "$culprit" "train: red gate on the batch battery ($batch_ids) - train-bisect names this card's landing ($culsha) as the culprit. Un-landed, back to ready. Failure evidence (tail):
+
+$(tail -c 1200 "$evid")
+
+Full gate log: $evid
+Bisect log: ${bisect_log:-<none>}"
+  demote_card "$culprit" \
+    "merge train: red gate - this landing ($culsha) is the batch battery's culprit per train-bisect. Un-landed; rebased branch $culbra is KEPT."
+
+  survivors=("${pre_cards[@]}")
+  prev_old="$culsha"
+  for entry in "${post_cards[@]}"; do
+    id="${entry%%|*}"; bra="$(cut -d'|' -f2 <<<"$entry")"; oldsha="$(cut -d'|' -f3 <<<"$entry")"
+    newpre="$(git rev-parse HEAD)"
+    # --onto: the card was rebased onto the culprit's landing, so the culprit
+    # must be the exclusion point - a plain merge would carry its changes back.
+    if ! git rebase --onto "$newpre" "$prev_old" "$bra" >/dev/null 2>&1; then
+      git rebase --abort 2>/dev/null || true
+      git checkout -q -f "$BASE" 2>/dev/null || true
+      git reset -q --hard "$newpre"
+      drop_reland "$id" "$bra" "rebase conflict"
+      prev_old="$oldsha"
+      continue
+    fi
+    git checkout -q "$BASE"
+    if ! git merge --no-ff -q -m "Merge card $id: $(cut -c1-60 <<<"$(task_field "$id" title || true)") (work by $(task_field "$id" assignee || true))" "$bra" 2>/dev/null; then
+      git merge --abort 2>/dev/null || true
+      git checkout -q -f "$BASE" 2>/dev/null || true
+      git reset -q --hard "$newpre"
+      drop_reland "$id" "$bra" "merge conflict"
+      prev_old="$oldsha"
+      continue
+    fi
+    newsha="$(git rev-parse HEAD)"
+    if [ "$newsha" = "$newpre" ] || ! two_parent "$newsha"; then
+      git reset -q --hard "$newpre"
+      drop_reland "$id" "$bra" "no-op merge"
+      prev_old="$oldsha"
+      continue
+    fi
+    survivors+=("$id|$bra|$newsha|$newpre")
+    note "re-landed $id at $newsha"
+    prev_old="$oldsha"
+  done
+  B_LAND=("${survivors[@]}")
+}
+
+# rollback_batch <evidence-log>: the whole batch un-lands. Used when the red
+# cannot be pinned to one card (the walk refused, or the tree is still red
+# without the culprit) - a red dev never gets a push.
+rollback_batch() {
+  local evid="$1" entry id bra st
+  git checkout -q "$BASE" 2>/dev/null || true
+  git reset -q --hard "$batch_base"
+  git clean -qfd api/static >/dev/null 2>&1 || true
+  note "un-landed the WHOLE batch: $BASE back to ${batch_base:0:12}"
+  for entry in "${B_LAND[@]}"; do
+    id="${entry%%|*}"; bra="$(cut -d'|' -f2 <<<"$entry")"
+    st="$(task_field "$id" status || true)"
+    [ "$st" = "done" ] || continue
+    board_comment "$id" "train: red gate on the batch battery ($batch_ids) and the red could not be pinned to one card - the WHOLE batch was un-landed, back to ready. Failure evidence (tail):
+
+$(tail -c 1200 "$evid")
+
+Full gate log: $evid
+Bisect log: ${bisect_log:-<none>}"
+    demote_card "$id" \
+      "merge train: red gate on the batch battery - the whole batch un-landed (batch: $batch_ids). Failure tail on the card; rebased branch $bra is KEPT."
+  done
+}
+
+run_battery "$batch_base"
+bisect_used="no"
+
 if [ "$gates_rc" != "0" ]; then
   tail -25 "$gates_log" >&2 || true
-  git reset -q --hard "$pre"
-  git clean -qfd api/static >/dev/null 2>&1 || true
-  note "red gate (rc $gates_rc) - un-landed: dev back to $pre"
-  board_comment "$tid" "train: red gate on $mergesha - un-landed, back to ready. Failure evidence (tail):
+  CULPRIT=""
+  if [ "${#B_LAND[@]}" = "1" ]; then
+    # One merged card is its own attribution - a walk over one candidate
+    # would cost two probe batteries to say what the batch already says.
+    CULPRIT="${B_LAND[0]%%|*}"
+    bisect_used="no (single card $CULPRIT)"
+    note "red gate: battery rc $gates_rc on the one merged card $CULPRIT - no walk needed"
+  else
+    note "red gate: battery rc $gates_rc over ${#B_LAND[@]} merged card(s) - walking the batch"
+    attribute_red
+    if [ -z "$CULPRIT" ]; then
+      bisect_used="no (unattributed)"
+      note "train-bisect could not name a card of this batch - un-landing the WHOLE batch"
+      rollback_batch "$gates_log"
+      note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisect=$bisect_used landed=0"
+      exit 6
+    fi
+    bisect_used="yes ($CULPRIT)"
+  fi
 
-$(tail -c 1200 "$gates_log")
+  note "un-landing $CULPRIT and re-merging the cards after it"
+  unland_culprit "$CULPRIT" "$gates_log"
+  if [ "${#B_LAND[@]}" -eq 0 ]; then
+    note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisect=$bisect_used landed=0"
+    note "nothing survives the un-land - $BASE sits at ${batch_base:0:12}"
+    exit 6
+  fi
 
-Full gate log: $gates_log"
-  demote_card "$tid" \
-    "merge train: red gate - $mergesha un-landed (rc $gates_rc). Failure tail on the card; rebased branch $bra is KEPT."
-  exit 6
+  # The batch tree changed: gate it ONCE more before anything is pushed. A red
+  # here says the culprit's removal was not the whole story.
+  note "battery re-run on the culprit-free tip (${#B_LAND[@]} card(s))"
+  run_battery "$batch_base"
+  if [ "$gates_rc" != "0" ]; then
+    tail -25 "$gates_log" >&2 || true
+    note "red gate again without $CULPRIT - un-landing the WHOLE batch (nothing is pushed ungated)"
+    rollback_batch "$gates_log"
+    note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisect=$bisect_used landed=0"
+    exit 6
+  fi
 fi
+
 grep -q '^FIN$' "$gates_log" || {
-  git reset -q --hard "$pre"
-  die "gate list broke its own structure (no FIN marker) - un-landed, dev back to $pre"
+  rollback_batch "$gates_log"
+  note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisect=$bisect_used landed=0"
+  die "the battery broke its own structure (no FIN marker) - the whole batch is un-landed"
 }
-note "gates green"
+note "battery green: ${battery_total}s over $battery_runs run(s)"
+note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisect=$bisect_used landed=${#B_LAND[@]}"
 # A skipped leg must be visible in the PASS log too, not only in the gate log
 # (a green pass prints no gate detail, and a permanent ruling nobody can see
 # is how a "temporary" workaround becomes invisible debt - t_7cc44bf1).
@@ -840,41 +1200,63 @@ grep -m1 'race leg skipped' "$gates_log" 2>/dev/null || true
 
 have_origin() { grep -q '^origin$' <<<"$(git remote 2>/dev/null)"; }
 
-# marker: refs/train/<seq>-<task_id> at the merge commit. Zero-padded seq
-# keeps refname sort == chronological order, which train-bisect walks on.
-# FULL refnames only: %(refname:short) elides refs/ -> 'train/0001-x',
-# which once made the seq parse crash and reset the chain to 0001 forever
-# (found on the 2nd real landing). The marker is written BEFORE the push
-# so a landing never reaches origin without its marker.
+# marker: refs/train/<seq>-<task_id> at each card's merge commit. Zero-padded
+# seq keeps refname sort == chronological order, which train-bisect walks on.
+# FULL refnames only: %(refname:short) elides refs/ -> 'train/0001-x', which
+# once made the seq parse crash and reset the chain to 0001 forever (found on
+# the 2nd real landing). A batch allocates one seq per card, in merge order,
+# and every marker is written BEFORE the push so a landing never reaches
+# origin without its marker.
 last_ref="$(git for-each-ref --format='%(refname)' refs/train 2>/dev/null | sort | tail -1)"
-last_num=0
+seq=0
 if [ -n "$last_ref" ]; then
   tmp="${last_ref##*/}"   # refs/train/0001-t_x -> 0001-t_x
   tmp="${tmp%%-*}"        # -> 0001
   case "$tmp" in
     ''|*[!0-9]*) die "latest marker '$last_ref' carries no numeric seq - the marker chain is corrupted; resolve by hand, the train never guesses" ;;
   esac
-  last_num=$((10#$tmp))
+  seq=$((10#$tmp))
 fi
-seq=$((last_num + 1))
-s="$(printf '%04d' "$seq")"
-marker="refs/train/$s-$tid"
-git update-ref "$marker" "$mergesha"
+
+landed_markers=()
+landed_seq=()
+for entry in "${B_LAND[@]}"; do
+  tid="${entry%%|*}"
+  mergesha="$(cut -d'|' -f3 <<<"$entry")"
+  seq=$((seq + 1))
+  s="$(printf '%04d' "$seq")"
+  marker="refs/train/$s-$tid"
+  git update-ref "$marker" "$mergesha"
+  note "landed $tid at $mergesha; marker ref $marker"
+  landed_markers+=("$marker")
+  landed_seq+=("$s")
+done
+
 if [ "$PUSH" = "1" ] && have_origin; then
   git push -q origin "$BASE"
-  git push -q origin "refs/train/$s-$tid:refs/train/$s-$tid" \
-    || echo "    (marker push refused - the marker is local; push refs/train/* by hand later)"
+  for marker in "${landed_markers[@]}"; do
+    git push -q origin "$marker:$marker" \
+      || echo "    (marker push refused - $marker is local; push refs/train/* by hand later)"
+  done
 fi
 
-note "landed $tid at $mergesha; marker ref $marker"
+# ---- board bookkeeping + branch sweep ----------------------------------
 
-# ---- board bookkeeping + branch sweep -----------------------------------
+i=0
+for entry in "${B_LAND[@]}"; do
+  tid="${entry%%|*}"
+  bra="$(cut -d'|' -f2 <<<"$entry")"
+  mergesha="$(cut -d'|' -f3 <<<"$entry")"
+  s="${landed_seq[$i]}"
+  marker="refs/train/$s-$tid"
+  i=$((i + 1))
+  board_comment "$tid" "train: landed $mergesha on $BASE, marker ref $marker."
+  "$HERMES_BIN" kanban edit "$tid" \
+    --summary "landed via merge train: $mergesha, marker $marker" \
+    --metadata "{\"landed_by\":\"train-pass\",\"merge_sha\":\"$mergesha\",\"marker\":\"$marker\",\"batch\":\"$batch_ids\"}" \
+    >/dev/null 2>&1 || note "(result edit skipped: the hermes CLI refused in this context; the landing comment is on the card)"
+  git branch -d -q "$bra" 2>/dev/null || true
+  echo "train: DONE $tid -> $mergesha, marker $marker"
+done
 
-board_comment "$tid" "train: landed $mergesha on $BASE, marker ref $marker."
-"$HERMES_BIN" kanban edit "$tid" \
-  --summary "landed via merge train: $mergesha, marker $marker" \
-  --metadata "{\"landed_by\":\"train-pass\",\"merge_sha\":\"$mergesha\",\"marker\":\"refs/train/$s-$tid\"}" \
-  >/dev/null 2>&1 || note "(result edit skipped: the hermes CLI refused in this context; the landing comment is on the card)"
-
-git branch -d -q "$bra" 2>/dev/null || true
-echo "train: DONE $tid -> $mergesha, marker $marker"
+exit "$batch_rc"

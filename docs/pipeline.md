@@ -42,22 +42,38 @@ gate + soak automation.
    A CHANGES REQUESTED verdict, a held pipeline lock or a failed landing
    leaves the card exactly where the previous flow left it.
 
-4. **Train (the fallback sweep)** picks the oldest done card whose branch
+4. **Train (the fallback sweep)** picks every done card whose branch
    still carries commits not on dev - which is to say, **it merges only
    what the review seat left behind**:
 
    ```
-   scripts/train-pass.sh          # one landing per pass
+   scripts/train-pass.sh          # one landing PASS: the whole batch, one battery
    ```
 
-   Rebase onto the dev tip, full gates on the merged tree (go
-   build/vet/test + `-race` on touched packages - the race leg is SKIPPED
-   with one receipt line on a host with no cgo toolchain, see below -
-   dep-law gate, webui node suite, embed-lane static regen, validation
-   journeys), then
-   `merge --no-ff`, push `origin dev`, marker ref
-   `refs/train/<seq>-<task_id>` at the merge commit. Green or red, the
-   state machine is the same for every card.
+   The pass takes the queue as a BATCH: each branch is rebased onto the
+   tip the previous merges left, every card is merged with `merge --no-ff`
+   and NO gate between merges, then the full gate battery runs ONCE on the
+   final tree (go build/vet/test + `-race` on the packages the batch
+   touches - the race leg is SKIPPED with one receipt line on a host with
+   no cgo toolchain, see below - dep-law gate, worker fence eval, webui
+   node suite, embed-lane static regen, validation journeys), then push
+   `origin dev` and one marker ref `refs/train/<seq>-<task_id>` per card at
+   its merge commit. Green or red, the state machine is the same for every
+   card. A card that conflicts or replays wrong is dropped from the batch
+   (strike law below) and the rest still land.
+
+   **A red battery is attributed by the bisect, not by a re-gate.**
+   `scripts/train-bisect.sh --chain` walks the batch's merge commits (they
+   carry no markers yet - a marker is a landing, and the battery decides
+   that), scoring each candidate with the pass's own battery in
+   `--gate-only` probe mode. The culprit un-lands with the red-gate
+   semantics, the cards after it re-merge onto the new tip, and the battery
+   runs once more on that tree before the push. A red the walk cannot pin
+   to a card (a pre-existing red on dev, a served-lane red) un-lands the
+   whole batch: nothing is pushed ungated. Probe mode keeps the code legs
+   and skips the three legs a probe checkout cannot measure - the webui
+   node suite and the embed lane need the main checkout's `node_modules`,
+   and the journeys measure the SERVED lane, which lags the tree (below).
 
    The queued branch is the row's `branch_name`, or `wt/<task_id>` when the
    row carries none - a scratch-spawned card lands with a NULL
@@ -471,9 +487,9 @@ stable channel from ever seeing a nightly.
 | ------------------------------- | --------------------------------------------------------------------------- |
 | `docs/release-gate.md`          | the gate's operating law: round cap, noise tags, lens brief, regression set |
 | `scripts/embed-lane.sh`         | the ONE owner of committed `api/static/`                                    |
-| `scripts/train-pass.sh`         | one mechanical landing per pass + marker refs + strikes                     |
+| `scripts/train-pass.sh`         | one mechanical landing PASS (the batch) + marker refs + strikes + bisect attribution + the `--gate-only` probe seam |
 | `scripts/factory-merge.sh`      | the review seat's merge entry: train pinned to one APPROVED card, then prune |
-| `scripts/train-bisect.sh`       | the marker-chain walk: --list, or bisect by check                           |
+| `scripts/train-bisect.sh`       | the marker-chain walk: --list, or bisect by check (--chain for a batch's merges) |
 | `scripts/review-at-close.sh`    | fresh review worktree + cold diff vs merge-base                             |
 | `scripts/train-dry-run.sh`      | stale wt/\* sweep preview (stage 1, report/apply)                           |
 | `scripts/drift-gate.sh`         | hard-fail drift check, dev vs master (10 commits / 7 days)                  |

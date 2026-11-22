@@ -1021,6 +1021,122 @@ git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_excl || badf "S13c: the
 grep -q "kanban create" "$HARNESS/mock/hermes.log" &&
   badf "S13c: an excluded card must not spawn a second reconciler card: $(cat "$HARNESS/mock/hermes.log")"
 
+echo "== S14: a 3-card batch runs ONE battery and lands all three"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_bat1 10
+card_branch t_bat2 20
+card_branch t_bat3 30
+export TRAIN_GATES_CMD="pwd >>'$HARNESS/battery.log'"
+run --no-push
+unset TRAIN_GATES_CMD
+if [ "$rc" != 0 ]; then badf "S14: batch pass rc $rc: $(cat "$HARNESS/run.out")"; fi
+[ "$(grep -c . "$HARNESS/battery.log" 2>/dev/null || echo 0)" = "1" ] ||
+  badf "S14: 3 cards must cost ONE battery run, got $(grep -c . "$HARNESS/battery.log" 2>/dev/null || echo 0)"
+grep -q 'batch: cards=t_bat1,t_bat2,t_bat3 battery=.* runs=1 bisect=no landed=3' "$HARNESS/run.out" ||
+  badf "S14: the pass log must name the batch (cards, battery, bisect): $(cat "$HARNESS/run.out")"
+for id in t_bat1 t_bat2 t_bat3; do
+  grep -q "DONE $id" "$HARNESS/run.out" || badf "S14: $id did not land: $(cat "$HARNESS/run.out")"
+  [ "$(status_of "$id")" = "done" ] || badf "S14: $id must stay done"
+  [ -f "$REPO/$id.txt" ] || badf "S14: $id work missing from dev"
+done
+git -C "$REPO" rev-parse --verify -q refs/train/0001-t_bat1 >/dev/null || badf "S14: 0001 marker missing"
+git -C "$REPO" rev-parse --verify -q refs/train/0002-t_bat2 >/dev/null || badf "S14: 0002 marker missing"
+git -C "$REPO" rev-parse --verify -q refs/train/0003-t_bat3 >/dev/null || badf "S14: 0003 marker missing"
+[ "$(git -C "$REPO" rev-parse dev)" = "$(git -C "$REPO" rev-parse refs/train/0003-t_bat3)" ] ||
+  badf "S14: the batch tip must be the last landing"
+[ "$(git -C "$REPO" rev-parse dev^1)" = "$(git -C "$REPO" rev-parse refs/train/0002-t_bat2)" ] ||
+  badf "S14: the batch's merges must chain in landing order"
+[ "$(git -C "$REPO" rev-parse dev^1^1)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_bat1)" ] ||
+  badf "S14: the first landing must sit under the second"
+
+echo "== S15: a red batch bisects to ONE culprit; the other two re-land"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_bi1 10
+card_branch t_bi2 20
+git -C "$REPO" checkout -q wt/t_bi2
+echo "BUG_TOKEN" >"$REPO/bug.txt"
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "feat(card): t_bi2 poison"
+git -C "$REPO" checkout -q dev
+card_branch t_bi3 30
+# The discriminating gate: green on any tree without the poison, red on the
+# poisoned one - so the walk can name a landing and the anchors can pass.
+export TRAIN_GATES_CMD="pwd >>'$HARNESS/battery.log'; test ! -f bug.txt"
+run --no-push
+unset TRAIN_GATES_CMD
+if [ "$rc" != 0 ]; then
+  badf "S15: the surviving cards must land (rc 0), got $rc: $(cat "$HARNESS/run.out")"
+fi
+probe_runs="$(grep -c 'train-bisect' "$HARNESS/battery.log" 2>/dev/null || echo 0)"
+[ "${probe_runs:-0}" -ge 2 ] || badf "S15: the red must be attributed by a probe walk (probe runs: ${probe_runs:-0})"
+grep -q 'culprit: landing t_bi2' "$HARNESS/run.out" ||
+  badf "S15: the walk must name t_bi2: $(cat "$HARNESS/run.out")"
+grep -q 'bisect=yes (t_bi2)' "$HARNESS/run.out" ||
+  badf "S15: the pass log must record the bisect and its culprit: $(cat "$HARNESS/run.out")"
+[ "$(status_of t_bi2)" = "ready" ] || badf "S15: the culprit is back to ready, got $(status_of t_bi2)"
+git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_bi2 || badf "S15: the culprit's branch is KEPT"
+[ "$(status_of t_bi1)" = "done" ] || badf "S15: t_bi1 stays done"
+[ "$(status_of t_bi3)" = "done" ] || badf "S15: t_bi3 stays done"
+[ -f "$REPO/bug.txt" ] && badf "S15: the culprit's bytes must not reach dev"
+[ -f "$REPO/t_bi1.txt" ] || badf "S15: t_bi1's work must be on dev"
+[ -f "$REPO/t_bi3.txt" ] || badf "S15: t_bi3 must be re-landed on dev"
+git -C "$REPO" rev-parse --verify -q refs/train/0001-t_bi1 >/dev/null || badf "S15: 0001 marker missing"
+git -C "$REPO" rev-parse --verify -q refs/train/0002-t_bi3 >/dev/null ||
+  badf "S15: the re-landed card takes the next seq"
+git -C "$REPO" rev-parse --verify -q refs/train/0003-t_bi3 >/dev/null && badf "S15: the culprit never gets a marker"
+[ "$(git -C "$REPO" rev-parse dev^1)" = "$(git -C "$REPO" rev-parse refs/train/0001-t_bi1)" ] ||
+  badf "S15: the re-land must sit directly on the surviving landing"
+sqlite3 "$KANBAN_DB" "SELECT body FROM task_comments WHERE task_id='t_bi2';" |
+  grep -q 'train-bisect names this card' ||
+  badf "S15: the culprit must carry the attribution evidence"
+
+echo "== S16: a retried batch after an unattributed red lands every card (no false replay anomaly)"
+ok
+
+mk_harness
+new_board
+new_repo
+card_branch t_rt1 10
+card_branch t_rt2 20
+card_branch t_rt3 30
+base_tip="$(git -C "$REPO" rev-parse dev)"
+# Pass 1: red everywhere, so the walk cannot attribute it (the anchor fails
+# too) - the batch un-lands whole, the branches stay rebased onto each other.
+export TRAIN_GATES_CMD="exit 1"
+run --no-push
+unset TRAIN_GATES_CMD
+if [ "$rc" != 6 ]; then badf "S16: an unattributed red must exit 6, got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q 'bisect=no (unattributed)' "$HARNESS/run.out" ||
+  badf "S16: the pass must record the unattributed walk: $(cat "$HARNESS/run.out")"
+for id in t_rt1 t_rt2 t_rt3; do
+  [ "$(status_of "$id")" = "ready" ] || badf "S16: $id must go back to ready, got $(status_of "$id")"
+  git -C "$REPO" show-ref --verify --quiet "refs/heads/wt/$id" || badf "S16: $id's branch must survive"
+done
+[ "$(git -C "$REPO" rev-parse dev)" = "$base_tip" ] || badf "S16: dev must be un-landed"
+# Pass 2: green. Every card must land - the predecessor copies on each branch
+# are duplicates the rebase drops, not lost work.
+sqlite3 "$KANBAN_DB" "UPDATE tasks SET status='done',
+  completed_at=CASE id WHEN 't_rt1' THEN 10 WHEN 't_rt2' THEN 20 ELSE 30 END
+  WHERE status='ready';"
+run --no-push
+if [ "$rc" != 0 ]; then badf "S16: the retry must land all three (rc 0), got $rc: $(cat "$HARNESS/run.out")"; fi
+grep -q 'replay anomaly' "$HARNESS/run.out" &&
+  badf "S16: a retried batch must not read a predecessor copy as lost work: $(cat "$HARNESS/run.out")"
+for id in t_rt1 t_rt2 t_rt3; do
+  [ "$(status_of "$id")" = "done" ] || badf "S16: $id must land on the retry, got $(status_of "$id")"
+  [ -f "$REPO/$id.txt" ] || badf "S16: $id's work must be on dev after the retry"
+done
+git -C "$REPO" rev-parse --verify -q refs/train/0003-t_rt3 >/dev/null ||
+  badf "S16: the retry must write one marker per card (0001..0003)"
+
 echo ""
 echo "train-pass_test: $pass ok, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
