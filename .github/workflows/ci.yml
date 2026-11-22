@@ -41,15 +41,12 @@ jobs:
       # sweep_chromes_win_test.sh (needs powershell.exe) and orphan_test.sh
       # (needs the bundled chromium) exit 0 as SKIP on this host, and a suite
       # that skips asserts nothing - they belong to the Windows/Pi lanes.
-      # sweep_daemons_test.sh stays out until sweep-daemons.sh reads Linux
-      # netstat: client_attached() parses the Windows shape (uppercase TCP,
-      # state in column 4) and this host prints lowercase tcp with the state
-      # in column 6, so a live ESTABLISHED session reads as idle and closes.
-      - name: Journeys witness suites (the suite's own budgets, REST/browser deadlines, run lock and console scope - stub browser, stub lane, no live chrome)
+      - name: Journeys witness suites (the suite's own budgets, REST/browser deadlines, run lock, console scope and the idle-daemon sweep - stub browser, stub lane, no live chrome)
         run: |
           bash scripts/journeys/clock_test.sh
           bash scripts/journeys/console_scope_test.sh
           bash scripts/journeys/runlock_test.sh
+          bash scripts/journeys/sweep_daemons_test.sh
 
   # The merge gate's browser legs live HERE (docs/pipeline.md, "The journeys
   # gate is CI-owned"): the train pass runs the fast battery only, because the

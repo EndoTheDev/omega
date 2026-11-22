@@ -84,6 +84,16 @@ chmod +x "$STUB"
 
 cat > "$STUBBIN/netstat" <<'STUBNET'
 #!/usr/bin/env bash
+# both shapes netstat prints in the wild: Windows uppercase `TCP` with no queue
+# columns, Linux lowercase `tcp` after Recv-Q/Send-Q
+if [ "${STUB_NETSTAT_SHAPE:-windows}" = linux ]; then
+  printf 'Active Internet connections (servers and established)\n'
+  printf 'Proto Recv-Q Send-Q Local Address           Foreign Address         State       Timer\n'
+  for p in ${STUB_ATTACH_PORTS:-}; do
+    printf 'tcp        0      0 127.0.0.1:%s         127.0.0.1:49999         ESTABLISHED off (0.00/0/0)\n' "$p"
+  done
+  exit 0
+fi
 printf 'Active Connections\n\n  Proto  Local Address          Foreign Address        State           PID\n'
 for p in ${STUB_ATTACH_PORTS:-}; do
   printf '  TCP    127.0.0.1:%s         127.0.0.1:49999    ESTABLISHED     4242\n' "$p"
@@ -231,6 +241,22 @@ rc=$?
 [ "$(closed_names)" = "old-idle " ] && ok \
   || bad "D: standalone closed '$(closed_names)', want 'old-idle ' only (no gate exemption outside the gate)"
 [ -e "$LOCK.d" ] && bad "D: the stand-alone sweep left its lock dir behind" || ok
+
+# --- L: the Linux netstat shape protects an attached session -----------------
+# net-tools prints lowercase `tcp` with the local address in column 4 and the
+# state in column 6, not the Windows uppercase columns. Read Windows-shaped it
+# matches nothing, so a live client reads as idle and the sweep closes it.
+reset_log
+drop_lock
+out="$(sd "STUB_SESSIONS=$base_sessions" "STUB_ATTACH_PORTS=59103" "STUB_NETSTAT_SHAPE=linux")"
+rc=$?
+[ "$rc" = 1 ] && ok || bad "L: exit $rc, want 1. output: $out"
+[ "$(closed_names)" = "old-idle " ] && ok \
+  || bad "L: closed '$(closed_names)', want 'old-idle ' (the Linux netstat shape must protect attached)"
+case "$out" in
+  *"attached is live (client attached)"*) ok ;;
+  *) bad "L: the attached session was not named as live under the Linux netstat shape. output: $out" ;;
+esac
 
 # --- I: a recycled pid (LIVE, but not a suite) is stale -----------------------
 # The failure this card exists for: a dead suite's dir whose number the host
