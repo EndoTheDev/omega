@@ -113,7 +113,6 @@ function pushToast(n: OmegaNotification): void {
   timers.add(id);
 }
 
-// one live frame -> the feed row, the unread count, the toast
 function ingest(payload: unknown): void {
   const n = decodeToast(payload);
   if (!n) return;
@@ -122,7 +121,6 @@ function ingest(payload: unknown): void {
   pushToast(n);
 }
 
-// a row (or toast) click un-badges that one record
 export async function markRecordRead(n: OmegaNotification): Promise<void> {
   if (n.read) return;
   const before = unread.value;
@@ -147,12 +145,10 @@ export async function markAllRead(): Promise<void> {
   }
 }
 
-// one toast out of the stack (its click or its expiry)
 export function dismissToast(key: number): void {
   toasts.value = toasts.value.filter((t) => t.key !== key);
 }
 
-// every toast out at once; the expiry timers die with it
 function clearToasts(): void {
   for (const id of timers) clearTimeout(id);
   timers.clear();
@@ -172,7 +168,6 @@ export async function clearAll(): Promise<void> {
   }
 }
 
-// a toast click: mark the record read, drop the toast, hand the record back for navigation
 export async function openToastRecord(t: {
   key: number;
   record: OmegaNotification;
@@ -182,8 +177,6 @@ export async function openToastRecord(t: {
   return t.record;
 }
 
-// an approval toast's click: the toast drops and the card comes back for the caller's
-// navigation intent (the answering surface is the panel's pending list).
 export function openToastVerdict(t: {
   key: number;
   card: PendingVerdictCard;
@@ -229,7 +222,6 @@ export function stopNotificationFeed(): void {
   timers.clear();
 }
 
-// an activation pull
 export function refreshNotifications(): Promise<void> {
   return refresh();
 }

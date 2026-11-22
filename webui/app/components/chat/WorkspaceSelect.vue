@@ -1,10 +1,8 @@
 <template>
   <!--
-    Session workspace picker.
-    v0.14.3 (user screenshot findings): the chip rides the same interactive treatment
-    as its row neighbors (.model-chip: full contrast, chevron, shared narrow squeeze)
-    and shows the CURRENT workspace value - "no workspace" is the empty state, never
-    the static word.
+    Session workspace picker: the chip rides the same interactive treatment as its row
+    neighbors (.model-chip: full contrast, chevron, shared narrow squeeze) and shows the
+    CURRENT workspace value - "no workspace" is the empty state, never the static word.
   -->
   <div class="ws-select">
     <button
@@ -15,9 +13,6 @@
       :aria-expanded="open"
       :disabled="disabled"
       @click="toggle">
-      <!--
-        browseLabel mode - the settings pane rides the SAME picker with a plain.
-      -->
       <span
         v-if="browseLabel"
         class="chip-name">{{ browseLabel }}</span>

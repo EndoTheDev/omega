@@ -52,7 +52,7 @@
           </div>
           <!--
             the right control seat: the shared TogglePill for toggleable rows.
-            ONE click applies.: the load-bearing pair (agent-loop + provider) renders a
+            ONE click applies. The load-bearing pair (agent-loop + provider) renders a
             VISIBLE always-on CHIP, never a disabled control - the seam refuses that
             toggle (api/server_modules.go: "module <name> is always on"), so this row
             is only the mirror.
@@ -144,7 +144,6 @@
 </template>
 
 <script setup lang="ts">
-  // the settings tab's MODULES section.
   import { computed, ref, watch } from "vue";
   import {
     fetchExtensions,
@@ -175,7 +174,6 @@
     narrow?: boolean;
   }>();
 
-  // open-module(moduleId): open that module's dock tab.
   const emit = defineEmits<{
     (e: "open-module", moduleId: string): void;
     (e: "count", count: number): void;
@@ -215,8 +213,8 @@
     expanded.value = next;
   }
 
-  // the one-click toggle ------------------------ One activation commits; busy names
-  // the in-flight row so a second click cannot overlap the write.
+  // One activation commits; busy names the in-flight row so a second click cannot
+  // overlap the write.
 
   // toggleNote speaks the registry introspection's dialect (ModuleRow).
   const asModuleRow = (row: {
@@ -230,7 +228,7 @@
     dependents: row.dependents,
   });
 
-  // rowHint: the consequence line ("this also disables. It now rides the pill's title,
+  // rowHint: the consequence line ("this also disables ...") rides the pill's title,
   // where it informs without ever blocking the switch.
   const rowHint = (row: {
     name: string;
@@ -344,7 +342,6 @@
   .extension-expand:hover { color: var(--text); }
   .extension-chevron { transition: transform 0.15s ease; }
   .extension-chevron.open { transform: rotate(90deg); }
-  /* the name line: the row law's typography rides.reg-row-name. */
   .extension-name {
     font-family: var(--mono);
   }

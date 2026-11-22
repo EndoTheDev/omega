@@ -30,9 +30,8 @@
         :size="16" />
     </button>
     <!--
-      the affordance.
-      Its "placeholder" is a LIVE clock (re-rendered on every minute boundary, never a
-      frozen label).
+      the affordance's placeholder is a LIVE clock (re-rendered on every minute
+      boundary, never a frozen label).
       data-palette-trigger: CommandPalette's outside-click handler exempts it, so
       opening the palette with this click cannot close it again on the way out.
       The clock keeps ticking while hidden: the timer belongs to this component, not to
@@ -72,10 +71,9 @@
   import Icon from "../ui/Icon.vue";
 
   // the dims ride the nav history's canBack/canForward (app.vue passes the computed's
-  // values down - cluster stays a dumb four-control strip).: `paletteOpen` is the
-  // takeover's one bit - the cluster hides its chrome (the arrows + the Ctrl+K toggle,
-  // via.palette-open's visibility rule, so the seat never moves) and the affordance
-  // stands down for the teleported field.
+  // values down - cluster stays a dumb four-control strip). `paletteOpen` is the
+  // takeover's one bit: the cluster hides its chrome (the arrows + the Ctrl+K toggle)
+  // so the seat never moves, and the affordance stands down for the teleported field.
   defineProps<{
     canBack: boolean;
     canForward: boolean;

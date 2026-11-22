@@ -212,7 +212,6 @@
   }
   onUnmounted(() => window.clearTimeout(copyTimer));
 
-  // Codeblock UX (header bar, copy, collapse, 60vh cap).
   const mdEl = ref<HTMLElement | null>(null);
   const collapsed = new Set<number>();
   watch(rendered, () => {

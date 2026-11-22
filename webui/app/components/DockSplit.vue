@@ -107,10 +107,9 @@
     return { [axis]: "auto", flex: `${grow} 1 0` };
   }
 
-  // drag --- dragging = divider index during a gesture. The raw->delta reduction
+  // drag: dragging = divider index during a gesture. The raw->delta reduction
   // (cumulative-from-baseline) lives in dividerGesture.ts so its contract is
-  // unit-tested - found it silently sending per-event increments (dead-looking
-  // dividers) after the snap-ladder rework.
+  // unit-tested.
   const dragging = ref<number | null>(null);
   let startPx: number[] | null = null;
   const pointerState: DividerPointerState = { base: null };
@@ -137,7 +136,7 @@
       if (dragging.value !== null) return; // another divider's gesture owns this pointer
       dragging.value = dividerIndex;
       startPx = measure();
-      // v0.14.4 a RESIZE is ONE layout op per gesture.
+      // a RESIZE is ONE layout op per gesture.
       api.beginResize();
       pointerState.base = null; // fresh gesture: the reducer re-derives the base
     }
@@ -177,7 +176,7 @@
     dropGesture();
   }
 
-  // v0.14.4 Modifier-Z at the dock root walks the layout back one op.
+  // Modifier-Z at the dock root walks the layout back one op.
   function onUndoKey(e: KeyboardEvent) {
     if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
     const t = e.target as HTMLElement | null;

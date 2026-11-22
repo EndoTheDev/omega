@@ -62,9 +62,6 @@
     retryable?: boolean;
     sessionId?: string;
     gateCard?: PendingVerdictCard | null;
-    //
-    // foldAddress) - the tool line keys its manual open/close pin by it on
-    // the tab's view record, so the pin survives the pane's unmount
     foldKey?: string;
   }>();
   const emit = defineEmits<{

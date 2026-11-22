@@ -1,4 +1,3 @@
-<!-- omega webui: THE ICON WRAPPER. -->
 <template>
   <component
     :is="icon"

@@ -1,9 +1,7 @@
 <template>
   <!--
-    the mobile drawer.
-    That decoupling is the REPRO 1 fix: a desktop-closed sidebar (the pane pruned from
-    the tree, page-lifetime by design) must not gate the mobile drawer - the drawer
-    reads no dock-tree presence.
+    the mobile drawer: a desktop-closed sidebar (the pane pruned from the tree,
+    page-lifetime by design) must not gate it - the drawer reads no dock-tree presence.
   -->
   <section
     class="mobile-drawer"

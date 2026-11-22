@@ -17,9 +17,7 @@
         >…</span
       > </summary>
     <div class="thinking-body">{{ content }}</div>
-    <!--
-      variant anchor: a THINKING row can be a branch's active head (a multi-row.
-    -->
+    <!-- variant anchor: a THINKING row can be a branch's active head -->
     <VariantSwitcher
       v-if="variant"
       class="thinking-variant"

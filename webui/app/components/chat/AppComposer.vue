@@ -684,7 +684,6 @@
 
   const appContext = getCurrentInstance()?.appContext ?? null;
 
-  // buildChip mounts ONE renderer's instance into a non-editable span.
   function buildChip(t: RefToken): HTMLElement {
     const wrap = document.createElement("span");
     wrap.className = "ref-chip";
@@ -712,7 +711,6 @@
     return wrap;
   }
 
-  // openRef: the viewer inject the Files tab's row clicks ride
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function openRef(t: RefToken) {
     openViewerRef?.({ kind: t.kind, name: t.name });
@@ -813,7 +811,6 @@
     resize();
   }
 
-  // insertAtCaret writes plain text into the editor at the caret and runs the input.
   function insertAtCaret(text: string): void {
     const el = ta.value;
     if (!el || text === "") return;
@@ -837,7 +834,6 @@
     absorbWrite(el);
   }
 
-  // removeToken: the chip's x.
   function removeToken(t: RefToken) {
     const next = deleteTokenAt(props.draft, t);
     emit("update:draft", next.draft);
@@ -851,7 +847,6 @@
     });
   }
 
-  // acceptItem: mention rows insert their completed token at the caret.
   function acceptItem(item: PaletteItem) {
     if (!paletteOpen.value) return;
     // a SKILL row is a reference pill now, not a fire-and-forget dispatch.
@@ -905,7 +900,7 @@
     });
   }
 
-  // Tab completes without submitting (TUI acceptMatch parity).
+  // Tab completes without submitting.
   function acceptActive(submit: boolean) {
     const item = paletteItems.value[active.value];
     if (!item) return closePalette();
@@ -924,7 +919,7 @@
       if (el) nextTick(() => placeCaretAt(el, next.caret));
       return;
     }
-    // a mention Tab completes too (TUI acceptMatch parity).
+    // a mention Tab completes too.
     return acceptItem(item);
   }
 

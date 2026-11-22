@@ -40,7 +40,7 @@
     useModelCatalog,
     type ModelFilter,
   } from "~/composables/modelCatalog";
-  // THE composer's picker: settings and chat render the SAME popover since - never.
+  // THE composer's picker: settings and chat render the SAME popover
   import ModelSelect from "../chat/ModelSelect.vue";
 
   const props = defineProps<{
