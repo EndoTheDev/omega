@@ -17,7 +17,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// serveRoute serves one request through the named route pattern on the context.
 func serveRoute(t *testing.T, ctx *core.Context, pattern, method, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -31,7 +30,6 @@ func serveRoute(t *testing.T, ctx *core.Context, pattern, method, path string) *
 	return nil
 }
 
-// mountPlugin mounts a plugin the api way and returns the live Context.
 func mountReloadPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -41,7 +39,6 @@ func mountReloadPlugin(t *testing.T, p *Plugin) *core.Context {
 	return ctx
 }
 
-// decodeReport parses a StatusReport body.
 func decodeReport(t *testing.T, w *httptest.ResponseRecorder) StatusReport {
 	t.Helper()
 	var rep StatusReport
@@ -51,7 +48,6 @@ func decodeReport(t *testing.T, w *httptest.ResponseRecorder) StatusReport {
 	return rep
 }
 
-// TestReloadRouteEmptyToLive verifies the exact Endo scenario: no config at boot.
 func TestReloadRouteEmptyToLive(t *testing.T) {
 	srv := mockMCPServer(t, "reload-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -89,7 +85,6 @@ func TestReloadRouteEmptyToLive(t *testing.T) {
 	}
 }
 
-// TestReloadToolsChangeAfterReload verifies the live-bridge swap.
 func TestReloadToolsChangeAfterReload(t *testing.T) {
 	srv := mockMCPServer(t, "swap-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"mock","url":"`+srv.URL+`"}]}`)
@@ -147,7 +142,6 @@ func TestReloadRemovesServerInFlight(t *testing.T) {
 		t.Fatalf("POST /mcp/reload: %d", w.Code)
 	}
 
-	// the removed server's call: a structured IsError tool result
 	_, runErr := oldTools.run(context.Background(), map[string]any{"msg": "hi"})
 	if runErr == nil {
 		t.Fatal("expected an IsError tool result from the removed server, got none")
@@ -189,7 +183,6 @@ func TestReloadKeepsBridgeOnBadConfig(t *testing.T) {
 	}
 }
 
-// TestReloadPartialFailure verifies one failing server does not fail the reload.
 func TestReloadPartialFailure(t *testing.T) {
 	srv := mockMCPServer(t, "partial-session")
 	t.Setenv("MCP_SERVERS",

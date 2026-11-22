@@ -24,8 +24,6 @@ func (s scriptedConn) callTool(ctx context.Context, name string, args map[string
 }
 func (s scriptedConn) close() {}
 
-// mcpListTools
-
 func TestMcpListToolsValid(t *testing.T) {
 	payload := json.RawMessage(`{"tools":[
 		{"name":"search","description":"Search the web","inputSchema":{"type":"object"}},
@@ -73,8 +71,6 @@ func TestMcpListToolsRequestError(t *testing.T) {
 		t.Fatal("expected error from request, got nil")
 	}
 }
-
-// mcpCallTool
 
 func TestMcpCallToolTextContent(t *testing.T) {
 	payload := json.RawMessage(`{"content":[

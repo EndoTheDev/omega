@@ -20,8 +20,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// MCP protocol types
-
 type mcpRequest struct {
 	JSONRPC string `json:"jsonrpc"`
 	ID      int64  `json:"id"`
@@ -59,8 +57,6 @@ type mcpCallResult struct {
 	IsError bool `json:"isError"`
 }
 
-// unified MCP connection interface
-
 // MCPConn is the abstraction over stdio and HTTP MCP server connections. Every call
 // that a live run drives takes a ctx: the agent loop's tool call carries cancellation,
 // and a cancelled call must abort instead of riding out the 30s request budget.
@@ -71,7 +67,6 @@ type MCPConn interface {
 	close()
 }
 
-// mcpListTools calls tools/list on any MCP connection.
 func mcpListTools(ctx context.Context, c MCPConn) ([]mcpTool, error) {
 	result, err := c.request(ctx, "tools/list", map[string]any{})
 	if err != nil {
@@ -84,7 +79,6 @@ func mcpListTools(ctx context.Context, c MCPConn) ([]mcpTool, error) {
 	return list.Tools, nil
 }
 
-// mcpCallTool calls tools/call on any MCP connection and extracts text content.
 func mcpCallTool(ctx context.Context, c MCPConn, name string, args map[string]any) (string, bool, error) {
 	result, err := c.request(ctx, "tools/call", map[string]any{"name": name, "arguments": args})
 	if err != nil {
@@ -102,8 +96,6 @@ func mcpCallTool(ctx context.Context, c MCPConn, name string, args map[string]an
 	}
 	return text.String(), call.IsError, nil
 }
-
-// stdio MCP server
 
 type stdioServer struct {
 	name      string
@@ -371,7 +363,6 @@ func (s *httpServer) readSSE(ctx context.Context, body io.Reader) (json.RawMessa
 	return nil, fmt.Errorf("SSE stream ended without response")
 }
 
-// sseDataValue reports whether line carries a `data:` field and returns its value.
 func sseDataValue(line string) (string, bool) {
 	if !strings.HasPrefix(line, "data:") {
 		return "", false
@@ -379,7 +370,6 @@ func sseDataValue(line string) (string, bool) {
 	return strings.TrimPrefix(strings.TrimPrefix(line, "data:"), " "), true
 }
 
-// parseSSEEvent parses one accumulated event payload.
 func parseSSEEvent(payload string) (res json.RawMessage, ok bool, err error) {
 	if payload == "" || payload == "[DONE]" {
 		return nil, false, nil
@@ -394,7 +384,6 @@ func parseSSEEvent(payload string) (res json.RawMessage, ok bool, err error) {
 	return mcpResp.Result, true, nil
 }
 
-// newMCPRequest builds an HTTP request to the MCP endpoint with the common headers.
 func (s *httpServer) newMCPRequest(ctx context.Context, url, method string, body []byte) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 	if err != nil {
@@ -429,7 +418,6 @@ func (s *httpServer) initialize() error {
 		return fmt.Errorf("http: %w", err)
 	}
 	defer resp.Body.Close()
-	// Capture the session ID for subsequent requests.
 	s.sessionID = resp.Header.Get("mcp-session-id")
 	if strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
 		_, err = s.readSSE(ctx, resp.Body)
@@ -474,8 +462,6 @@ func (s *httpServer) close() {
 	// HTTP servers have no process to kill.
 }
 
-// config
-
 type serverConfig struct {
 	Name    string            `json:"name" yaml:"name"`
 	Command string            `json:"command" yaml:"command"`
@@ -489,7 +475,6 @@ type serverConfig struct {
 	Enabled *bool `json:"enabled,omitempty" yaml:"enabled,omitempty"`
 }
 
-// isEnabled reports the toggle state.
 func (sc *serverConfig) isEnabled() bool { return sc.Enabled == nil || *sc.Enabled }
 
 type mcpConfig struct {
@@ -502,7 +487,6 @@ func loadConfig() (*mcpConfig, string, error) {
 		cfg, err := parseConfig([]byte(raw))
 		return cfg, "env", err
 	}
-	// Try config file: mcp.yaml first, then mcp.json.
 	path, name, ok := configFile()
 	if !ok {
 		return &mcpConfig{}, "none", nil
@@ -515,7 +499,6 @@ func loadConfig() (*mcpConfig, string, error) {
 	return cfg, name, err
 }
 
-// mcpHome resolves the omega home the mcp config lookup starts from.
 func mcpHome() string {
 	home := os.Getenv("OMEGA_HOME")
 	if home == "" {
@@ -524,7 +507,6 @@ func mcpHome() string {
 	return home
 }
 
-// configFile resolves the config file the loader reads, walking the IDENTICAL lookup.
 func configFile() (path string, name string, ok bool) {
 	home := mcpHome()
 	cfgDir := filepath.Join(home, "config")
@@ -549,14 +531,11 @@ func parseConfig(data []byte) (*mcpConfig, error) {
 	return &cfg, nil
 }
 
-// bridge
-
 type toolMapping struct {
 	server string
 	mcp    string
 }
 
-// Bridge manages MCP server connections and routes tool calls.
 type Bridge struct {
 	servers  map[string]MCPConn
 	toolMap  map[string]toolMapping
@@ -568,7 +547,6 @@ type Bridge struct {
 	closeOnce sync.Once
 }
 
-// NewBridge creates a Bridge from an explicit config, connecting to all configured.
 func NewBridge(cfg *mcpConfig) (*Bridge, error) {
 	b := &Bridge{
 		servers:  make(map[string]MCPConn),
@@ -618,7 +596,6 @@ func (b *Bridge) shutdown() {
 	}
 }
 
-// NewBridgeFromEnv loads config from MCP_SERVERS env var or mcp.yaml/mcp.json.
 func NewBridgeFromEnv() (*Bridge, error) {
 	cfg, source, err := loadConfig()
 	if err != nil {
@@ -672,7 +649,6 @@ func (b *Bridge) connect(cfg *mcpConfig) error {
 	return nil
 }
 
-// Tools builds the core.Tool map from discovered MCP tools.
 func (b *Bridge) Tools() map[string]agentTool {
 	tools := make(map[string]agentTool, len(b.toolDefs))
 	for name, mt := range b.toolDefs {
@@ -709,7 +685,6 @@ func (b *Bridge) Tools() map[string]agentTool {
 	return tools
 }
 
-// agentTool is the local representation of an agent tool.
 type agentTool struct {
 	description string
 	parameters  map[string]any

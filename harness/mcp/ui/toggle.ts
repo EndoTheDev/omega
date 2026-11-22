@@ -1,4 +1,3 @@
-// omega webui: the MCP tab's per-server toggle chain.
 import type { McpStatusWire } from "./serverRows";
 
 // The POST body IS the fresh StatusReport (one round trip). A refused write throws so the

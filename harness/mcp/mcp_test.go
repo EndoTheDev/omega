@@ -9,7 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// fakeConn is a test MCPConn that returns canned tools and call results.
 type fakeConn struct {
 	tools []mcpTool
 }
@@ -23,13 +22,11 @@ func (f fakeConn) callTool(ctx context.Context, name string, args map[string]any
 }
 func (f fakeConn) close() {}
 
-// TestPluginInterface verifies Plugin satisfies agent.Plugin at compile time.
 func TestPluginInterface(t *testing.T) {
 	var _ agent.Plugin = (*Plugin)(nil)
 	var _ core.ToolProvider = bridgeToolProvider{}
 }
 
-// TestEmptyBridge verifies an empty Bridge (no servers) produces zero tools.
 func TestEmptyBridge(t *testing.T) {
 	b, err := NewBridge(nil)
 	if err != nil {
@@ -52,7 +49,6 @@ func TestEmptyBridge(t *testing.T) {
 	}
 }
 
-// TestPluginMetadata verifies Name/Provides/Requires return expected values.
 func TestPluginMetadata(t *testing.T) {
 	p := NewPlugin(nil)
 	if p.Name() != "mcp" {
@@ -66,7 +62,6 @@ func TestPluginMetadata(t *testing.T) {
 	}
 }
 
-// TestNilBridgePlugin verifies a nil-bridge plugin still registers the runtime tool.
 func TestNilBridgePlugin(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}
@@ -81,7 +76,6 @@ func TestNilBridgePlugin(t *testing.T) {
 	}
 }
 
-// TestBridgeWithFakeServer verifies tool discovery and call routing work through.
 func TestBridgeWithFakeServer(t *testing.T) {
 	b := &Bridge{
 		servers:  make(map[string]MCPConn),
@@ -122,7 +116,6 @@ func TestBridgeWithFakeServer(t *testing.T) {
 	}
 }
 
-// TestConfigParsing verifies YAML and JSON config parsing both work.
 func TestConfigParsing(t *testing.T) {
 	jsonData := []byte(`{"servers":[{"name":"test","command":"echo"}]}`)
 	cfg, err := parseConfig(jsonData)
@@ -143,7 +136,6 @@ func TestConfigParsing(t *testing.T) {
 	}
 }
 
-// TestMountAllIntegration verifies the plugin integrates with MountAll.
 func TestMountAllIntegration(t *testing.T) {
 	p := NewPlugin(nil)
 	ctx := &core.Context{}

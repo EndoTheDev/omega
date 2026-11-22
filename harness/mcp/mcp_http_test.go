@@ -17,14 +17,10 @@ import (
 // runs packages in parallel, so a healthy goroutine can take seconds to be scheduled.
 const testWaitTimeout = 30 * time.Second
 
-// httptest helpers
-
-// mockMCPServer returns an httptest.Server implementing a minimal Streamable HTTP MCP.
 func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// Only POST is supported.
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -96,7 +92,6 @@ func mockMCPServer(t *testing.T, sessionID string) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-// intVal extracts an int from an interface{} coming out of a generic JSON decode.
 func intVal(v any) int {
 	switch n := v.(type) {
 	case float64:
@@ -110,7 +105,6 @@ func intVal(v any) int {
 	}
 }
 
-// mockSSEServer returns an httptest.Server that responds to requests.
 func mockSSEServer(t *testing.T, lines ...string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -126,9 +120,6 @@ func mockSSEServer(t *testing.T, lines ...string) *httptest.Server {
 	}))
 }
 
-// tests
-
-// TestHTTPRequestJSONResponse covers httpServer.request with a plain JSON.
 func TestHTTPRequestJSONResponse(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,7 +142,6 @@ func TestHTTPRequestJSONResponse(t *testing.T) {
 	}
 }
 
-// TestHTTPRequestError covers httpServer.request when the JSON-RPC response carries.
 func TestHTTPRequestError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -170,7 +160,6 @@ func TestHTTPRequestError(t *testing.T) {
 	}
 }
 
-// TestHTTPRequestHTTPStatus covers httpServer.request when the server returns.
 func TestHTTPRequestHTTPStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -189,7 +178,6 @@ func TestHTTPRequestHTTPStatus(t *testing.T) {
 	}
 }
 
-// TestHTTPRequestSSEResponse covers httpServer.request when the server responds.
 func TestHTTPRequestSSEResponse(t *testing.T) {
 	srv := mockSSEServer(t, `{"jsonrpc":"2.0","id":1,"result":{"ok":true}}`, "[DONE]")
 	defer srv.Close()
@@ -204,7 +192,6 @@ func TestHTTPRequestSSEResponse(t *testing.T) {
 	}
 }
 
-// TestReadSSEHappyPath covers readSSE parsing a data line with a JSON-RPC response.
 func TestReadSSEHappyPath(t *testing.T) {
 	body := "event: message\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n"
@@ -218,7 +205,6 @@ func TestReadSSEHappyPath(t *testing.T) {
 	}
 }
 
-// TestReadSSEDoneMarker covers readSSE skipping the [DONE] marker and then reading.
 func TestReadSSEDoneMarker(t *testing.T) {
 	body := "data: [DONE]\n\n" +
 		"data: {\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"x\":1}}\n\n"
@@ -232,7 +218,6 @@ func TestReadSSEDoneMarker(t *testing.T) {
 	}
 }
 
-// TestReadSSEError covers readSSE returning an error when the SSE data carries.
 func TestReadSSEError(t *testing.T) {
 	body := "data: {\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-1,\"message\":\"oops\"}}\n\n"
 	s := &httpServer{}
@@ -245,7 +230,6 @@ func TestReadSSEError(t *testing.T) {
 	}
 }
 
-// TestReadSSENoResponse covers readSSE when the stream ends without a JSON-RPC.
 func TestReadSSENoResponse(t *testing.T) {
 	body := "data: [DONE]\n\n"
 	s := &httpServer{}
@@ -258,7 +242,6 @@ func TestReadSSENoResponse(t *testing.T) {
 	}
 }
 
-// TestReadSSEEmpty covers readSSE on a completely empty stream.
 func TestReadSSEEmpty(t *testing.T) {
 	s := &httpServer{}
 	_, err := s.readSSE(context.Background(), strings.NewReader(""))
@@ -270,7 +253,6 @@ func TestReadSSEEmpty(t *testing.T) {
 	}
 }
 
-// TestHTTPInitialize covers httpServer.initialize against a mock MCP server.
 func TestHTTPInitialize(t *testing.T) {
 	gotNotif := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +296,6 @@ func TestHTTPInitialize(t *testing.T) {
 	}
 }
 
-// TestHTTPInitializeSSE covers httpServer.initialize when the server replies.
 func TestHTTPInitializeSSE(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
@@ -346,7 +327,6 @@ func TestHTTPInitializeSSE(t *testing.T) {
 	}
 }
 
-// TestHTTPInitializeError covers httpServer.initialize failing when the server.
 func TestHTTPInitializeError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -365,7 +345,6 @@ func TestHTTPInitializeError(t *testing.T) {
 	}
 }
 
-// TestHTTPInitializeBadNotifStatus covers initialize failing when.
 func TestHTTPInitializeBadNotifStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var req map[string]any
@@ -395,7 +374,6 @@ func TestHTTPInitializeBadNotifStatus(t *testing.T) {
 	}
 }
 
-// TestNewHTTPServerEndToEnd exercises newHTTPServer (which calls initialize) against.
 func TestNewHTTPServerEndToEnd(t *testing.T) {
 	srv := mockMCPServer(t, "session-abc")
 	defer srv.Close()
@@ -409,7 +387,6 @@ func TestNewHTTPServerEndToEnd(t *testing.T) {
 		t.Fatalf("sessionID: got %q, want %q", s.sessionID, "session-abc")
 	}
 
-	// listTools via the shared helper.
 	tools, err := s.listTools(context.Background())
 	if err != nil {
 		t.Fatalf("listTools: %v", err)
@@ -418,7 +395,6 @@ func TestNewHTTPServerEndToEnd(t *testing.T) {
 		t.Fatalf("tools: got %+v", tools)
 	}
 
-	// callTool via the shared helper.
 	text, isErr, err := s.callTool(context.Background(), "echo", map[string]any{"msg": "hi"})
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
@@ -431,7 +407,6 @@ func TestNewHTTPServerEndToEnd(t *testing.T) {
 	}
 }
 
-// TestHTTPListToolsError covers listTools propagating a request error.
 func TestHTTPListToolsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -446,7 +421,6 @@ func TestHTTPListToolsError(t *testing.T) {
 	}
 }
 
-// TestHTTPCallToolError covers callTool propagating a JSON-RPC error.
 func TestHTTPCallToolError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -465,15 +439,12 @@ func TestHTTPCallToolError(t *testing.T) {
 	}
 }
 
-// TestHTTPClose verifies close is a no-op and does not panic.
 func TestHTTPClose(t *testing.T) {
 	s := &httpServer{name: "t"}
-	// Should not panic and should return nothing.
 	s.close()
 	s.close()
 }
 
-// TestNextRequestID verifies the IDs are sequential and unique.
 func TestNextRequestID(t *testing.T) {
 	s := &httpServer{}
 	var ids []int64
@@ -511,7 +482,6 @@ func TestNextRequestIDConcurrent(t *testing.T) {
 	}
 }
 
-// TestHTTPRequestCustomHeaders verifies that configured custom headers are sent.
 func TestHTTPRequestCustomHeaders(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("X-Test"); got != "hello" {
@@ -529,7 +499,6 @@ func TestHTTPRequestCustomHeaders(t *testing.T) {
 	}
 }
 
-// TestHTTPRequestSessionHeader verifies the mcp-session-id header is sent on requests.
 func TestHTTPRequestSessionHeader(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("mcp-session-id"); got != "sess-xyz" {
@@ -547,7 +516,6 @@ func TestHTTPRequestSessionHeader(t *testing.T) {
 	}
 }
 
-// TestNewPluginFromEnv covers NewPluginFromEnv with MCP_SERVERS set to a JSON config.
 func TestNewPluginFromEnv(t *testing.T) {
 	srv := mockMCPServer(t, "plugin-session")
 	defer srv.Close()
@@ -577,8 +545,6 @@ func TestNewPluginFromEnv(t *testing.T) {
 	}
 }
 
-// TestNewPluginFromEnvEmpty covers NewPluginFromEnv when no config is
-// present: it should return a no-op plugin (nil bridge) without error.
 func TestNewPluginFromEnvEmpty(t *testing.T) {
 	t.Setenv("MCP_SERVERS", "")
 	t.Setenv("OMEGA_HOME", "")
@@ -590,13 +556,11 @@ func TestNewPluginFromEnvEmpty(t *testing.T) {
 	if p == nil {
 		t.Fatal("plugin is nil")
 	}
-	// With no servers configured, the bridge is non-nil but empty (no tools).
 	if p.bridge != nil && len(p.bridge.Tools()) != 0 {
 		t.Fatalf("expected 0 tools for empty config, got %d", len(p.bridge.Tools()))
 	}
 }
 
-// TestNewPluginFromEnvBadConfig covers NewPluginFromEnv returning an error when.
 func TestNewPluginFromEnvBadConfig(t *testing.T) {
 	t.Setenv("MCP_SERVERS", "{not valid json")
 	t.Setenv("OMEGA_HOME", "")
@@ -606,8 +570,6 @@ func TestNewPluginFromEnvBadConfig(t *testing.T) {
 		t.Fatal("expected error for bad config, got nil")
 	}
 }
-
-// SSE frame limits and continuation lines
 
 // TestReadSSELargeFrame is the record for the 64 KiB scanner cap: a single
 // SSE frame well past bufio.Scanner's default token limit must round-trip
@@ -681,7 +643,6 @@ func TestReadSSEMultilineData(t *testing.T) {
 	}
 }
 
-// TestReadSSEMultilineLongPayload splits one large result across many data.
 func TestReadSSEMultilineLongPayload(t *testing.T) {
 	chunk := strings.Repeat("y", 8*1024)
 	var b strings.Builder

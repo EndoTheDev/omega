@@ -12,7 +12,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// serveJSON serves one request with a JSON body through the named route pattern.
 func serveJSON(t *testing.T, ctx *core.Context, pattern, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -29,7 +28,6 @@ func serveJSON(t *testing.T, ctx *core.Context, pattern, path, body string) *htt
 	return nil
 }
 
-// crudHome points OMEGA_HOME at a temp home with no mcp config yet.
 func crudHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
@@ -73,7 +71,6 @@ func TestCRUDRoundTrip(t *testing.T) {
 		t.Fatalf("GET after save: %+v", got.Servers)
 	}
 
-	// delete: the listing is back to the starting state, the tool seam is empty again.
 	w = serveJSON(t, ctx, "POST /mcp/delete", "/mcp/delete", `{"name":"mock"}`)
 	if w.Code != 200 {
 		t.Fatalf("POST /mcp/delete: %d %s", w.Code, w.Body.String())
@@ -97,7 +94,6 @@ func TestCRUDRoundTrip(t *testing.T) {
 	}
 }
 
-// TestCRUDSaveValidation pins the refusals the wire carries.
 func TestCRUDSaveValidation(t *testing.T) {
 	crudHome(t)
 	ctx := mountReloadPlugin(t, NewPlugin(nil))
@@ -115,7 +111,6 @@ func TestCRUDSaveValidation(t *testing.T) {
 	}
 }
 
-// TestCRUDDeleteUnknown404 pins the no-silent-noop law on the wire.
 func TestCRUDDeleteUnknown404(t *testing.T) {
 	crudHome(t)
 	ctx := mountReloadPlugin(t, NewPlugin(nil))

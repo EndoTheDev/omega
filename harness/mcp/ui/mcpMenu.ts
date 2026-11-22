@@ -1,5 +1,3 @@
-// omega webui: the MCP tab row's right-click rows.
-//
 // EXISTING VERBS ONLY: Open unfolds the row's detail (the recorded failure in full, and
 // where the entry is authored), Enable or Disable is the row's own pill (POST
 // /mcp/toggle), and Delete arms the detail's one confirm (POST /mcp/delete).

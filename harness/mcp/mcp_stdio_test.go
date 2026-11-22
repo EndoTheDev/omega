@@ -12,7 +12,6 @@ import (
 	"time"
 )
 
-// pythonBin finds the Python binary at test time.
 func pythonBin() string {
 	for _, name := range []string{"python3", "python"} {
 		if path, err := exec.LookPath(name); err == nil {
@@ -22,7 +21,6 @@ func pythonBin() string {
 	return "python3"
 }
 
-// fakeServerScript is a minimal MCP server over stdio.
 const fakeServerScript = `import sys, json
 
 for line in sys.stdin:
@@ -60,7 +58,6 @@ for line in sys.stdin:
     sys.stdout.flush()
 `
 
-// writeFakeServer writes the fake MCP server script to a temp file and returns.
 func writeFakeServer(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
@@ -71,7 +68,6 @@ func writeFakeServer(t *testing.T) string {
 	return path
 }
 
-// TestNewStdioServerHandshake verifies that newStdioServer spawns the subprocess.
 func TestNewStdioServerHandshake(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
@@ -80,7 +76,6 @@ func TestNewStdioServerHandshake(t *testing.T) {
 	}
 	defer s.close()
 
-	// listTools through the real stdio request path.
 	tools, err := s.listTools(context.Background())
 	if err != nil {
 		t.Fatalf("listTools: %v", err)
@@ -92,7 +87,6 @@ func TestNewStdioServerHandshake(t *testing.T) {
 		t.Fatalf("tool[0]: got %+v", tools[0])
 	}
 
-	// callTool through the real stdio request path.
 	text, isErr, err := s.callTool(context.Background(), "echo", map[string]any{"msg": "hi"})
 	if err != nil {
 		t.Fatalf("callTool: %v", err)
@@ -105,7 +99,6 @@ func TestNewStdioServerHandshake(t *testing.T) {
 	}
 }
 
-// TestNewStdioServerBadCommand verifies the start-error branch returns an error when.
 func TestNewStdioServerBadCommand(t *testing.T) {
 	_, err := newStdioServer("bad", "definitely-not-a-real-executable-xyz-12345", nil, nil)
 	if err == nil {
@@ -116,7 +109,6 @@ func TestNewStdioServerBadCommand(t *testing.T) {
 	}
 }
 
-// TestStdioServerClose verifies close terminates the subprocess promptly without.
 func TestStdioServerClose(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)
@@ -138,7 +130,6 @@ func TestStdioServerClose(t *testing.T) {
 	}
 }
 
-// TestStdioServerEnv verifies env vars are passed through to the subprocess by having.
 func TestStdioServerEnv(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "env_mcp_server.py")
@@ -177,7 +168,6 @@ for line in sys.stdin:
 	}
 }
 
-// TestStdioServerRequestRoundTrip verifies request returns the parsed result payload.
 func TestStdioServerRequestRoundTrip(t *testing.T) {
 	script := writeFakeServer(t)
 	s, err := newStdioServer("fake", pythonBin(), []string{script}, nil)

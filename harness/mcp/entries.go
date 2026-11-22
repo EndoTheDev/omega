@@ -1,7 +1,5 @@
 package mcp
 
-// entries.go: the MCP server entry CRUD write face.
-
 import (
 	"encoding/json"
 	"errors"
@@ -24,7 +22,6 @@ func (e UnknownServerError) Error() string {
 	return fmt.Sprintf("no mcp server named %q", e.Name)
 }
 
-// writableConfigFile resolves the mcp.yaml a CRUD write lands.
 func writableConfigFile() (string, error) {
 	if os.Getenv("MCP_SERVERS") != "" {
 		return "", fmt.Errorf("config came from MCP_SERVERS - it is not a file; edit the env var")
@@ -98,7 +95,6 @@ type serverWriteDoc struct {
 	Servers []serverEntryWire `yaml:"servers"`
 }
 
-// serverEntryNode builds one entry's mapping node from the validated entry.
 func serverEntryNode(sc serverConfig) (*yaml.Node, error) {
 	data, err := yaml.Marshal(serverWriteDoc{Servers: []serverEntryWire{{
 		Name:    sc.Name,
@@ -133,7 +129,6 @@ func serverEntryNode(sc serverConfig) (*yaml.Node, error) {
 	return nil, fmt.Errorf("marshal server: no entry produced")
 }
 
-// serversDocument reads the mcp.yaml at path and returns its document node plus.
 func serversDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -221,7 +216,7 @@ func upsertServerEntry(path string, sc serverConfig) error {
 // file or a missing entry is UnknownServerError - never a silent no-op. Removing the
 // last entry from a document that carries nothing else (no comments, no other keys)
 // removes the FILE too: an add/delete round trip leaves the home exactly as it found it
-// (the no- residue law). A hand-owned file with comments or other keys is never deleted
+// (the no-residue law). A hand-owned file with comments or other keys is never deleted
 // - it just loses the entry.
 func removeServerEntry(path, name string) error {
 	doc, seq, err := serversDocument(path)
@@ -285,8 +280,8 @@ func (p *Plugin) ServerEntry(name string) (serverConfig, bool) {
 }
 
 // saveServerAndReload performs one save whole: the validated node write and the bridge
-// swap under ONE reloadMu hold (the toggle route's v0.14.1 audit shape - two quick
-// saves can no longer race the read-parse-marshal-write).
+// swap under ONE reloadMu hold, so two quick saves cannot race the
+// read-parse-marshal-write.
 func (p *Plugin) saveServerAndReload(sc serverConfig) (rep StatusReport, writeErr, reloadErr error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -301,7 +296,6 @@ func (p *Plugin) saveServerAndReload(sc serverConfig) (rep StatusReport, writeEr
 	return rep, nil, reloadErr
 }
 
-// deleteServerAndReload is saveServerAndReload's delete sibling.
 func (p *Plugin) deleteServerAndReload(name string) (rep StatusReport, writeErr, reloadErr error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -375,7 +369,6 @@ func (p *Plugin) handleSaveServer(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleDeleteServer serves POST /mcp/delete.
 func (p *Plugin) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

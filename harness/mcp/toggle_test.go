@@ -16,7 +16,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// writeHome writes a temp OMEGA_HOME with an mcp.yaml at the config/ subdir.
 func writeHome(t *testing.T, yaml string) string {
 	t.Helper()
 	home := t.TempDir()
@@ -32,7 +31,6 @@ func writeHome(t *testing.T, yaml string) string {
 	return path
 }
 
-// TestServerConfigEnabledFlag: the yaml flag parses, an absent key reads.
 func TestServerConfigEnabledFlag(t *testing.T) {
 	cfg, err := parseConfig([]byte(`
 servers:
@@ -62,9 +60,6 @@ servers:
 	}
 }
 
-// TestDisabledServerNotConnectedNotServed: the connect loop skips the disabled entry -
-// no connection attempt (the mock never sees it), no discovered tools in the served
-// map, and the status row stays listed with enabled:false / not connected / no error.
 func TestDisabledServerNotConnectedNotServed(t *testing.T) {
 	up := mockMCPServer(t, "s1")
 	defer up.Close()
@@ -119,7 +114,6 @@ servers:
 	}
 }
 
-// serveToggleRoute finds the module's POST /mcp/toggle route on the context.
 func serveToggleRoute(t *testing.T, ctx *core.Context, name string, enabled bool) *httptest.ResponseRecorder {
 	t.Helper()
 	body, err := json.Marshal(toggleRequest{Name: name, Enabled: enabled})
@@ -138,7 +132,6 @@ func serveToggleRoute(t *testing.T, ctx *core.Context, name string, enabled bool
 	return nil
 }
 
-// TestToggleRoutePersistsAndReloads: POST /mcp/toggle writes the flag into mcp.yaml.
 func TestToggleRoutePersistsAndReloads(t *testing.T) {
 	up := mockMCPServer(t, "s1")
 	defer up.Close()
@@ -174,7 +167,6 @@ servers:
 	if err := json.Unmarshal(w.Body.Bytes(), &rep); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	// the response IS the fresh status
 	var disabled *ServerStatus
 	for i := range rep.Servers {
 		if rep.Servers[i].Name == "echo" {
@@ -308,7 +300,6 @@ func TestToggleRouteRefusals(t *testing.T) {
 	}
 }
 
-// TestToggleDuplicateNamedServerRefused (v0.14.1 audit NOTE-tier).
 func TestToggleDuplicateNamedServerRefused(t *testing.T) {
 	path := writeHome(t, "servers:\n  - name: twin\n    command: cat\n  - name: twin\n    command: cat\n")
 	p, err := NewPluginFromEnv()
@@ -329,8 +320,8 @@ func TestToggleDuplicateNamedServerRefused(t *testing.T) {
 	}
 }
 
-// TestToggleRaceKeepsBothWrites (v0.14.1 audit): two quick toggles against DIFFERENT
-// servers must both land.
+// TestToggleRaceKeepsBothWrites: two quick toggles against DIFFERENT servers must both
+// land.
 func TestToggleRaceKeepsBothWrites(t *testing.T) {
 	path := writeHome(t, "servers:\n  - name: alpha\n    command: cat\n  - name: beta\n    command: cat\n")
 	p, err := NewPluginFromEnv()
@@ -356,7 +347,6 @@ func TestToggleRaceKeepsBothWrites(t *testing.T) {
 	}
 }
 
-// setServerEnabledAndReloadTolerant wraps the plugin toggle for the race test where.
 func (p *Plugin) setServerEnabledAndReloadTolerant(path, name string, enabled bool) error {
 	_, writeErr, reloadErr := p.setServerEnabledAndReload(path, name, enabled)
 	if writeErr != nil {
@@ -368,7 +358,6 @@ func (p *Plugin) setServerEnabledAndReloadTolerant(path, name string, enabled bo
 	return nil
 }
 
-// checkBothDisabled reads both enabled: scalars as bare false.
 func checkBothDisabled(s string) error {
 	lines := strings.Split(s, "\n")
 	got := 0

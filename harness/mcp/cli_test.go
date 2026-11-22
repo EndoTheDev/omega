@@ -20,7 +20,6 @@ servers:
     url: http://127.0.0.1:9/mcp
 `
 
-// newCLIPlugin mounts the entry set a CLI dispatch would get.
 func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 	t.Helper()
 	home := t.TempDir()
@@ -44,7 +43,6 @@ func newCLIPlugin(t *testing.T, seed string) (*Plugin, string) {
 
 func mcpConfigPath(home string) string { return filepath.Join(home, "config", "mcp.yaml") }
 
-// TestMCPCLIRoundTrip drives add -> list -> edit -> delete through the handler.
 func TestMCPCLIRoundTrip(t *testing.T) {
 	p, home := newCLIPlugin(t, cliSeedMCP)
 	cmd := cmdMCP(p)
@@ -87,7 +85,6 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 		t.Fatalf("edit with no flags: got %v", err)
 	}
 
-	// delete: back to the seed state, byte for byte
 	if err := cmd([]string{"delete", "mock"}); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -110,7 +107,6 @@ func TestMCPCLIRoundTrip(t *testing.T) {
 	}
 }
 
-// TestMCPCLIAddBootstraps: add on a home with no mcp.yaml creates the file.
 func TestMCPCLIAddBootstraps(t *testing.T) {
 	p, home := newCLIPlugin(t, "")
 	cmd := cmdMCP(p)
@@ -122,7 +118,6 @@ func TestMCPCLIAddBootstraps(t *testing.T) {
 	}
 }
 
-// TestMCPCLIRefusals pins the grammar's refusals.
 func TestMCPCLIRefusals(t *testing.T) {
 	p, _ := newCLIPlugin(t, cliSeedMCP)
 	cmd := cmdMCP(p)
@@ -147,7 +142,6 @@ func TestMCPCLIRefusals(t *testing.T) {
 	}
 }
 
-// TestMCPCLIHelp prints the module's own help and registers the verb summary.
 func TestMCPCLIHelp(t *testing.T) {
 	p, _ := newCLIPlugin(t, "")
 	if err := cmdMCP(p)([]string{"--help"}); err != nil {

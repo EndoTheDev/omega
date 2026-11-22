@@ -25,7 +25,6 @@ servers:
       - hi
 `
 
-// seedHome writes the named config file into a temp home and returns it.
 func seedHome(t *testing.T, name, content string) (home, path string) {
 	t.Helper()
 	home = t.TempDir()
@@ -52,7 +51,6 @@ func readFileString(t *testing.T, path string) string {
 	return string(data)
 }
 
-// TestUpsertBootstrapsFreshHome verifies the first add against a home with no mcp.yaml.
 func TestUpsertBootstrapsFreshHome(t *testing.T) {
 	home, _ := seedHome(t, "", "")
 	path, err := writableConfigFile()
@@ -80,7 +78,6 @@ func TestUpsertBootstrapsFreshHome(t *testing.T) {
 	}
 }
 
-// TestUpsertPreservesDocumentComments verifies the fold-write law.
 func TestUpsertPreservesDocumentComments(t *testing.T) {
 	_, path := seedHome(t, "mcp.yaml", entriesSeed)
 	if err := upsertServerEntry(path, serverConfig{Name: "docs", URL: "http://127.0.0.1:9/mcp2"}); err != nil {
@@ -118,8 +115,8 @@ func TestUpsertPreservesDocumentComments(t *testing.T) {
 
 // TestRemoveLandsTheSeedState verifies the residue law: after add then delete, the
 // loader reads exactly the seed's servers and the file carries no trace of the added
-// entry. (Byte identity is not the contract - the node marshal normalizes indentation,
-// the cron writeJobsYAML law - the landed config is.)
+// entry. (Byte identity is not the contract - the node marshal normalizes indentation -
+// the landed config is.)
 func TestRemoveLandsTheSeedState(t *testing.T) {
 	_, path := seedHome(t, "mcp.yaml", entriesSeed)
 	if err := upsertServerEntry(path, serverConfig{Name: "scratch", Command: "python3", Args: []string{"server.py"}}); err != nil {
@@ -146,7 +143,6 @@ func TestRemoveLandsTheSeedState(t *testing.T) {
 	}
 }
 
-// TestRemoveUnknownServer verifies the 404-lane error and that nothing is written.
 func TestRemoveUnknownServer(t *testing.T) {
 	_, path := seedHome(t, "mcp.yaml", entriesSeed)
 	seed := readFileString(t, path)
@@ -175,7 +171,6 @@ func TestUpsertRefusesDuplicateNames(t *testing.T) {
 	}
 }
 
-// TestUpsertKeepsForeignKeys: a file whose top-level document carries other keys.
 func TestUpsertAppendsServersKey(t *testing.T) {
 	seed := "# foreign doc\nother: 1\n"
 	_, path := seedHome(t, "mcp.yaml", seed)
@@ -188,7 +183,6 @@ func TestUpsertAppendsServersKey(t *testing.T) {
 	}
 }
 
-// TestValidateServerEntry pins the one schema law.
 func TestValidateServerEntry(t *testing.T) {
 	enabled := true
 	valid := []serverConfig{
@@ -220,7 +214,6 @@ func TestValidateServerEntry(t *testing.T) {
 	}
 }
 
-// TestWritableConfigFileRefusals pins the legacy-source refusals.
 func TestWritableConfigFileRefusals(t *testing.T) {
 	home, _ := seedHome(t, "", "")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"x","url":"http://x/mcp"}]}`)

@@ -1,4 +1,3 @@
-// omega webui: the MCP tab's reload chain.
 import type { McpStatusWire } from "./serverRows";
 
 // the POST body IS the fresh StatusReport: one round trip, never a re-GET.
