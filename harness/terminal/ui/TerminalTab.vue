@@ -164,19 +164,42 @@
 
   let claimFail = "";
 
+  // The claim is the pane's ONE door to a shell, and it fails transiently: the store's
+  // session cap frees once a sibling shell exits, a spawn is refused under load, a
+  // fetch dies with the lane. The ladder keeps the pane recoverable - the state line
+  // reports the live refusal while it runs, and a later answer promotes it to "shell"
+  // - instead of stranding the pane until a page reload.
+  const CLAIM_RETRY_MS = [500, 1000, 2000, 4000, 8000];
+
   async function open() {
     killed.value = false;
     claimFail = "";
-    const id = await claim();
-    if (!id) {
+    let attempt = 0;
+    for (;;) {
+      let id: string | null = null;
+      try {
+        id = await claim();
+      } catch (e) {
+        claimFail = e instanceof Error ? e.message : String(e);
+      }
+      if (killed.value) return;
+      if (id) {
+        sessionId.value = id;
+        dead.value = false;
+        stateLine.value = "connecting...";
+        errorLine.value = "";
+        stream(id);
+        requestAnimationFrame(() => void resize());
+        return;
+      }
+      dead.value = true;
       stateLine.value = "no terminal";
       errorLine.value = claimFail || "the terminal module did not answer the claim";
-      return;
+      if (attempt >= CLAIM_RETRY_MS.length) return;
+      await new Promise((r) => setTimeout(r, CLAIM_RETRY_MS[attempt]));
+      attempt++;
+      if (killed.value) return;
     }
-    sessionId.value = id;
-    dead.value = false;
-    stream(id);
-    requestAnimationFrame(() => void resize());
   }
 
   /** keystrokes ride POST /input as raw frame bodies: control chars are data. */

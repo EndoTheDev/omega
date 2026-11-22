@@ -197,7 +197,22 @@ step "ok: Close closes the settings tab"
 # --- 4. the terminal ------------------------------------------------------
 # Every buffer read strips whitespace: the bottom pane is 200px tall, so a long marker line
 # WRAPS onto the next row and the rendered text breaks mid-token.
-wait_js '(() => (document.querySelector(".terminal-state")||{textContent:""}).textContent.trim()==="shell")()' 25
+#
+# The state line IS the pane's claim report - "connecting..." while a claim is in flight,
+# "shell" once the stream has replayed the pty, "no terminal" with the module's own reason
+# in `.terminal-error` when a claim is refused. Poll that exact predicate, and on a miss
+# print what the pane actually says: the bare boolean told two nightlies nothing.
+TERM_STATE_READ='(() => {
+  const el = document.querySelector(".terminal-state");
+  return JSON.stringify({
+    mounted: !!el,
+    state: el ? el.textContent.trim() : null,
+    error: (document.querySelector(".terminal-error") || { textContent: "" }).textContent.trim(),
+  });
+})()'
+if ! poll_js '(() => (document.querySelector(".terminal-state")||{textContent:""}).textContent.trim()==="shell")()' 25; then
+  die "the bottom terminal never reached the shell state: $(jsq "$TERM_STATE_READ" 2>&1 | tail -1)"
+fi
 step "ok: the bottom terminal claimed a shell"
 
 # focus the shell with a real press, then type a marker line. The typed line is the only
