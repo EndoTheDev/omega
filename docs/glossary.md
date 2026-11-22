@@ -18,7 +18,7 @@ The domain language, one home. Every term defined once; code, docs and UI text u
 
 **context start** - the anchor message id where a session's live context begins; set at compact time. Everything before it is summary plus retained tail.
 
-**tool call** - one invocation of a tool by the agent. A tool call is either synchronous (blocks its turn) or background (its result arrives later as a wake).
+**tool call** - one invocation of a tool by the agent. A tool call is either synchronous (blocks its turn) or background: it outlives its turn, and while it runs the turn preamble counts it ("2 tool calls running, 1 settled since last turn").
 
 **verdict** - a human judgment record on a run (approve/reject plus note). Not a gate result: gates are deterministic; verdicts are taste.
 
@@ -38,7 +38,7 @@ The domain language, one home. Every term defined once; code, docs and UI text u
 
 **board** - omega's built-in kanban. **board card** - one task on it; cards move through statuses; archive is the reversible end state.
 
-**cron** - omega's scheduled runner. **cron job** - one scheduled entry: a prompt run on a schedule. Always the compound; the bare word "job" is reserved for background tool work and its naming is still under review (nothing ships under it yet).
+**cron** - omega's scheduled runner. **cron job** - one scheduled entry: a prompt run on a schedule. Always the compound; the bare word "job" is not used for tool work.
 
 **journey** - a scripted end-to-end check that drives the UI the way a user would. Journeys pin the implemented shape of a feature; they run in CI and gate releases.
 
