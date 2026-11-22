@@ -112,11 +112,15 @@ Every red that burned a lane once enters the named regression set and
 runs forever: `scripts/journeys/regression.list` names the recipes and
 the pins that each past red must never trip again.
 
-- **Gate time** (every train pass, the lane SHA):
-  `scripts/journeys/run.sh --regression` - the named set IS the train's
-  journeys gate. The full suite is the nightly's (it builds the lane from
-  the tree it tests); see `docs/pipeline.md`, "The train's journeys gate
-  is the regression set".
+- **Gate time** (every push to dev, in CI): `scripts/journeys/run.sh
+  --regression` in the `Journeys regression` job of
+  `.github/workflows/ci.yml` - the named set IS the merge gate's browser
+  leg, and it never runs on the landing host (a local chrome battery
+  starves itself beside the lane, the workers and the gateway; see
+  `docs/pipeline.md`, "The journeys gate is CI-owned"). The train pass
+  runs the fast battery only, and `scripts/factory-dispatch.sh` holds new
+  work while the dev tip's verdict is red or in flight. The full suite is
+  the nightly's (it builds the lane from the tree it tests).
 - **Nightly**: the full suite includes the set.
 - **Pin tests** (compile-time shapes a browser cannot witness) run in
   `go test ./...` and in the train gate list. The set's current pins:

@@ -50,3 +50,106 @@ jobs:
           bash scripts/journeys/clock_test.sh
           bash scripts/journeys/console_scope_test.sh
           bash scripts/journeys/runlock_test.sh
+
+  # The merge gate's browser legs live HERE (docs/pipeline.md, "The journeys
+  # gate is CI-owned"): the train pass runs the fast battery only, because the
+  # one host that can serve a lane also runs the workers and the gateway, and a
+  # local chrome battery there starved itself and reported the starvation as a
+  # tree red (journey 118, wait_js 30s/39s with 47 recipes green around it).
+  # Dev pushes only: master is a soak point, and a PR's tip is not a landing.
+  # The NIGHTLY keeps the full-suite soak - this job runs regression.list.
+  journeys:
+    name: "Journeys regression (CI-owned: the merge gate's browser legs)"
+    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Boot the validation lane (no provider on purpose)
+        # The shape the nightly proves: a fresh home, the minimal lane config
+        # (serve refuses a home without config.yaml, card t_0744eb8e), dummy
+        # provider values so no recipe reaches a model, OMEGA_PORT 8098 =
+        # run.sh's default base. /health never calls the provider.
+        run: |
+          mkdir -p "$RUNNER_TEMP/omega-lane/config"
+          go build -o "$RUNNER_TEMP/omega-lane/omega" ./cmd/omega
+          echo "OMEGA_BIN=$RUNNER_TEMP/omega-lane/omega" >> "$GITHUB_ENV"
+          echo "OMEGA_HOME=$RUNNER_TEMP/omega-lane" >> "$GITHUB_ENV"
+          cat > "$RUNNER_TEMP/omega-lane/config/config.yaml" <<'LANE_CONFIG'
+          provider:
+            type: ollama
+            model_name: dummy
+            host: http://127.0.0.1:9
+          LANE_CONFIG
+          OMEGA_MODEL=dummy OMEGA_HOST=http://127.0.0.1:9 OMEGA_PORT=8098 \
+            OMEGA_DB_PATH="$RUNNER_TEMP/ci-lane.db" \
+            "$RUNNER_TEMP/omega-lane/omega" serve >"$RUNNER_TEMP/lane.log" 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://127.0.0.1:8098/health >/dev/null && exit 0
+            sleep 1
+          done
+          echo "validation lane never came up:" >&2
+          cat "$RUNNER_TEMP/lane.log" >&2
+          exit 1
+
+      - name: Validation journeys - the named regression set
+        run: |
+          set -o pipefail
+          # agent-browser is PINNED (card t_a1fe9f84): the gesture recipes drive
+          # real pointer input through this CLI, 0.43.0 broke that path, and
+          # run.sh refuses a version mismatch under JOURNEY_AB_REQUIRE_VERSION.
+          # This number and run.sh's JOURNEY_AB_VERSION move together.
+          npm i -g agent-browser@0.42.0 && agent-browser install
+          agent-browser --version
+          scripts/journeys/run.sh --regression 2>&1 | tee "$RUNNER_TEMP/journeys-stdout.log"
+        env:
+          JOURNEY_BASE_URL: http://127.0.0.1:8098
+          JOURNEY_AB_REQUIRE_VERSION: "1"
+
+      - name: Journey evidence to the run summary (on red)
+        # A post-hoc red is read from the run page, not from a live terminal:
+        # the summary carries the suite tail (infra deaths print nothing into
+        # journey logs) plus one annotation per red recipe.
+        if: failure()
+        run: |
+          EVID=""
+          for root in "$RUNNER_TEMP" "${TMPDIR:-/tmp}" /tmp; do
+            EVID="$(ls -dt "$root"/omega-journeys-evidence.* 2>/dev/null | head -1 || true)"
+            [ -n "$EVID" ] && break
+          done
+          if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+            tail_lines="$(grep -vE ' (green|running)$' "$RUNNER_TEMP/journeys-stdout.log" | tail -12 | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journeys suite output (noise stripped)::$tail_lines"
+          fi
+          if [ -z "$EVID" ] || [ ! -d "$EVID" ]; then
+            echo "::error::journeys red - no evidence dir found (infra exit: chrome or lane dead)"
+            echo "## :x: Journeys red - no evidence dir found (infra exit: chrome or lane dead)" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## :x: Journeys regression red - evidence (per journey, last 40 lines)"
+            if [ -f "$RUNNER_TEMP/journeys-stdout.log" ]; then
+              echo ""
+              echo "### suite output (last 30 lines)"
+              echo '```'
+              tail -30 "$RUNNER_TEMP/journeys-stdout.log"
+              echo '```'
+            fi
+            for f in "$EVID"/*.log; do
+              echo ""
+              echo "### $(basename "$f" .log)"
+              echo '```'
+              tail -40 "$f"
+              echo '```'
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          for f in "$EVID"/*.log; do
+            [ -e "$f" ] || continue
+            if ! grep -q ' RED$' "$f"; then continue; fi
+            name="$(basename "$f" .log)"
+            tail_lines="$(tail -8 "$f" | tr '\n' '|' | cut -c1-380)"
+            echo "::error title=journey red: $name::$tail_lines"
+          done

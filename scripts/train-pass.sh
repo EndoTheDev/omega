@@ -72,10 +72,10 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 #         running exactly the battery the pass runs, so a red can never be
 #         attributed by a proxy that gates something else. No board, no
 #         queue, no merge, no push. The probe gate keeps the CODE legs and
-#         SKIPS the legs a probe checkout cannot measure: the webui node
-#         suite (node_modules lives in the main checkout), the embed lane (the
-#         SPA build needs that same install) and the journeys (they drive the
-#         SERVED lane, which lags the tree).
+#         SKIPS the leg a probe checkout cannot measure: the webui node
+#         suite (node_modules lives in the main checkout) and the embed lane
+#         (the SPA build needs that same install). Journeys are CI-owned and
+#         never run locally, probe or not.
 #
 # Environment:
 #
@@ -97,21 +97,26 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 #                              toolchain verdict the -race leg skips on
 #                              (0 = toolchain present). Unset in real passes:
 #                              they probe by compiling a trivial cgo file.
-#   TRAIN_JOURNEYS_CMD         the validation-journeys suite (default:
-#                              scripts/journeys/run.sh --regression - the
-#                              NAMED REGRESSION SET, regression.list's own
-#                              gate-time minimum. The full suite belongs to
-#                              the nightly, which builds the lane from the
-#                              tree it tests; docs/pipeline.md carries the
-#                              ruling. Missing = skipped loudly until the
-#                              companion card lands). Flags allowed - the
-#                              gate runs it through bash -c
+#   TRAIN_JOURNEYS_CMD         the one-command debugging unit. UNSET by
+#                              default: the journeys are CI-owned (every
+#                              push to dev runs the regression set in the
+#                              runner) and the battery carries no browser
+#                              leg at all - a local chrome run on the host
+#                              that also serves the lane, the workers and
+#                              the gateway manufactures the 118-class
+#                              wait_js starvation reds it then blames on
+#                              the tree. Set it to a single recipe wrapper
+#                              when a red must be reproduced by hand; the
+#                              journeys law allows ONE recipe locally,
+#                              never the suite. Flags allowed - the gate
+#                              runs it through bash -c. Setting it re-arms
+#                              the lane preconditions below.
 #   OMEGA_HOME / OMEGA_BIN     the SERVING lane home the journey recipes seed
-#                              into. Unset, the train derives <checkout>/bin
-#                              (a serving home: config/config.yaml + the omega
-#                              binary) and refuses BEFORE the merge when it
-#                              cannot - a gate that cannot run green is a
-#                              precondition, never a post-merge demote
+#                              into (used only when TRAIN_JOURNEYS_CMD is
+#                              set). Unset, the train derives <checkout>/bin
+#                              and refuses BEFORE the merge when it cannot - a
+#                              gate that cannot run green is a precondition,
+#                              never a post-merge demote
 #   JOURNEY_BASE_URL           the served lane the journeys gate drives
 #                              (default: run.sh's own http://127.0.0.1:8098);
 #                              checked healthy as a precondition
@@ -147,19 +152,18 @@ BASE="dev"
 PUSH=1
 [ "${TRAIN_NO_PUSH:-}" = "1" ] && PUSH=0
 HERMES_BIN="${HERMES:-hermes}"
-# The train-time journeys gate is the NAMED REGRESSION SET, not the full
-# suite. regression.list is the gate-time minimum (every entry there burned
-# a lane once and must never fail again); the full suite belongs to the
-# nightly, which builds the lane from the tree it tests. The narrowing is
-# not a coverage trade: the tick's fallback merge carries NO journeys gate,
-# so a full-suite train gate vetoes nothing it would not already land - it
-# only converts any standing product red into an un-land + demote + resweep
-# cycle. Ruling 2026-11-19 on this card: the set ran 12/12 green while
-# 92-registry-toggles - NOT in the set - red on the same lane, and the
-# 75-divider-resize red the earlier rejection rested on was green. Widen
-# the gate by adding a recipe to regression.list, never by asking the train
-# for the full suite.
-JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-scripts/journeys/run.sh --regression}"
+# The local battery carries NO browser leg (card t_a78c6f3a, Endo ruling
+# 2026-11-22): the validation journeys belong to CI, which runs the regression
+# set on every push to dev (.github/workflows/ci.yml). The one host that can
+# serve the lane also runs the workers and the gateway, so a local chrome
+# battery starves itself and reports the starvation as a tree red (journey
+# 118: wait_js 30s/39s timeouts two nights running with 47 recipes green
+# around it). The local critical path is the fast battery: gate-deps, go
+# test, go test -race, the static gate, the lane rebuild. No local chrome at
+# all, not even a subset - the lane-smoke covers boot liveness, and any local
+# chrome recreates the starvation class at smaller scale. TRAIN_JOURNEYS_CMD
+# stays as the debugging seam: ONE command, one recipe, never the suite.
+JOURNEYS_CMD="${TRAIN_JOURNEYS_CMD:-}"
 RECONCILER_ASSIGNEE="${TRAIN_RECONCILER_ASSIGNEE:-default}"
 PIN="${TRAIN_CARD:-}"
 GATE_ONLY=0
@@ -299,13 +303,18 @@ gates_pass() {
   else
     echo "embed lane absent in this checkout - skipping (static/ change gate lives in the lane)"
   fi
-  # The journeys measure the SERVED lane, which lags the tree it is gated
-  # against: a probe checkout cannot move that lane, so scoring a probe on it
-  # would read the same answer for every candidate.
-  if [ "${GATE_PROBE:-0}" = "1" ]; then
+  # The journeys are CI-owned: the battery carries no browser leg at all (see
+  # JOURNEYS_CMD). A TRAIN_JOURNEYS_CMD is the hand-run debugging unit, and it
+  # is the only way a local chrome ever starts.
+  if [ -z "$JOURNEYS_CMD" ]; then
+    echo "==> validation journeys: CI-owned (push-triggered)"
+  elif [ "${GATE_PROBE:-0}" = "1" ]; then
     echo "==> validation journeys: SKIPPED (probe gate: the served lane measures the LANE, not this tree)"
-  elif [ -f "$journeys_path" ]; then
-    echo "==> validation journeys"
+  elif [ ! -f "$journeys_path" ]; then
+    echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
+    exit 1
+  else
+    echo "==> validation journeys (TRAIN_JOURNEYS_CMD debugging unit)"
     echo "    lane env: OMEGA_HOME=${OMEGA_HOME:-<unset>} OMEGA_BIN=${OMEGA_BIN:-<unset>} base ${JOURNEY_BASE_URL:-<run.sh default>}"
     # An override whose WHOLE value is a path (spaces allowed) runs as one
     # argument; anything else is a command line, flags included.
@@ -314,11 +323,6 @@ gates_pass() {
     else
       bash -c "$JOURNEYS_CMD" || exit 1
     fi
-  elif [ -n "${TRAIN_JOURNEYS_CMD:-}" ]; then
-    echo "journeys command is set but missing: $journeys_path (from '$JOURNEYS_CMD')" >&2
-    exit 1
-  else
-    echo "==> validation journeys: SKIPPED - $journeys_path not present yet (the companion card wires it in)"
   fi
   echo "FIN"
 }
@@ -681,7 +685,7 @@ else
 fi
 
 # ---- gate preconditions (refuse BEFORE the merge, never mid-cycle) ------
-# The journeys gate measures the SERVED lane, and six recipes seed agent
+# The debugging unit measures the SERVED lane, and six recipes seed agent
 # homes into the lane home ($OMEGA_HOME), dying loudly when the env does not
 # name it (110/114/60/92/94/96: "set OMEGA_HOME or OMEGA_BIN ..."). A pass
 # with no caller env therefore burned a full merge cycle and paid a red gate
@@ -689,8 +693,10 @@ fi
 # precondition die with zero product assertions reached, and an approved
 # card was demoted on it. A gate that cannot run green is a PRECONDITION:
 # it refuses HERE, before anything is rebased or merged, and the card keeps
-# its status, its branch and its verdict.
-journeys_will_run() { [ -z "${TRAIN_GATES_CMD:-}" ] && [ -f "$journeys_path" ]; }
+# its status, its branch and its verdict. It applies exactly when a
+# TRAIN_JOURNEYS_CMD names a local chrome run - the CI-owned default has no
+# lane to check.
+journeys_will_run() { [ -z "${TRAIN_GATES_CMD:-}" ] && [ -n "$JOURNEYS_CMD" ]; }
 
 lane_home_usable() {  # <dir>: a serving lane home - its config + serve binary
   local d="$1" b
@@ -729,7 +735,7 @@ resolve_lane_env() {
     note "journeys lane home (derived): $OMEGA_HOME"
     return 0
   fi
-  die "the validation journeys gate cannot run green without a lane home: OMEGA_HOME and OMEGA_BIN are unset and $REPO/bin is not a serving lane home (needs config/config.yaml plus omega or omega.exe). Probed: OMEGA_HOME (unset), OMEGA_BIN (unset), $REPO/bin. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status."
+  die "TRAIN_JOURNEYS_CMD is set, so the debugging unit drives the SERVED lane, and it cannot run green without a lane home: OMEGA_HOME and OMEGA_BIN are unset and $REPO/bin is not a serving lane home (needs config/config.yaml plus omega or omega.exe). Probed: OMEGA_HOME (unset), OMEGA_BIN (unset), $REPO/bin. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status."
 }
 
 lane_healthy() {  # <url>: the served lane the journeys drive must answer ok
@@ -740,7 +746,7 @@ lane_healthy() {  # <url>: the served lane the journeys drive must answer ok
   case "$answer" in
     *'"ok"'*) note "journeys lane healthy: $url"; return 0 ;;
   esac
-  die "the validation journeys gate drives the SERVED lane, and $url/health is not healthy (answer: ${answer:-<none>}). A lane red of that shape says nothing about this landing. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status. Fix the lane (or set JOURNEY_BASE_URL to the lane that serves this checkout) and rerun."
+  die "TRAIN_JOURNEYS_CMD is set, so the debugging unit drives the SERVED lane, and $url/health is not healthy (answer: ${answer:-<none>}). A lane red of that shape says nothing about this landing. Refusing BEFORE the merge - nothing rebased, nothing merged, the card keeps its status. Fix the lane (or set JOURNEY_BASE_URL to the lane that serves this checkout) and rerun."
 }
 
 if journeys_will_run; then
@@ -1195,6 +1201,9 @@ note "batch: cards=$batch_ids battery=${battery_total}s runs=$battery_runs bisec
 # (a green pass prints no gate detail, and a permanent ruling nobody can see
 # is how a "temporary" workaround becomes invisible debt - t_7cc44bf1).
 grep -m1 'race leg skipped' "$gates_log" 2>/dev/null || true
+# The CI-owned journeys line rides the same law: the browser gate is not in
+# this pass, so the pass log says where it went.
+grep -m1 'validation journeys: CI-owned' "$gates_log" 2>/dev/null || true
 
 # ---- land --------------------------------------------------------------
 

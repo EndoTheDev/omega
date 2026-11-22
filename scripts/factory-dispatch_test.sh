@@ -41,6 +41,16 @@ GUARD="$(cd "$(dirname "$0")" && pwd)/factory-dispatch.sh"
 # which clears the variable per call.
 export FD_ALLOW_MISSING_CONFIG=1
 
+# ---- TIP CI VERDICT SEAM (card t_a78c6f3a) ---------------------------------
+# The guard reads the dev tip's CI verdict through $FD_GH (default `gh`). Every
+# leg below runs against whatever checkout the suite sits in, and on a fleet
+# host that checkout is the REAL repo with an authenticated gh - a live query
+# per pass would be slow, network-bound and not the subject. So the suite pins
+# a name that is not on PATH: no gh => verdict unknown => proceed, loudly. T29
+# points FD_GH at its own stub, which is where the verdict is exercised.
+FD_GH_PIN='__fd_no_gh_for_tests__'
+export FD_GH="$FD_GH_PIN"
+
 # ---- FENCE ROOT (card t_8ff31265) ------------------------------------------
 # Every LIVE pass ends in `hermes kanban dispatch` behind the FENCE STAMP: the
 # guard cds to `dirname "$0"/..` and refuses to dispatch at all (exit 1,
@@ -1978,6 +1988,98 @@ grep -qF 'Onboarded: 1 (t_law)' <<<"$out" \
 [ "$(sql "$(spdb onboard-other)" "SELECT count(*) FROM task_comments WHERE task_id='t_law';")" = "2" ] \
 	&& ok || bad "T28c: the pass rewrote the card's thread (expected the 2 seeded rows, nothing else)"
 rm -rf "$SPAWN_BASE"
+
+# T29 (local + CI): the tip-CI check (card t_a78c6f3a). The merge gate's
+# browser legs moved to CI, so the dispatcher reads the dev tip's `Journeys
+# regression` job BEFORE spawning: red or in flight HOLDS the pass (no
+# local-green landings pile onto an unproven tip), green or absent proceeds,
+# and an unreadable verdict (no gh) proceeds LOUDLY. The gh binary is the
+# $FD_GH seam; the stub answers the two calls the check makes - `run list
+# --commit <sha>` (the run id) and `run view <id> --json jobs` (the job rows
+# after --jq, exactly what real gh prints) - and logs each invocation.
+#
+# The verdict needs a checkout with a `dev` ref at the GUARD ROOT, so these
+# legs run against a second staged fence root (the suite's own guard bytes
+# with a real repo beside them); the shared root is restored after.
+TIPBASE=$(mktemp -d); TIPBASE_N=$(mixpath "$TIPBASE")
+TIPSEED="INSERT INTO tasks VALUES('t_tip','ready','tip card','FILES: scripts/factory-dispatch.sh',NULL,NULL,5,'2026-11-22T12:00',NULL,NULL);"
+GHTIP="$TIPBASE_N/gh"
+cat >"$TIPBASE/gh" <<'GHSTUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"${GH_STUB_LOG:-/dev/null}"
+case "${1:-} ${2:-}" in
+  'run list') printf '%s\n' "${GH_STUB_LIST:-}" ;;
+  'run view') printf '%s\n' "${GH_STUB_JOBS:-}" ;;
+  *) exit 1 ;;
+esac
+GHSTUB
+chmod +x "$TIPBASE/gh"
+TIPGUARD=$(stage_fence_root "$GUARD")
+TIPROOT="${TIPGUARD%/scripts/factory-dispatch.sh}"
+TIPROOT_N=$(mixpath "$TIPROOT")
+git -C "$TIPROOT_N" init -q
+git -C "$TIPROOT_N" config user.email t@t
+git -C "$TIPROOT_N" config user.name t
+git -C "$TIPROOT_N" add -A
+git -C "$TIPROOT_N" commit -qm base
+git -C "$TIPROOT_N" branch -M dev
+TIPSHOW=$(git -C "$TIPROOT_N" rev-parse dev)
+JOB_RED="$(printf 'Journeys regression (CI-owned: the merge gate)\tcompleted\tfailure')"
+JOB_DONE="$(printf 'Journeys regression (CI-owned: the merge gate)\tcompleted\tsuccess')"
+JOB_RUN="$(printf 'Journeys regression (CI-owned: the merge gate)\tin_progress\t')"
+GUARD_SAVED="$GUARD"
+GUARD="$TIPGUARD"
+export FD_GH="$GHTIP"
+export GH_STUB_LOG="$TIPBASE/calls.log"
+
+# T29a: red verdict -> HOLD, nothing spawns, and the dry-run says it first.
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RED"; export GH_STUB_LIST GH_STUB_JOBS
+out=$(SPAWNRUN tip-red "$TIPSEED" --dry-run)
+grep -qF "tip CI: red - dev ${TIPSHOW:0:12}" <<<"$out" \
+	&& ok || bad "T29a: the dry-run must read the tip's verdict (out: $out)"
+grep -qF 'tip CI: HOLD' <<<"$out" \
+	&& ok || bad "T29a: a red tip must print the hold (out: $out)"
+out=$(SPAWNRUN tip-red "$TIPSEED" --max 1)
+grep -qF 'no dispatch (tip CI red' <<<"$out" \
+	&& ok || bad "T29a: a red tip must refuse the dispatch and name the reason (out: $out)"
+grep -qF 'Spawned' <<<"$out" && bad "T29a: a card spawned onto a CI-red tip (out: $out)" || ok
+[ ! -s "$(splog tip-red)" ] || bad "T29a: the inner dispatcher was invoked on a held pass"
+
+# T29b: the job is still running -> HOLD (the verdict is unknown, not green).
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RUN"; export GH_STUB_LIST GH_STUB_JOBS
+out=$(SPAWNRUN tip-run "$TIPSEED" --max 1)
+grep -qF 'tip CI: inflight' <<<"$out" \
+	&& ok || bad "T29b: an in-flight run must read as inflight (out: $out)"
+grep -qF 'Spawned' <<<"$out" && bad "T29b: a card spawned while the tip's verdict was in flight (out: $out)" || ok
+
+# T29c: green -> the pass proceeds and spawns.
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_DONE"; export GH_STUB_LIST GH_STUB_JOBS
+out=$(SPAWNRUN tip-green "$TIPSEED" --max 1)
+grep -qF "tip CI: green - dev ${TIPSHOW:0:12}" <<<"$out" \
+	&& ok || bad "T29c: a green tip must read green (out: $out)"
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T29c: a green tip must NOT block the spawn (out: $out)"
+grep -qF 'HOLD' <<<"$out" && bad "T29c: a green tip printed a hold (out: $out)" || ok
+
+# T29d: no run for that sha (a docs-only push, or a job-less workflow) -> absent.
+GH_STUB_LIST=""; export GH_STUB_LIST
+out=$(SPAWNRUN tip-absent "$TIPSEED" --max 1)
+grep -qF 'tip CI: absent' <<<"$out" \
+	&& ok || bad "T29d: no run must read absent, not hold (out: $out)"
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T29d: an absent verdict must proceed (out: $out)"
+
+# T29e: no gh on PATH -> proceeds LOUDLY (a missing tool never freezes the factory).
+export FD_GH="$FD_GH_PIN"
+out=$(SPAWNRUN tip-nogh "$TIPSEED" --max 1)
+grep -qF 'tip CI: unknown' <<<"$out" \
+	&& ok || bad "T29e: a missing gh must read unknown, out loud (out: $out)"
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T29e: a missing gh must not block the factory (out: $out)"
+GUARD="$GUARD_SAVED"
+export FD_GH="$FD_GH_PIN"
+unset GH_STUB_LIST GH_STUB_JOBS GH_STUB_LOG
+rm -rf "$TIPBASE" "${TIPROOT}"
 
 echo
 echo "factory-dispatch_test: $pass ok, $fail fail"
