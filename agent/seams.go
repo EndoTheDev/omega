@@ -170,7 +170,9 @@ type LoggerLastError interface {
 
 type PromptBuilder interface {
 	BuildPrompt(ctx context.Context, opts core.PromptBuildOptions) (string, bool)
-	Guidelines() []string
+	// Guidelines takes the same build options: the guidelines are prompt prose, so they
+	// obey the same fold law as every section (a line may not name a disabled tool).
+	Guidelines(opts core.PromptBuildOptions) []string
 }
 
 type Provider interface {

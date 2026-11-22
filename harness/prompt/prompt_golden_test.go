@@ -183,6 +183,65 @@ func TestPromptGoldenMinimal(t *testing.T) {
 	compareGolden(t, "golden_prompt_minimal", prompt)
 }
 
+// TestPromptToolsFoldDropsSections pins the acceptance pair on the real capsule set: with
+// the fold empty every section renders, and with the fold naming every tool the sections
+// that describe those tools are gone from the prompt. This is the defect that shipped -
+// the Tools list emptied while the prose kept describing the tools it had dropped.
+func TestPromptToolsFoldDropsSections(t *testing.T) {
+	dir := t.TempDir()
+	skillDir := filepath.Join(dir, "skills")
+	seedSkills(t, skillDir)
+	memCfg := memory.Config{
+		Enabled:              true,
+		UserProfileEnabled:   true,
+		CharLimit:            2200,
+		UserProfileCharLimit: 1375,
+		File:                 filepath.Join(dir, "memory.md"),
+		UserProfileFile:      filepath.Join(dir, "user.md"),
+	}
+	seedMemory(t, memCfg)
+	ctx := wireContext(t, skillDir, memCfg)
+	builder := ctx.Services().Resolve("prompt").(agent.PromptBuilder)
+
+	// Empty fold: the sections render.
+	on, ok := builder.BuildPrompt(context.Background(), minimalOpts(ctx))
+	if !ok {
+		t.Fatal("BuildPrompt returned ok=false")
+	}
+	for _, want := range []string{"## Available Skills", "Call skills.read", "access to tools", "- Use tools to read files"} {
+		if !strings.Contains(on, want) {
+			t.Errorf("unfolded prompt missing %q\n--- prompt ---\n%s", want, on)
+		}
+	}
+	// The store guideline is presence-gated too: this scenario mounts no store capsule, so
+	// the prompt must not send the model to store tools that are not on the wire.
+	if strings.Contains(on, "store tools") {
+		t.Errorf("prompt names store tools although the scenario mounts no store capsule:\n%s", on)
+	}
+
+	// Every tool folded: the sections that describe them are gone, and the posture stops
+	// claiming tools.
+	fold := core.ToolNames(ctx.Infos)
+	if len(fold) == 0 {
+		t.Fatal("inventory carries no tools, the pin proves nothing")
+	}
+	opts := minimalOpts(ctx)
+	opts.DisabledTools = fold
+	opts.Extensions = core.StampDisabledTools(ctx.Infos, fold)
+	off, ok := builder.BuildPrompt(context.Background(), opts)
+	if !ok {
+		t.Fatal("BuildPrompt returned ok=false")
+	}
+	for _, banned := range []string{"## Available Skills", "skills.read", "## Approval Gate", "## Tools", "- files.read", "access to tools", "Use tools to read files", "store tools"} {
+		if strings.Contains(off, banned) {
+			t.Errorf("fully folded prompt still carries %q\n--- prompt ---\n%s", banned, off)
+		}
+	}
+	if !strings.Contains(off, "No tools are enabled for this session") {
+		t.Errorf("fully folded prompt does not say the session has no tools:\n%s", off)
+	}
+}
+
 // TestPromptGoldenEmptyStores pins the prompt when skills and memory are mounted.
 func TestPromptGoldenEmptyStores(t *testing.T) {
 	dir := t.TempDir()

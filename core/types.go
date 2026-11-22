@@ -1,5 +1,7 @@
 package core
 
+import "sort"
+
 // ToolStat is one row in the tool breakdown.
 type ToolStat struct {
 	Name  string
@@ -104,6 +106,21 @@ func StampDisabledTools(infos []ExtensionInfo, disabled []string) []ExtensionInf
 	return out
 }
 
+// ToolNames returns every tool name the inventory carries, sorted, never nil. It is the
+// fold that means "no tools at all" - a toolless run passes this list as its fold.
+func ToolNames(infos []ExtensionInfo) []string {
+	var out []string
+	for _, info := range infos {
+		for _, t := range info.ToolList {
+			if t.Name != "" {
+				out = append(out, t.Name)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // ExtensionInfo is metadata about a loaded extension, for display.
 type ExtensionInfo struct {
 	Name        string
@@ -123,6 +140,66 @@ type PromptBuildOptions struct {
 	ProjectContext string   // AGENTS.md contents, already trust-gated by Go
 	Custom         string   // user-supplied prompt from config, may be empty
 	Append         []string // extra prompts from --append-system-prompt, may be nil
+	// DisabledTools is the run's fold: the tools the wire does not carry. The Tools
+	// section already reads the stamped Disabled flags; every other contributor (a
+	// capsule's prose section, the guidelines, the opening posture) must consult this
+	// set too - a prompt that describes a capability the run cannot execute is a lie
+	// the model acts on (agent/agent.go:206).
+	DisabledTools []string
+}
+
+// ToolEnabled reports whether the run offers name to the model - the tool is on the wire.
+// A tool is on the wire when the run's inventory carries it and the fold does not name it.
+// An inventory the caller did not supply is unknown, never empty, so a name is then judged
+// by the fold alone (the caller-less builders keep the prompt they had).
+func (o PromptBuildOptions) ToolEnabled(name string) bool {
+	if name == "" {
+		return true
+	}
+	for _, n := range o.DisabledTools {
+		if n == name {
+			return false
+		}
+	}
+	if len(o.Extensions) == 0 {
+		return true
+	}
+	for _, ext := range o.Extensions {
+		for _, t := range ext.ToolList {
+			if t.Name == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ToolsEnabled reports whether at least one of names is offered to the model - the gate
+// for a section that needs any one of a capability family rather than a named tool.
+func (o PromptBuildOptions) ToolsEnabled(names ...string) bool {
+	for _, n := range names {
+		if o.ToolEnabled(n) {
+			return true
+		}
+	}
+	return false
+}
+
+// HasTools reports whether the run's inventory carries at least one callable tool. An
+// inventory the caller did not supply (no Extensions) answers true: a missing inventory
+// is not evidence of missing tools, and the opening posture is a claim about the run.
+func (o PromptBuildOptions) HasTools() bool {
+	if len(o.Extensions) == 0 {
+		return true
+	}
+	for _, ext := range o.Extensions {
+		for _, t := range ext.ToolList {
+			if !t.Disabled {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // PromptSection is one titled block of system prompt content, contributed.

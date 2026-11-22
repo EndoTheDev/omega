@@ -93,18 +93,28 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 
 	prompt := ""
 	if opts.PromptBuilder != nil {
-		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, core.PromptBuildOptions{
+		// The prompt carries the SAME fold the wire carries: a section or guideline that
+		// describes a tool the run cannot call is a lie the model acts on. A toolless run
+		// is the extreme case of the fold - every known tool off - so its prompt cannot
+		// advertise the registry the loop just emptied.
+		fold := opts.DisabledTools
+		if agent.Toolless(ctx) {
+			fold = core.ToolNames(opts.ExtensionInfos)
+		}
+		build := core.PromptBuildOptions{
 			CWD:            opts.CWD,
 			Messages:       messages,
-			Extensions:     opts.ExtensionInfos,
+			Extensions:     core.StampDisabledTools(opts.ExtensionInfos, fold),
 			ProjectContext: opts.PromptContext,
 			Custom:         opts.PromptCustom,
 			Append:         opts.PromptAppend,
-		}); ok {
+			DisabledTools:  fold,
+		}
+		if extPrompt, ok := opts.PromptBuilder.BuildPrompt(ctx, build); ok {
 			prompt = extPrompt
 		}
 		if prompt != "" {
-			if guidelines := opts.PromptBuilder.Guidelines(); len(guidelines) > 0 {
+			if guidelines := opts.PromptBuilder.Guidelines(build); len(guidelines) > 0 {
 				prompt += "\n## Extension Guidelines\n"
 				for _, g := range guidelines {
 					prompt += "- " + g + "\n"

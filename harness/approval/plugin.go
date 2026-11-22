@@ -54,8 +54,13 @@ const promptSectionOrder = 36 // after verdict cards (35)
 
 // PromptSections tells the agent (both origins) how the gate behaves: which commands
 // flag, what an escalation looks like in its context, and that an escalated command
-// never executed.
+// never executed. The section is prose about shell.run, so it renders only while shell.run
+// is on the wire - a session whose fold switched the shell off has nothing to gate and
+// must not be told it does.
 func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
+	if !opts.ToolEnabled("shell.run") {
+		return nil
+	}
 	body := "- approval gate: shell commands with write, network or system effects pass an approval check before they run. Read-only and inspecting commands are unaffected.\n" +
 		"- In smart mode a decision model reviews flagged commands: APPROVE/DENY decide automatically, ESCALATE rises as a verdict card (interactive) or a tool error + notification (cron runs). A DENY or escalation means the command never executed - do not retry the identical command expecting a different answer; change it, or ask the user.\n" +
 		"- In manual mode every flagged command asks you to approve via a card. Keep ordinary operations in files tools and routine commands; batch related shell work into fewer commands.\n"

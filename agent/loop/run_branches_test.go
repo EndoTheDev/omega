@@ -19,14 +19,18 @@ type mockPromptBuilder struct {
 	prompt     string
 	guidelines []string
 	called     bool
+	lastOpts   core.PromptBuildOptions // the last build request, for fold pins
+	guideOpts  core.PromptBuildOptions // the guidelines' request
 }
 
-func (m *mockPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOptions) (string, bool) {
+func (m *mockPromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOptions) (string, bool) {
 	m.called = true
+	m.lastOpts = opts
 	return m.prompt, true
 }
 
-func (m *mockPromptBuilder) Guidelines() []string {
+func (m *mockPromptBuilder) Guidelines(opts core.PromptBuildOptions) []string {
+	m.guideOpts = opts
 	return m.guidelines
 }
 
