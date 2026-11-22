@@ -24,7 +24,7 @@ export function navEntriesEqual(a: NavEntry, b: NavEntry): boolean {
   return a.paneId === b.paneId && a.tabId === b.tabId;
 }
 
-/** the push model (pure): dedupe the CURRENT entry (a re-click on an already-active. */
+/** the push model (pure): dedupe the CURRENT entry. */
 export function navPush(
   entries: readonly NavEntry[],
   index: number,

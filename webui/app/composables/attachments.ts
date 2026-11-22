@@ -88,7 +88,6 @@ export function attachmentSizeLabel(size: number | undefined): string {
 // the extensions whose files are IMAGES (the base64 lane).
 const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp"]);
 
-/** isImageFile routes a picked File. */
 export function isImageFile(file: { name: string; type: string }): boolean {
   if ((file.type || "").startsWith("image/")) return true;
   const dot = file.name.lastIndexOf(".");

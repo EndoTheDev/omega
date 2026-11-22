@@ -6,7 +6,7 @@ export interface DividerPointerState {
   base: number | null;
 }
 
-/** Reduces one divider emit to the cumulative delta the store math wants (null =. */
+/** Reduces one divider emit to the cumulative delta the store math wants. */
 export function dividerDelta(
   state: DividerPointerState,
   delta: number,
