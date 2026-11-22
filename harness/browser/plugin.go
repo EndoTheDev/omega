@@ -73,7 +73,6 @@ func (p *Plugin) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"last": p.store.Last()})
 }
 
-// handlePut serves PUT /browser/last.
 func (p *Plugin) handlePut(w http.ResponseWriter, r *http.Request) {
 	b, err := io.ReadAll(io.LimitReader(r.Body, 4096))
 	if err != nil {

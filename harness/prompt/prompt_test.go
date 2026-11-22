@@ -10,7 +10,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// Compile-time interface checks.
 var (
 	_ agent.PromptBuilder = (*PromptBuilder)(nil)
 	_ agent.Plugin       = (*Plugin)(nil)
@@ -21,7 +20,6 @@ type stubSectioner struct {
 	sections []core.PromptSection
 }
 
-// PromptSections returns the canned sections.
 func (s *stubSectioner) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	return s.sections
 }

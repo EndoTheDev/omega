@@ -60,7 +60,6 @@ func Bootstrap(home string) {
 	_ = os.WriteFile(dst, data, 0o600)
 }
 
-// loadTrusted reads the trust store.
 func (p *Provider) loadTrusted() []TrustEntry {
 	data, err := os.ReadFile(p.trustPath())
 	if err != nil {
@@ -73,7 +72,7 @@ func (p *Provider) loadTrusted() []TrustEntry {
 	return store.Trusted
 }
 
-// saveTrusted writes the trust store at the resolved path, creating its directory if.
+// saveTrusted writes the trust store at the resolved path, creating its directory.
 func (p *Provider) saveTrusted(entries []TrustEntry) error {
 	data, err := yaml.Marshal(trustStore{Trusted: entries})
 	if err != nil {

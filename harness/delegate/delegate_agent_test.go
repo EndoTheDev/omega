@@ -15,7 +15,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// writeAgentStub is the writeStub pattern plus an OMEGA_AGENT line.
 func writeAgentStub(t *testing.T) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "stub-agent-omega")

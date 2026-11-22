@@ -26,9 +26,9 @@ func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
-// Requires: logging, read at mount time to dispatch the spawns. The notifications edge is
-// gone - the dispatched-run emitter is a registration that arrives at mount end, nil when
-// the module is absent (docs/migrating-a-module.md).
+// Requires: logging, read at mount time to dispatch the spawns. The notifications seam is
+// a mount-end registration, nil when the capsule is absent
+// (docs/migrating-a-module.md).
 func (p *Plugin) Requires() []string { return []string{"logger"} }
 
 // MountWithAPI implements agent.APIPlugin.

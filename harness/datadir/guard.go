@@ -17,8 +17,8 @@ func DBDenied(what string) error {
 	return fmt.Errorf("REFUSED by ENDO'S LAW 2026-10-18: %s (requested: %s)", DBDenyLaw, what)
 }
 
-// Guard holds the real filesystem paths of the instance database family (omega.db. A
-// nil Guard means no instance home was determinable and everything passes.
+// Guard holds the real filesystem paths of the instance database family. A nil Guard
+// means no instance home was determinable and everything passes.
 type Guard struct {
 	reals map[string]bool
 }

@@ -489,7 +489,7 @@ func TestMemoryToolMissingTarget(t *testing.T) {
 	}
 }
 
-// TestDottedWirePin pins the split's registry shape: exactly the four dotted memory.
+// TestDottedWirePin pins the registry shape: exactly the four dotted memory tools.
 func TestDottedWirePin(t *testing.T) {
 	tp := &memoryToolProvider{mem: newTestMemory(t)}
 	tools := tp.Tools()
@@ -698,7 +698,7 @@ func TestPluginMount(t *testing.T) {
 	}
 }
 
-// TestPromptSections verifies FileMemory contributes its snapshot as an untitled.
+// TestPromptSections verifies FileMemory contributes its snapshot as an untitled block.
 func TestPromptSections(t *testing.T) {
 	fm := newTestMemory(t)
 	fm.Add(targetMemory, "Test fact one")

@@ -72,20 +72,13 @@ const (
 
 const stderrTailCap = 2000
 
-// Description constants for the delegate tools.
 const (
 	delegateTaskDesc   = "Spawn a subagent to work on a task in the background. The result re-enters as this call's tool result when the subagent finishes."
 	delegateStatusDesc = "Check the status of running and completed subagent tasks."
 )
 
-// taskIDShape: task ids stay short session-local names ("task-1", "task-2") with one
-// counter per Delegate instance, so an id alone is unsafe to match on. The id shape
-// itself never changed (consumers match by it); the session is the disambiguator, in
-// the same payload.
-
-// statusSummaryClip bounds the prompt digest a status row carries (scope addition A4):
-// the FULL prompt never re-enters on a poll - a prompt-sized line every poll is the
-// payload bloat the finding names.
+// statusSummaryClip bounds the prompt digest a status row carries: the FULL prompt never
+// re-enters on a poll - a prompt-sized line every poll is the payload bloat.
 const statusSummaryClip = 120
 
 func (d *Delegate) Tools() map[string]core.Tool {
@@ -112,9 +105,8 @@ func (d *Delegate) Tools() map[string]core.Tool {
 		"required": []string{"prompt"},
 	}
 	return map[string]core.Tool{
-		// The machine-facing identities are the module.verb pairs (Q10, the v0.12 mount. A
-		// wakeless host (the CLI loop, a bare run) runs it loop-back instead: the blocking
-		// wait the one-shot shape always had.
+		// A wakeless host (the CLI loop, a bare run) runs the tool loop-back instead: the
+		// blocking wait the one-shot shape always had.
 		"delegate.task": {
 			Description: delegateTaskDesc,
 			Yield:       true,
@@ -139,7 +131,6 @@ func (d *Delegate) Tools() map[string]core.Tool {
 	}
 }
 
-// runDelegate dispatches the consolidated delegate tool.
 func (d *Delegate) runDelegate(ctx context.Context, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	switch action {
@@ -197,8 +188,8 @@ func workerStamp(taskID, omegaBin string) []string {
 	return env
 }
 
-// fenceShimDir returns the bin/shims dir sitting next to the omega binary, when.
-// Empty when it does not - an installed instance never fakes a fence.
+// fenceShimDir returns the bin/shims dir next to the omega binary, or "" -
+// an installed instance never fakes a fence.
 func fenceShimDir(omegaBin string) string {
 	if omegaBin == "" {
 		return ""
@@ -251,7 +242,7 @@ func (d *Delegate) runDelegateTask(ctx context.Context, args map[string]any) (st
 	if d.store != nil {
 		if sid, err := agent.NewSessionID(); err == nil {
 			label := "delegate:" + taskID
-			// Fresh context is the rule: the child's lineage rides delegate_parent, NEVER.
+			// Fresh context is the rule: the child's lineage rides delegate_parent, never parent_id.
 			var createErr error
 			if ds, ok := d.store.(agent.DelegateSessionStore); ok {
 				createErr = ds.CreateDelegateSession(ctx, sid, agent.SessionIDFromContext(ctx), label)
@@ -417,7 +408,6 @@ func (d *Delegate) findOmegaBinary() string {
 			return bin
 		}
 	}
-	// Fall back: relative to the current executable (./omega or./omega.exe).
 	exe, err := os.Executable()
 	if err != nil {
 		return ""

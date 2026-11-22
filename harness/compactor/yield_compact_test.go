@@ -100,7 +100,8 @@ func TestCompactAfterSettle(t *testing.T) {
 	}
 }
 
-// TestCompactPendingOtherSession: a pending call belonging to ANOTHER session does.
+// TestCompactPendingOtherSession: a pending call belonging to ANOTHER session does not
+// fence the compact.
 func TestCompactPendingOtherSession(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s2", CallID: "cOther", DispatchedAt: core.NowISO()}); err != nil {
@@ -116,7 +117,7 @@ func TestCompactPendingOtherSession(t *testing.T) {
 	}
 }
 
-// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending.
+// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending call.
 func TestCompactFullyPendingHistory(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()}); err != nil {

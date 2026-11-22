@@ -73,7 +73,7 @@ func TestTrustPathRootWins(t *testing.T) {
 	}
 }
 
-// TestBootstrapMigratesRootStore covers the (a) verify case: a home
+// TestBootstrapMigratesRootStore covers the verify case: a home
 // with only a root trust.yaml gets a config/ copy on boot, root stays
 // byte-identical, and the root file remains authoritative for reads.
 func TestBootstrapMigratesRootStore(t *testing.T) {
@@ -105,7 +105,7 @@ func TestBootstrapMigratesRootStore(t *testing.T) {
 	}
 }
 
-// TestBootstrapBothPresentRootWins covers the (b) verify case: both stores present
+// TestBootstrapBothPresentRootWins covers the verify case: both stores present
 // means nothing is copied, overwritten or deleted - the diverging config/ content stays
 // untouched and the root content stays untouched.
 func TestBootstrapBothPresentRootWins(t *testing.T) {
@@ -134,7 +134,6 @@ func TestBootstrapBothPresentRootWins(t *testing.T) {
 	}
 }
 
-// TestBootstrapConfigOnlyNoop covers the (c) verify case.
 func TestBootstrapConfigOnlyNoop(t *testing.T) {
 	home := t.TempDir()
 	cfgContent := []byte("trusted: [{path: /config, level: exact}]\n")
@@ -166,7 +165,7 @@ func TestBootstrapWithoutTrustFileNoop(t *testing.T) {
 	}
 }
 
-// TestResolveContextRootStore covers the (d) verify case end to end at the trust.
+// TestResolveContextRootStore covers the verify case end to end through the provider.
 func TestResolveContextRootStore(t *testing.T) {
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, "config"), 0o755); err != nil {

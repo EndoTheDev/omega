@@ -65,7 +65,7 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOpti
 	return sb.String(), true
 }
 
-// writeSections collects PromptSections from every contributing module and renders.
+// writeSections collects PromptSections from every contributing capsule and renders them.
 func (b *PromptBuilder) writeSections(sb *strings.Builder, opts core.PromptBuildOptions) {
 	if b.pctx == nil {
 		return

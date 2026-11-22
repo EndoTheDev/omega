@@ -9,8 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The per-subsystem model slot.
-
 // slotMessages builds a history whose tiny window forces one summarize call.
 func slotMessages() []core.Message {
 	return []core.Message{

@@ -33,7 +33,6 @@ func DBPath(home, name string) string {
 	return filepath.Join(Dir(home), name)
 }
 
-// Home resolves the omega home the way the module-level fallbacks do.
 func Home() string {
 	if home := os.Getenv("OMEGA_HOME"); home != "" {
 		return home
@@ -49,7 +48,7 @@ func Home() string {
 // when the process runs as a continuous agent (OMEGA_AGENT set, the spawn contract
 // every wake child and delegated child carries), the answer is the agent's own home so
 // its sessions store, notifications, and boards resolve under <agent>/data/ - full data
-// isolation, of. A malformed OMEGA_AGENT value can never escape agents/: invalid names
+// isolation. A malformed OMEGA_AGENT value can never escape agents/: invalid names
 // fail the resolution loudly (the caller surfaces the error), never silently fall back
 // - a hostile env var must not point the stores at the wrong home.
 func AgentHome() (string, error) {

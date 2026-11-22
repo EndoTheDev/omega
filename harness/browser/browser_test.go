@@ -64,7 +64,6 @@ func TestStoreRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStoreMemoryOnly: a pathless store answers as a zero state and swallows.
 func TestStoreMemoryOnly(t *testing.T) {
 	s, err := OpenStore("")
 	if err != nil {

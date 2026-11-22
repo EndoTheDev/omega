@@ -67,7 +67,7 @@ func TestDBGuardDenyShellBasename(t *testing.T) {
 	}
 }
 
-// TestDBGuardDenyShellResolvedPath: the basename can be hidden by indirection —.
+// TestDBGuardDenyShellResolvedPath: the basename can be hidden by indirection.
 func TestDBGuardDenyShellResolvedPath(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "omega.db")

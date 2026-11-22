@@ -8,7 +8,6 @@ import (
 // Plugin implements agent.Plugin for the memory seam.
 type Plugin struct{}
 
-// Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
 
 func (p *Plugin) Name() string { return "memory" }
@@ -45,5 +44,5 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 // NewPlugin creates a memory plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule (the config.yaml disabled: list may name it).
 func (p *Plugin) Toggleable() bool { return true }
