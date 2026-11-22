@@ -21,7 +21,6 @@ func NewPlugin(b *Bridge) *Plugin {
 	return &Plugin{bridge: b}
 }
 
-// NewPluginFromEnv loads MCP config from the environment and creates a plugin.
 func NewPluginFromEnv() (*Plugin, error) {
 	b, err := NewBridgeFromEnv()
 	if err != nil {
@@ -30,14 +29,12 @@ func NewPluginFromEnv() (*Plugin, error) {
 	return NewPlugin(b), nil
 }
 
-// activeBridge returns the live bridge under the read lock.
 func (p *Plugin) activeBridge() *Bridge {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.bridge
 }
 
-// swapBridge installs the fresh bridge and returns the replaced one.
 func (p *Plugin) swapBridge(b *Bridge) *Bridge {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -46,7 +43,6 @@ func (p *Plugin) swapBridge(b *Bridge) *Bridge {
 	return old
 }
 
-// Name returns the plugin name shown in the /extensions listing.
 func (p *Plugin) Name() string { return "mcp" }
 
 // Description implements agent.Describer.
@@ -56,10 +52,8 @@ func (p *Plugin) Description() string {
 
 func (p *Plugin) ConfigKey() string { return "" }
 
-// Provides lists the seams this plugin mounts.
 func (p *Plugin) Provides() []string { return []string{"tools"} }
 
-// Requires lists seams that must be mounted before this plugin.
 func (p *Plugin) Requires() []string { return nil }
 
 // MountWithAPI implements agent.APIPlugin. Server-qualified external tool names
@@ -99,12 +93,10 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.RegisterRuntimeTools(bridgeToolProvider{p: p})
 }
 
-// bridgeToolProvider adapts Plugin to the core.ToolMap shape.
 type bridgeToolProvider struct {
 	p *Plugin
 }
 
-// Tools returns the MCP-discovered tools as core.Tool values.
 func (b bridgeToolProvider) Tools() map[string]core.Tool {
 	active := b.p.activeBridge()
 	if active == nil {
@@ -125,8 +117,6 @@ func (b bridgeToolProvider) Tools() map[string]core.Tool {
 	return tools
 }
 
-// Toggleable marks the MCP bridge as a module capsule.
 func (p *Plugin) Toggleable() bool { return true }
 
-// Compile-time assertion that the plugin is a Plugin.
 var _ agent.Plugin = (*Plugin)(nil)

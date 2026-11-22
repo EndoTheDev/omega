@@ -1,15 +1,14 @@
 package mcp
 
-// cli.go: the mcp subcommand. The capsule registers the name at mount
-// (RegisterSubcommand, v0.12 phase D Q6: the module owns its argv), exactly like crons
-// and skills. Every write rides saveServerAndReload / deleteServerAndReload - the SAME
-// law POST /mcp/save and POST /mcp/delete ride (validate, node splice, atomic write,
-// bridge swap). The CLI adds no second writer: `omega mcp add` and a wire save land
-// byte-identically in mcp.yaml. Verb grammar is the crons card's: the bare word lists,
-// the name is the first positional of every write verb (Go's flag package stops at the
-// first non-flag argument, so a trailing name would swallow the flags), edit applies
-// only the flags actually passed, and a leading-dash first argument is a usage error -
-// never a guessed name.
+// cli.go: the mcp subcommand. The capsule registers the name at mount, exactly like
+// crons and skills. Every write rides saveServerAndReload / deleteServerAndReload - the
+// SAME law POST /mcp/save and POST /mcp/delete ride (validate, node splice, atomic
+// write, bridge swap). The CLI adds no second writer: `omega mcp add` and a wire save
+// land byte-identically in mcp.yaml. The bare word lists; the name is the first
+// positional of every write verb (Go's flag package stops at the first non-flag
+// argument, so a trailing name would swallow the flags), edit applies only the flags
+// actually passed, and a leading-dash first argument is a usage error - never a guessed
+// name.
 
 import (
 	"flag"
@@ -20,10 +19,8 @@ import (
 	"text/tabwriter"
 )
 
-// mcpSummary is the one-line entry the global `omega --help` module section shows.
 const mcpSummary = "mcp servers: list, add, edit, delete (see: omega mcp --help)"
 
-// mcpHelp is the module's own help: `omega mcp --help` prints it.
 const mcpHelp = `omega mcp - Model Context Protocol server entries in mcp.yaml
 
 Usage:
@@ -47,7 +44,6 @@ style survive the splice), atomically, then the live bridge swaps - no
 restart. Adding on a home with no mcp.yaml creates <home>/config/mcp.yaml.
 `
 
-// cmdMCP builds the subcommand handler.
 func cmdMCP(p *Plugin) func([]string) error {
 	return func(args []string) error {
 		if len(args) == 0 {
@@ -76,7 +72,6 @@ func cmdMCP(p *Plugin) func([]string) error {
 	}
 }
 
-// mcpList renders the server table from the LIVE bridge.
 func mcpList(p *Plugin, w io.Writer) error {
 	rep := StatusReport{Source: "none", Servers: []ServerStatus{}}
 	if active := p.activeBridge(); active != nil {
@@ -113,7 +108,6 @@ func mcpList(p *Plugin, w io.Writer) error {
 	return nil
 }
 
-// listValue collects a repeatable string flag (--arg, --env, --header).
 type listValue []string
 
 func (l *listValue) String() string { return strings.Join(*l, ",") }
@@ -123,7 +117,6 @@ func (l *listValue) Set(v string) error {
 	return nil
 }
 
-// mcpFlags is the parsed flag set of add/edit.
 type mcpFlags struct {
 	command string
 	args    listValue
@@ -150,7 +143,6 @@ func parseMCPArgs(args []string) (*mcpFlags, []string, *flag.FlagSet, error) {
 	return f, fs.Args(), fs, nil
 }
 
-// serverName peels the one positional a write verb needs.
 func serverName(verb string, args []string) (string, []string, error) {
 	if len(args) == 0 {
 		return "", nil, fmt.Errorf("usage: omega mcp %s <name> [flags] (omega mcp --help lists them)", verb)
@@ -179,7 +171,6 @@ func splitPairs(flagName, sep string, values []string) (map[string]string, error
 	return out, nil
 }
 
-// mcpAdd creates one entry.
 func mcpAdd(p *Plugin, args []string) error {
 	name, flagArgs, err := serverName("add", args)
 	if err != nil {
@@ -302,7 +293,6 @@ func mcpEdit(p *Plugin, args []string) error {
 	return nil
 }
 
-// mcpDelete removes one entry.
 func mcpDelete(p *Plugin, args []string) error {
 	name, rest, err := serverName("delete", args)
 	if err != nil {

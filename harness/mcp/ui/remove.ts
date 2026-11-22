@@ -1,5 +1,3 @@
-// omega webui: the MCP tab's delete helper (POST /mcp/delete).
-//
 // The route answers the FRESH server listing after the bridge swap, so the panel
 // re-renders from server truth and never from its own guess - the reload/toggle helpers'
 // contract. A refused delete throws; the caller lands it on the panel's error line.

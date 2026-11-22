@@ -3,7 +3,6 @@
     ref="rootEl"
     class="mcp-list"
     :class="{ narrow: narrow }">
-    <!-- the toolbar row, the FilesTab pattern. -->
     <TabBand title="MCP">
       <div class="band-search">
         <SearchInput
@@ -32,7 +31,6 @@
       class="panel-status">
       loading
     </p>
-    <!-- the empty state - the standard pattern, never a blank pane. -->
     <div
       v-else-if="rows.length === 0 && !query.trim()"
       class="mcp-empty">
@@ -48,7 +46,6 @@
         class="panel-status mcp-none-matches">
         no matching servers
       </p>
-      <!-- the server rows, THE ROW LAW. -->
       <ul class="mcp-rows">
         <li
           v-for="s in visibleRows"
@@ -76,7 +73,6 @@
                 </span>
               </span>
             </div>
-            <!-- the toggle is the shared TogglePill. -->
             <TogglePill
               class="reg-row-ctrl"
               :state="serverEnabled(s)"
@@ -165,18 +161,10 @@
   } from "./serverRows";
   import { filterMcpServers } from "./search";
 
-  // Module-owned UI: the inspector's MCP tab content,
-  // sourced from GET /mcp/servers and shipped by the mcp module itself
-  // (harness/mcp/ui/) through the module-UI composition - the same
-  // shape the tools/skills/cron panels ride. The write paths
-  // + ): the band refresh POSTs /mcp/reload; the
-  // per-row toggle POSTs /mcp/toggle - each re-fetches the listing
-  //   through its helper, and a failure lands on the panel's error line
-  //   with the prior rows standing (server truth never fakes a swap).
-  // Self-contained wiring (module UI carries its own wiring, the
-  // narrow.ts copy law). The wire's `source` field is read nowhere in
-  // the panel since (the from-mcp.yaml echo died with
-  // its caption) - the wire keeps the field for the helpers' contracts.
+  // Module-owned UI: the inspector's MCP tab content, sourced from GET /mcp/servers and
+  // shipped by the mcp module itself (harness/mcp/ui/) through the module-UI composition.
+  // Self-contained wiring (module UI carries its own wiring, the narrow.ts copy law). The
+  // wire's `source` field is unread here; it stays for the helpers' contracts.
   const rows = ref<McpServerWire[]>(serverRows({}));
   const loaded = ref(false);
   const error = ref("");
@@ -195,8 +183,8 @@
     rows.value = serverRows(rep);
   }
 
-  // the per-server toggle ---------------------------- ONE click commits. busy holds
-  // the committing row's name so a stacked double-click cannot overlap writes.
+  // the per-server toggle POSTs /mcp/toggle: ONE click commits. busy holds the
+  // committing row's name so a stacked double-click cannot overlap writes.
   const busy = ref<string | null>(null);
 
   // the row detail (the menu's Open) is one at a time; `confirming` is the delete arm
@@ -249,7 +237,6 @@
     }
   }
 
-  // the commit: POST the toggle chain (toggle.ts), then re-render from the fresh.
   async function apply(s: McpServerWire) {
     const target = !serverEnabled(s);
     busy.value = s.name;
@@ -285,7 +272,6 @@
     }
   }
 
-  // narrow adaptation, the module-UI recipe.
   const rootEl = ref<HTMLElement | null>(null);
   const narrow = ref(false);
   let resizeObs: ResizeObserver | null = null;
@@ -362,7 +348,6 @@
     font-size: 11px;
     opacity: 0.55;
   }
-  /* the server rows: THE ROW LAW. */
   .mcp-rows {
     list-style: none;
     margin: 0;
@@ -420,7 +405,6 @@
   .mcp-dot-off {
     background: var(--text-dim);
   }
-  /* the toggle has no local CSS. */
   .mcp-target {
     margin: 0;
     font-size: 10.5px;

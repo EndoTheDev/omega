@@ -6,7 +6,6 @@ import (
 	"testing"
 )
 
-// TestLoadConfigEnvVar verifies MCP_SERVERS env var takes priority over files.
 func TestLoadConfigEnvVar(t *testing.T) {
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"envserver","command":"envcmd"}]}`)
 	cfg, _, err := loadConfig()
@@ -18,7 +17,6 @@ func TestLoadConfigEnvVar(t *testing.T) {
 	}
 }
 
-// TestLoadConfigYAMLFile verifies mcp.yaml in OMEGA_HOME is used when the env var is.
 func TestLoadConfigYAMLFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -35,7 +33,6 @@ func TestLoadConfigYAMLFile(t *testing.T) {
 	}
 }
 
-// TestLoadConfigJSONFile verifies mcp.json is used when no mcp.yaml exists.
 func TestLoadConfigJSONFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -52,7 +49,6 @@ func TestLoadConfigJSONFile(t *testing.T) {
 	}
 }
 
-// TestLoadConfigEmpty verifies an empty config (no env var, no files) is returned.
 func TestLoadConfigEmpty(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -66,7 +62,6 @@ func TestLoadConfigEmpty(t *testing.T) {
 	}
 }
 
-// TestLoadConfigYAMLInConfigSubdir verifies mcp.yaml in <home>/config/ is used when.
 func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -86,7 +81,6 @@ func TestLoadConfigYAMLInConfigSubdir(t *testing.T) {
 	}
 }
 
-// TestLoadConfigRootWinsOverSubdir verifies a root mcp.yaml shadows one in config/.
 func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -110,7 +104,6 @@ func TestLoadConfigRootWinsOverSubdir(t *testing.T) {
 	}
 }
 
-// TestLoadConfigInvalidYAML verifies malformed config surfaces a parse error.
 func TestLoadConfigInvalidYAML(t *testing.T) {
 	t.Setenv("MCP_SERVERS", "{not yaml or json")
 	if _, _, err := loadConfig(); err == nil {
@@ -118,7 +111,6 @@ func TestLoadConfigInvalidYAML(t *testing.T) {
 	}
 }
 
-// TestNewBridgeFromEnvEmptyConfig verifies NewBridgeFromEnv with an empty config.
 func TestNewBridgeFromEnvEmptyConfig(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -141,7 +133,6 @@ func TestNewBridgeFromEnvBadConfig(t *testing.T) {
 	}
 }
 
-// TestNewBridgeFromEnvToolDiscovery verifies env-configured tools end up.
 func TestNewBridgeFromEnvToolDiscovery(t *testing.T) {
 	// ponytail: connect has no injection point for test conns, so this exercises. The
 	// bridge must still be usable and the failure must be non-fatal.

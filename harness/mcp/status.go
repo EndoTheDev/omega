@@ -1,4 +1,3 @@
-// Status: the read-only inventory the webui MCP dock tab lists plus the reload write.
 package mcp
 
 import (
@@ -12,7 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ServerStatus is the wire view of one configured MCP server.
 type ServerStatus struct {
 	Name string `json:"name"`
 	// Transport names the config's transport: "http" (a url entry), "stdio" (a command
@@ -111,9 +109,9 @@ func (p *Plugin) reload() (StatusReport, error) {
 	return p.reloadLocked()
 }
 
-// setServerEnabledAndReload performs one toggle whole (v0.14.1 audit): the flag write
-// and the bridge swap under ONE reloadMu hold, so two quick toggles can no longer race
-// the read-parse-marshal-write of mcp.yaml and lose the first write.
+// setServerEnabledAndReload performs one toggle whole: the flag write and the bridge
+// swap under ONE reloadMu hold, so two quick toggles cannot race the
+// read-parse-marshal-write of mcp.yaml and lose the first write.
 func (p *Plugin) setServerEnabledAndReload(path, name string, enabled bool) (rep StatusReport, writeErr, reloadErr error) {
 	p.reloadMu.Lock()
 	defer p.reloadMu.Unlock()
@@ -149,13 +147,11 @@ type toggleRequest struct {
 	Enabled bool   `json:"enabled"`
 }
 
-// handleToggle serves POST /mcp/toggle. The wire responds with the fresh StatusReport
-// (everything the tab needs to re-render, no second fetch required by the route
-// contract - status.go:171's promise the v0.14.1 review lens collected:
-// toggle.ts/reload.ts consume this body, the follow-up GET died). Refusals (400, the
-// panel's error line): MCP_SERVERS - the env var is not a file, there is nowhere to
-// persist; "none" - nothing configured; mcp.json - JSON entries stay hand-edited,
-// writing YAML semantics into JSON would corrupt them.
+// handleToggle serves POST /mcp/toggle. The wire responds with the fresh StatusReport,
+// everything the tab needs to re-render, so toggle.ts/reload.ts need no follow-up GET.
+// Refusals (400, the panel's error line): MCP_SERVERS - the env var is not a file, there
+// is nowhere to persist; "none" - nothing configured; mcp.json - JSON entries stay
+// hand-edited, writing YAML semantics into JSON would corrupt them.
 func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 	var req toggleRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" {
@@ -180,7 +176,6 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 			http.StatusBadRequest)
 		return
 	}
-	// toggle+reload under one reloadMu.
 	rep, writeErr, reloadErr := p.setServerEnabledAndReload(path, req.Name, req.Enabled)
 	if writeErr != nil {
 		http.Error(w, "mcp toggle: "+writeErr.Error(), http.StatusBadRequest)
@@ -196,7 +191,6 @@ func (p *Plugin) handleToggle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// setServerEnabled flips the per-server `enabled:` flag on the named server entry.
 func setServerEnabled(path, name string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -225,7 +219,6 @@ func setServerEnabled(path, name string, enabled bool) error {
 		return fmt.Errorf("parse %s: no servers: array", path)
 	}
 	flag := enabledValue(enabled)
-	// v0.14.1 audit NOTE-tier: with duplicate names the flag previously landed.
 	matches := 0
 	for _, item := range servers.Content {
 		if item.Kind == yaml.MappingNode && namesServer(item, name) {
@@ -242,7 +235,6 @@ func setServerEnabled(path, name string, enabled bool) error {
 		if !namesServer(item, name) {
 			continue
 		}
-		// the named entry: replace an existing `enabled:` scalar in place, or append.
 		for i := 0; i+1 < len(item.Content); i += 2 {
 			key, val := item.Content[i], item.Content[i+1]
 			if key.Kind == yaml.ScalarNode && key.Value == "enabled" {
@@ -259,7 +251,6 @@ func setServerEnabled(path, name string, enabled bool) error {
 	return fmt.Errorf("parse %s: no server named %s", path, name)
 }
 
-// namesServer reports whether a servers.
 func namesServer(item *yaml.Node, name string) bool {
 	for i := 0; i+1 < len(item.Content); i += 2 {
 		key, val := item.Content[i], item.Content[i+1]
@@ -271,7 +262,6 @@ func namesServer(item *yaml.Node, name string) bool {
 	return false
 }
 
-// enabledValue renders the flag the way yaml node scalars carry bools.
 func enabledValue(enabled bool) string {
 	if enabled {
 		return "true"
@@ -279,12 +269,11 @@ func enabledValue(enabled bool) string {
 	return "false"
 }
 
-// writeYAML marshals the whole document node and replaces the file. The write is atomic
-// (the same tmp+rename class writeDisabled/saveCronState run, v0.14.1 audit): a crash
-// mid-write previously truncated the live mcp.yaml and silently dropped every
-// configured server - now the tmp dies alone and the old file survives the rename miss.
-// The write is the caller's responsibility to surface: a parse or lookup failure never
-// reaches this point (the file stays untouched).
+// writeYAML marshals the whole document node and replaces the file atomically: a crash
+// mid-write must never truncate the live mcp.yaml and silently drop every configured
+// server - the tmp dies alone and the old file survives the rename miss. The write is
+// the caller's responsibility to surface: a parse or lookup failure never reaches this
+// point (the file stays untouched).
 func writeYAML(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {

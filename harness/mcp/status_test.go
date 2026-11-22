@@ -10,7 +10,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountPlugin mounts the plugin the api way and returns the live Context.
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	t.Helper()
 	ctx := &core.Context{}
@@ -20,7 +19,6 @@ func mountPlugin(t *testing.T, p *Plugin) *core.Context {
 	return ctx
 }
 
-// serveStatusRoute finds the module's GET /mcp/servers route on the context.
 func serveStatusRoute(t *testing.T, ctx *core.Context) *httptest.ResponseRecorder {
 	t.Helper()
 	for _, rt := range ctx.ModuleRoutes {
@@ -62,7 +60,6 @@ func TestStatusRouteNilBridge(t *testing.T) {
 	}
 }
 
-// TestStatusRouteEmptyBridge verifies an existing-but-empty bridge serves the empty.
 func TestStatusRouteEmptyBridge(t *testing.T) {
 	b, err := NewBridge(nil)
 	if err != nil {
@@ -85,7 +82,6 @@ func TestStatusRouteEmptyBridge(t *testing.T) {
 	}
 }
 
-// TestStatusReportConnectionTruth builds a bridge over three shapes — a live HTTP MCP.
 func TestStatusReportConnectionTruth(t *testing.T) {
 	srv := mockMCPServer(t, "test-session")
 	cfg := &mcpConfig{Servers: []serverConfig{
@@ -130,7 +126,6 @@ func TestStatusReportConnectionTruth(t *testing.T) {
 	}
 }
 
-// TestStatusRouteWithLiveServer verifies the full env path.
 func TestStatusRouteWithLiveServer(t *testing.T) {
 	srv := mockMCPServer(t, "test-session")
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"proof","url":"`+srv.URL+`"}]}`)

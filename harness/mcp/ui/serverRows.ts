@@ -1,4 +1,3 @@
-// omega webui: the MCP tab's row model.
 export interface McpServerWire {
   name: string;
   transport?: string;
@@ -30,7 +29,6 @@ export function serverEnabled(s: McpServerWire): boolean {
   return s.enabled !== false;
 }
 
-// the per-server truth line, in priority order: a disabled server says exactly.
 export function statusLabel(s: McpServerWire): string {
   if (!serverEnabled(s)) return "disabled";
   if (s.error && s.error.length > 0) return s.error;
@@ -44,8 +42,6 @@ export function statusDot(s: McpServerWire): "ok" | "err" | "off" {
   return s.connected ? "ok" : "off";
 }
 
-// one panel row per configured server, config order kept (the config file's order IS
-// the inventory's order), tools sorted as the wire delivers them.
 export function serverRows(rep: McpStatusWire): McpServerWire[] {
   return Array.isArray(rep.servers) ? rep.servers : [];
 }
