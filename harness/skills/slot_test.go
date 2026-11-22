@@ -11,12 +11,10 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The curator's model slot.
-
 const slotMergeScript = `{"merges":[{"source":"narrow","into":"umbrella","reason":"same job, one umbrella"}],"distills":[]}`
 
-// slotFixture builds a skills dir with the merge pair and the default provider.
-// The instance fake carries the merge script; the base fake never proposes one.
+// slotFixture's instance fake carries the merge script; the base fake never proposes
+// one.
 func slotFixture(t *testing.T) (*SkillsProvider, agent.Provider) {
 	t.Helper()
 	dir := t.TempDir()
@@ -45,7 +43,6 @@ func slotFixture(t *testing.T) (*SkillsProvider, agent.Provider) {
 	return sp, base
 }
 
-// TestCuratorSlotRoutesInstance: the slot "big:x-model" serves the proposal consult.
 func TestCuratorSlotRoutesInstance(t *testing.T) {
 	sp, prov := slotFixture(t)
 	rep, repErr := sp.RunCurator(context.Background(), prov, "big:x-model")

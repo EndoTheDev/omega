@@ -1,6 +1,5 @@
 // omega webui: the skills tab's fetch chain.
 
-// the loaded skill inventory, from GET /skills.
 export interface SkillInfo {
   name: string;
   description: string;

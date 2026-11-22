@@ -1,10 +1,5 @@
 package skills
 
-// The skills content-view face's self-check. The wire contract: one skill's
-// name+description+body with the truncation flag, the loud refusals (illegal names -
-// traversal, hidden, untrimmed), a 404 for an unknown name, and the read-only posture
-// (405 on POST).
-
 import (
 	"net/http"
 	httptest2 "net/http/httptest"
@@ -14,7 +9,6 @@ import (
 	"testing"
 )
 
-// skillsRoutes builds the capsule Routes over a real provider scanning a throwaway.
 func skillsRoutes(t *testing.T) (*Routes, string) {
 	t.Helper()
 	dir := t.TempDir()

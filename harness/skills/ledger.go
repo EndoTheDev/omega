@@ -17,7 +17,6 @@ import (
 // Full-folder copies ride the sidecar backups (keep 5) - the ledger stays small, the
 // restores stay byte-exact.
 
-// Ledger actions.
 const (
 	LedgerArchive  = "archive"
 	LedgerMerge    = "merge"
@@ -26,7 +25,6 @@ const (
 	LedgerRollback = "rollback"
 )
 
-// LedgerEntry is one audit row.
 type LedgerEntry struct {
 	ID     string `json:"id"`
 	TS     string `json:"ts"`
@@ -37,7 +35,6 @@ type LedgerEntry struct {
 	Files    []LedgerFile   `json:"files"`
 }
 
-// LedgerFile is one touched SKILL.md with its before/after bytes.
 type LedgerFile struct {
 	Path   string `json:"path"`
 	Before string `json:"before"`
@@ -49,7 +46,6 @@ const (
 	backupKeep       = 5
 )
 
-// Curator state paths, all under <skillsdir>/.curator.
 const (
 	curatorDirName    = ".curator"
 	ledgerFileName    = "ledger.jsonl"
@@ -58,7 +54,6 @@ const (
 	legacyBackupsName = ".curator_backups"
 )
 
-// curatorRoot returns the curator's state root (<skillsdir>/.curator) and creates it.
 func (sp *SkillsProvider) curatorRoot() (string, error) {
 	if sp.Dir == "" {
 		return "", fmt.Errorf("skills directory not configured")
@@ -71,7 +66,7 @@ func (sp *SkillsProvider) curatorRoot() (string, error) {
 	return root, nil
 }
 
-// migrateLegacyCuratorState adopts the pre- layout. The call is best-effort and
+// migrateLegacyCuratorState adopts the pre-.curator layout. The call is best-effort and
 // idempotent. A home that already holds the new path keeps it and the stale legacy path
 // is LEFT on disk - nothing is merged, because the on-disk copy is the record; a rename
 // that fails (permissions, a lock) never blocks the ledger write.
@@ -89,7 +84,6 @@ func migrateLegacyCuratorState(dir, root string) {
 	move(filepath.Join(dir, legacyBackupsName), filepath.Join(root, backupsDirName))
 }
 
-// ledgerFile returns the ledger path for the provider's write home.
 func (sp *SkillsProvider) ledgerFile() (string, error) {
 	root, err := sp.curatorRoot()
 	if err != nil {
@@ -98,7 +92,6 @@ func (sp *SkillsProvider) ledgerFile() (string, error) {
 	return filepath.Join(root, ledgerFileName), nil
 }
 
-// ledgerMu serializes ledger appends and rollbacks.
 var ledgerMu sync.Mutex
 
 // readLedger returns every ledger row, oldest first.
@@ -179,7 +172,6 @@ func writeLedger(sp *SkillsProvider, entries []LedgerEntry) error {
 	return os.WriteFile(path, []byte(sb.String()), 0o644)
 }
 
-// backupDir returns the sidecar backup root.
 func (sp *SkillsProvider) backupDir() (string, error) {
 	root, err := sp.curatorRoot()
 	if err != nil {
@@ -188,7 +180,6 @@ func (sp *SkillsProvider) backupDir() (string, error) {
 	return filepath.Join(root, backupsDirName), nil
 }
 
-// archiveDir returns the retired-skills root.
 func (sp *SkillsProvider) archiveDir() (string, error) {
 	if sp.Dir == "" {
 		return "", fmt.Errorf("skills directory not configured")
@@ -196,8 +187,6 @@ func (sp *SkillsProvider) archiveDir() (string, error) {
 	return filepath.Join(sp.Dir, ".archive"), nil
 }
 
-// BackupSkill copies a skill folder into.curator/backups by NAME in the own skills dir
-// (the curator's callers.
 func (sp *SkillsProvider) BackupSkill(name, action string) (string, error) {
 	root, err := sp.backupDir()
 	if err != nil {
@@ -206,7 +195,7 @@ func (sp *SkillsProvider) BackupSkill(name, action string) (string, error) {
 	return sp.backupFrom(filepath.Join(sp.Dir, name), root, name, action)
 }
 
-// backupFrom copies one skill folder (src, the whole tree. The source is the caller's
+// backupFrom copies one skill folder (src) whole-tree. The source is the caller's
 // resolved folder so a shared-dir winner is backed up from where it lives.
 func (sp *SkillsProvider) backupFrom(src, root, name, action string) (string, error) {
 	dst := filepath.Join(root, fmt.Sprintf("%s-%s-%s", time.Now().UTC().Format("20060102-150405"), action, name))
@@ -217,7 +206,6 @@ func (sp *SkillsProvider) backupFrom(src, root, name, action string) (string, er
 	return dst, nil
 }
 
-// pruneBackups keeps the newest backupKeep backup dirs, oldest first out.
 func (sp *SkillsProvider) pruneBackups(root string) {
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -267,7 +255,6 @@ func copyDir(src, dst string) error {
 	return nil
 }
 
-// Rollback reverts one ledger row: the single-edit revert.
 func (sp *SkillsProvider) Rollback(id string) (string, error) {
 	ledgerMu.Lock()
 	defer ledgerMu.Unlock()
@@ -363,7 +350,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 		writeUsageLocked(sp.Dir, m)
 		usageMu.Unlock()
 	}
-	// Archive-folder rollback: the archived folder vanishes above, so the ledger.
 	// Merge/distill leave both files restored from `before` - byte-exact by construction.
 	undo := LedgerEntry{
 		ID:     randID(),
@@ -387,7 +373,6 @@ func (sp *SkillsProvider) Rollback(id string) (string, error) {
 	return report.String(), nil
 }
 
-// randID is the shared hex id helper (ledger rows and rollback rows).
 func randID() string {
 	var raw [6]byte
 	_, _ = rand.Read(raw[:])

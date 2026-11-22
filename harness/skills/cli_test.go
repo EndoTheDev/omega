@@ -1,7 +1,5 @@
 package skills
 
-// cli_test.go: the `omega skills` subcommand's self-check.
-
 import (
 	"bytes"
 	"encoding/json"
@@ -11,7 +9,6 @@ import (
 	"testing"
 )
 
-// runCLI drives one argv through the dispatcher with captured stdout and a scripted.
 func runCLI(t *testing.T, sp *SkillsProvider, args []string, stdin string) (string, error) {
 	t.Helper()
 	var out bytes.Buffer

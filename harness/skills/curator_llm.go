@@ -15,7 +15,6 @@ import (
 // the client's own (llm/RetryHTTP), failures surface to the caller and the pass moves
 // on.
 
-// complete runs ONE collect-the-text completion over the provider.
 func complete(ctx context.Context, prov agent.Provider, prompt string) (string, error) {
 	if prov == nil {
 		return "", fmt.Errorf("no provider")
@@ -34,7 +33,6 @@ func complete(ctx context.Context, prov agent.Provider, prompt string) (string, 
 	return sb.String(), nil
 }
 
-// extractJSON pulls the first JSON object out of a model answer that may wrap it.
 func extractJSON(s string) string {
 	if i := strings.Index(s, "{"); i >= 0 {
 		if start := strings.Index(s, "```"); start >= 0 && start <= i {
@@ -49,7 +47,6 @@ func extractJSON(s string) string {
 	return s
 }
 
-// absorbedSection is the drafted consolidation text for one merge.
 type absorbedSection struct {
 	title string
 	body  string
@@ -83,8 +80,6 @@ func (sp *SkillsProvider) draftAbsorption(ctx context.Context, prov agent.Provid
 	return absorbedSection{title: d.Title, body: d.Body}, nil
 }
 
-// draftDistill asks for ONE call: rewrite the oversized body tighter,
-// same procedures, no loss of load-bearing facts.
 func (sp *SkillsProvider) draftDistill(ctx context.Context, prov agent.Provider, name, body string) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("You are the skills curator. The skill below exceeds the body-size floor. Rewrite its body tighter: same procedures, preserved commands and exact identifiers, cut narration and repetition. No frontmatter - body text only.\n\n")
@@ -93,7 +88,6 @@ func (sp *SkillsProvider) draftDistill(ctx context.Context, prov agent.Provider,
 	return complete(ctx, prov, sb.String())
 }
 
-// jsonUnmarshalStrict is extractJSON's pair: decode or fail loudly.
 func jsonUnmarshalStrict(data string, v any) error {
 	if s := strings.TrimSpace(data); s == "" || s[0] != '{' {
 		return fmt.Errorf("answer carried no JSON object")

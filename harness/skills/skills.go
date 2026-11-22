@@ -15,11 +15,10 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// SkillsProvider implements core.SkillsProvider by scanning a directory.
 type SkillsProvider struct {
 	Dir       string
 	SharedDir string
-	// Disabled is the config.yaml disabled.skills fold (v0.14.1): the names a prompt build
+	// Disabled is the config.yaml disabled.skills fold: the names a prompt build
 	// never advertises.
 	Disabled []string
 
@@ -32,28 +31,24 @@ type SkillsProvider struct {
 	disableMu sync.RWMutex
 }
 
-// SetCuratorModel swaps the curator's consult slot live.
 func (sp *SkillsProvider) SetCuratorModel(model string) {
 	sp.disableMu.Lock()
 	defer sp.disableMu.Unlock()
 	sp.curatorModel = model
 }
 
-// curatorSlot returns the live consult slot snapshot.
 func (sp *SkillsProvider) curatorSlot() string {
 	sp.disableMu.RLock()
 	defer sp.disableMu.RUnlock()
 	return sp.curatorModel
 }
 
-// SetDisabled swaps the disable list live.
 func (sp *SkillsProvider) SetDisabled(names []string) {
 	sp.disableMu.Lock()
 	defer sp.disableMu.Unlock()
 	sp.Disabled = names
 }
 
-// SetProviderFn installs the live provider reader (the plugin passes api.Provider).
 func (sp *SkillsProvider) SetProviderFn(fn func() agent.Provider) { sp.providerFn = fn }
 
 // provider returns the consult provider for one pass, nil-safe.
@@ -71,7 +66,6 @@ func (sp *SkillsProvider) disabledNames() []string {
 	return sp.Disabled
 }
 
-// scanDirs returns the ordered directory list to scan.
 func (sp *SkillsProvider) scanDirs(dir string) []string {
 	var dirs []string
 	if sp.SharedDir != "" {
@@ -107,7 +101,6 @@ func (sp *SkillsProvider) LoadSkills(dir string) ([]Skill, error) {
 			out = append(out, s)
 		}
 	}
-	// The explicit allowlist (0.17.3 make-over).
 	if sp.AllowSet {
 		allowed := make(map[string]bool, len(sp.Allow))
 		for _, name := range sp.Allow {
@@ -163,10 +156,8 @@ func (sp *SkillsProvider) SkillRead(name string) (description, content string, e
 // promptSectionOrder places the Available Skills section behind the memory snapshot.
 const promptSectionOrder = 20
 
-// PromptSections renders the Available Skills section.
 func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
 	skills, _ := sp.LoadSkills("")
-	// The disabled.skills fold (v0.14.1).
 	if off := sp.disabledNames(); len(off) > 0 {
 		offSet := make(map[string]bool, len(off))
 		for _, n := range off {
@@ -193,10 +184,8 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-// skillsVerbs is the skills verb set, the one list the batch-shaped consumers.
 var skillsVerbs = []string{"read", "write", "update", "curate"}
 
-// prop assembles one typed schema property.
 func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
@@ -212,7 +201,6 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// Tools returns the dotted skills wire: one tool per verb.
 func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"skills.read": {
@@ -250,7 +238,6 @@ func (sp *SkillsProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// runCurate is skills.curate's Run.
 func (sp *SkillsProvider) runCurate(ctx context.Context, args map[string]any) (string, error) {
 	out, err := sp.HandleCommand(ctx, "/curator", strArg(args["verb"]))
 	if out == "" && err == nil {
@@ -366,7 +353,6 @@ func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (s
 	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
 }
 
-// writePatched writes the patched content back and re-parses it through the loader.
 func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("write SKILL.md: %w", err)
@@ -379,7 +365,7 @@ func (sp *SkillsProvider) writePatched(path, content string) (string, error) {
 
 // ReadSkill is the single-content read seam.
 func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
-	// The explicit allowlist (0.17.3 make-over) is the agent's whole registry.
+	// The explicit allowlist is the agent's whole registry.
 	if sp.AllowSet && !sp.allowed(name) {
 		return Skill{}, fmt.Errorf("skill %q is not enabled for this agent (its allowlist names %s)", name, sp.allowList())
 	}
@@ -396,7 +382,6 @@ func (sp *SkillsProvider) ReadSkill(name string) (Skill, error) {
 	return s, nil
 }
 
-// allowed reports whether the explicit allowlist names a skill.
 func (sp *SkillsProvider) allowed(name string) bool {
 	for _, a := range sp.Allow {
 		if a == name {
@@ -406,7 +391,6 @@ func (sp *SkillsProvider) allowed(name string) bool {
 	return false
 }
 
-// allowList renders the allowlist for a refusal message.
 func (sp *SkillsProvider) allowList() string {
 	if len(sp.Allow) == 0 {
 		return "none"
@@ -434,13 +418,11 @@ func (sp *SkillsProvider) resolveSkillFile(name string) (string, error) {
 	return "", fmt.Errorf("skill %q not found. Available: %s", name, strings.Join(names, ", "))
 }
 
-// strArg is the plain string read every action does on an untyped tool-args map.
 func strArg(v any) string {
 	s, _ := v.(string)
 	return s
 }
 
-// runRead is the read-action handler.
 func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (string, error) {
 	name, _ := args["name"].(string)
 	if name == "" {
@@ -475,7 +457,6 @@ func (sp *SkillsProvider) runRead(ctx context.Context, args map[string]any) (str
 	return "", fmt.Errorf("skill %q could not be read", name)
 }
 
-// HandleCommand processes the /skills and /curator slash commands.
 func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) (string, error) {
 	switch name {
 	case "/skills":
@@ -486,7 +467,6 @@ func (sp *SkillsProvider) HandleCommand(ctx context.Context, name, args string) 
 	return "", fmt.Errorf("unknown command: %s", name)
 }
 
-// handleSkillsCommand is the /skills listing.
 func (sp *SkillsProvider) handleSkillsCommand() (string, error) {
 	skills, err := sp.LoadSkills("")
 	if err != nil {
@@ -510,7 +490,6 @@ func (sp *SkillsProvider) handleSkillsCommand() (string, error) {
 	return sb.String(), nil
 }
 
-// handleCuratorCommand is /curator.
 func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string) (string, error) {
 	verb, rest := strings.TrimSpace(args), ""
 	if i := strings.IndexAny(verb, " 	"); i >= 0 {
@@ -557,7 +536,6 @@ func (sp *SkillsProvider) handleCuratorCommand(ctx context.Context, args string)
 	}
 }
 
-// formatReport renders one pass's outcome as the report text.
 func formatReport(rep CuratorReport) string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "curator pass: %d marked stale, %d reactivated, %d archived, %d merges, %d distills",
@@ -576,7 +554,6 @@ func formatReport(rep CuratorReport) string {
 	return sb.String()
 }
 
-// Commands returns the slash command definitions.
 func (sp *SkillsProvider) Commands() []core.ExtensionCommand {
 	return []core.ExtensionCommand{
 		{Name: "/skills", Description: "List loaded skills with name and description"},
@@ -656,7 +633,6 @@ func fileExists(path string) bool {
 	return err == nil
 }
 
-// loadSkill reads a single SKILL.md file and parses its YAML frontmatter.
 func loadSkill(path string) (Skill, error) {
 	f, err := os.Open(path)
 	if err != nil {

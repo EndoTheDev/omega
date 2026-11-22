@@ -41,12 +41,10 @@ func writeHandSkill(t *testing.T, dir, name, body string) {
 	}
 }
 
-// daysAgo is an RFC3339 stamp N days ago.
 func daysAgo(n int) string {
 	return time.Now().UTC().Add(-time.Duration(n) * 24 * time.Hour).Format(time.RFC3339)
 }
 
-// writeUsageAt seeds the usage state file with exact records.
 func writeUsageAt(dir string, m map[string]UsageRecord) error {
 	if err := os.MkdirAll(filepath.Join(dir, ".curator"), 0o755); err != nil {
 		return err
@@ -58,7 +56,6 @@ func writeUsageAt(dir string, m map[string]UsageRecord) error {
 	return os.WriteFile(usageFile(dir), data, 0o644)
 }
 
-// chat is one scripted completion: a text answer.
 func chat(text string) []core.ProviderStreamEvent {
 	return []core.ProviderStreamEvent{
 		core.ResponseChunk{Type: "response", Content: text},
@@ -66,10 +63,6 @@ func chat(text string) []core.ProviderStreamEvent {
 	}
 }
 
-// TestCuratorStalenessArchives: the deterministic pass - a 40d-idle skill lands
-// in.archive with backup + ledger row; 20d-idle skills are only marked stale
-// (never-used ones included: absence of usage inside the stale window still ages them
-// out); fresh skills stay.
 func TestCuratorStalenessArchives(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -126,7 +119,6 @@ func TestCuratorStalenessArchives(t *testing.T) {
 	}
 }
 
-// TestCuratorStaleListSurfaces: StaleSkillNames reflects the state file.
 func TestCuratorStaleListSurfaces(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -142,9 +134,6 @@ func TestCuratorStaleListSurfaces(t *testing.T) {
 	}
 }
 
-// TestCuratorMergeByteExactRollback: an LLM merge proposal absorbs a source into an
-// umbrella - the target gains the section, the source is archived, one ledger row
-// covers both files; the rollback restores both byte-exact and un-archives the source.
 func TestCuratorMergeByteExactRollback(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -221,8 +210,6 @@ func TestCuratorMergeByteExactRollback(t *testing.T) {
 	}
 }
 
-// TestCuratorArchiveRollbackByteExact: the staleness archive undoes
-// byte-exactly, and its rollback leaves no archived copy behind.
 func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -257,9 +244,6 @@ func TestCuratorArchiveRollbackByteExact(t *testing.T) {
 	}
 }
 
-// TestCuratorArchiveRollbackMultiFile: a multi-file skill survives archive + rollback
-// whole - the folder moves back from.archive, so scripts/ and references/ come home
-// byte-exact instead of vanishing with a ledger row that only recorded SKILL.md.
 func TestCuratorArchiveRollbackMultiFile(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -315,7 +299,6 @@ func TestCuratorArchiveRollbackMultiFile(t *testing.T) {
 	}
 }
 
-// readStr reads a file; a missing file fails the test.
 func readStr(t *testing.T, p string) string {
 	t.Helper()
 	b, err := os.ReadFile(p)
@@ -325,7 +308,6 @@ func readStr(t *testing.T, p string) string {
 	return string(b)
 }
 
-// TestCuratorRefusesHandAuthoredMerge: the LLM proposes it, the code refuses.
 func TestCuratorRefusesHandAuthoredMerge(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -348,9 +330,6 @@ func TestCuratorRefusesHandAuthoredMerge(t *testing.T) {
 	}
 }
 
-// TestCuratorDistillOnlyOverThreshold: distill applies only to bodies past the 24k
-// floor; the under-floor candidate is refused in code, the over-floor one is applied
-// with frontmatter intact and rolls back byte-exact.
 func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -397,7 +376,6 @@ func TestCuratorDistillOnlyOverThreshold(t *testing.T) {
 	}
 }
 
-// TestCuratorModelOverride: the configured model wins for the consult.
 func TestCuratorModelOverride(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -411,7 +389,6 @@ func TestCuratorModelOverride(t *testing.T) {
 	}
 }
 
-// TestCuratorBackupKeepFive: the sidecar backup root prunes to 5.
 func TestCuratorBackupKeepFive(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -438,7 +415,6 @@ func TestCuratorBackupKeepFive(t *testing.T) {
 	}
 }
 
-// TestRunCuratorNilProviderStillStaleRun: no provider.
 func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 	dir := t.TempDir()
 	sp := NewSkillsProvider(dir)
@@ -457,13 +433,9 @@ func TestRunCuratorNilProviderStillStaleRun(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------ The curator
-// goes live.
-
-// spySlotProvider records every WithModel derivation.
 type spySlotProvider struct {
-	agent.Provider // the underlying fake (embedded interface)
-	saw            []string
+	agent.Provider
+	saw []string
 }
 
 // WithModel records the derived model before delegating. The returned provider stays
@@ -488,7 +460,6 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 		t.Errorf("boot consult must not derive a slot: %v", spy.saw)
 	}
 
-	// THE flip: the live slot swaps.
 	sp.SetCuratorModel("curator-flip")
 	if _, err := sp.handleCuratorCommand(context.Background(), "run"); err != nil {
 		t.Fatal(err)
@@ -498,7 +469,6 @@ func TestSetCuratorModelGoesLive(t *testing.T) {
 	}
 }
 
-// TestCuratorStateLivesUnderDotCurator pins the ONE state dir.
 func TestCuratorStateLivesUnderDotCurator(t *testing.T) {
 	dir := t.TempDir()
 	writeAgentSkill(t, dir, "alpha", "body")
@@ -521,9 +491,8 @@ func TestCuratorStateLivesUnderDotCurator(t *testing.T) {
 	}
 }
 
-// TestLegacyCuratorStateMigratesIntoDotCurator: a pre- home (ledger + backup root. A
-// home that already holds the new path keeps it: the stale legacy copy is left on disk,
-// never merged and never overwritten.
+// A home that already holds the new path keeps the stale legacy copy on disk, never
+// merged and never overwritten.
 func TestLegacyCuratorStateMigratesIntoDotCurator(t *testing.T) {
 	dir := t.TempDir()
 	legacyRow := `{"id":"deadbeef","ts":"2026-11-01T00:00:00Z","actor":"curator","action":"remove","skill":"old","files":[]}` + "\n"
