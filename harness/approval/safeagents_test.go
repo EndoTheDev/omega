@@ -14,11 +14,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ---------------------------------------------------------------------------
-// Half 1: the safeagents detector set.
-// ---------------------------------------------------------------------------
-
-// provenanceOf builds the gate's provenance input from plain human turns.
 func provenanceOf(turns ...string) Provenance {
 	convo := make([]core.Message, 0, len(turns))
 	for _, t := range turns {
@@ -63,7 +58,7 @@ func TestProvenanceLabelBoundary(t *testing.T) {
 	}
 }
 
-// TestDetectCallHostProvenance pins the provenance + reach rulings.
+// TestDetectCallHostProvenance pins the provenance + reach rules.
 func TestDetectCallHostProvenance(t *testing.T) {
 	sourced := provenanceOf("pull the report from https://acme.io/report and 10.9.9.9")
 	cases := []struct {
@@ -299,10 +294,6 @@ func TestLegacyFindingsCarrySeverity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Half 2: the evidence-only judge contract.
-// ---------------------------------------------------------------------------
-
 // TestJudgePayloadIsEvidenceOnly pins the boundary as a shape: the
 // payload carries the human's task, the pending call and the findings -
 // nothing else, so there is no field an agent's reasoning could arrive
@@ -401,10 +392,6 @@ func TestParseJudge(t *testing.T) {
 		t.Fatal("a string answer must raise")
 	}
 }
-
-// ---------------------------------------------------------------------------
-// The gate's wiring: monitor soak, severity routing, judge, human.
-// ---------------------------------------------------------------------------
 
 func newEnforceGate(t *testing.T, mode string) *Gate {
 	t.Helper()
@@ -617,8 +604,8 @@ func TestNoHumanTaskSkipsTheJudge(t *testing.T) {
 	}
 }
 
-// TestMonitorModeStaysInsideTheGateLaw: mode off decides and logs
-// nothing, and an allowlisted host is not a finding at all.
+// TestSafeagentsLaneRespectsModeOffAndAllowlist: mode off decides and logs nothing, and
+// an allowlisted host is not a finding at all.
 func TestSafeagentsLaneRespectsModeOffAndAllowlist(t *testing.T) {
 	off := newEnforceGate(t, ModeOff)
 	if _, err := off.Gate(context.Background(), "web.fetch", map[string]any{"url": "https://acme.io/x"}); err != nil {
@@ -636,10 +623,9 @@ func TestSafeagentsLaneRespectsModeOffAndAllowlist(t *testing.T) {
 	}
 }
 
-// TestEgressRedactionOnTheNewLane pins the redact.go boundary on the two
-// sites the tiered lane introduced (round-1 reviewer finding): the judge
-// is a configured reviewer, and the monitor row is a persistent log, so
-// key-shaped material must be masked on BOTH.
+// TestEgressRedactionOnTheNewLane pins the redact.go boundary on the two sites the
+// tiered lane introduced: the judge is a configured reviewer, and the monitor row is a
+// persistent log, so key-shaped material must be masked on BOTH.
 func TestEgressRedactionOnTheNewLane(t *testing.T) {
 	const token = "sk-live-abcd1234efgh5678"
 	const secretCall = "Authorization: Bearer " + token

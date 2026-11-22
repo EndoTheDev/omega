@@ -11,8 +11,6 @@ import (
 	"sync"
 )
 
-// The verdict cache (design Q8).
-
 // Cache is gate-scoped, process-resident, concurrency-safe.
 type Cache struct {
 	mu sync.RWMutex
@@ -40,13 +38,11 @@ func policyHash(policy string) string {
 	return hex.EncodeToString(sum[:])[:16]
 }
 
-// Key builds a cache key from the reviewed state.
 func (c *Cache) Key(canonical, targetHash, policy string) string {
 	sum := sha256.Sum256([]byte(canonical + "\x00" + targetHash + "\x00" + policyHash(policy)))
 	return hex.EncodeToString(sum[:])
 }
 
-// Lookup returns the cached resolution, if any.
 func (c *Cache) Lookup(key string) (record, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -54,7 +50,6 @@ func (c *Cache) Lookup(key string) (record, bool) {
 	return r, ok
 }
 
-// Store records one resolution.
 func (c *Cache) Store(key string, r record) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -121,7 +116,6 @@ func TargetContentHash(segments []Segment) string {
 	return hex.EncodeToString(hash.Sum(nil))
 }
 
-// isTargetPath picks the words that could name a file.
 func isTargetPath(w string) bool {
 	if w == "" || strings.Contains(w, "://") {
 		return false

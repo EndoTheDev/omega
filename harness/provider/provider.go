@@ -105,7 +105,6 @@ func (p *Provider) SetConfig(cfg Config) {
 	p.thinkingLevel = snapshot.thinkingLevel
 }
 
-// NewProvider creates a Provider from the given configuration fields.
 func NewProvider(typ, modelName, baseURL, apiKey string) *Provider {
 	p := &Provider{
 		typ:       typ,
@@ -151,7 +150,6 @@ func (p *Provider) initDefaults() {
 	p.baseURL = strings.TrimRight(p.baseURL, "/")
 }
 
-// Stream sends a completion request to the provider and streams events.
 func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []llm.ToolSchema) <-chan core.ProviderStreamEvent {
 	s := p.snapshot()
 	events := make(chan core.ProviderStreamEvent, 64)
@@ -183,10 +181,8 @@ func (p *Provider) Stream(ctx context.Context, messages []core.Message, tools []
 	return events
 }
 
-// ModelName returns the current model name.
 func (p *Provider) ModelName() string { return p.snapshot().modelName }
 
-// SetThinkingLevel sets the thinking level for subsequent streams.
 func (p *Provider) SetThinkingLevel(level string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -201,7 +197,6 @@ func (p *Provider) SetModel(model string) {
 	p.modelName = model
 }
 
-// WithModel returns a copy of the provider serving the given model.
 func (p *Provider) WithModel(model string) agent.Provider {
 	cp := p.snapshot()
 	cp.modelName = model
@@ -239,7 +234,6 @@ func (p *Provider) ListModels() ([]string, error) {
 	return names, nil
 }
 
-// ModelInfo queries the provider for the current model's context window.
 func (p *Provider) ModelInfo() (llm.ModelInfo, error) {
 	ctx, err := p.snapshot().modelInfo()
 	if err != nil {
@@ -248,9 +242,7 @@ func (p *Provider) ModelInfo() (llm.ModelInfo, error) {
 	return llm.ModelInfo{ContextWindow: ctx}, nil
 }
 
-// message/tool serialization
-
-// messagesToJSON serializes core.Message values to maps with a role field added based.
+// messagesToJSON serializes core.Message values to maps with a role field added.
 func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 	msgJSON := make([]map[string]any, len(messages))
 	for i, msg := range messages {
@@ -269,7 +261,6 @@ func messagesToJSON(messages []core.Message, stringArgs bool) []map[string]any {
 		case core.YieldResult:
 			m["role"] = "tool"
 		}
-		// The OpenAI wire format requires each tool_calls entry to be.
 		if calls, ok := m["tool_calls"].([]any); ok {
 			wire := make([]map[string]any, 0, len(calls))
 			for _, c := range calls {
@@ -340,7 +331,6 @@ func imagesToOllamaWire(messages []map[string]any) {
 	}
 }
 
-// toolSchemasToJSON converts ToolSchema values to the generic map format expected.
 func toolSchemasToJSON(tools []llm.ToolSchema) []map[string]any {
 	toolJSON := make([]map[string]any, len(tools))
 	for i, t := range tools {
@@ -352,8 +342,6 @@ func toolSchemasToJSON(tools []llm.ToolSchema) []map[string]any {
 	}
 	return toolJSON
 }
-
-// Ollama
 
 func sendEvent(ctx context.Context, events chan<- core.ProviderStreamEvent, event core.ProviderStreamEvent) {
 	select {
@@ -385,7 +373,7 @@ func flushToolCalls[T any](ctx context.Context, events chan<- core.ProviderStrea
 	}
 }
 
-// buildListModelsRequest constructs the HTTP request for listing models based.
+// buildListModelsRequest constructs the HTTP request for listing models.
 func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 	switch p.typ {
 	case "ollama":
@@ -417,9 +405,8 @@ func (p *Provider) buildListModelsRequest() (*http.Request, error) {
 	}
 }
 
-// listModelEntries fetches the model list and parses it into entries with capability.
 func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
-	// The mock serves its model list directly - no request, no network, exactly.
+	// The mock serves its model list directly - no request, no network.
 	if p.typ == "mock" {
 		return mockModelEntries(p.modelName), nil
 	}
@@ -467,11 +454,10 @@ func (p *Provider) listModelEntries() ([]core.ModelEntry, error) {
 	return entries, nil
 }
 
-// modelInfo queries the provider for the current model's context window.
 func (p *Provider) modelInfo() (int, error) {
 	switch p.typ {
 	case "mock":
-		// The mock exposes no context window; callers fall back to the config /.
+		// The mock exposes no context window; callers fall back to the configured default.
 		return 0, nil
 	case "ollama":
 		body, _ := json.Marshal(map[string]any{"model": p.modelName})
@@ -543,5 +529,3 @@ func (p *Provider) modelInfo() (int, error) {
 		return 0, nil
 	}
 }
-
-// thinking level mappers

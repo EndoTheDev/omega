@@ -17,10 +17,8 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// testContext returns a background context for tests.
 func testContext() context.Context { return context.Background() }
 
-// drainEvents reads all events from a stream channel and returns the final StreamEnd.
 func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
 	var end core.StreamEnd
 	for e := range events {
@@ -34,12 +32,10 @@ func drainEvents(events <-chan core.ProviderStreamEvent) core.StreamEnd {
 	return end
 }
 
-// TestProviderImplementsAIProvider verifies Provider satisfies the agent.Provider.
 func TestProviderImplementsAIProvider(t *testing.T) {
 	var _ agent.Provider = (*Provider)(nil)
 }
 
-// TestNewProviderDefaults verifies defaults are applied.
 func TestNewProviderDefaults(t *testing.T) {
 	p := NewProvider("", "", "", "")
 	if p.typ != "ollama" {
@@ -50,7 +46,6 @@ func TestNewProviderDefaults(t *testing.T) {
 	}
 }
 
-// TestWithModel verifies WithModel returns a copy on the new model and leaves.
 func TestWithModel(t *testing.T) {
 	p := NewProvider("ollama", "old", "", "")
 	cp := p.WithModel("new")
@@ -62,7 +57,6 @@ func TestWithModel(t *testing.T) {
 	}
 }
 
-// TestSetThinkingLevel verifies SetThinkingLevel stores the level.
 func TestSetThinkingLevel(t *testing.T) {
 	p := NewProvider("ollama", "m", "", "")
 	p.SetThinkingLevel("high")
@@ -71,7 +65,6 @@ func TestSetThinkingLevel(t *testing.T) {
 	}
 }
 
-// TestWithThinkingLevel verifies WithThinkingLevel threads the level through a copy.
 func TestWithThinkingLevel(t *testing.T) {
 	p := NewProvider("ollama", "m", "", "")
 	p.SetThinkingLevel("medium")
@@ -90,7 +83,6 @@ func TestWithThinkingLevel(t *testing.T) {
 	}
 }
 
-// TestUnknownProviderStreamError verifies Stream returns an error StreamEnd.
 func TestUnknownProviderStreamError(t *testing.T) {
 	p := &Provider{typ: "bogus", baseURL: "http://localhost"}
 	events := p.Stream(testContext(), nil, nil)
@@ -103,7 +95,6 @@ func TestUnknownProviderStreamError(t *testing.T) {
 	}
 }
 
-// TestMessagesToJSON verifies role fields are added and timestamps are stripped.
 func TestMessagesToJSON(t *testing.T) {
 	msgs := []core.Message{
 		core.NewSystem("sys"),
@@ -127,7 +118,6 @@ func TestMessagesToJSON(t *testing.T) {
 	}
 }
 
-// TestThinkingMappers verifies the three thinking-level mappers across.
 func TestThinkingMappers(t *testing.T) {
 	t.Run("ollamaThinkValue", func(t *testing.T) {
 		cases := []struct {
@@ -207,7 +197,6 @@ func TestThinkingMappers(t *testing.T) {
 	})
 }
 
-// TestAnthropicConvertMessages verifies system prompt is lifted, tool results are.
 func TestAnthropicConvertMessages(t *testing.T) {
 	messages := []map[string]any{
 		{"role": "system", "content": "be helpful"},
@@ -253,7 +242,6 @@ func TestAnthropicConvertMessages(t *testing.T) {
 	}
 }
 
-// TestPluginInterface verifies the Plugin adapter returns the right metadata.
 func TestPluginInterface(t *testing.T) {
 	p := Plugin{}
 	if p.Name() != "provider" {
@@ -268,7 +256,6 @@ func TestPluginInterface(t *testing.T) {
 	}
 }
 
-// TestInitDefaults verifies initDefaults resolves API keys from env vars and fills.
 func TestInitDefaults(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -376,7 +363,6 @@ func TestInitDefaults(t *testing.T) {
 	}
 }
 
-// TestProviderModelCommand verifies /model <name> updates the base provider.
 func TestProviderModelCommand(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
@@ -405,7 +391,6 @@ func TestProviderModelCommand(t *testing.T) {
 	}
 }
 
-// TestProviderModelNoArgs verifies /model with no args returns usage.
 func TestProviderModelNoArgs(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
@@ -422,7 +407,6 @@ func TestProviderModelNoArgs(t *testing.T) {
 	}
 }
 
-// TestProviderInfoCommand verifies /provider returns provider + model info.
 func TestProviderInfoCommand(t *testing.T) {
 	p := &Plugin{}
 	ctx := &core.Context{}
@@ -442,7 +426,6 @@ func TestProviderInfoCommand(t *testing.T) {
 	}
 }
 
-// TestListModels verifies listModels against fake HTTP servers for each provider type.
 func TestListModels(t *testing.T) {
 	// ollama: GET /api/tags, "models" array with "name" fields.
 	var ollamaPath string
@@ -588,8 +571,6 @@ func TestListModelEntries(t *testing.T) {
 	}
 }
 
-// TestModelInfo verifies modelInfo: ollama /api/show context_length
-// extraction, non-200 error, and 0/nil for other provider types.
 func TestModelInfo(t *testing.T) {
 	var gotPath string
 	var gotBody []byte
@@ -649,8 +630,6 @@ func TestModelInfo(t *testing.T) {
 	}
 }
 
-// TestSendEvent verifies sendEvent delivers on a ready channel and drops the event
-// instead of blocking when the context is cancelled and the channel is full.
 func TestSendEvent(t *testing.T) {
 	events := make(chan core.ProviderStreamEvent, 1)
 	sendEvent(testContext(), events, core.StreamEnd{FinishReason: "stop"})
@@ -679,14 +658,12 @@ func TestSendEvent(t *testing.T) {
 	}
 }
 
-// testToolCall is the generic parameter for flushToolCalls tests.
 type testToolCall struct {
 	ID   string
 	Name string
 	JSON string
 }
 
-// TestFlushToolCalls verifies flushToolCalls.
 func TestFlushToolCalls(t *testing.T) {
 	events := make(chan core.ProviderStreamEvent, 4)
 	flushToolCalls(testContext(), events, map[int]*testToolCall{},
@@ -743,7 +720,6 @@ func TestFlushToolCalls(t *testing.T) {
 	}
 }
 
-// collectEvents reads all events from a stream channel and returns them in order.
 func collectEvents(t *testing.T, events <-chan core.ProviderStreamEvent) []core.ProviderStreamEvent {
 	t.Helper()
 	var out []core.ProviderStreamEvent
@@ -902,7 +878,6 @@ func TestStreamOllamaToolCalls(t *testing.T) {
 	}
 }
 
-// TestStreamOllamaToolResultRoundTrip verifies the request side of the native.
 func TestStreamOllamaToolResultRoundTrip(t *testing.T) {
 	var gotMessages []any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -974,7 +949,6 @@ func TestStreamOllamaDoneReason(t *testing.T) {
 	}
 }
 
-// TestStreamOllamaErrors verifies error paths.
 func TestStreamOllamaErrors(t *testing.T) {
 	t.Run("in_stream_error_string", func(t *testing.T) {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1037,7 +1011,6 @@ func TestStreamOllamaErrors(t *testing.T) {
 	})
 }
 
-// TestMessagesToJSONToolArgsEncoding verifies the tool_calls argument encoding.
 func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
 	assistant := core.NewAssistant("")
 	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "get_weather", Arguments: map[string]any{"city": "Tokyo"}}}
@@ -1053,7 +1026,6 @@ func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			result := messagesToJSON(msgs, c.stringArgs)
-			// Round-trip through JSON: the wire slice is []map[string]any in Go, which a []any.
 			data, err := json.Marshal(result[1])
 			if err != nil {
 				t.Fatalf("marshal: %v", err)
@@ -1078,7 +1050,6 @@ func TestMessagesToJSONToolArgsEncoding(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAIToolResultRoundTrip verifies the openai wire keeps the JSON-string.
 func TestStreamOpenAIToolResultRoundTrip(t *testing.T) {
 	var gotMessages []any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1117,7 +1088,6 @@ func TestStreamOpenAIToolResultRoundTrip(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAI verifies Stream against a fake OpenAI SSE endpoint.
 func TestStreamOpenAI(t *testing.T) {
 	var gotPath string
 	var gotAuth string
@@ -1193,7 +1163,6 @@ func TestStreamOpenAI(t *testing.T) {
 	}
 }
 
-// TestStreamAnthropic verifies Stream against a fake Anthropic SSE endpoint.
 func TestStreamAnthropic(t *testing.T) {
 	var gotPath string
 	var gotAPIKey, gotVersion string

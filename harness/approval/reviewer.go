@@ -14,21 +14,18 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// The reviewer client (design Q12 + the folded assumption). Every failure mode -
-// unreachable, timeout, malformed answers - raises and the caller escalates (Q4:
-// fail-closed).
+// The reviewer client. Every failure mode - unreachable, timeout, malformed answers -
+// raises and the caller escalates (fail-closed).
 
 // reviewerEndpointPath is the keypool passthrough path under the host.
 const reviewerEndpointPath = "/v1/systemone"
 
-// Reviewer issues the six-question review for one command.
 type Reviewer struct {
 	Host   string // provider host (keypool)
 	APIKey string // provider credential (Bearer when set)
 	Model  string // approvals.model (decision family)
 }
 
-// questionsJSON is the six-question set, verbatim from the reference.
 func questionsJSON() map[string]any {
 	return map[string]any{
 		"verdict": map[string]any{
@@ -76,7 +73,7 @@ func questionsJSON() map[string]any {
 	}
 }
 
-// PolicyHash is the questions-set fingerprint the audit row carries
+// questionsFingerprint is the questions-set fingerprint the audit row carries
 // (a rubric edit changes it; the hash never stores the policy text).
 func questionsFingerprint() string {
 	raw, _ := json.Marshal(questionsJSON())
@@ -84,10 +81,8 @@ func questionsFingerprint() string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// maxCommandChars caps the reviewed text.
 const maxCommandChars = 4000
 
-// Review sends one forward pass and returns the parsed six answers.
 func (r Reviewer) Review(ctx context.Context, command, flagged, policy string, hasPolicy bool) (Answers, error) {
 	state := map[string]any{"command": trunc(command)}
 	if flagged != "" {
@@ -198,7 +193,6 @@ func noul(answer map[string]any, key string) (float64, error) {
 	return finite(answer["noul"], key+".noul", -1)
 }
 
-// finite coerces one numeric answer.
 func finite(raw any, where string, def float64) (float64, error) {
 	if _, isBool := raw.(bool); isBool {
 		return 0, fmt.Errorf("approval reviewer: %s is a bool, not a number", where)

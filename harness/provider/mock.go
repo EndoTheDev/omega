@@ -49,7 +49,6 @@ func mockSeed(messages []map[string]any) string {
 	return hex.EncodeToString(sum[:])[:12]
 }
 
-// streamMock produces the deterministic stream for typ "mock".
 func (p *Provider) streamMock(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	seed := mockSeed(messages)
 	var lastRole string
@@ -74,7 +73,6 @@ func (p *Provider) streamMock(ctx context.Context, events chan<- core.ProviderSt
 	return core.StreamEnd{Type: "stream_end", FinishReason: "stop"}
 }
 
-// mockToolCall builds the deterministic tool call for the first announced tool.
 func mockToolCall(tool map[string]any, seed string, messages []map[string]any) core.ToolCall {
 	name, _ := tool["name"].(string)
 	seen := 0
@@ -103,7 +101,6 @@ func mockToolCall(tool map[string]any, seed string, messages []map[string]any) c
 	return core.ToolCall{ID: fmt.Sprintf("mock_call_%d", seen+1), Name: name, Arguments: args}
 }
 
-// mockFill derives the deterministic value for a required schema property.
 func mockFill(typ any, seed string) any {
 	switch typ {
 	case "string":
@@ -121,7 +118,6 @@ func mockFill(typ any, seed string) any {
 	}
 }
 
-// mockReply composes the seeded deterministic text.
 func mockReply(seed, prompt string, fromTool bool) string {
 	body := prompt
 	if fromTool {
@@ -144,7 +140,7 @@ func mockReply(seed, prompt string, fromTool bool) string {
 	return fmt.Sprintf("[mock %s %s] %s", who, seed, body)
 }
 
-// mockChunks streams the reply in fixed-size RUNE chunks so consumers that care see.
+// mockChunks streams the reply in fixed-size RUNE chunks.
 func mockChunks(text string) []string {
 	const size = 16
 	runes := []rune(text)

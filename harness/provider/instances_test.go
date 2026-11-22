@@ -1,7 +1,5 @@
 package provider
 
-// /: the named provider instances - mount + resolver law.
-
 import (
 	"testing"
 

@@ -49,7 +49,6 @@ const (
 	MonitorEnforce = "enforce"
 )
 
-// NormalizedMonitor returns the config's normalized detector mode.
 func (c Config) NormalizedMonitor() string {
 	if c.Monitor == MonitorEnforce {
 		return MonitorEnforce
@@ -62,7 +61,6 @@ func (c Config) NormalizedMonitor() string {
 // are audited as WOULD-BLOCK and the call proceeds untouched.
 func (c Config) DetectorsEnforce() bool { return c.NormalizedMonitor() == MonitorEnforce }
 
-// ValidMonitor reports whether m is a detector mode config may carry.
 func ValidMonitor(m string) bool {
 	return m == "" || m == MonitorLogOnly || m == MonitorEnforce
 }

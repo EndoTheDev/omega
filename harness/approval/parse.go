@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Shell parsing (design Q7): the reviewer NEVER sees the raw command string.
+// Shell parsing: the reviewer NEVER sees the raw command string.
 
 // Segment is one shell command after the control-operator split (|; && || & newlines).
 type Segment struct {
@@ -30,12 +30,11 @@ type Parsed struct {
 // invent a value for them and never pass through the caller's shell semantics).
 func envLookup(name string) (string, bool) { return os.LookupEnv(name) }
 
-// Parse splits and expands one shell command.
 func Parse(command string) Parsed {
 	tz := &tokenizer{out: make([]token, 0, 16)}
 	if err := tz.run(command); err != nil {
 		e := fmt.Errorf("shell parse: %w", err)
-		// Fail visible: hand back the raw text as one segment so a caller that wants.
+		// Fail visible: hand back the raw text as one segment.
 		return Parsed{
 			Canonical: command,
 			Segments:  []Segment{{Words: []string{command}}},
@@ -47,7 +46,6 @@ func Parse(command string) Parsed {
 	return p
 }
 
-// assemble folds the tokenizer's token stream into segments.
 func assemble(toks []token) Parsed {
 	p := Parsed{Segments: make([]Segment, 0, 4)}
 	cur := Segment{}
@@ -74,7 +72,6 @@ func assemble(toks []token) Parsed {
 	return p
 }
 
-// stringJoin rebuilds the canonical reviewed form.
 func stringJoin(segs []Segment) string {
 	var sb strings.Builder
 	for i, s := range segs {
@@ -301,7 +298,6 @@ func (tz *tokenizer) run(input string) error {
 	return nil
 }
 
-// isRedirectOpForm reports whether a word is exactly an fd-prefixed redirect operator.
 func isRedirectOpForm(w string) bool {
 	switch strings.TrimLeft(w, "0123456789") {
 	case ">", ">>", "<":
@@ -332,7 +328,6 @@ func isNameRune(r rune) bool {
 	return isNameStart(r) || r >= '0' && r <= '9'
 }
 
-// scanSub copies an unexpanded $ ${} span (or its backticked double) into out.
 func scanSub(rs []rune, i int, mode int) (string, int, error) {
 	if rs[i+1] == '{' {
 		for j := i + 2; j < len(rs); j++ {

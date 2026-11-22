@@ -24,7 +24,6 @@ import (
 // when the operator says so. It rides the same /v1/systemone passthrough the reviewer
 // uses: one forward pass, the shared llm client, no new knob.
 
-// Judge verdict states the audit row and the human card speak.
 const (
 	JudgeBlocked      = "blocked"
 	JudgeCleared      = "cleared"
@@ -37,8 +36,6 @@ const (
 // the same law the reviewer's ladder rides).
 const judgeBlockThreshold = 0.6
 
-// JudgeAnswer is the parsed answer to the one question the judge is
-// asked.
 type JudgeAnswer struct {
 	// Block is the probability the evidence says "block this call".
 	Block float64
@@ -46,7 +43,6 @@ type JudgeAnswer struct {
 	Confidence float64
 }
 
-// Blocked applies the Go threshold to the judge's probability.
 func (a JudgeAnswer) Blocked() bool { return a.Block >= judgeBlockThreshold }
 
 // State names the resolution for the audit row.
@@ -61,7 +57,6 @@ func (a JudgeAnswer) State(err error) string {
 	}
 }
 
-// Judge issues the evidence-only verdict for one pending call.
 type Judge struct {
 	Host   string // provider host (keypool)
 	APIKey string // provider credential (Bearer when set)

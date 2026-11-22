@@ -14,7 +14,6 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// sseAnthropicServer serves a canned anthropic SSE stream shaped like the live.
 func sseAnthropicServer(t *testing.T, events ...string) *httptest.Server {
 	t.Helper()
 	var sb strings.Builder
@@ -27,7 +26,6 @@ func sseAnthropicServer(t *testing.T, events ...string) *httptest.Server {
 	}))
 }
 
-// TestStreamAnthropicThinking verifies thinking_delta deltas surface as ThinkingChunk.
 func TestStreamAnthropicThinking(t *testing.T) {
 	srv := sseAnthropicServer(t,
 		`{"type":"message_start","message":{"usage":{"input_tokens":10,"output_tokens":0}}}`,
@@ -152,7 +150,6 @@ func TestStreamAnthropicMaxTokensWithBudget(t *testing.T) {
 	}
 }
 
-// TestAnthropicConvertMessagesIsError verifies errored tool results get the is_error.
 func TestAnthropicConvertMessagesIsError(t *testing.T) {
 	messages := []map[string]any{
 		{"role": "tool", "tool_call_id": "call_ok", "content": "fine"},
@@ -174,7 +171,6 @@ func TestAnthropicConvertMessagesIsError(t *testing.T) {
 	}
 }
 
-// openaiSSEServer serves a canned openai chat.completions SSE stream.
 func openaiSSEServer(t *testing.T, chunks ...string) *httptest.Server {
 	t.Helper()
 	var sb strings.Builder
@@ -188,7 +184,6 @@ func openaiSSEServer(t *testing.T, chunks ...string) *httptest.Server {
 	}))
 }
 
-// TestStreamOpenAIReasoningContent verifies the deepseek-style reasoning_content.
 func TestStreamOpenAIReasoningContent(t *testing.T) {
 	srv := openaiSSEServer(t,
 		`{"choices":[{"index":0,"delta":{"reasoning_content":"Working it out"},"finish_reason":null}]}`,
@@ -217,7 +212,6 @@ func TestStreamOpenAIReasoningContent(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAISynthesizesToolCallIDs verifies tool-call fragments without a wire.
 func TestStreamOpenAISynthesizesToolCallIDs(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -300,7 +294,6 @@ func TestStreamOpenAIAbsentUsage(t *testing.T) {
 	}
 }
 
-// TestStreamOpenAIUsageReported verifies the usage chunk.
 func TestStreamOpenAIUsageReported(t *testing.T) {
 	var gotBody []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -335,9 +328,6 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	}
 }
 
-// ollama done_reason "load" retry
-
-// ollamaNDJSONServer writes canned ollama /api/chat responses as NDJSON.
 func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httptest.Server, *uint32) {
 	t.Helper()
 	var hits uint32
@@ -351,7 +341,6 @@ func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httpte
 	return srv, &hits
 }
 
-// TestStreamOllamaRetriesLoadUntilContent verifies a stream ending in done_reason.
 func TestStreamOllamaRetriesLoadUntilContent(t *testing.T) {
 	t.Setenv("OMEGA_MAX_RETRIES", "3")
 	srv, hits := ollamaNDJSONServer(t, func(attempt uint32) []string {

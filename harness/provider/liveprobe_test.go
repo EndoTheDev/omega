@@ -5,7 +5,7 @@ package provider
 // via env. Base URL defaults to the standard keypool port.
 //
 //	KEYPOOL_CLIENT_KEY=<key> KEYPOOL_HOST=http://127.0.0.1:11435 \
-// go test./modules/provider/ -run TestLive -v
+// go test ./harness/provider/ -run TestLive -v
 
 import (
 	"os"
@@ -30,7 +30,6 @@ func keypoolProvider(t *testing.T, typ string) (*Provider, string) {
 	return &Provider{typ: typ, baseURL: host, modelName: keypoolModel, apiKey: os.Getenv("KEYPOOL_CLIENT_KEY")}, host
 }
 
-// TestLiveKeypoolAnthropic drives the anthropic lane end to end.
 func TestLiveKeypoolAnthropic(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
@@ -106,7 +105,6 @@ func TestLiveKeypoolAnthropic(t *testing.T) {
 	t.Logf("lane=%s host=%s", "anthropic", host)
 }
 
-// TestLiveKeypoolOpenAI drives the openai lane end to end.
 func TestLiveKeypoolOpenAI(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")
@@ -172,7 +170,6 @@ func TestLiveKeypoolOpenAI(t *testing.T) {
 	}
 }
 
-// TestLiveKeypoolOllama drives the ollama-native lane end to end.
 func TestLiveKeypoolOllama(t *testing.T) {
 	if os.Getenv("KEYPOOL_CLIENT_KEY") == "" {
 		t.Skip("KEYPOOL_CLIENT_KEY not set; live keypool probe skipped")

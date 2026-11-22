@@ -1,11 +1,10 @@
 package provider
 
-// Live probe for the prompt-cache economics
-// ladder step 1). Skipped unless KEYPOOL_CLIENT_KEY is set - no secrets
-// in the tree.
+// Live probe for the prompt-cache economics. Skipped unless KEYPOOL_CLIENT_KEY is set -
+// no secrets in the tree.
 //
 //	KEYPOOL_CLIENT_KEY=<key> KEYPOOL_HOST=http://<host>:11435 \
-// go test./harness/provider/ -run TestLiveToolBlockPromptCache -v
+// go test ./harness/provider/ -run TestLiveToolBlockPromptCache -v
 //
 // What it measures: the tools block is the wire's largest stable
 // prefix, and a prefix cache reuses only BYTE-IDENTICAL prefixes. This
@@ -17,22 +16,6 @@ package provider
 // telemetry answers cached=0 on every call, which is a lane fact, not a
 // product failure. The deterministic laws live in tools_block_test.go
 // (rendered block byte-stable) and agent/loop (sorted + hoisted).
-//
-// Measured on glm-5.3 through the keypool gateway, same
-// 26,159-byte / 25-tool block, three calls per shape:
-//
-//	pre-fix shape (toolSchemasToJSON fed from a map range):
-// turn 1 cold prompt_eval=6753 cached=0
-// turn 2 repeat prompt_eval=6753 cached=0
-//	  turn 3 extended prompt_eval=6766 cached=0
-//	current shape (sorted slice rendered verbatim):
-// turn 1 cold prompt_eval=6753 cached=0
-// turn 2 repeat prompt_eval=6753 cached=6720
-//	  turn 3 extended prompt_eval=6766 cached=6720
-//
-// i.e. 0 of 6,753 prompt tokens reused before, 6,720 of 6,753 after:
-// the cacheable prefix moved from the system prompt alone to the whole
-// system+system-tools block, and the extension call reused it too.
 
 import (
 	"encoding/json"
@@ -141,8 +124,6 @@ func TestLiveToolBlockPromptCache(t *testing.T) {
 	}
 }
 
-// jsonLen renders the tools block the same way the ollama wire does and
-// returns its byte length.
 func jsonLen(tools []llm.ToolSchema) (int, error) {
 	apiTools := make([]map[string]any, 0, len(tools))
 	for _, tool := range tools {
