@@ -233,9 +233,13 @@ step "ok: Delete arms the existing confirm and removes the skill"
 chip_click "Tools"
 wait_js '(() => document.querySelectorAll(".tools-list .registry-row").length > 0)()' 15 \
   || die "the tools tab never rendered rows"
-TOOL=$(jsq '(() => {const r=document.querySelector(".tools-list .registry-row .reg-row-name"); return r ? r.textContent.trim() : ""})()')
+# The lane fold is USER state this recipe does not own, so the first row is
+# not promised ON: a folded domain's menu reads Enable, and this half pins
+# the Disable verb. Seed off the first row that IS on, then leave it on -
+# the round-trip returns the row to the state it was found in.
+TOOL=$(jsq '(() => {const rows=[...document.querySelectorAll(".tools-list .registry-row")];const r=rows.find(x=>{const b=x.querySelector("button.registry-toggle");return b&&!x.classList.contains("registry-off")&&(b.getAttribute("aria-label")||"").indexOf("disable ")===0});const n=r&&r.querySelector(".reg-row-name");return n?n.textContent.trim():""})()')
 TOOL=${TOOL//\"/}
-[ -n "$TOOL" ] || die "no tool row to menu"
+[ -n "$TOOL" ] || die "no ON tool row to menu (every domain is folded on this lane - the Disable-verb half has nothing to drive)"
 tool_row="(() => {const row=[...document.querySelectorAll('.tools-list .registry-row')].find((r)=>((r.querySelector('.reg-row-name')||{}).textContent||'').trim()==='$TOOL'); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 right_click_js "$tool_row"
 menu_wait "Disable"

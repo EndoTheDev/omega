@@ -40,7 +40,11 @@
 #                           GET /tools?disabled=1 keeps all six stamped
 #                           disabled:true. The management surface and the
 #                           model's registry are different reads on
-#                           purpose; both are pinned here.
+#                           purpose; both are pinned here. Graded as a
+#                           DIFF against the pre-toggle snapshot, never as
+#                           an absolute name list: the lane fold is USER
+#                           state (a live repro rides it), so only the six
+#                           files.* names may move in either read.
 #   f  re-enable           - the fold clears (wire AND the lane home's
 #                           config.yaml) and the row renders on again.
 #
@@ -52,7 +56,10 @@
 # unset dies loudly. Residue-free: the cleanup trap re-enables only the
 # names STILL folded, so a green run leaves the fold untouched and a red
 # one puts it back; a leftover fold from a crashed earlier run is cleared
-# at pre-flight instead of reding this run's toggle.
+# at pre-flight instead of reding this run's toggle. The pre-flight owns
+# the recipe's OWN files.* residue and nothing else: every other name in
+# the lane fold is user state, read for the diff assertions and never
+# cleared.
 #
 # Drive-by-aria-label (worker-onboarding law): the toggle is clicked
 # through its aria state machine ("disable files" -> "enable files") -
@@ -67,16 +74,19 @@ fi
 CONFIG="$OMEGA_HOME/config/config.yaml"
 [ -d "$OMEGA_HOME" ] || die "OMEGA_HOME does not exist: $OMEGA_HOME (set it to the serving lane's home, never a checkout root)"
 FILES_NAMES="files.read files.write files.edit files.batch files.grep files.glob"
+FILES_SORTED="$(printf '%s\n' $FILES_NAMES | sort | tr '\n' ' ' | sed 's/ $//')"
 
 # --- wire + fold helpers ---------------------------------------------------
 
-# files_fold: the files.* names the fold currently carries, space
-# separated (empty = clean). GET /disabled is the fold's rendered truth.
-# A read that FAILED is not a clean fold: an empty body from a dropped call
-# would skip the pre-flight's clear, leave the row rendered in its off state,
-# and the toggle click would then find no "disable files" button at all (the
+# fold_names: every name GET /disabled carries under tools, sorted and
+# space separated (empty = nothing folded). GET /disabled is the fold's
+# rendered truth, and on a live lane part of that fold is USER state this
+# recipe neither assumes clean nor clears. A read that FAILED is not a
+# clean fold: an empty body from a dropped call would skip the
+# pre-flight's clear, leave the row rendered in its off state, and the
+# toggle click would then find no "disable files" button at all (the
 # no-op-toggle red, one step earlier than the toggle).
-files_fold() {
+fold_names() {
   local body code
   body=$(curl -s -w '\n%{http_code}' "$JOURNEY_BASE_URL/disabled")
   code="$(printf '%s' "$body" | tail -1)"
@@ -90,7 +100,44 @@ try:
     fold = (json.load(sys.stdin) or {}).get("tools", []) or []
 except Exception:
     sys.exit(0)
-sys.stdout.write(" ".join(str(n) for n in fold if str(n).startswith("files.")))' 2>/dev/null | tr -d '\r'
+print(" ".join(sorted(str(n) for n in fold)))' 2>/dev/null | tr -d '\r'
+}
+
+# files_fold: the files.* names the fold carries (empty = the recipe's own
+# residue is gone; who else is folded is not this function's business).
+files_fold() {
+  python3 -c 'import sys; print(" ".join(n for n in sys.argv[1].split() if n.startswith("files.")))' "$(fold_names)"
+}
+
+# wire_names: every name the bare GET /tools lists (the model's executable
+# registry), sorted and space separated. A failed read DIES: the diff
+# assertions grade one snapshot against another, so a silent empty would
+# grade every difference against nothing.
+wire_names() {
+  local body code
+  body=$(curl -s -w '\n%{http_code}' "$JOURNEY_BASE_URL/tools")
+  code="$(printf '%s' "$body" | tail -1)"
+  case "$code" in
+    200) ;;
+    *) die "GET /tools did not answer (code=${code:-<none>}) - the registry snapshot is unknown, not empty" ;;
+  esac
+  printf '%s' "$body" | sed '$d' | python3 -c '
+import json, sys
+try:
+    rows = json.load(sys.stdin) or []
+except Exception:
+    sys.exit(0)
+print(" ".join(sorted(str(t.get("name", "")) for t in rows if t.get("name"))))' 2>/dev/null | tr -d '\r'
+}
+
+# set_minus <left> <right>: the names in left and not right, sorted and
+# space separated. A wire name carries no space, so the joined form IS the
+# set, and comparing two of these grades a fold change as a change.
+set_minus() {
+  python3 -c '
+import sys
+l, r = set(sys.argv[1].split()), set(sys.argv[2].split())
+print(" ".join(sorted(l - r)))' "$1" "$2"
 }
 
 # clear_files_fold: re-enable whatever files.* names are still folded
@@ -123,14 +170,6 @@ import json, sys
 rows = json.load(sys.stdin) or []
 sel = [t for t in rows if str(t.get("name", "")).startswith("files.")]
 print(len(sel), sum(1 for t in sel if t.get("disabled")))' 2>/dev/null | tr -d '\r'
-}
-
-# wire_has <name>: non-zero unless the bare GET /tools lists the name.
-wire_has() {
-  curl -s "$JOURNEY_BASE_URL/tools" | python3 -c '
-import json, sys
-rows = json.load(sys.stdin) or []
-sys.exit(0 if any(str(t.get("name", "")) == sys.argv[1] for t in rows) else 1)' "$1" 2>/dev/null
 }
 
 # fold_has <name>: non-zero unless config.yaml's `disabled:` fold names
@@ -261,6 +300,14 @@ assert_eq "$(detail_domain_breaks)" "" "every detail line belongs to its own row
 step "ok: (b)+(c) the files identities sit under the files row and nowhere else"
 
 # --- (d) the fold-aware render: disabling the domain keeps its row -------
+# The snapshots the diff assertions grade against: taken AFTER the
+# pre-flight (the recipe's own files.* residue is gone) and BEFORE the
+# click (the lane exactly as its owner left it). This recipe reads that
+# fold and never assumes it empty.
+WIRE_SNAP="$(wire_names)"
+FOLD_SNAP="$(fold_names)"
+step "pre-toggle snapshot: $(printf '%s' "$FOLD_SNAP" | wc -w | tr -d ' ') tool(s) folded on the lane, outside this recipe's domain and left alone"
+
 # ONE click commits (card t_5051d523): the arm/confirm two-step that
 # needed a second click is dead, so the click writes and the row
 # re-renders off.
@@ -269,10 +316,12 @@ step "ok: (b)+(c) the files identities sit under the files row and nowhere else"
 # served and the fold has re-rendered, so grade the WIRE first and re-drive the
 # same press once when it never took: while the wire is still clean the button
 # still says "disable files", so the second press cannot fold the domain twice.
+# The wire grade names a FILES name: any-tool presence is already true on a
+# lane whose owner folded something else.
 clicked=$(toggle_click "disable files" "disable files - ")
 assert_eq "$clicked" "1" "the files row's toggle answered the click"
-if ! poll_http "$JOURNEY_BASE_URL/disabled" '"tools"' 15; then
-  step "the fold never took the click (GET /disabled still carries no tools) - pressing once more"
+if ! poll_http "$JOURNEY_BASE_URL/disabled" '"files\.read"' 15; then
+  step "the fold never took the click (GET /disabled still carries no files.* name) - pressing once more"
   toggle_click "disable files" "disable files - " >/dev/null
 fi
 wait_js "$ROW_IS_OFF" 10 \
@@ -283,10 +332,24 @@ assert_eq "$(missing_files_detail)" "" "the dimmed row keeps its full detail (th
 step "ok: (d) the disabled domain keeps its dimmed, toggleable row"
 
 # --- (e) the two reads disagree on purpose --------------------------------
+# The files-domain half is absolute: the recipe owns those six names.
 assert_eq "$(wire_files_count "")" "0" "bare GET /tools drops every disabled files.* name (the model's registry)"
 assert_eq "$(wire_stamped)" "6 6" "fold-aware GET /tools?disabled=1 keeps all six, each stamped disabled"
-wire_has "shell.run" || die "the fan-out disabled a tool outside the files domain (bare GET /tools lost shell.run)"
-assert_eq "$(files_fold | wc -w | tr -d ' ')" "6" "the fold carries all six names (the row toggle fanned out)"
+# The fan-out half is a DIFF against the pre-click snapshot: on a lane whose
+# owner folded other tools, only the six files.* names may move, in either
+# read. An absolute name here reds on correct product behavior the moment the
+# lane carries a live repro fold (t_3845b80e), which wedged every landing.
+WIRE_NOW="$(wire_names)"
+assert_eq "$(set_minus "$WIRE_SNAP" "$WIRE_NOW")" "$FILES_SORTED" \
+  "the bare registry lost exactly the six files.* names (the fan-out)"
+assert_eq "$(set_minus "$WIRE_NOW" "$WIRE_SNAP")" "" \
+  "the fan-out disabled no tool outside the files domain (bare GET /tools)"
+FOLD_NOW="$(fold_names)"
+assert_eq "$(set_minus "$FOLD_NOW" "$FOLD_SNAP")" "$FILES_SORTED" \
+  "the fold gained exactly the six files.* names (the row toggle fanned out)"
+assert_eq "$(set_minus "$FOLD_SNAP" "$FOLD_NOW")" "" \
+  "the fan-out dropped nothing the lane fold already carried"
+assert_eq "$(files_fold | wc -w | tr -d ' ')" "6" "the fold carries all six names"
 for n in $FILES_NAMES; do
   fold_has "$n" || die "the lane home's config.yaml disabled: fold does not persist $n (the fan-out missed a member)"
 done
@@ -305,7 +368,10 @@ wait_js "$ROW_IS_ON" 10 \
   || die "one click did not re-enable (the files row never came back on)"
 assert_eq "$(files_fold)" "" "the fold cleared on the wire"
 assert_eq "$(wire_stamped)" "6 0" "the management read lists all six, none stamped disabled"
-assert_eq "$(wire_files_count "")" "6" "bare GET /tools carries the domain again"
+# The mirror of (e): both reads return to the pre-toggle snapshot, the lane
+# owner's fold included. Nothing the recipe did may survive in either read.
+assert_eq "$(wire_names)" "$WIRE_SNAP" "bare GET /tools returned to its pre-toggle snapshot (lane fold and all)"
+assert_eq "$(fold_names)" "$FOLD_SNAP" "the fold returned to its pre-toggle snapshot (lane fold and all)"
 for n in $FILES_NAMES; do
   fold_has "$n" && die "the lane home's config.yaml fold kept $n after the re-enable"
 done
