@@ -1,25 +1,20 @@
 package continuous
 
-// report.go: the wake report's shape
-// second half). The run's closing message IS the report;
-// before it lands in the agent's canonical chat the runtime shapes it,
-// never the agent:
+// report.go: the wake report's shaper. The run's closing message IS the report; before
+// it lands in the agent's canonical chat the runtime shapes it, never the agent:
 //
-// a claim sentence gains its ledger citation when the run's
-//     evidence backs it (an ok row whose verifier proves the path);
-// a claim sentence with no backing - or one the ledger
-// contradicts - is stripped before persistence
-//     unverified claims do not land);
-// the runtime evidence tail (call counts, row ids) closes the
-//     report; a run that called no tools gets no tail (nothing to
-//     cite, never a fabricated verdict).
+// - a claim sentence gains its ledger citation when the run's evidence backs it (an ok
+//   row whose verifier proves the path);
+// - a claim sentence with no backing - or one the ledger contradicts - is stripped
+//   before persistence (unverified claims do not land);
+// - the runtime evidence tail (call counts, row ids) closes the report; a run that
+//   called no tools gets no tail (nothing to cite, never a fabricated verdict).
 //
-// Verifier scope, kept honest: the cheap check is the file
-// stat ONLY. URL claims ride their own fetch: a claim over a URL is
-// backed when the run's ledger carries an ok row FOR that URL (the
-// fetch tool's own result, the HTTP outcome) and strips when the fetch
-// failed or the run never fetched it - fail closed either way. The
-// verifier string `url:.` is a locator, not a check.
+// Verifier scope, kept honest: the cheap check is the file stat ONLY. URL claims ride
+// their own fetch: a claim over a URL is backed when the run's ledger carries an ok row
+// FOR that URL (the fetch tool's own result, the HTTP outcome) and strips when the fetch
+// failed or the run never fetched it - fail closed either way. The verifier string
+// `url:.` is a locator, not a check.
 
 import (
 	"context"
@@ -89,16 +84,12 @@ func (s *wakeReportSink) shape(ctx context.Context, content string) string {
 	return shapeReport(content, rows)
 }
 
-// claimVerbs are the action words a claim sentence leans.
 var claimVerbs = regexp.MustCompile(`(?i)\b(created|wrote|updated|deleted|removed|edited|modified|renamed|moved|fetched|downloaded|uploaded|saved|read|installed|deployed)\b`)
 
-// pathTokens finds the checkable objects of a claim: a path or a URL.
 var pathTokens = regexp.MustCompile(`https?://[\w.@%+=:/~#?&-]+|(?:[A-Za-z]:)?(?:\.{1,2}/|~/|/|\\)[\w.@%+=:/\\~-]+|\b[\w-]+(?:\.[\w-]+)+\b`)
 
-// maxTailRows caps the id list the evidence tail names.
 const maxTailRows = 12
 
-// evidence is the run's folded ledger tables.
 type evidence struct {
 	fileVerified map[string][]int64
 	fileFailed   map[string]bool
@@ -129,7 +120,6 @@ func shapeReport(content string, rows []record) string {
 	return text
 }
 
-// shapeParagraph shapes one line.
 func shapeParagraph(para string, ev evidence, rows []record) []string {
 	if strings.TrimSpace(para) == "" {
 		return []string{para}
@@ -147,7 +137,6 @@ func shapeParagraph(para string, ev evidence, rows []record) []string {
 	return kept
 }
 
-// splitSentences breaks one line at sentence ends.
 func splitSentences(line string) []string {
 	end := regexp.MustCompile(`[.!?]["')\]]?(?:\s+|$)`)
 	var out []string
@@ -201,7 +190,6 @@ func judgeSentence(sent string, ev evidence) string {
 	return "strip"
 }
 
-// matchPaths extracts the sentence's file-like tokens and resolves each onto.
 func matchPaths(sent string, ev evidence) []string {
 	var out []string
 	seenAny := map[string]bool{}
@@ -239,12 +227,10 @@ func matchURLs(sent string, ev evidence) []string {
 	return out
 }
 
-// isURLToken reports whether a raw token is an http(s) URL.
 func isURLToken(tok string) bool {
 	return strings.HasPrefix(tok, "http://") || strings.HasPrefix(tok, "https://")
 }
 
-// normURL is the URL match key.
 func normURL(u string) string {
 	return strings.TrimSuffix(strings.TrimSpace(u), "/")
 }
@@ -265,9 +251,8 @@ func isNumericToken(tok string) bool {
 }
 
 // resolve maps a claim token onto the ledger's path key for the same file. The suffix
-// match normalizes both sides: the ledger key is the raw tool-arg path, a backslash
-// shape on windows, and the old hardcoded "/"+token join never matched it, so every
-// claim stripped and no citation landed.
+// match normalizes both sides: the ledger key is the raw tool-arg path, a backslash shape
+// on windows, so an exact join on the token would never meet it.
 func resolve(tok string, ev evidence) string {
 	token := strings.TrimPrefix(strings.TrimPrefix(tok, "./"), "~/")
 	present := func(p string) bool { return ev.fileVerified[p] != nil || ev.fileFailed[p] }
@@ -293,13 +278,12 @@ func canonKey(p string) string {
 	return filepath.ToSlash(filepath.Clean(strings.ReplaceAll(p, `\`, "/")))
 }
 
-// keySuffixMatch reports whether the ledger path p IS the canonical token or ends.
+// keySuffixMatch reports whether the ledger path p IS the canonical token or ends with it.
 func keySuffixMatch(p, normToken string) bool {
 	canon := canonKey(p)
 	return canon == normToken || strings.HasSuffix(canon, "/"+normToken)
 }
 
-// evidenceSets folds the run's rows into the claim tables.
 func evidenceSets(rows []record) evidence {
 	ev := evidence{
 		fileVerified: map[string][]int64{},
@@ -346,7 +330,6 @@ func evidenceSets(rows []record) evidence {
 	return ev
 }
 
-// citeSentence appends the sentence's backing row ids, file rows and url rows alike.
 func citeSentence(sent string, ev evidence, rows []record) string {
 	ids := map[int64]bool{}
 	for _, p := range matchPaths(sent, ev) {

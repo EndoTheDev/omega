@@ -29,7 +29,6 @@ type Ledger struct {
 	db *sql.DB
 }
 
-// Open opens (creating if needed) the ledger for the process's data directory.
 func OpenLedger(dataDir string) (*Ledger, error) {
 	if dataDir == ":memory:" {
 		dataDir = ""
@@ -55,7 +54,6 @@ func OpenLedger(dataDir string) (*Ledger, error) {
 	return l, nil
 }
 
-// OpenLedgerForHome opens the ledger for an omega home (datadir.AgentHome's answer).
 func OpenLedgerForHome(home string) (*Ledger, error) {
 	return OpenLedger(datadir.Dir(home))
 }
@@ -73,10 +71,8 @@ func (l *Ledger) migrate() error {
 	return err
 }
 
-// Close closes the ledger database.
 func (l *Ledger) Close() error { return l.db.Close() }
 
-// record is one evidence row.
 type record struct {
 	ID       int64
 	TS       string
@@ -87,7 +83,6 @@ type record struct {
 	Verifier string
 }
 
-// Append writes one row.
 func (l *Ledger) append(r record) (int64, error) {
 	res, err := l.db.Exec(`INSERT INTO evidence (ts, run_id, tool, args_hash, ok, verifier) VALUES (?, ?, ?, ?, ?, ?)`,
 		r.TS, r.RunID, r.Tool, r.ArgsHash, boolInt(r.OK), r.Verifier)
@@ -97,7 +92,7 @@ func (l *Ledger) append(r record) (int64, error) {
 	return res.LastInsertId()
 }
 
-// List returns the run_id's rows (the report cites these), newest order preserved.
+// List returns the run_id's rows (the report cites these).
 func (l *Ledger) List(ctx context.Context, runID string) ([]record, error) {
 	rows, err := l.db.QueryContext(ctx,
 		`SELECT id, ts, run_id, tool, args_hash, ok, verifier FROM evidence WHERE run_id = ? ORDER BY id`, runID)
@@ -118,7 +113,6 @@ func (l *Ledger) List(ctx context.Context, runID string) ([]record, error) {
 	return out, rows.Err()
 }
 
-// Count returns every row count (the roster's evidence total).
 func (l *Ledger) Count(ctx context.Context) (int, error) {
 	var n int
 	err := l.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM evidence`).Scan(&n)
@@ -158,7 +152,6 @@ func boolInt(b bool) int {
 // runtime-owned id the tools never see, never mint.
 var spawnRunID = fmt.Sprintf("run-%x-%d", os.Getpid(), time.Now().UnixNano())
 
-// pendingCall carries a tool call from its spine sighting to its result landing.
 type pendingCall struct {
 	name     string
 	argsHash string
@@ -185,7 +178,6 @@ func argPathFor(args map[string]any) string {
 	return ""
 }
 
-// verify is the cheap post-check.
 func verify(argPath string) string {
 	if argPath == "" {
 		return ""
@@ -196,7 +188,6 @@ func verify(argPath string) string {
 	return "file:missing:" + argPath
 }
 
-// urlVerifier records a URL-carrying call's object (web.fetch's `url` arg).
 func urlVerifier(argURL string) string {
 	if argURL == "" {
 		return ""
@@ -204,7 +195,6 @@ func urlVerifier(argURL string) string {
 	return "url:" + argURL
 }
 
-// urlFor picks the URL object of a call.
 func urlFor(args map[string]any) string {
 	if raw, ok := args["url"].(string); ok {
 		if u := strings.TrimSpace(raw); u != "" && strings.IndexByte(u, 0) < 0 {
@@ -219,7 +209,6 @@ func urlFor(args map[string]any) string {
 	return ""
 }
 
-// argsHash is the cheap stable digest of a call's arguments.
 func argsHash(args map[string]any) string {
 	keys := make([]string, 0, len(args))
 	for k := range args {

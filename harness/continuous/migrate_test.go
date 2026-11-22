@@ -1,7 +1,5 @@
 package continuous
 
-// migrate_test.go: the canonical-id migration and the invariant it protects.
-
 import (
 	"context"
 	"os"
@@ -37,7 +35,6 @@ func TestCanonicalIDsAreUniquePerHome(t *testing.T) {
 	}
 }
 
-// legacyCanonicalHome writes an agent home the pre-fix way.
 func legacyCanonicalHome(t *testing.T, home, name string) string {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, name, ""); err != nil {
@@ -104,7 +101,6 @@ func TestMigrateCanonicalIDsRenamesLegacyChats(t *testing.T) {
 	}
 }
 
-// listedCanonicalHome writes an agent home the way the pre-fix build created it.
 func listedCanonicalHome(t *testing.T, home, name string) {
 	t.Helper()
 	if err := agent.ScaffoldAgent(home, name, ""); err != nil {
@@ -120,7 +116,6 @@ func listedCanonicalHome(t *testing.T, home, name string) {
 	}
 }
 
-// TestMigrateCanonicalVisibilityRepairsListedCanonicals is the round-1 regression pin.
 func TestMigrateCanonicalVisibilityRepairsListedCanonicals(t *testing.T) {
 	home := testHome(t)
 	listedCanonicalHome(t, home, "scout")

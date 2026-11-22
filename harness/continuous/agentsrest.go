@@ -1,17 +1,13 @@
 package continuous
 
 // agentsrest.go: the roster-management REST face.
-// Moved whole from agent/api/server_agents.go: GET /agents profile inventory (the
-// roster list) POST /agents scaffold a new agent directory (or a clone) GET
-// /agents/{name} one agent's detail PUT /agents/{name} the roster's edit affordance
-// DELETE /agents/{name} delete the HOME, sessions included GET /agents/{name}/sessions
-// sessions bound to this agent POST /agents/{name}/sessions create a session AS this
-// agent THE FLOOR VERDICT (the task's classification rule): no handler here serves the
-// chat floor - the chat page never fetches agent profiles (the only /agents consumer in
-// the webui is the roster panel), and the canonical-chat cross-home reads (GET
-// /continuous/{name}/chat) were born on this capsule's own route list. The store
-// resolves per request (the store seam's live re-wire law): the session counts and the
-// agent-session reads die with a disabled store, the profile reads never needed one.
+//
+// No handler here serves the chat floor - the chat page never fetches agent profiles
+// (the only /agents consumer in the webui is the roster panel), and the canonical-chat
+// cross-home reads (GET /continuous/{name}/chat) were born on this capsule's own route
+// list. The store resolves per request (the store seam's live re-wire law): the session
+// counts and the agent-session reads die with a disabled store, the profile reads never
+// needed one.
 
 import (
 	"context"
@@ -29,16 +25,15 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// agentRoutes is the roster REST face, built on the plugin's root home and mount.
 type agentRoutes struct {
 	home    string
 	ctx     *core.Context
 	machine *Machine
 }
 
-// mountedStore resolves the daemon's store seam per request (the store seam's live. Nil
-// = no store capsule mounted: the roster keeps its zero rows and the session routes
-// answer 501.
+// mountedStore resolves the daemon's store seam per request (the store seam's live
+// re-wire law). Nil = no store capsule mounted: the roster keeps its zero rows and the
+// session routes answer 501.
 func (ar *agentRoutes) mountedStore() agent.StoreProvider {
 	st, _ := ar.ctx.Services().Resolve("store").(agent.StoreProvider)
 	return st
@@ -119,21 +114,18 @@ func (ar *agentRoutes) writeAgentSession(ctx context.Context, name, id string) e
 // errNoStoreSeam is the 501 lane.
 var errNoStoreSeam = errors.New("store does not support agent sessions")
 
-// writeJSON renders one 200-family response.
 func (ar *agentRoutes) writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
 }
 
-// httpError renders one failure.
 func (ar *agentRoutes) httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
 }
 
-// registrationRows returns the pattern/handler rows the mount registers - exactly.
 func (ar *agentRoutes) registrationRows() []struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
@@ -161,14 +153,12 @@ type agentRow struct {
 	LastReportAt       string `json:"last_report_at,omitempty"`
 }
 
-// agentFacts is what the roster needs from outside the profile.
 type agentFacts struct {
 	canonical string
 	report    string
 	reportAt  string
 }
 
-// fillAgentSessions writes session counts and last activity into profiles.
 func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.Profile) map[string]agentFacts {
 	if ar.mountedStore() == nil {
 		return nil
@@ -185,7 +175,8 @@ func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.P
 				profiles[i].LastActivity = sess.UpdatedAt
 			}
 		}
-		// The canonical chat, NOT the newest row: the click's target must not move when.
+		// The canonical chat, NOT the newest row: the click's target must not move when
+		// the newest row changes.
 		cur, ok := CurrentCanonicalSession(sessions, profiles[i].Name)
 		if !ok {
 			continue // never minted, or retired: the click mints anew
@@ -197,8 +188,7 @@ func (ar *agentRoutes) fillAgentSessions(ctx context.Context, profiles []agent.P
 	return facts
 }
 
-// canonicalPreview reads one canonical chat's one-line preview off the store that. A
-// dead read answers "" - the row renders without a preview, never with an invented one.
+// A dead read answers "": the row renders without a preview, never with an invented one.
 func (ar *agentRoutes) canonicalPreview(ctx context.Context, name, id string) string {
 	st, closeFn, err := ar.agentStoreFor(name)
 	if err != nil || st == nil {
@@ -214,7 +204,6 @@ func (ar *agentRoutes) canonicalPreview(ctx context.Context, name, id string) st
 	return previewOf(msgs)
 }
 
-// rosterRows pairs each profile with its canonical chat facts.
 func rosterRows(profiles []agent.Profile, facts map[string]agentFacts) []agentRow {
 	rows := make([]agentRow, 0, len(profiles))
 	for _, p := range profiles {
@@ -284,7 +273,7 @@ var errCloneStoreTag = errors.New("re-tag cloned sessions")
 // retagAgentSessions is the clone's last SQLite step, swappable in tests.
 var retagAgentSessions = store.RetagAgentSessions
 
-// wireStoreSnapshot installs the SQLite-backed store copier the CLONE law needs.
+// The CLONE law's store copier (agent.StoreSnapshot has no default).
 func init() {
 	agent.StoreSnapshot = store.SnapshotStore
 }
@@ -306,7 +295,6 @@ func (ar *agentRoutes) cloneAgent(from, to, description string) error {
 	return nil
 }
 
-// retagClonedSessions rewrites the copied store's agent tags to the clone.
 func (ar *agentRoutes) retagClonedSessions(from, to string) error {
 	dsn := filepath.Join(agent.AgentDir(ar.home, to), "data", "omega.db")
 	if from == agent.DefaultAgentName {

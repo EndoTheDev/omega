@@ -52,7 +52,6 @@ func (m *Machine) tickObserver() core.EventObserver {
 	}
 }
 
-// childExe resolves the wake child binary.
 func (m *Machine) childExe() (string, error) {
 	if m.spawnExe != nil {
 		return m.spawnExe()
@@ -60,7 +59,6 @@ func (m *Machine) childExe() (string, error) {
 	return os.Executable()
 }
 
-// logf writes to stderr.
 func (m *Machine) logf(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "continuous: "+format+"\n", args...)
 }
@@ -73,7 +71,7 @@ func (m *Machine) logf(format string, args ...any) {
 // RUNNING, never when its loop finishes; the report lands in the agent's own canonical
 // session by the child's own persistence.
 func (m *Machine) Wake(name, message, model string) error {
-	// The soft-disable law (v0.14.1). A disabled agent's home is never touched.
+	// The soft-disable law: a disabled agent's home is never touched.
 	if m.agentDisabled(name) {
 		return fmt.Errorf("continuous: agent %s is disabled (config.yaml disabled.agents) - wake refused", name)
 	}
@@ -95,7 +93,6 @@ func (m *Machine) Wake(name, message, model string) error {
 	return nil
 }
 
-// Sleep terminates a live wake (the roster's sleep button).
 func (m *Machine) Sleep(name string) {
 	m.mu.Lock()
 	cancel, ok := m.live[name]
@@ -105,7 +102,6 @@ func (m *Machine) Sleep(name string) {
 	}
 }
 
-// runWake builds and runs the child process for one wake.
 func (m *Machine) runWake(p agent.Profile, message, model string) {
 	defer func() {
 		m.mu.Lock()
@@ -169,7 +165,6 @@ func (m *Machine) runWake(p agent.Profile, message, model string) {
 	}
 }
 
-// LiveWake reports whether the named agent currently has a wake running.
 func (m *Machine) LiveWake(name string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -189,9 +184,9 @@ type EvidenceRow struct {
 }
 
 // Evidence reads the named agent's evidence ledger: rows grouped by run, latest first.
-// When is an agent-home read but NOT a roster/canonical-chat read - it rides the
-// allow-list as its own item because names the ledger as runtime-owned evidence the
-// roster must be able to cite; it reads NOTHING else about the home.
+// It is an agent-home read but NOT a roster/canonical-chat read - it rides the allow-list
+// as its own item because it names the ledger as runtime-owned evidence the roster must
+// be able to cite; it reads NOTHING else about the home.
 func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 	p, err := agent.LoadProfile(m.home, name)
 	if err != nil {
@@ -206,7 +201,6 @@ func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 	return lg.All(context.Background())
 }
 
-// WakeNow is the roster's wake button.
 func (m *Machine) WakeNow(name string) error {
 	return m.Wake(name, "", "")
 }

@@ -1,7 +1,5 @@
 package continuous
 
-// report_test.go: the wake report's shape self-checks.
-
 import (
 	"context"
 	"os"
@@ -13,7 +11,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// row is a ledger fixture helper.
 func row(id int64, ok bool, verifier string) record {
 	return record{ID: id, RunID: spawnRunID, Tool: "shell", ArgsHash: "0123456789abcdef", OK: ok, Verifier: verifier}
 }
@@ -171,7 +168,6 @@ func TestWakeReportSinkShapesOnlyClosing(t *testing.T) {
 	}
 }
 
-// captureSink collects persisted messages in order.
 type captureSink struct {
 	messages *[]core.Message
 }

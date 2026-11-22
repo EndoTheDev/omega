@@ -1,7 +1,5 @@
 package continuous
 
-// continuous_test.go: the home machinery self-checks.
-
 import (
 	"context"
 	"os"
@@ -15,7 +13,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// testHome writes a minimal omega home.
 func testHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()

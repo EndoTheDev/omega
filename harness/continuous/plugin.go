@@ -1,7 +1,5 @@
 package continuous
 
-// plugin.go: the capsule adapter.
-
 import (
 	"encoding/json"
 	"fmt"
@@ -13,16 +11,14 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Plugin adapts the continuous machinery into omega's plugin system.
 type Plugin struct {
 	home    string   // the ROOT omega home; "" = datadir.Home() fallback
-	cfg     Config   // the mounted config section
+	cfg     Config
 	machine *Machine // nil until MountWithAPI
 	ctx     *core.Context
 	ledger  *Ledger // nil until MountWithAPI; Close releases it
 }
 
-// Compile-time assertion that *Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)
 
 // NewPluginWithHome creates the plugin against an explicit root home
@@ -30,24 +26,18 @@ var _ agent.Plugin = (*Plugin)(nil)
 // resolution).
 func NewPluginWithHome(home string) *Plugin { return &Plugin{home: home} }
 
-// Name returns the plugin name shown in the /extensions listing.
 func (p *Plugin) Name() string { return "continuous" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "continuous: agent homes, wake subprocesses, canonical chats, the evidence ledger"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "continuous" }
 
-// Provides lists the seams this plugin mounts: none exclusive.
 func (p *Plugin) Provides() []string { return nil }
 
-// Requires: store.
 func (p *Plugin) Requires() []string { return []string{"store"} }
 
-// MountWithAPI wires the capsule.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["continuous"].(Config); ok {
@@ -109,12 +99,11 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule as a module capsule (the tier law).
 func (p *Plugin) Toggleable() bool { return true }
 
-// SetDisabledAgents swaps the disabled.agents soft-toggle list live (v0.14.1. Nil
-// before Mount is recorded - the mount reads it first, but a toggle that early never
-// happens (the seam only exists on a wired channel).
+// SetDisabledAgents swaps the disabled.agents soft-toggle list live. Before Mount it is
+// a no-op: the mount reads the config first.
 func (p *Plugin) SetDisabledAgents(names []string) {
 	if p.machine != nil {
 		p.machine.SetDisabledAgents(names)
@@ -133,13 +122,11 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 	return err
 }
 
-// routeRow is one REST registration.
 type routeRow struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
 }
 
-// routes builds the capsule's REST face.
 func (p *Plugin) routes() []routeRow {
 	m := p.machine
 	rows := []routeRow{
@@ -241,14 +228,12 @@ func sleepHandler(m *Machine) http.HandlerFunc {
 	}
 }
 
-// writeJSON renders one 200.
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	_ = enc.Encode(v)
 }
 
-// httpError renders one failure.
 func httpError(w http.ResponseWriter, code int, format string, args ...any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)

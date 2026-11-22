@@ -1,5 +1,3 @@
-// continuousRows.ts: the pure view-model helpers for the continuous roster pane.
-
 export interface OmegaContinuousRow {
   name: string;
   description?: string;
@@ -32,20 +30,16 @@ export interface OmegaChatMessage {
   timestamp?: string;
 }
 
-// rowStatus is the list-row status voice.
 export function rowStatus(row: OmegaContinuousRow): string {
   if (row.unread) return "unread report";
   if (row.next_wake) return `next wake ${shortWhen(row.next_wake)}`;
   return "sleeping";
 }
 
-// shortWhen renders an ISO timestamp as its local HH:MM.
 export function shortWhen(iso: string): string {
   const cut = iso.slice(11, 16);
   return cut || "-";
 }
-
-// The under-row last-report preview helper is DELETED.
 
 // evidenceSummary is the detail strip's evidence line: the run's
 // verdict counts in one voice ("4 ok, 1 failed" style), empty when no
@@ -57,7 +51,6 @@ export function evidenceSummary(rows: OmegaEvidenceRow[]): string {
   return failed === 0 ? `${ok} ok` : `${ok} ok, ${failed} failed`;
 }
 
-// verifierVoice renders one row's verifier verdict or a dash.
 export function verifierVoice(row: OmegaEvidenceRow): string {
   return row.verifier || "-";
 }

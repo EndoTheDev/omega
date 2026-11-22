@@ -14,7 +14,6 @@ import (
 	"time"
 )
 
-// stubSource is the wake-child stub program.
 const stubSource = `package main
 
 import (
@@ -55,7 +54,6 @@ func main() {
 }
 `
 
-// stubExePath is the built stub binary for this test run (windows only).
 var stubExePath string
 
 func TestMain(m *testing.M) {
