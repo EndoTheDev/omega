@@ -1,6 +1,5 @@
 package mcp
 
-
 import (
 	"encoding/json"
 	"net/http/httptest"
@@ -166,5 +165,48 @@ func TestCRUDDeleteUnmountsStdioCleanly(t *testing.T) {
 	rep := decodeReport(t, serveRoute(t, ctx, "GET /mcp/servers", "GET", "/mcp/servers"))
 	if len(rep.Servers) != 0 {
 		t.Fatalf("after delete: %+v", rep.Servers)
+	}
+}
+
+// The panel's edit round trip: GET answers the whole entry masked, and the save that
+// carries the mask back keeps the env value on disk (the settings mask law).
+func TestCRUDSaveMaskedSecretRoundTrip(t *testing.T) {
+	home := crudHome(t)
+	ctx := mountReloadPlugin(t, NewPlugin(nil))
+
+	w := serveJSON(t, ctx, "POST /mcp/save", "/mcp/save",
+		`{"name":"fake","command":"jrn-nonexistent","args":["--x"],"env":{"TOKEN":"s3cret"},"enabled":false}`)
+	if w.Code != 200 {
+		t.Fatalf("seed save: %d %s", w.Code, w.Body.String())
+	}
+	got := decodeReport(t, serveRoute(t, ctx, "GET /mcp/servers", "GET", "/mcp/servers"))
+	if len(got.Servers) != 1 {
+		t.Fatalf("servers: %+v", got.Servers)
+	}
+	row := got.Servers[0]
+	if len(row.Args) != 1 || row.Args[0] != "--x" {
+		t.Fatalf("args on the wire: %v, want [--x]", row.Args)
+	}
+	if row.Env["TOKEN"] != maskedValue {
+		t.Fatalf("env on the wire: %q, want the mask", row.Env["TOKEN"])
+	}
+
+	w = serveJSON(t, ctx, "POST /mcp/save", "/mcp/save",
+		`{"name":"fake","command":"jrn-other","args":["--x"],"env":{"TOKEN":"****"},"enabled":false}`)
+	if w.Code != 200 {
+		t.Fatalf("masked save: %d %s", w.Code, w.Body.String())
+	}
+	text := readFileString(t, filepath.Join(home, "config", "mcp.yaml"))
+	if !strings.Contains(text, "TOKEN: s3cret") {
+		t.Fatalf("the masked save dropped the stored secret:\n%s", text)
+	}
+	if !strings.Contains(text, "command: jrn-other") {
+		t.Fatalf("the edit did not land:\n%s", text)
+	}
+
+	w = serveJSON(t, ctx, "POST /mcp/save", "/mcp/save",
+		`{"name":"fake","command":"jrn-other","args":["--x"],"env":{"NEW":"****"},"enabled":false}`)
+	if w.Code != 400 {
+		t.Fatalf("a mask on a new key: got %d, want 400 (%s)", w.Code, w.Body.String())
 	}
 }

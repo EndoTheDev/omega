@@ -27,6 +27,13 @@ import {
 } from "../../harness/mcp/ui/serverRows.ts";
 import { reloadMcpServers } from "../../harness/mcp/ui/reload.ts";
 import { setMcpServerEnabled } from "../../harness/mcp/ui/toggle.ts";
+import {
+  MCP_MASKED,
+  draftOf,
+  draftToBody,
+  pairLines,
+  saveMcpServer,
+} from "../../harness/mcp/ui/edit.ts";
 
 // module UI source lives at the repo root (webui/test is three levels under it)
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -317,4 +324,123 @@ test("the shell mounts the panel: the outlet template rides app.vue, the route i
     !status.includes("MethodPut") && !status.includes("PUT"),
     "no write verb vocabulary",
   );
+});
+// the entry editor --------------------------------- the lossless-save half.
+
+test("draftOf: the wire's whole entry becomes the form's lines, masks included", () => {
+  const d = draftOf({
+    name: "docs",
+    transport: "stdio",
+    command: "/bin/echo",
+    args: ["--flag", "value"],
+    env: { TOKEN: MCP_MASKED, EMPTY: "" },
+    enabled: false,
+  });
+  assert.equal(d.name, "docs");
+  assert.equal(d.transport, "stdio");
+  assert.equal(d.command, "/bin/echo");
+  assert.equal(d.args, "--flag\nvalue", "one arg per line");
+  assert.equal(d.env, "EMPTY=\nTOKEN=****", "KEY=VALUE lines, keys sorted, the mask kept");
+  assert.equal(d.enabled, false);
+});
+
+test("draftOf: an http entry reads url + headers, never the stdio half", () => {
+  const d = draftOf({ name: "web", transport: "http", url: "http://x/mcp", headers: { Authorization: "****" } });
+  assert.equal(d.transport, "http");
+  assert.equal(d.url, "http://x/mcp");
+  assert.equal(d.headers, "Authorization: ****");
+  assert.equal(d.command, "");
+});
+
+test("draftToBody: a stdio edit sends command/args/env and nothing else", () => {
+  const { body, error } = draftToBody({
+    name: "docs",
+    transport: "stdio",
+    command: " /bin/echo ",
+    args: "--flag\n\n value \n",
+    env: "TOKEN=****\nEMPTY=",
+    url: "http://stale/mcp",
+    headers: "X: stale",
+    enabled: true,
+  });
+  assert.equal(error, "");
+  assert.deepEqual(body, {
+    name: "docs",
+    command: "/bin/echo",
+    args: ["--flag", "value"],
+    env: { TOKEN: "****", EMPTY: "" },
+  }, "no enabled key on an enabled row; url/headers never ride a stdio save");
+});
+
+test("draftToBody: a disabled row keeps enabled:false so an edit cannot resurrect it", () => {
+  const { body } = draftToBody({
+    name: "docs",
+    transport: "http",
+    command: "",
+    args: "",
+    env: "",
+    url: "http://x/mcp",
+    headers: "",
+    enabled: false,
+  });
+  assert.equal(body?.enabled, false);
+  assert.equal(body?.url, "http://x/mcp");
+  assert.equal(body?.headers, undefined, "an empty header box empties the map, it writes no key");
+});
+
+test("draftToBody: the form refuses what the route would refuse", () => {
+  const base = {
+    name: "docs",
+    transport: "stdio" as const,
+    command: "  ",
+    args: "",
+    env: "",
+    url: "",
+    headers: "",
+    enabled: true,
+  };
+  assert.match(draftToBody(base).error, /command is required/);
+  assert.match(
+    draftToBody({ ...base, transport: "http", command: "", url: "ftp://x/mcp" }).error,
+    /http\(s\)/,
+  );
+  assert.match(draftToBody({ ...base, command: "/bin/echo", env: "TOKEN" }).error, /expected KEY=VALUE/);
+  assert.match(
+    draftToBody({ ...base, command: "/bin/echo", env: "=value" }).error,
+    /expected KEY=VALUE/,
+  );
+});
+
+test("pairLines: the first separator splits, blank lines drop, values keep the separator", () => {
+  assert.deepEqual(pairLines("A=1\n\nB=x=y\n", "=", "env").pairs, { A: "1", B: "x=y" });
+  assert.deepEqual(pairLines("Host: a:b\n", ":", "header").pairs, { Host: "a:b" });
+});
+
+test("saveMcpServer: one POST /mcp/save round trip, the body IS the fresh listing", async () => {
+  const calls: { url: string; method: string; body?: string }[] = [];
+  savedFetch = globalThis.fetch;
+  globalThis.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+    calls.push({ url: String(url), method: init?.method ?? "GET", body: init?.body == null ? undefined : String(init.body) });
+    return new Response(
+      JSON.stringify({ source: "mcp.yaml", servers: [{ name: "docs", transport: "stdio", command: "/bin/echo", args: ["--flag"], env: { TOKEN: "****" }, connected: false, enabled: true }] }),
+      { status: 200 },
+    );
+  }) as typeof globalThis.fetch;
+  try {
+    const rep = await saveMcpServer({ name: "docs", command: "/bin/echo", args: ["--flag"], env: { TOKEN: MCP_MASKED } });
+    assert.equal(calls.length, 1, "no follow-up GET - the POST body is the listing");
+    assert.equal(calls[0].url, "/mcp/save");
+    assert.equal(calls[0].method, "POST");
+    assert.equal(rep.servers?.[0]?.args?.[0], "--flag", "the fresh listing carries the saved entry");
+  } finally {
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("the panel wires the editor: the menu's Edit opens the form, the save rides the helper", () => {
+  const src = read(root, "harness", "mcp", "ui", "McpServers.vue");
+  assert.match(src, /draftOf\(s\)/, "the form seeds from the wire's whole entry");
+  assert.match(src, /saveMcpServer\(body\)/, "the save rides the edit helper, never a raw fetch");
+  assert.match(src, /edit: \(\) => startEdit\(s\)/, "the menu's Edit row opens the entry form");
+  assert.ok(!src.includes("method:"), "the panel itself still carries no write verb");
 });

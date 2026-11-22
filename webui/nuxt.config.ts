@@ -132,6 +132,17 @@ export default defineNuxtConfig({
         // lane answers the SPA's terminal calls with SSR HTML and the pane never leaves
         // "connecting...", so no journey can exercise the shell in dev
         "/terminal",
+        // the tools registry's fold-aware management read is QUERY-BEARING: the bare
+        // "/tools" key never matches it, so the tab booted on SSR HTML and rendered no
+        // rows (the same prefix rule as "/sessions?archived=include" above)
+        "/tools?disabled=1",
+        // the composer's attach lane: a picked file POSTs /attach-file (and the remote
+        // image door POSTs /attach-image) - unmatched, the chip never parks
+        "/attach-file",
+        "/attach-image",
+        // the notifications feed's REST pair: GET lists, DELETE clears - the feed panel
+        // and the journey's clear-all leg both read it off this lane
+        "/notifications",
         "/commands", "/commands/dispatch", //: the palette's GET
         // /commands (extension registry rows) and POST /commands/dispatch.
         "/modules", //: the settings tab's modules group fetches

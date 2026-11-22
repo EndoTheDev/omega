@@ -174,15 +174,68 @@ func serversDocument(path string) (*yaml.Node, *yaml.Node, error) {
 	return &doc, seq, nil
 }
 
+// storedValues reads one entry node's map field ("env" / "headers") as the file holds it.
+func storedValues(item *yaml.Node, key string) map[string]string {
+	for i := 0; i+1 < len(item.Content); i += 2 {
+		k, v := item.Content[i], item.Content[i+1]
+		if k.Kind != yaml.ScalarNode || k.Value != key || v.Kind != yaml.MappingNode {
+			continue
+		}
+		out := make(map[string]string, len(v.Content)/2)
+		for j := 0; j+1 < len(v.Content); j += 2 {
+			out[v.Content[j].Value] = v.Content[j+1].Value
+		}
+		return out
+	}
+	return nil
+}
+
+// resolveMaskedMap swaps every masked value for the one already on disk. A mask with no
+// stored value is refused: a save must never write the mask out as the credential (the
+// settings raw-save law), and a mask on a new entry has nothing to keep.
+func resolveMaskedMap(field, name string, submitted, stored map[string]string) error {
+	for k, v := range submitted {
+		if v != maskedValue {
+			continue
+		}
+		old, ok := stored[k]
+		if !ok || old == "" {
+			return fmt.Errorf("server %q: %s %s carries the read mask but the stored entry has no value to keep - type a real value", name, field, k)
+		}
+		submitted[k] = old
+	}
+	return nil
+}
+
+// resolveMaskedValues restores the secrets an edit left untouched. It reads the entry the
+// file holds NOW, never the live bridge: a hand edit the bridge has not reloaded yet is
+// still the truth on disk.
+func resolveMaskedValues(seq *yaml.Node, sc *serverConfig) error {
+	if len(sc.Env) == 0 && len(sc.Headers) == 0 {
+		return nil
+	}
+	var stored *yaml.Node
+	for _, item := range seq.Content {
+		if item.Kind == yaml.MappingNode && namesServer(item, sc.Name) {
+			stored = item
+			break
+		}
+	}
+	var env, headers map[string]string
+	if stored != nil {
+		env, headers = storedValues(stored, "env"), storedValues(stored, "headers")
+	}
+	if err := resolveMaskedMap("env", sc.Name, sc.Env, env); err != nil {
+		return err
+	}
+	return resolveMaskedMap("headers", sc.Name, sc.Headers, headers)
+}
+
 // upsertServerEntry writes the entry into the mcp.yaml at path. Duplicate names are
 // refused before any write touches the file (the toggle route's ambiguity law: the
 // bridge resolves one name, two rows would lie).
 func upsertServerEntry(path string, sc serverConfig) error {
 	if err := validateServerEntry(sc); err != nil {
-		return err
-	}
-	entry, err := serverEntryNode(sc)
-	if err != nil {
 		return err
 	}
 	doc, seq, err := serversDocument(path)
@@ -197,6 +250,13 @@ func upsertServerEntry(path string, sc serverConfig) error {
 	}
 	if matches > 1 {
 		return fmt.Errorf("parse %s: more than one server named %s - edit the file by hand and rename one", path, sc.Name)
+	}
+	if err := resolveMaskedValues(seq, &sc); err != nil {
+		return err
+	}
+	entry, err := serverEntryNode(sc)
+	if err != nil {
+		return err
 	}
 	replaced := false
 	for _, item := range seq.Content {
