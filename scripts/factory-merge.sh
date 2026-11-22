@@ -55,10 +55,12 @@
 #   KANBAN_DB        board db (inherited by train-pass; unset, the train
 #                    resolves the live home's board db itself - card
 #                    t_7acaa267, never the dead $HOME/.hermes legacy default)
-#   OMEGA_HOME       the SERVING lane home for the journeys gate (inherited;
-#   OMEGA_BIN        unset, the train derives <checkout>/bin and refuses
-#                    BEFORE the merge when it cannot)
-#   JOURNEY_BASE_URL the lane those journeys drive (inherited; health-checked
+#   OMEGA_HOME       the SERVING lane home the TRAIN_JOURNEYS_CMD debugging
+#   OMEGA_BIN        unit seeds into (inherited; unset, the train derives
+#                    <checkout>/bin and refuses BEFORE the merge when it
+#                    cannot). The battery itself carries no browser leg -
+#                    the journeys are CI-owned (docs/pipeline.md)
+#   JOURNEY_BASE_URL the lane that unit drives (inherited; health-checked
 #                    as a precondition)
 #   TRAIN_GATES_CMD  forwarded - the test override for the gate list
 #

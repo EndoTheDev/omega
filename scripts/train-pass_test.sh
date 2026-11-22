@@ -813,7 +813,7 @@ grep -q "KANBAN_DB is set but there is no board db at .*dead/kanban.db" "$HARNES
 grep -q "DONE t_pin" "$HARNESS/run.out" && badf "S9: an explicit dead override must never land a neighbour board"
 [ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S9: dev must be untouched"
 
-echo "== S10a: journeys gate with no derivable lane home refuses BEFORE the merge"
+echo "== S10a: a TRAIN_JOURNEYS_CMD with no derivable lane home refuses BEFORE the merge"
 ok
 
 mk_harness
@@ -823,17 +823,20 @@ fixture_journeys
 git -C "$REPO" add -A
 git -C "$REPO" commit -qm "test(fixture): journeys suite"
 card_branch t_nolane 630
+export TRAIN_JOURNEYS_CMD="scripts/journeys/run.sh"
 pre="$(git -C "$REPO" rev-parse dev)"
 run --no-push
+unset TRAIN_JOURNEYS_CMD
 if [ "$rc" != 2 ]; then badf "S10a: no lane home must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
 grep -q "cannot run green without a lane home" "$HARNESS/run.out" || badf "S10a: refusal must name the lane-home gap: $(cat "$HARNESS/run.out")"
+grep -q "TRAIN_JOURNEYS_CMD is set" "$HARNESS/run.out" || badf "S10a: the refusal must name the override that armed it: $(cat "$HARNESS/run.out")"
 [ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S10a: the refusal must come BEFORE the merge (dev moved)"
 [ "$(status_of t_nolane)" = "done" ] || badf "S10a: a precondition refusal never demotes, got $(status_of t_nolane)"
 git -C "$REPO" show-ref --verify --quiet refs/heads/wt/t_nolane || badf "S10a: branch must survive"
 sqlite3 "$KANBAN_DB" "SELECT count(*) FROM task_comments WHERE task_id='t_nolane';" | grep -q '^0$' ||
   badf "S10a: a precondition refusal posts nothing (no strike, no red-gate evidence)"
 
-echo "== S10b: <checkout>/bin is derived and the gate inherits OMEGA_HOME/OMEGA_BIN"
+echo "== S10b: <checkout>/bin is derived for the debugging unit and the gate inherits OMEGA_HOME/OMEGA_BIN"
 ok
 
 mk_harness
@@ -846,13 +849,14 @@ git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home"
 card_branch t_lane 640
 lane_stub
 export JOURNEY_WITNESS="$HARNESS/journey.env"
+export TRAIN_JOURNEYS_CMD="scripts/journeys/run.sh"
 run_with_lane ok
-unset JOURNEY_WITNESS
+unset JOURNEY_WITNESS TRAIN_JOURNEYS_CMD
 if [ "$rc" != 0 ]; then badf "S10b: expected rc 0 with a derived lane home, got $rc: $(cat "$HARNESS/run.out")"; fi
 grep -q "journeys lane home (derived): .*bin" "$HARNESS/run.out" || badf "S10b: derivation line missing: $(cat "$HARNESS/run.out")"
 [ -f "$HARNESS/journey.env" ] || badf "S10b: the journeys command never ran"
-grep -q "^ARGS=--regression$" "$HARNESS/journey.env" ||
-  badf "S10b: the default gate must run the named regression set (--regression), got: $(cat "$HARNESS/journey.env")"
+grep -q "^ARGS=$" "$HARNESS/journey.env" ||
+  badf "S10b: the debugging unit must receive no injected flag, got: $(cat "$HARNESS/journey.env")"
 grep -q "OMEGA_HOME=.*/repo/bin" "$HARNESS/journey.env" || badf "S10b: OMEGA_HOME must reach the gate: $(cat "$HARNESS/journey.env")"
 grep -q "OMEGA_BIN=.*/repo/bin/omega" "$HARNESS/journey.env" || badf "S10b: OMEGA_BIN must reach the gate: $(cat "$HARNESS/journey.env")"
 grep -q "DONE t_lane" "$HARNESS/run.out" || badf "S10b: no landing: $(cat "$HARNESS/run.out")"
@@ -870,12 +874,38 @@ git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home"
 card_branch t_deadlane 650
 lane_stub
 pre="$(git -C "$REPO" rev-parse dev)"
+export TRAIN_JOURNEYS_CMD="scripts/journeys/run.sh"
 run_with_lane dead
+unset TRAIN_JOURNEYS_CMD
 if [ "$rc" != 2 ]; then badf "S10c: a dead lane must refuse exit 2, got $rc: $(cat "$HARNESS/run.out")"; fi
 grep -q "is not healthy" "$HARNESS/run.out" || badf "S10c: refusal must name the lane health: $(cat "$HARNESS/run.out")"
 [ "$(git -C "$REPO" rev-parse dev)" = "$pre" ] || badf "S10c: the refusal must come BEFORE the merge (dev moved)"
 [ "$(status_of t_deadlane)" = "done" ] || badf "S10c: a lane red at precondition time never demotes, got $(status_of t_deadlane)"
 grep -q "DONE t_deadlane" "$HARNESS/run.out" && badf "S10c: nothing may land on a dead lane"
+
+echo "== S10d: the default battery owns NO journeys leg - CI does (t_a78c6f3a)"
+ok
+
+mk_harness
+new_repo
+new_board
+fixture_journeys
+fixture_lane_home
+git -C "$REPO" add -A
+git -C "$REPO" commit -qm "test(fixture): journeys suite + lane home, no override"
+card_branch t_cijur 655
+lane_stub
+export JOURNEY_WITNESS="$HARNESS/journey.env"
+run_with_lane ok
+unset JOURNEY_WITNESS
+if [ "$rc" != 0 ]; then badf "S10d: expected rc 0, got $rc: $(cat "$HARNESS/run.out")"; fi
+[ -f "$HARNESS/journey.env" ] &&
+  badf "S10d: the suite ran LOCALLY without an override - the battery must carry no browser leg"
+[ "$(grep -c 'validation journeys: CI-owned (push-triggered)' "$HARNESS/run.out")" = 1 ] ||
+  badf "S10d: the pass log must carry exactly one CI-owned journeys line: $(cat "$HARNESS/run.out")"
+grep -q "journeys lane home" "$HARNESS/run.out" &&
+  badf "S10d: no override means no lane precondition and no derived lane home: $(cat "$HARNESS/run.out")"
+grep -q "DONE t_cijur" "$HARNESS/run.out" || badf "S10d: no landing: $(cat "$HARNESS/run.out")"
 
 echo "== S11: TRAIN_JOURNEYS_CMD replaces the whole command (no flag injected, spaces allowed)"
 ok

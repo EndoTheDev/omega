@@ -116,6 +116,11 @@ carries no hermes config at all gets the documented floor of 2, loudly
 config that is unreadable, carries no numeric knob, or names a
 non-positive value refuses in every mode.
 
+FD_GH names the gh binary the tip-CI verdict reads through (default `gh`;
+the test suite's seam). The pass prints one `tip CI:` line every run and
+holds the spawn while the dev tip's `Journeys regression` job is red or in
+flight (the merge-before-dispatch law) - docs/pipeline.md.
+
 Hermes home + board follow the hermes CLI's own resolution:
 HERMES_KANBAN_DB (pins the DB file) > HERMES_KANBAN_BOARD /
 HERMES_KANBAN_HOME > HERMES_HOME (a profiles/<name> home names its
@@ -1185,6 +1190,95 @@ if [ "${#UNSLOTTED[@]}" -gt 0 ]; then
   echo "impl lane over-cap: ${UNSLOTTED[*]} - legal, but no implementation slot this pass ($SLOTS head slot(s), $RUNIMPL_N of $IMPL_SEATS seats live)"
 fi
 
+# ---- tip CI verdict: the CI-owned journeys gate (card t_a78c6f3a) ---------
+# Every push to dev triggers the ci.yml `Journeys regression` job, so the LOCAL
+# battery can no longer say anything about the browser legs - and a pass that
+# never reads them would pile local-green landings onto a tip whose suite is
+# unproven. The merge-before-dispatch law gains this leg: read the dev tip's
+# verdict BEFORE anything spawns and hold the pass while it is red or in
+# flight. Green or absent (no run for that sha: a docs-only push, or a
+# workflow revision older than the job) proceeds. An unreadable verdict (no
+# gh, no auth, no dev ref) proceeds LOUDLY - a missing tool must never freeze
+# the factory. FD_GH is the suite's seam: the gh binary the check reads
+# through.
+FD_GH="${FD_GH:-gh}"
+TIP_SHA=""
+TIP_VERDICT="unknown"
+TIP_WHY=""
+TIP_HOLD=0
+
+# Reads through FD_GH; bounded by coreutils timeout where the host has it, so a
+# hung GitHub call can never stall the tick (the read is advisory, the hold is
+# not worth a frozen factory).
+gh_call() {
+  if command -v timeout >/dev/null 2>&1; then
+    timeout 30 "$FD_GH" "$@"
+  else
+    "$FD_GH" "$@"
+  fi
+}
+
+tip_ci_verdict() {
+  local sha runid jobs jname jstatus jconcl
+  # Sets TIP_VERDICT / TIP_SHA / TIP_WHY directly: a command substitution would
+  # run this in a subshell and throw all three away.
+  sha="$(git rev-parse -q --verify dev 2>/dev/null || true)"
+  [ -n "$sha" ] || sha="$(git rev-parse -q --verify origin/dev 2>/dev/null || true)"
+  if [ -z "$sha" ]; then
+    TIP_WHY="no dev ref in $PWD"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
+  TIP_SHA="$sha"
+  if ! command -v "$FD_GH" >/dev/null 2>&1; then
+    TIP_WHY="no $FD_GH on PATH"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
+  runid="$(gh_call run list --workflow ci.yml --commit "$sha" --event push --limit 10 \
+    --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
+  if [ -z "$runid" ]; then
+    TIP_WHY="no CI run recorded for this commit"
+    TIP_VERDICT="absent"
+    return 0
+  fi
+  jobs="$(gh_call run view "$runid" --json jobs \
+    --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
+  if [ -z "$jobs" ]; then
+    TIP_WHY="run $runid unreadable"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
+  while IFS=$'\t' read -r jname jstatus jconcl; do
+    case "$jname" in
+      'Journeys regression'*)
+        if [ "$jstatus" != "completed" ]; then
+          TIP_WHY="job \"$jname\" is $jstatus (run $runid)"
+          TIP_VERDICT="inflight"
+          return 0
+        fi
+        case "$jconcl" in
+          success) TIP_WHY="job \"$jname\" green (run $runid)"; TIP_VERDICT="green" ;;
+          skipped) TIP_WHY="job \"$jname\" skipped (run $runid)"; TIP_VERDICT="absent" ;;
+          *) TIP_WHY="job \"$jname\" $jconcl (run $runid)"; TIP_VERDICT="red" ;;
+        esac
+        return 0
+        ;;
+    esac
+  done <<<"$jobs"
+  TIP_WHY="run $runid carries no \"Journeys regression\" job (workflow revision older than the job)"
+  TIP_VERDICT="absent"
+}
+
+tip_ci_verdict
+case "$TIP_VERDICT" in
+  red|inflight) TIP_HOLD=1 ;;
+esac
+echo "tip CI: $TIP_VERDICT - dev ${TIP_SHA:0:12} ${TIP_WHY}"
+if [ "$TIP_HOLD" = 1 ]; then
+  echo "tip CI: HOLD - no spawn while the dev tip's regression verdict is unproven (the merge-before-dispatch law: a red tip is fix-forward + the un-land discipline, carded per the red-gate flake law)"
+fi
+
 [ "$DRY" = 1 ] && { echo "cap=$CAP"; echo "(dry-run: no dispatch)"; exit 0; }
 
 # guard bug #11 (2026-10-30): recompute_ready (kanban_db.py:2035) runs on
@@ -1260,7 +1354,7 @@ CLAIMABLE=$(dbq "SELECT (SELECT COUNT(*) FROM tasks WHERE status='ready') + (SEL
 # 2 implementation cards running, a third run may still be the review lane's
 # one seat (2 + 1 = 3). Past TOTAL_SEATS nothing can spawn, whatever the
 # claimable count says.
-if [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
+if [ "$TIP_HOLD" = 0 ] && [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
   DOUT=$(mktemp)
   # BUDGET-derived, and CLAMPED below by the head verdict: an explicit --max N
   # is a TRUE concurrency cap (running + spawns), a bare pass fills the factory
@@ -1398,8 +1492,13 @@ if [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
 else
   # Name the reason, not just the cap: `running=0/cap=2` on a board whose only
   # work sits in the review lane with a lock, or on a board with no work at
-  # all, is the same line - the tick reads claimable to tell them apart.
-  echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP, claimable=$CLAIMABLE)"
+  # all, is the same line - the tick reads claimable to tell them apart. A tip
+  # hold is a third reason and must not read as a full factory.
+  if [ "$TIP_HOLD" = 1 ]; then
+    echo "no dispatch (tip CI $TIP_VERDICT, running=${#RUNNING[@]}/cap=$CAP, claimable=$CLAIMABLE)"
+  else
+    echo "no dispatch (running=${#RUNNING[@]}/cap=$CAP, claimable=$CLAIMABLE)"
+  fi
 fi
 
 # sweep repair (guard bug #11): named holds go back to their pre-pass

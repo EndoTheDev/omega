@@ -56,7 +56,8 @@ gate + soak automation.
    final tree (go build/vet/test + `-race` on the packages the batch
    touches - the race leg is SKIPPED with one receipt line on a host with
    no cgo toolchain, see below - dep-law gate, worker fence eval, webui
-   node suite, embed-lane static regen, validation journeys), then push
+   node suite, embed-lane static regen; the browser legs are CI-owned and
+   never run in the pass, see below), then push
    `origin dev` and one marker ref `refs/train/<seq>-<task_id>` per card at
    its merge commit. Green or red, the state machine is the same for every
    card. A card that conflicts or replays wrong is dropped from the batch
@@ -71,9 +72,9 @@ gate + soak automation.
    runs once more on that tree before the push. A red the walk cannot pin
    to a card (a pre-existing red on dev, a served-lane red) un-lands the
    whole batch: nothing is pushed ungated. Probe mode keeps the code legs
-   and skips the three legs a probe checkout cannot measure - the webui
-   node suite and the embed lane need the main checkout's `node_modules`,
-   and the journeys measure the SERVED lane, which lags the tree (below).
+   and skips the two legs a probe checkout cannot measure - the webui
+   node suite and the embed lane both need the main checkout's
+   `node_modules`; the journeys are CI-owned and run nowhere locally.
 
    The queued branch is the row's `branch_name`, or `wt/<task_id>` when the
    row carries none - a scratch-spawned card lands with a NULL
@@ -161,34 +162,48 @@ assumptions were wrong on a host whose live home was remapped.
   An explicit `KANBAN_DB` that names no file refuses without falling back
   (landing another board's queue silently is worse than a dead pass), and
   a pass with no candidate names every probed path.
-- **The journeys gate's lane env is derived or demanded BEFORE the merge.**
-  Six recipes seed agent homes into the serving lane home and die loudly
+- **The journeys debugging unit's lane env is derived or demanded BEFORE
+  the merge.** The battery owns no browser leg (below), so this applies
+  exactly when `TRAIN_JOURNEYS_CMD` names one command. Six recipes seed
+  agent homes into the serving lane home and die loudly
   when `$OMEGA_HOME`/`$OMEGA_BIN` do not name it (110, 114, 60, 92, 94,
   96). The train derives `<checkout>/bin` when that directory is a serving
   home (`config/config.yaml` plus the `omega` binary the lane's serve was
   launched from), and otherwise refuses exit 2 naming what it probed. The
-  same precondition health-checks the lane the suite drives
+  same precondition health-checks the lane
   (`$JOURNEY_BASE_URL`, default `http://127.0.0.1:8098`).
 - **A precondition refusal is not a strike and not a demote.** Nothing is
   rebased, nothing is merged, the card keeps its status, its branch and
   its verdict. `factory-merge.sh` prints a `NOTE` naming the class, so the
   review seat reads "the environment is wrong", not "the work is wrong".
 
-### The lane lag: what a train-time journeys red actually measures
+### The journeys gate is CI-owned (ruling 2026-11-22)
 
-The train-time journeys run against the **served lane**, which lags the
-merged tree by one lane rebuild. So a train-time journey result describes
-the PREVIOUS landing's tree, not the tree this pass just merged. A red
-there can be a pre-existing lane defect that no landing can clear.
+The browser legs of the merge gate run in CI, not in the pass. Every push to
+dev triggers the `Journeys regression` job in `.github/workflows/ci.yml`: it
+builds the binary, boots a provider-less validation lane and runs
+`scripts/journeys/run.sh --regression` inside the runner. The nightly keeps
+its full-suite soak unchanged.
 
-- Read a journeys-only red as "the lane is red". Re-run the named recipes
-  against a lane rebuilt from the merged tree before treating it as this
-  card's regression; the pass's un-land and demote law runs unchanged, so
-  the evidence trail stays mechanical.
-- The authoritative full-suite verdict is the nightly, which builds the
-  lane from the tree it tests. Train-time gates stay: build/vet/test,
-  `-race` on touched packages, dep law, the fence eval, the webui node
-  suite, the embed lane, then the journeys.
+- **Why.** The one host that can serve a lane also runs the workers and the
+  gateway. A local chrome battery there starves itself and reports the
+  starvation as a tree red: journey 118 timed out in `wait_js` at 30s/39s two
+  nights running with 47 recipes green around it.
+- **Trades (accepted).** A browser red arrives post-hoc, 20-40 min after the
+  push, instead of blocking the landing. The mitigations are fix-forward, the
+  un-land discipline (the tick reverts the merge exactly like a local red,
+  branch kept, card back to ready), the tip check in
+  `scripts/factory-dispatch.sh` (no new dispatch while the dev tip's
+  regression job is red or in flight), and the nightly soak as the 24h fence.
+- **No local chrome at all, not even a subset.** The lane-smoke covers boot
+  liveness; any local chrome recreates the starvation class at smaller scale.
+- **`TRAIN_JOURNEYS_CMD` is the debugging unit.** One command, hand-run when
+  a CI red must be reproduced locally; it is the only way a local chrome
+  starts, and the lane-home and lane-health preconditions apply exactly then.
+- The authoritative full-suite verdict is the nightly, which builds the lane
+  from the tree it tests. The pass's own battery stays: build/vet/test,
+  `-race` on touched packages, dep law, the fence eval, the webui node suite,
+  the embed lane.
 - **The race leg skips, it never reds, on a host with no cgo toolchain.**
   `go test -race` cannot run without one (winbtw has no C compiler and
   `CGO_ENABLED=0`). Ruling 2026-11-10 (card t_7cc44bf1): the leg is
@@ -201,19 +216,13 @@ there can be a pre-existing lane defect that no landing can clear.
   reports 0 as "no Go source files", and `CGO_ENABLED=1` can still carry
   an unresolved `CC`).
 
-### The train's journeys gate is the regression set (ruling 2026-11-19)
+### The regression set is the journeys gate (ruling 2026-11-19, home moved 2026-11-22)
 
-The train runs `scripts/journeys/run.sh --regression`, not the full suite.
 `regression.list` is the set a recipe enters only after it burned a lane
-once, so it is the gate-time minimum; the full suite is the nightly's job
-and the nightly alone exports the lane env for it.
+once, so it is the gate-time minimum. The CI regression job runs exactly that
+set (`run.sh --regression`); the full suite is the nightly's job, and the
+nightly alone exports the lane env for it.
 
-- **A full-suite train gate vetoes nothing.** The tick's fallback merge
-  carries no journeys gate at all (cron receipt 2026-11-18: two landings
-  recorded `go vet/build/test + guard suite` and nothing else). So the
-  full suite in the train does not close a door - it adds an
-  un-land/demote/resweep cycle to every landing while any standing product
-  red persists.
 - **Receipts for the narrowing** (2026-11-19, dev lane serving `9f77f768`):
   the whole regression set ran 12/12 green in 706s, and
   `75-divider-resize` - the red the earlier rejection of narrowing rested
@@ -221,9 +230,10 @@ and the nightly alone exports the lane env for it.
   `92-registry-toggles`, is NOT in the set; it is carded as its own product
   finding (t_a68f59b1).
 - **`TRAIN_JOURNEYS_CMD` still replaces the whole command** (flags
-  allowed), and the lane-home and lane-health preconditions above apply to
-  whatever it runs. Widen the train gate by adding a recipe to
-  `regression.list`, never by asking the train for the full suite.
+  allowed) for the hand-run debugging unit, and the lane-home and
+  lane-health preconditions above apply to whatever it runs. Widen the gate
+  by adding a recipe to `regression.list`, never by asking a local run for
+  the full suite.
 
 ## The machine fence (worker sessions)
 
@@ -395,6 +405,16 @@ pass). A sandbox or CI home that carries no hermes config at all opts
 into the documented floor of 2 with `FD_ALLOW_MISSING_CONFIG=1`, loudly;
 that hook covers an ABSENT file only, so a present config with a missing
 or non-positive knob still refuses.
+
+The guard also holds new work on the dev tip's CI verdict. Before anything
+spawns it reads the tip's `Journeys regression` job (`gh run list` for that
+sha, then that job's own status) and refuses the pass with one `tip CI: HOLD`
+line while the verdict is red or in flight - the merge-before-dispatch law
+gaining a leg, so local-green landings never pile onto a tip whose browser
+gate is unproven. Green, or absent (no run for that sha: a docs-only push),
+proceeds; an unreadable verdict (no `gh`, no auth, no git) also proceeds,
+loudly - a missing tool must not freeze the factory. `FD_GH` names the gh
+binary the check reads through (the suite's seam).
 
 # Round 4: nightly channel, drift gate, soak automation
 
