@@ -26,7 +26,6 @@
 <script setup lang="ts">
   import { computed } from "vue";
 
-  // state.
   const props = withDefaults(
     defineProps<{
       state: boolean;

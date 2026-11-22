@@ -1,5 +1,4 @@
 <template>
-  <!-- the command palette OVERLAY -->
   <div
     ref="rootEl"
     v-if="open"
@@ -40,7 +39,6 @@
         @click="run(c)">
         <span class="command-text">
           <span class="command-title">{{ c.title }}</span>
-          <!-- description under the title; rows without one render title-only -->
           <span
             v-if="c.description"
             class="command-desc">{{ c.description }}</span>

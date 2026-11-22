@@ -250,7 +250,6 @@
     return n;
   });
 
-  // ageOf renders "12s ago" for a unix-seconds stamp.
   function ageOf(unix?: number): string {
     if (!unix) return "";
     const ms = Date.now() - unix * 1000;

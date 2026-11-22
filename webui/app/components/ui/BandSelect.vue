@@ -1,5 +1,4 @@
 <template>
-  <!-- THE THEMED SELECT -->
   <div
     class="model-select band-select"
     :class="{ up: drop === 'up' }"
@@ -156,7 +155,6 @@
 
   function openNow() {
     open.value = true;
-    // seat on the CURRENT value's row
     const seat = props.options.findIndex((o) => o.value === props.modelValue);
     active.value = seat >= 0 ? seat : 0;
     void nextTick(() => {
@@ -202,7 +200,6 @@
   .band-select .model-chip {
     max-width: 100%;
   }
-  /* the ACTIVE row is the one the roving tabindex and DOM focus sit on */
   .band-select .model-list li.active {
     background: var(--z1-raised);
     color: var(--text);

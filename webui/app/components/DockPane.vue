@@ -43,8 +43,8 @@
               'caret-before': dropIdx === i,
               'drop-refused': refusedIdx === i,
               /*
-               * sidebar strips (icon-only) get their own 28px centered chip shape - the
-               * text-tab rules never move / /
+               * sidebar strips (icon-only) get their own 28px centered chip shape -
+               * the text-tab rules never move
                */
               'ic-only': iconTabs,
             }"
@@ -158,7 +158,6 @@
       v-else
       class="dock-empty" />
 
-    <!-- corner affordance: split / remove (never on a pinned pane) -->
     <div
       v-if="menuOpen"
       class="dock-menu"
@@ -195,7 +194,6 @@
         class="dock-drop-zone"
         :class="{ refused: predicted?.refused }"
         :style="zoneStyle">
-        <!-- the ghost: the exact result a release lands (direction, target) -->
         <DockGhost
           v-if="predicted"
           :preview="predicted"
@@ -212,7 +210,6 @@
     DOCK_CHAT_OPEN_KEY,
     DOCK_TAB_TITLE_KEY,
     DOCK_DRAFT_FOCUS_KEY,
-    // the LOCKED LAST TAB's one condition.
     lastTabLocked as lastTabLockedIn,
     type DockPane as DockPaneNode,
     type DockTab,
@@ -376,10 +373,8 @@
     else api.setComponent(props.node.id, "chat"); // unreachable: app always provides the opener
   }
 
-  // the sidebar shells (left/right edges) render their tab strips as ICON-ONLY chips.
   const iconTabs = computed(() => inSidebarZone.value);
   function tabIcon(tab: DockTab): string | null {
-    // the viewer's chip icon follows the CONTENT type.
     if (tab.component === "viewer" && tab.viewer) {
       if (tab.viewer.kind === "dir") return "folder";
       return tab.viewer.kind === "skill"
@@ -389,12 +384,10 @@
     return dockableIcon(tab.component);
   }
 
-  // the tab chip's unread badge TEXT
   function tabBadge(tab: DockTab): string {
     return tab.component === "notifications" ? notificationsBadgeText.value : "";
   }
 
-  // tab DnD: EVERY tab bar is a drop target.
   const TAB_MIME = "application/x-omega-dock-tab";
 
   interface DragPayload {
@@ -427,7 +420,6 @@
     if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
     // identity for the LIVE hit-test (data is protected until drop):
     tabDrag.start({ paneId: props.node.id, index, component: tab.component });
-    // v0.14.4 the ghost gesture begins.
     ghostRegistry.begin(props.node.id, index);
   }
 
@@ -435,9 +427,7 @@
   const dropIdx = ref<number | null>(null);
   const refusedIdx = ref<number | null>(null);
   const dropHover = ref(false);
-  // the docking prediction - the landing zone a dragged tab would drop.
   const dropZone = ref<DragZone | null>(null);
-  // v0.14.4 the GHOST preview.
   const predicted = ref<GhostPreview | null>(null);
   const dragGhost = computed(() => {
     if (!dropZone.value) return null;
@@ -587,7 +577,6 @@
       predicted.value = null;
       return;
     }
-    // VS Code zone read on the pane body: halves + center.
     const raw = selfRaw ?? rawZone;
     dropHover.value = false; // the overlay carries the body affordance
     refusedIdx.value = null;

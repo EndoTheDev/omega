@@ -130,7 +130,6 @@
     border-radius: var(--r-card);
     box-shadow: var(--shadow-2);
     user-select: none;
-    /* the box is measured before the first paint of its position */
     visibility: hidden;
   }
   .context-menu.measured {

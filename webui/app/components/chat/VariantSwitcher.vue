@@ -1,5 +1,4 @@
 <template>
-  <!-- ONE variant switcher chip: « n/n » with prev/next arrows. -->
   <div class="variant-switcher">
     <button
       class="v-arrow"

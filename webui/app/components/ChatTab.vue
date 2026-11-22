@@ -18,7 +18,6 @@
           say something to
           <span class="brand">Ωmega</span>
         </p>
-        <!-- ChatItem is a fragment: ONE item renderer, identical DOM in both layouts -->
         <template v-if="appearance === 'stacked'">
           <!-- a run is one block's subtree: runs never span blocks -->
           <div
@@ -671,7 +670,6 @@
     if (!host.states.get(stateKey)?.loaded) host.load(stateKey, id);
   });
 
-  // a run starting for the session AFTER this tab mounted.
   watch(
     () => sessionId.value ? host.busyAll.value.has(sessionId.value) : false,
     (live) => {

@@ -106,10 +106,6 @@
             class="registry-state reg-row-ctrl"
             :aria-label="`${r.disabled ? 'enable' : 'disable'} ${r.name}`">{{ r.disabled ? "disabled" : "on" }}</span>
         </div>
-        <!--
-          the armed-confirm note line is gone: its consequence text rides the pill's title
-          (toggleHint), and the preview above is the only under-row line.
-        -->
         <template v-if="isExpanded(r.name)">
           <ul
             v-if="hasDetail(r)"
@@ -334,7 +330,6 @@
   .registry-list.feel-sessions .registry-row:hover:not(.registry-off) .reg-row-name {
     opacity: 1;
   }
-  /* the active row is the one the operator has OPEN */
   .registry-list.feel-sessions .registry-row.reg-row-active .reg-row-name {
     color: var(--accent);
     opacity: 1;
@@ -347,7 +342,6 @@
   .registry-desc {
     min-width: 0;
   }
-  /* the preview line: one line, ellipsized, with its age pinned right */
   .reg-row-preview {
     margin-top: 1px;
   }

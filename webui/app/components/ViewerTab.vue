@@ -33,9 +33,6 @@
         <p
           v-if="skillDesc"
           class="viewer-skill-desc">{{ skillDesc }}</p>
-        <!--
-          the FOLDER body: a dir ref lists one directory (/files/browse, the same.
-        -->
         <div
           v-if="isDir"
           class="viewer-dir"
@@ -96,9 +93,7 @@
               :download="leafName">download</a>
           </p>
         </div>
-        <!--
-          the markdown body: the CHAT renderer (same grammar, same sanitizer) + the.
-        -->
+        <!-- the markdown body: the CHAT renderer (same grammar, same sanitizer) -->
         <div
           v-else-if="view === 'markdown'"
           ref="mdEl"
@@ -170,7 +165,7 @@
   const dirEntries = ref<FileEntry[]>([]);
   const isDir = computed(() => props.viewer?.kind === "dir");
 
-  // the viewer's own opener: a folder row drills to another folder tab, a file row.
+  // the viewer's own opener: a folder row drills to another folder tab.
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
   function dirChildPath(e: FileEntry): string {
     return joinRelPath(props.viewer?.name ?? "", e.name);
@@ -203,7 +198,6 @@
         truncated.value = data.truncated;
         skillDesc.value = data.description;
       } else if (props.viewer.kind === "dir") {
-        // the folder body: /files/browse under the SAME root resolution the Files tab.
         const data = await fetchFilesBrowse(props.viewer.name, focusedSession?.value ?? undefined);
         dirEntries.value = sortFileEntries(data.entries ?? []);
       } else {

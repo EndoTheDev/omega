@@ -1,5 +1,4 @@
 <template>
-  <!-- the ghost preview (v0.14.4 milestone 5). -->
   <span
     class="dock-ghost"
     :data-refused="preview.refused ?? undefined"
@@ -35,7 +34,6 @@
   // commit's own call - so what the overlay draws is exactly what a release lands,
   // refusals included.
   import { computed } from "vue";
-  // the registry icon is a NAME in the webui iconset, rendered through the one.
   import Icon from "./ui/Icon.vue";
   import type { GhostPreview } from "../composables/dockghost";
 

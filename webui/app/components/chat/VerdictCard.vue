@@ -14,9 +14,6 @@
       class="verdict-body">{{ item.body }}</p>
 
     <template v-if="item.status === 'pending'">
-      <!--
-        v1.1 list layout: one row per option, label over its optional description.
-      -->
       <div
         v-if="item.options.length"
         class="verdict-options">
@@ -209,7 +206,6 @@
     color: var(--text-dim);
     white-space: pre-wrap;
   }
-  /* v1.1 list layout: the rows stack top to bottom, one per row. */
   .verdict-options {
     display: flex;
     flex-direction: column;

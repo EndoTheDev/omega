@@ -1605,7 +1605,6 @@
     docSections.value.reduce((n, section) => n + section.count, 0),
   );
 
-  // the scroll-spy: the nav follows the document's order
   const spyOrder = computed<string[]>(() => [
     ...spyTargetIds(docSections.value),
     ...(modulesShown.value ? [MODULES_CATEGORY] : []),
@@ -1711,9 +1710,10 @@
     for (const node of spyNodes.values()) spyObserver.observe(node);
   }
 
-  // survives as an ANCHOR: on open the pane restores the scroll to the remembered id. An
-  // id that no longer exists (module unmounted, an agent tab without that category) opens
-  // at the top - no selection is invented, and a DESELECTED pane stored no anchor.
+  // The remembered selection survives as an ANCHOR: on open the pane restores the scroll
+  // to the remembered id. An id that no longer exists (module unmounted, an agent tab
+  // without that category) opens at the top - no selection is invented, and a DESELECTED
+  // pane stored no anchor.
   let restored = false;
   function restoreAnchor() {
     if (restored || typeof window === "undefined") return;
@@ -2112,7 +2112,6 @@
     outline: 1px solid var(--accent);
     outline-offset: -1px;
   }
-  /* a read-only scope: its inputs take no pointer events */
   .settings-readonly {
     opacity: 0.7;
   }

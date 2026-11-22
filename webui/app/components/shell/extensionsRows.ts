@@ -9,7 +9,6 @@
 
 import type { OmegaExtension, ModuleRow } from "../../composables/omega";
 
-// PanelRef is one composition-manifest hit.
 export interface PanelRef {
   module: string;
   title: string;
@@ -33,7 +32,6 @@ interface ExtensionRow {
   dependents: string[];
 }
 
-// extensionsRows merges the endpoint payload, the composition manifest.
 export function extensionsRows(
   extensions: readonly OmegaExtension[],
   panels: readonly PanelRef[],
@@ -88,7 +86,6 @@ export function extensionsRows(
   return rows;
 }
 
-// extensionsSummary is the tab's header line.
 export function extensionsSummary(rows: readonly ExtensionRow[]): string {
   const tools = rows.reduce((n, r) => n + r.tools, 0);
   const commands = rows.reduce((n, r) => n + r.commands, 0);

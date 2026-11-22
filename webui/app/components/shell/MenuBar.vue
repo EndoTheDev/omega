@@ -1,6 +1,5 @@
 <template>
   <header class="menubar">
-    <!-- ONE brand - the omega glyph and the word in a SINGLE element, far left. -->
     <span class="brand">Ωmega</span>
     <NavCluster
       :can-back="canBack"
@@ -10,13 +9,11 @@
       @forward="$emit('forward')"
       @open-palette="$emit('open-palette')" />
     <span class="menubar-spacer" />
-    <!-- the desktop toggles are BACK. -->
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle left sidebar"
       :title="sidebarOpen ? 'Close left sidebar' : 'Open left sidebar'"
       @click="$emit('toggle-sidebar')">
-      <!-- the six hand-rolled toggle SVGs collapse into the wrapper's. -->
       <Icon
         v-if="sidebarOpen"
         name="panel-left-close"
@@ -54,7 +51,6 @@
         name="panel-right-open"
         :size="16" />
     </button>
-    <!-- the settings gear is BACK. -->
     <button
       class="icon-btn edge-toggle"
       aria-label="Open settings"
@@ -64,7 +60,6 @@
         name="settings"
         :size="16" />
     </button>
-    <!-- the bell is GONE - the durable feed is the notifications dock tab. -->
     <NotificationToasts @open="$emit('open-notification', $event)" />
   </header>
 </template>
@@ -72,7 +67,6 @@
 <script setup lang="ts">
   // the toggles drive app.vue's emits; app.vue routes each one on isMobile.
   import Icon from "../ui/Icon.vue";
-  // the notifications surface is the notifications DOCK TAB.
   import NotificationToasts from "./NotificationToasts.vue";
   import NavCluster from "../nav/NavCluster.vue";
 
