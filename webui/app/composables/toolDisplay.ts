@@ -17,7 +17,7 @@ export function parseToolDisplay(v: unknown): ToolDisplay {
   return v === "expanded" || v === "collapsed" ? v : "auto";
 }
 
-// toolRowWantOpen: the pure mode+status -> open mapping for a row the user has NOT.
+// toolRowWantOpen: the pure mode+status -> open mapping for an unpinned row.
 export function toolRowWantOpen(status: string, mode: ToolDisplay): boolean {
   if (mode === "expanded") return true;
   if (mode === "collapsed") return false;

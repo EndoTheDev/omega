@@ -2008,9 +2008,6 @@ export async function fetchSessions(): Promise<Session[]> {
   return r.json();
 }
 
-// -- extensions inventory: GET /extensions --
-
-// OmegaExtension is one loaded module.
 export interface OmegaExtension {
   name: string;
   description?: string;
@@ -2027,9 +2024,6 @@ export async function fetchExtensions(): Promise<OmegaExtension[]> {
   return r.json();
 }
 
-// -- settings pane: config knobs behind /settings --
-
-// SettingKnob is one exposed config field.
 export interface SettingKnob {
   key: string;
   label: string;
@@ -2079,8 +2073,6 @@ export interface SettingGroup {
   knobs: SettingKnob[];
 }
 
-// -- settings scopes: the per-agent surface (settings tier 3b) --
-
 // SettingsScopeKnob is one knob inside an agent scope. That flag is the seam rule's
 // "differs from main" for a secret, whose masked value cannot be compared.
 export interface SettingsScopeKnob {
@@ -2116,7 +2108,7 @@ export interface SettingsPayload {
 const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers"];
 
 // normalizeSettingKnob sanitizes ONE knob object - the shape the groups carry and the
-// one-knob read (`GET /settings?key=`) answers verbatim.: both readers run through this
+// one-knob read (`GET /settings?key=`) answers verbatim: both readers run through this
 // one function, so the lazy read can never disagree with the group walk about a knob's
 // fields.
 export function normalizeSettingKnob(raw: unknown): SettingKnob | null {
@@ -2164,10 +2156,9 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
       groups.push({ key: gr.key, label: gr.label, knobs });
     }
   }
-  // -- scopes (settings tier 3b) --- Same tolerance as the groups above: a malformed
-  // scope entry drops whole, a malformed knob drops, and the list is ALWAYS an array
-  // (R8: the pane decides "no strip" from scopes.length === 0, never from a missing
-  // key).
+  // same tolerance as the groups above: a malformed scope entry drops whole, a
+  // malformed knob drops, and the list is ALWAYS an array (the pane decides "no
+  // strip" from scopes.length === 0, never from a missing key).
   const scopes: SettingsScope[] = [];
   const rawScopes = raw && typeof raw === "object" ? (raw as Record<string, unknown>).scopes : undefined;
   if (Array.isArray(rawScopes)) {
@@ -2200,7 +2191,6 @@ export function normalizeSettingsPayload(raw: unknown): SettingsPayload {
   return { groups, scopes };
 }
 
-// fetchSettings loads the config-knob payload.
 export async function fetchSettings(): Promise<SettingsPayload> {
   const r = await fetch("/settings");
   if (!r.ok) {
@@ -2216,7 +2206,7 @@ export async function fetchSettings(): Promise<SettingsPayload> {
   return normalizeSettingsPayload(await r.json());
 }
 
-// fetchSettingKnob reads ONE knob through the server's own one-knob door.. The knob
+// fetchSettingKnob reads ONE knob through the server's own one-knob door. The knob
 // object rides back exactly as it sits inside its group; a null answer means the host
 // named no such knob (an old host, a renamed key).
 export async function fetchSettingKnob(key: string): Promise<SettingKnob | null> {
@@ -2225,14 +2215,12 @@ export async function fetchSettingKnob(key: string): Promise<SettingKnob | null>
   return normalizeSettingKnob(await r.json());
 }
 
-// fetchSettingsScopes reads ONLY the per-agent scopes.
 export async function fetchSettingsScopes(): Promise<SettingsScope[]> {
   const r = await fetch("/settings?scopes=1");
   if (!r.ok) throw await settingsFailure(r, "settings scopes");
   return normalizeSettingsPayload(await r.json()).scopes;
 }
 
-// saveSettings PUTs the changed knob values and returns the refreshed payload.
 export async function saveSettings(values: Record<string, unknown>): Promise<SettingsPayload> {
   const r = await fetch("/settings", {
     method: "PUT",
@@ -2252,7 +2240,6 @@ export async function saveSettings(values: Record<string, unknown>): Promise<Set
   return normalizeSettingsPayload(await r.json());
 }
 
-// settingsFailure renders a /settings failure into one sentence.
 async function settingsFailure(r: Response, what: string): Promise<Error> {
   let msg = `${what}: ${r.status}`;
   try {
@@ -2314,8 +2301,6 @@ export function settingValueOf(payload: SettingsPayload, key: string): unknown {
   return undefined;
 }
 
-// - modules: the live module toggle surface (v0.12 E2) -
-
 // ModuleRow is one registry-introspected module.
 export interface ModuleRow {
   name: string;
@@ -2327,7 +2312,7 @@ export interface ModuleRow {
   dependents?: string[];
 }
 
-// ModuleRefusal is one ledger entry: a rejection the UI surfaces as an event (Q12).
+// ModuleRefusal is one ledger entry: a rejection the UI surfaces as an event.
 export interface ModuleRefusal {
   module: string;
   predicate: string;
@@ -2340,7 +2325,6 @@ export interface ModulesPayload {
   refusals: ModuleRefusal[];
 }
 
-// normalizeModulesPayload sanitizes a /modules response.
 export function normalizeModulesPayload(raw: unknown): ModulesPayload {
   const modules: ModuleRow[] = [];
   const list =
@@ -2398,7 +2382,6 @@ export async function fetchModules(): Promise<ModulesPayload> {
   return normalizeModulesPayload(await r.json());
 }
 
-// toggleModule PUTs one module's new state and returns the refreshed introspection.
 export async function toggleModule(name: string, enabled: boolean): Promise<ModulesPayload> {
   const r = await fetch(`/modules/${encodeURIComponent(name)}`, {
     method: "PUT",
@@ -2427,15 +2410,6 @@ export function toggleNote(m: ModuleRow, enable: boolean): string {
   return "";
 }
 
-// 
-// surface lists every row with no search - the module row narrowing
-// helper left with its only consumer.
-// surface to the settings pane as its MODULES section, still with no
-// search of its own: the pane's filter bar covers knobs, not module
-// rows, and a second filter is not a thing this shell carries.)
-
-// - themes: color mode + theme, two knobs behind the picker split -
-
 // ColorMode is the color-mode knob's value space.
 export type ColorMode = "auto" | "dark" | "light";
 
@@ -2459,9 +2433,9 @@ export interface UserTheme {
   error?: string;
 }
 
-// THEME_TOKEN_KEYS mirrors the server's token allowlist (the color set main.css. It
+// THEME_TOKEN_KEYS mirrors the server's token allowlist (the color set in main.css). It
 // exists to CLEAR overrides when a user theme is switched off (built-in modes must
-// restore:root / [data-theme=light] values untouched); the server validates what may be
+// restore `:root` / [data-theme=light] values untouched); the server validates what may be
 // set.
 export const THEME_TOKEN_KEYS = [
   "accent",
@@ -2479,7 +2453,6 @@ export const THEME_TOKEN_KEYS = [
   "shadow-2",
 ] as const;
 
-// isColorMode narrows a persisted string to the color-mode space.
 export const isColorMode = (v: unknown): v is ColorMode =>
   v === "auto" || v === "light" || v === "dark";
 
@@ -2504,7 +2477,6 @@ export function restoreThemeKnobs(
   return { mode: "auto", theme: DEFAULT_THEME_ID };
 }
 
-// usableThemes: the picker lists only themes that parsed and validated.
 export function usableThemes(themes: UserTheme[]): UserTheme[] {
   return themes.filter((t) => !t.error);
 }
@@ -2536,7 +2508,6 @@ export function themePickOptions(
 // colorModeOptions: the color-mode knob's option list, in pick order.
 export const colorModeOptions: ColorMode[] = ["auto", "dark", "light"];
 
-// normalizeThemesPayload sanitizes a /themes response.
 export function normalizeThemesPayload(raw: unknown): UserTheme[] {
   const list =
     raw && typeof raw === "object" && "themes" in (raw as Record<string, unknown>)
@@ -2567,7 +2538,6 @@ export function normalizeThemesPayload(raw: unknown): UserTheme[] {
   return out;
 }
 
-// fetchThemes loads the user theme list.
 export async function fetchThemes(): Promise<UserTheme[]> {
   const r = await fetch("/themes");
   if (!r.ok) {
@@ -2583,12 +2553,10 @@ export async function fetchThemes(): Promise<UserTheme[]> {
   return normalizeThemesPayload(await r.json());
 }
 
-// clearThemeTokens removes every token override the inline style carries.
 export function clearThemeTokens(style: CSSStyleDeclaration): void {
   for (const k of THEME_TOKEN_KEYS) style.removeProperty(`--${k}`);
 }
 
-// applyThemeTokens writes a user theme's overrides into the element's inline style.
 export function applyThemeTokens(
   style: CSSStyleDeclaration,
   tokens: Record<string, string>,
@@ -2638,7 +2606,6 @@ export function knobDiffersFromDefault(value: unknown, def: unknown): boolean {
   return !valuesEqual(blankValue(value), blankValue(def));
 }
 
-// valuesEqual compares two knob values.
 export function valuesEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
@@ -2774,8 +2741,6 @@ export async function updateAgentConfig(
   throw new Error(msg);
 }
 
-// - session search: one endpoint owns title AND content hits -
-
 // SessionSearchHit is one /sessions/search row.
 export interface SessionSearchHit {
   id: string;
@@ -2838,7 +2803,7 @@ export async function attachImageUrl(url: string): Promise<OmegaImage> {
   return (await r.json()) as OmegaImage;
 }
 
-// uploadAttachment posts one picked File to POST /attach-file and answers the. The cap
+// uploadAttachment posts one picked File to POST /attach-file. The cap
 // is checked here too - the same number (MAX_CHAT_FILE_BYTES) the composer checks, so a
 // caller that skipped the picker's gate still never ships an oversize file past the
 // browser. PART ORDER IS LOAD-BEARING: the handler reads parts in wire order, so
@@ -2944,7 +2909,6 @@ export async function branchSession(id: string): Promise<Session> {
   return (await r.json()) as Session;
 }
 
-// renameSession PUTs the label on the session row.
 export async function renameSession(id: string, label: string): Promise<void> {
   const r = await fetch(`/sessions/${encodeURIComponent(id)}`, {
     method: "PUT",
@@ -2966,7 +2930,6 @@ export function sessionRowBadge(s: Pick<Session, "parent_id">): string {
   return s.parent_id ? "↳ branch" : "";
 }
 
-// commitSessionRename reduces an inline rename draft to its commit form.
 export function commitSessionRename(
   draft: string,
   current: string | undefined,
@@ -2983,7 +2946,6 @@ export interface TranscriptItemLike {
   content?: string;
 }
 
-// lastCompleteUserIndex finds the transcript's last complete user message.
 export function lastCompleteUserIndex(items: TranscriptItemLike[]): number {
   for (let i = items.length - 1; i >= 0; i--) {
     const item = items[i];
@@ -3004,7 +2966,6 @@ export function dataUrl(img: OmegaImage): string {
   return `data:${img.media_type};base64,${img.base64}`;
 }
 
-// MEDIA_MAGIC mirrors the llm/image.go magic signatures so the composer-side.
 export function mediaTypeFromBase64(base64: string): string | null {
   try {
     const head = atob(base64.slice(0, 16));
@@ -3029,9 +2990,7 @@ export function mediaTypeFromBase64(base64: string): string | null {
   }
 }
 
-// hasInterruptedMarker/withoutMarkers are gone with the interrupted transcript marker.
-
-// createItemKeySource gives transcript items a stable key surviving the. WeakMap: the
+// createItemKeySource gives transcript items a stable key. WeakMap: the
 // mapping dies with the item, no leak. This is per-source state, not a global counter -
 // two transcripts never share keys anyway.
 export function createItemKeySource(): (item: object) => number {
@@ -3179,9 +3138,8 @@ export async function stopSessionRun(id: string): Promise<void> {
   if (!r.ok) throw new Error(`stop: ${r.status}`);
 }
 
-// stopSession is gone with the REST stop affordance (chat-last 2a). Returns false when
-// the session has no live run (404 "session not active") - the caller renders settled
-// history instead.
+// attachSession's false means the session has no live run (404 "session not active") -
+// the caller renders settled history instead.
 export async function attachSession(
   sessionId: string,
   handlers: StreamHandlers,
@@ -3212,8 +3170,6 @@ export async function runActive(sessionId: string): Promise<boolean> {
     return false;
   }
 }
-
-// - registry-browser: the disabled fold surface (v0.14.1) --- One yaml fold, three.
 
 export type RegistryKind = "skills" | "tools" | "agents" | "insights";
 
@@ -3308,7 +3264,7 @@ export async function toggleRegistryEntry(
 }
 
 // registryNote builds the consequence a disabled-direction toggle shows. Insights
-// (v0.14.3's read-only stat consumer) has no exclusion surface - the note is the empty
+// (a read-only stat consumer) has no exclusion surface - the note is the empty
 // string, and the toggleable seam never reaches it.
 export function registryNote(kind: RegistryKind, enable: boolean): string {
   if (enable || kind === "insights") return "";

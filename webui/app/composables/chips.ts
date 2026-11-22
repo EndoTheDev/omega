@@ -14,13 +14,11 @@ export interface LiveChip {
   isError: boolean;
 }
 
-// MAX_LIVE_CHIPS bounds the map.
 export const MAX_LIVE_CHIPS = 32;
 
 // liveChips is the page's one live-tail map (call id -> chip).
 export const liveChips = reactive(new Map<string, LiveChip>());
 
-// ingestChipFrame folds one frame into the store.
 export function ingestChipFrame(frame: ChipFrame | null | undefined): void {
   if (!frame || !frame.call_id) return;
   let chip = liveChips.get(frame.call_id);

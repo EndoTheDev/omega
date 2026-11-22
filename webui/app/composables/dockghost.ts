@@ -46,7 +46,7 @@ export function ghostPreview(
   return { targetPaneId: toPaneId, zone, direction, refused: null, halves };
 }
 
-// the gesture rect registry ---------- One page-lifetime record per gesture.
+// one page-lifetime record per gesture.
 
 interface GhostRectEntry {
   source: { paneId: string; index: number } | null;

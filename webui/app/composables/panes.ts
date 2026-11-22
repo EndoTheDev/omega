@@ -20,7 +20,6 @@ export function snapCandidateAt(px: number, step: number): number | null {
   return Math.abs(px - p) <= SNAP_ZONE ? p : null;
 }
 
-/** the sidebars' +320 ladder */
 export function snapCandidate(px: number): number | null {
   return snapCandidateAt(px, SNAP_STEP);
 }

@@ -7,7 +7,6 @@ import type { DockableSpec } from "./dockables";
 // so a typo never reaches render
 import { ICON_NAMES } from "./icons.ts";
 
-// One discovered module UI directory.
 export interface ModuleUI {
   module: string;
   dir: string;

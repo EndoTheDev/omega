@@ -121,7 +121,6 @@ export function scanRefTokens(text: string, opts: ScanOpts = {}): RefToken[] {
   return out.sort((a, b) => a.start - b.start);
 }
 
-// splitRefSegments turns a text into rendered pieces.
 export function splitRefSegments(text: string, opts: ScanOpts = {}): RefSegment[] {
   const tokens = scanRefTokens(text, opts);
   const out: RefSegment[] = [];
@@ -147,7 +146,6 @@ export function tokenBeforeCaret(
   return null;
 }
 
-// deleteTokenAt removes the token span and parks the caret where it was.
 export function deleteTokenAt(text: string, t: RefToken): { draft: string; caret: number } {
   return {
     draft: text.slice(0, t.start) + text.slice(t.start + t.token.length),
