@@ -58,7 +58,7 @@ type CommandResult struct {
 
 // CmdAction tells the host to do something after a command runs.
 type CmdAction struct {
-	Type  string   // "set_model", "refresh_title", "fetch_model_info", CmdRunCompact, "set_model_list", "set_tool_display", "set_thinking", "new_session", "load_session", "branch_session", "set_label"
+	Type  string   // "set_model", "refresh_title", "fetch_model_info", CmdRunCompact, "set_model_list", "set_tool_display", "set_thinking"
 	Value string   // primary value (model name, session ID, label text)
 	List  []string // list values (model names)
 }
