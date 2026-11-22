@@ -15,13 +15,12 @@ export interface CronJobWireFull extends CronJobWire {
   // cannot carry this - a main-home job's authored `agent:` and a wake's owning home
   // both set it.
   agent_owned?: boolean;
-  // the last fire's outcome: status "" (never fired) | ok | error, the completion.
+  // the last fire's outcome: status "" (never fired) | ok | error.
   status?: string;
   last?: string;
   status_note?: string;
 }
 
-// JobDraft is the form shape.
 export interface JobDraft {
   name: string;
   kind: string;
@@ -50,7 +49,6 @@ export function editableOf(j: CronJobWireFull): boolean {
   return !j.agent_owned;
 }
 
-// emptyDraft: a new job lands cron-kind, new-session, enabled.
 export function emptyDraft(): JobDraft {
   return {
     name: "",
@@ -67,7 +65,6 @@ export function emptyDraft(): JobDraft {
   };
 }
 
-// draftOf prefills the form from a wire row.
 export function draftOf(j: CronJobWireFull): JobDraft {
   return {
     name: j.name,
@@ -118,11 +115,11 @@ export function validateDraft(
     if (seenSkills.has(s)) return `duplicate skill ${s}`;
     seenSkills.add(s);
   }
-  // the chain's law last: a schema-broken draft names its schema problem first, never.
+  // the chain's law last: a schema-broken draft names its schema problem first, never
+  // the chain.
   return chainViolation(d, mainAgent);
 }
 
-// parseSkills turns the comma-separated editor voice into the wire's list.
 export function parseSkills(s: string): string[] {
   const out: string[] = [];
   for (const part of s.split(",")) {
@@ -146,7 +143,6 @@ export function parseSkills(s: string): string[] {
 // Every control degrades to free text (or a named empty list) when its
 // GET fails - an option source that is down must never strand an edit.
 
-// FieldOption is one dropdown row in the editor's option sources.
 export interface FieldOption {
   value: string;
   label: string;
@@ -197,14 +193,12 @@ export async function fetchAgentOptions(): Promise<FieldOption[]> {
   return out;
 }
 
-// modelListWire is the subset of GET /models this editor reads.
 interface ModelListWire {
   current?: string;
   models?: string[];
   providers?: { name: string; models?: string[]; error?: string }[];
 }
 
-// ModelCatalog is fetchModelOptions' answer.
 export interface ModelCatalog {
   options: FieldOption[];
   current: string;
@@ -241,7 +235,6 @@ interface SkillRowWire {
   description?: string;
 }
 
-// fetchSkillOptions reads the skills registry.
 export async function fetchSkillOptions(): Promise<FieldOption[]> {
   const res = await fetch("/skills");
   if (!res.ok) throw new Error(`GET /skills: ${res.status}`);
@@ -260,7 +253,6 @@ export async function fetchSkillOptions(): Promise<FieldOption[]> {
   return out;
 }
 
-// filterFieldOptions narrows a dropdown by the typed query, matching the value.
 export function filterFieldOptions(
   options: FieldOption[],
   query: string,
@@ -273,13 +265,11 @@ export function filterFieldOptions(
   );
 }
 
-// optionKnown reports whether a typed value names a listed option.
 export function optionKnown(options: FieldOption[], value: string): boolean {
   const v = value.trim();
   return options.some((o) => o.value === v);
 }
 
-// moveComboIndex steps a combobox's active row, wrapping at both ends.
 export function moveComboIndex(
   index: number,
   delta: number,
@@ -297,7 +287,6 @@ export function moveComboIndex(
 // resolved value back into the field (the pencil fix's law, one field read two ways is
 // a bug waiting for its second reader).
 
-// ChainValue is one field's chain state.
 export interface ChainValue {
   inherited: boolean;
   // value is what the fire will use. "" when the chain cannot resolve it (an agent the
@@ -310,7 +299,6 @@ export interface ChainValue {
   blocked: boolean;
 }
 
-// ChainDraft is the slice of the form the chain reads.
 export interface ChainDraft {
   agent: string;
   model: string;
@@ -321,7 +309,6 @@ export interface ChainDraft {
 // it, but GET /agents that never answered must still render the chain honestly.
 export const MAIN_AGENT_FALLBACK = "default";
 
-// mainAgentOf reads the main agent's name off the roster.
 export function mainAgentOf(roster: FieldOption[]): string {
   const main = roster.find((o) => o.continuous === false);
   return main?.value ?? MAIN_AGENT_FALLBACK;
@@ -335,12 +322,10 @@ const CHAIN_AUTHORED: ChainValue = {
   blocked: false,
 };
 
-// isWake reports whether the draft's deliver target fires into an agent's own.
 function isWake(d: ChainDraft): boolean {
   return d.deliver.trim() === "continuous-agent";
 }
 
-// agentChain resolves the agent link: absent = the main agent.
 export function agentChain(d: ChainDraft, roster: FieldOption[]): ChainValue {
   const authored = d.agent.trim();
   if (authored !== "") return { ...CHAIN_AUTHORED, value: authored };
@@ -366,7 +351,6 @@ export function agentChain(d: ChainDraft, roster: FieldOption[]): ChainValue {
   };
 }
 
-// modelChain resolves the model link.
 export function modelChain(
   d: ChainDraft,
   roster: FieldOption[],
@@ -427,8 +411,6 @@ export function chainViolation(d: ChainDraft, mainAgent: string): string {
   return `continuous-agent needs its own agent - an empty agent inherits the main agent (${mainAgent}), which never wakes`;
 }
 
-// the strict skills multi-select --------------------
-
 // strictSkills splits a job's pinned names into what the registry can serve and what it
 // cannot. STRICT means the control loads only known names: an unknown one cannot be
 // represented as a chip, so it is dropped - and returned, so the editor can SAY it
@@ -450,7 +432,6 @@ export function strictSkills(
   return { kept, dropped };
 }
 
-// withSkill / withoutSkill are the checkbox toggles over a chip list.
 export function withSkill(skills: string[], name: string): string[] {
   return skills.includes(name) ? skills : [...skills, name];
 }
@@ -459,7 +440,6 @@ export function withoutSkill(skills: string[], name: string): string[] {
   return skills.filter((s) => s !== name);
 }
 
-// skillsVoice renders a chip list back into the draft's comma voice.
 export function skillsVoice(skills: string[]): string {
   return skills.join(", ");
 }
@@ -512,13 +492,11 @@ export async function deleteCronJob(name: string): Promise<CronJobWireFull[]> {
   return (await list.json()) as CronJobWireFull[];
 }
 
-// cadenceOf renders the row's firing voice, kind-aware.
 export function cadenceOf(j: CronJobWireFull): string {
   if ((j.kind ?? "cron") === "interval") return `${j.minutes ?? 0}m interval`;
   return j.schedule ?? "";
 }
 
-// jobMeta renders the row's dim meta fragments.
 export function jobMeta(j: CronJobWireFull): string {
   const parts: string[] = [];
   if (j.deliver && j.deliver !== "new-session") parts.push(j.deliver);
@@ -529,10 +507,10 @@ export function jobMeta(j: CronJobWireFull): string {
   return parts.length ? ` - ${parts.join(", ")}` : "";
 }
 
-// lastMeta renders the row's last-fire voice. The never-fired row stays quiet - "-"
-// means no fire, silence here is the same truth.
 const NOTE_DISPLAY_CAP = 120;
 
+// lastMeta renders the row's last-fire voice. The never-fired row stays quiet - "-"
+// means no fire, silence here is the same truth.
 export function lastMeta(j: CronJobWireFull): string {
   if (!j.status || !j.last) return "";
   const stamp = statusStamp(j.last);
@@ -546,7 +524,6 @@ export function lastMeta(j: CronJobWireFull): string {
   return ` - last ${j.status} ${stamp}`;
 }
 
-// statusStamp renders an RFC3339 timestamp as a local, compact date-time.
 export function statusStamp(rfc3339: string): string {
   const t = new Date(rfc3339);
   if (Number.isNaN(t.getTime())) return rfc3339;

@@ -41,8 +41,6 @@ func (f *fakeNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// fire emission
-
 func TestFireEmitsNotificationOkAndFailed(t *testing.T) {
 	r := newTestRunner(t, t.TempDir(), Job{Name: "nightly", Schedule: "0 3 * * *", Prompt: "p"})
 	n := &fakeNotifier{}
@@ -81,6 +79,5 @@ func TestFireWithoutNotifierNeverBlocks(t *testing.T) {
 	r.runTurn = func(ctx context.Context, sessionID string, job Job, prompt string) (string, error) {
 		return "final", nil
 	}
-	// nil notifier: emission is a no-op, fire still completes
 	r.fire(context.Background(), r.jobsSnapshot()[0], r.now())
 }

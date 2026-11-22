@@ -1,12 +1,5 @@
 package cron
 
-// status_test.go: the capsule round's two extensions.
-// the per-job LAST STATUS: every fire return path lands an outcome in
-// cronstate.json, Jobs carries it, the record survives a restart.
-// the per-job SKILLS: the editor pins names, the fire injects the
-//   bodies ahead of the prompt, an unpinnable name is a fire-time
-//   error (the bad-agent posture).
-
 import (
 	"context"
 	"errors"
@@ -111,7 +104,6 @@ func TestPinnedSkillsRideTheFirePrompt(t *testing.T) {
 		!strings.HasSuffix(got, "write the digest") {
 		t.Errorf("pinned prompt = %q, want skill body ahead of the prompt", got)
 	}
-	// An unpinned job's prompt is byte-identical to the authored one.
 	plain := newTestRunner(t, t.TempDir(), Job{Name: "plain", Schedule: "0 8 * * *", Prompt: "just the prompt"})
 	got, err = r.pinnedPrompt(plain.jobsSnapshot()[0])
 	if err != nil || got != "just the prompt" {
@@ -188,7 +180,7 @@ func TestAgentHomeRejectsSkills(t *testing.T) {
 }
 
 func TestJobsListingCarriesThePrompt(t *testing.T) {
-	// review fix: the editor drafts the WHOLE job from the listing row, so the row must.
+	// The editor drafts the WHOLE job from the listing row, so the row must carry the prompt.
 	r := newTestRunner(t, t.TempDir(),
 		Job{Name: "ed", Schedule: "0 12 * * *", Prompt: "the authored message"})
 	if got := r.Jobs()[0].Prompt; got != "the authored message" {

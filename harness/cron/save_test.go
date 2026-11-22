@@ -1,7 +1,5 @@
 package cron
 
-// save_test.go: the cron tab's job editor write face.
-
 import (
 	"errors"
 	"net/http"
@@ -106,7 +104,6 @@ func TestSaveJobReplacesEntryInPlaceKeepsSiblingStyle(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(text)
-	// the FILE-level comment survives the replace.
 	for _, want := range []string{"# the human-authored file", "0 9 * * *", "journal/daily.md", "minutes: 5", "kind: interval"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("file lost %q after replace:\n%s", want, s)
@@ -118,7 +115,6 @@ func TestSaveJobReplacesEntryInPlaceKeepsSiblingStyle(t *testing.T) {
 	if strings.Contains(s, "prompt: journal\n") {
 		t.Errorf("old prompt survived the replace:\n%s", s)
 	}
-	// exactly two jobs still
 	r2, _ := newSaveTestRunner(t, s)
 	if got := len(r2.jobsSnapshot()); got != 2 {
 		t.Errorf("job count after replace = %d, want 2:\n%s", got, s)
@@ -176,8 +172,6 @@ func TestDeleteJobRemovesEntryUnknownIsLoud(t *testing.T) {
 		t.Error("unknown delete moved the file")
 	}
 }
-
-// the inheritance chain
 
 // A wake that inherits the main agent is a job that would persist and never fire: the
 // main agent is the daemon and never wakes as a subprocess (runner.go's "main never
@@ -256,7 +250,6 @@ func TestSaveJobWritesAnInheritedAgentAsAbsence(t *testing.T) {
 	}
 }
 
-// A wake's own agent IS authored.
 func TestSaveJobKeepsAnAuthoredWakeAgent(t *testing.T) {
 	r, path := newSaveTestRunner(t, saveTestCrons)
 	if _, err := r.SaveJob(Job{
@@ -300,8 +293,6 @@ func TestSaveJobBootstrapsFreshHome(t *testing.T) {
 		t.Fatalf("bootstrap did not write %s: %v", path, err)
 	}
 }
-
-// the wire lanes
 
 func TestHandleSaveAndDeleteWire(t *testing.T) {
 	r, _ := newSaveTestRunner(t, saveTestCrons)

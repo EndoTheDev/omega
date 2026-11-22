@@ -1,7 +1,5 @@
 package cron
 
-// The canvas surface tests.
-
 import (
 	"encoding/json"
 	"errors"
@@ -12,7 +10,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// mountedPanelPlugin mounts a plugin (explicit config + temp home) and returns.
 func mountedPanelPlugin(t *testing.T, jobs ...Job) (*core.Context, *Plugin) {
 	t.Helper()
 	home := t.TempDir()
@@ -68,7 +65,6 @@ func TestCapsulePanelDeclaresJobs(t *testing.T) {
 	}
 }
 
-// TestHotReloadPushesPanelDelta: a crons.yaml reload.
 func TestHotReloadPushesPanelDelta(t *testing.T) {
 	ctx, p := mountedPanelPlugin(t, Job{Name: "starter", Schedule: "0 5 1 * *", Prompt: "p"})
 	var deltas []core.Panel
@@ -134,7 +130,6 @@ func TestReloadWithoutCanvasNeverBlocks(t *testing.T) {
 	}
 }
 
-// TestCapsuleActionsAreReadOnly: the module's declared posture.
 func TestCapsuleActionsAreReadOnly(t *testing.T) {
 	ctx, _ := mountedPanelPlugin(t, Job{Name: "j", Schedule: "0 5 1 * *", Prompt: "p"})
 	canvas, err := agent.NewCanvas(ctx, nil)
@@ -160,7 +155,6 @@ func TestCapsuleActionsAreReadOnly(t *testing.T) {
 	}
 }
 
-// jsonOf marshals a panel payload through its wire serialization.
 func jsonOf(v any) (string, error) {
 	b, err := json.Marshal(v)
 	if err != nil {

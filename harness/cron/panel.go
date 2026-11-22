@@ -1,10 +1,8 @@
 package cron
 
 // The canvas surface: the cron capsule ships its view-model as canvas panels. The job
-// set never changes through the action pipe: cron is read-only v1 (crons.yaml is
-// human-authored and omega may only ever propose jobs, the CronJobs.vue settled
-// decision). The module declares exactly one action, refresh: it answers the live
-// payload and pushes the panel - no mutation.
+// set never changes through the action pipe - the module declares exactly one action,
+// refresh: it answers the live payload and pushes the panel, no mutation.
 
 import (
 	"fmt"
@@ -13,13 +11,11 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// jobsPanelID is the jobs panel's id.
 const (
 	jobsPanelID   = "cron"
 	actionRefresh = "cron.refresh_jobs"
 )
 
-// jobRow is one jobs-panel line.
 type jobRow struct {
 	Name     string   `json:"name"`
 	Kind     string   `json:"kind"`
@@ -45,7 +41,6 @@ type jobsPayload struct {
 	Jobs  []jobRow `json:"jobs"`
 }
 
-// capsule is the cron module's canvas surface.
 type capsule struct {
 	runner *Runner
 
@@ -82,12 +77,10 @@ func (c *capsule) push() {
 	_ = up(c.jobsPanel())
 }
 
-// Panels declares the snapshot.
 func (c *capsule) Panels() []core.Panel {
 	return []core.Panel{c.jobsPanel()}
 }
 
-// jobsPanel builds the panel descriptor from the live runner.
 func (c *capsule) jobsPanel() core.Panel {
 	infos := []JobInfo(nil)
 	if c.runner != nil {
@@ -124,7 +117,6 @@ func (c *capsule) jobsPanel() core.Panel {
 	}
 }
 
-// HandleAction routes one action-pipe call (core.PanelProvider).
 func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 	switch call.Action {
 	case actionRefresh:

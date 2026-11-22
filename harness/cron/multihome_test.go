@@ -149,7 +149,6 @@ func TestAgentJobStateKeysNamespace(t *testing.T) {
 	}
 }
 
-// TestJobsListingMarksHomeOwnership pins the wire's ownership mark.
 func TestJobsListingMarksHomeOwnership(t *testing.T) {
 	home := t.TempDir()
 	mainYAML := "jobs:\n" +

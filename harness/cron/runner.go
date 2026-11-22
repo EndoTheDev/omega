@@ -1,4 +1,3 @@
-// Package cron runner: scheduling, catch-up, concurrent-fire guard, deliver targets.
 package cron
 
 import (
@@ -19,16 +18,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// catchUpWindow bounds how far back a missed fire is allowed to be.
 const catchUpWindow = 24 * time.Hour
 
-// cronStateFileName persists last-fire time per job under OMEGA_HOME.
 const cronStateFileName = "cronstate.json"
 
 // stateFileName is the job source watched for hot reload.
 const stateFileName = "crons.yaml"
 
-// runOriginScheduled tags fires as background runs.
 const runOriginScheduled = "cron"
 
 // cronState is the on-disk shape of cronstate.json. Jobs keys the
@@ -39,14 +35,12 @@ type cronState struct {
 	Last map[string]fireOutcome `json:"last,omitempty"`
 }
 
-// fireOutcome is one completed fire's record.
 type fireOutcome struct {
 	At    int64  `json:"at"` // completion wall clock (unix)
 	Ok    bool   `json:"ok"`
 	Error string `json:"error,omitempty"`
 }
 
-// statusNoteCap bounds the persisted error message.
 const statusNoteCap = 512
 
 // Runner is the scheduler. Safe for concurrent use.
@@ -118,24 +112,20 @@ func NewRunner(cfg *Config, home string) *Runner {
 	return r
 }
 
-// runnerDeps carries what the Start arms the runner.
 type runnerDeps struct {
 	Ctx   *core.Context
 	Agent *agent.Agent
 	Store agent.StoreProvider
 }
 
-// memoryStore is the consumer-side face of the memory capsule.
 type memoryStore interface {
 	Add(target, content string) (usage string, err error)
 }
 
-// finishedThings is the consumer-side face of the finished-things store.
 type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// skillReader is the consumer-side face of the skills capsule.
 type skillReader interface {
 	SkillRead(name string) (description, content string, err error)
 }
@@ -192,7 +182,6 @@ func (r *Runner) Start(ctx context.Context, deps runnerDeps) error {
 	return nil
 }
 
-// Stop shuts the scheduler down (the scheduler).
 func (r *Runner) Stop() error {
 	select {
 	case <-r.stop:
@@ -218,8 +207,6 @@ func (r *Runner) errorf(format string, args ...any) {
 	}
 }
 
-// firing
-
 // tryAcquire performs the single-instance-per-job check-and-set.
 func (r *Runner) tryAcquire(key string) bool {
 	r.mu.Lock()
@@ -231,14 +218,13 @@ func (r *Runner) tryAcquire(key string) bool {
 	return true
 }
 
-// release marks the job's fire as finished.
 func (r *Runner) release(key string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.running[key] = false
 }
 
-// fire runs one job occurrence at time `when` (the scheduled time for catch-up fires. A
+// fire runs one job occurrence at time `when` (the scheduled time for catch-up fires). A
 // fire arriving while the same job is still running is skipped - logged, never queued.
 // Agent jobs never turn in-process: they are WAKES, one tick through the event spine
 // (payload law: raw JSON); the continuous capsule owns what the tick means.
@@ -256,7 +242,6 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	}
 	defer r.release(key)
 
-	// The last-status contract.
 	if job.IsAgent() {
 		wakeErr := r.fireAgentWake(job, job.Agent, key)
 		r.recordFire(job, when)
@@ -341,7 +326,6 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	r.emitFinished(job.Name, runErr == nil)
 }
 
-// turnCapDefault is the unset server.run_timeout fallback.
 const turnCapDefault = 30 * time.Minute
 
 // serverRunTimeout is the ONE host knob a fire reads out of config.yaml.
@@ -512,7 +496,6 @@ func (r *Runner) agentTurn(ctx context.Context, sessionID string, job Job, promp
 	return final, runErr
 }
 
-// recordFire stores the covered fire time and writes cronstate.json.
 func (r *Runner) recordFire(job Job, when time.Time) {
 	r.mu.Lock()
 	r.lastFire[job.StateKey()] = when.Unix()
@@ -541,7 +524,6 @@ func (r *Runner) recordOutcome(job Job, err error) {
 	}
 }
 
-// truncateNote caps an error message for the state record.
 func truncateNote(err error) string {
 	if err == nil {
 		return ""
@@ -553,7 +535,6 @@ func truncateNote(err error) string {
 	return msg
 }
 
-// applyDeliver applies the run's deliver target to the final assistant message.
 func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 	if strings.TrimSpace(final) == "" {
 		if job.DeliverTarget() != deliverNone {
@@ -582,7 +563,6 @@ func (r *Runner) applyDeliver(ctx context.Context, job Job, final string) {
 	}
 }
 
-// appendDeliverFile appends the run summary to the job's `file` (home-relative).
 func appendDeliverFile(home string, job Job, when time.Time, final string) error {
 	name := job.File
 	if name == "" {
@@ -601,8 +581,6 @@ func appendDeliverFile(home string, job Job, when time.Time, final string) error
 	_, err = fmt.Fprintf(f, "## %s - %s\n\n%s\n\n", job.Name, when.Format("2006-01-02 15:04"), final)
 	return err
 }
-
-// catch-up
 
 // catchUp fires missed jobs at startup. A job with no recorded last fire (new or never
 // fired) gets no catch-up.
@@ -633,7 +611,6 @@ func (r *Runner) catchUp(ctx context.Context, now time.Time) {
 	}
 }
 
-// schedulePrev returns the most recent scheduled occurrence at or before `now`.
 func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	start := now.Add(-7 * 24 * time.Hour).Truncate(time.Minute)
 	prev := time.Time{}
@@ -649,7 +626,6 @@ func schedulePrev(sched cron.Schedule, now time.Time) time.Time {
 	return prev
 }
 
-// scheduleFor returns the cron.Schedule a job fires.
 func scheduleFor(job Job) (cron.Schedule, error) {
 	if job.KindResolved() == kindInterval {
 		return everySchedule{minutes: job.Minutes}, nil
@@ -669,9 +645,6 @@ func (s everySchedule) Next(t time.Time) time.Time {
 	return t.Truncate(dur).Add(dur)
 }
 
-// scheduling
-
-// scheduleEnabled rebuilds the scheduler from the current job set, scheduling enabled.
 func (r *Runner) scheduleEnabled(ctx context.Context) {
 	c := cron.New(cron.WithParser(scheduleParser))
 	r.mu.Lock()
@@ -697,7 +670,6 @@ func (r *Runner) scheduleEnabled(ctx context.Context) {
 	c.Start()
 }
 
-// stopScheduler cancels the active cron scheduler.
 func (r *Runner) stopScheduler() {
 	r.mu.Lock()
 	sched := r.sched
@@ -708,7 +680,6 @@ func (r *Runner) stopScheduler() {
 	}
 }
 
-// scheduledNames returns the currently scheduled job names (tests and diagnostics).
 func (r *Runner) scheduledNames() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -720,7 +691,6 @@ func (r *Runner) scheduledNames() []string {
 	return names
 }
 
-// jobsSnapshot returns a copy of the current job list.
 func (r *Runner) jobsSnapshot() []Job {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -775,8 +745,6 @@ func (r *Runner) Jobs() []JobInfo {
 	})
 	return out
 }
-
-// state (cronstate.json)
 
 // sweepStaleState is the cronstate.json GC rule. The sweep is conservative by
 // construction: a job that still declares itself keeps its state whatever its
@@ -880,7 +848,6 @@ func (r *Runner) saveCronState() error {
 	return os.Rename(tmp, path)
 }
 
-// lastFireOf returns the recorded last fire for a job.
 func (r *Runner) lastFireOf(name string) (int64, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -888,7 +855,6 @@ func (r *Runner) lastFireOf(name string) (int64, bool) {
 	return v, ok
 }
 
-// outcomeOf returns the recorded last-fire outcome for a job.
 func (r *Runner) outcomeOf(key string) (fireOutcome, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -896,9 +862,6 @@ func (r *Runner) outcomeOf(key string) (fireOutcome, bool) {
 	return o, ok
 }
 
-// hot reload
-
-// cronFiles returns every crons.yaml this runner owns.
 func (r *Runner) cronFiles() map[string]string {
 	paths := map[string]string{}
 	if p := homeFile(r.home); p != "" {
@@ -913,7 +876,6 @@ func (r *Runner) cronFiles() map[string]string {
 	return paths
 }
 
-// watchJobsFile polls every crons.yaml for mtime changes and reloads the full job set.
 func (r *Runner) watchJobsFile(ctx context.Context) {
 	last := map[string]time.Time{}
 	snapshot := func() map[string]time.Time {
@@ -950,7 +912,6 @@ func (r *Runner) watchJobsFile(ctx context.Context) {
 	}
 }
 
-// sameMtimes compares two mtime maps including key sets.
 func sameMtimes(a, b map[string]time.Time) bool {
 	if len(a) != len(b) {
 		return false
@@ -963,7 +924,6 @@ func sameMtimes(a, b map[string]time.Time) bool {
 	return true
 }
 
-// applyReload diffs the old job set against the new one, logs it, and reschedules.
 func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	old := r.jobsSnapshot()
 	r.mu.Lock()
@@ -984,7 +944,6 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	}
 	for _, j := range newJobs {
 		prev, existed := oldSet[j.StateKey()]
-		// Diff keys are the StateKey.
 		switch {
 		case !existed:
 			r.logf("reload: job added: %s (%s)", j.StateKey(), j.Schedule)
@@ -1013,14 +972,10 @@ func (r *Runner) applyReload(ctx context.Context, cfg *Config) {
 	r.panels.push()
 }
 
-// helpers
-
-// sinceStart formats a duration for fire logs.
 func sinceStart(start, end time.Time) string {
 	return end.Sub(start).Round(100 * time.Millisecond).String()
 }
 
-// shortID shortens a session id for log lines.
 func shortID(id string) string {
 	if len(id) > 8 {
 		return id[:8]

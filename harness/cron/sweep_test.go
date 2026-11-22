@@ -1,9 +1,5 @@
 package cron
 
-// sweep_test.go: the cronstate.json GC rule. State entries whose job no longer declares
-// itself anywhere (main crons.yaml + agent homes) are swept at Start and on every hot
-// reload, logged by name; a declared job's state is never touched, disabled included.
-
 import (
 	"context"
 	"encoding/json"
@@ -20,7 +16,6 @@ import (
 // the full suite runs packages in parallel and starves the goroutine under test.
 const testWaitTimeout = 30 * time.Second
 
-// writeState writes a cronstate.json fixture into home.
 func writeState(t *testing.T, home string, st cronState) {
 	t.Helper()
 	data, err := json.MarshalIndent(st, "", "  ")
@@ -180,7 +175,6 @@ func TestSweepKeepsDeclaredDropsStale(t *testing.T) {
 	}
 }
 
-// The live journey shape: an agent home with a declared wake is removed.
 func TestSweepOnReloadAfterAgentHomeRemoved(t *testing.T) {
 	home := t.TempDir()
 	if err := os.WriteFile(filepath.Join(home, stateFileName), []byte("jobs: []\n"), 0o644); err != nil {

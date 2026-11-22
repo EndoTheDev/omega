@@ -1,7 +1,5 @@
 package cron
 
-// toggle.go: the per-job `enabled:` flag write.
-
 import (
 	"context"
 	"encoding/json"
@@ -13,7 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// cronToggler is the write face the panel's toggle rides.
 type cronToggler interface {
 	ToggleJob(key string, enabled bool) ([]JobInfo, error)
 }
@@ -60,7 +57,6 @@ func (r *Runner) ToggleJob(key string, enabled bool) ([]JobInfo, error) {
 	return r.Jobs(), nil
 }
 
-// jobByKey finds the current job for a StateKey.
 func (r *Runner) jobByKey(key string) (Job, bool) {
 	for _, j := range r.jobsSnapshot() {
 		if j.StateKey() == key {
@@ -70,7 +66,6 @@ func (r *Runner) jobByKey(key string) (Job, bool) {
 	return Job{}, false
 }
 
-// jobFileFor resolves the crons.yaml that owns the job.
 func (r *Runner) jobFileFor(job Job) (string, error) {
 	for path, owner := range r.cronFiles() {
 		if job.IsAgent() && owner == job.Agent {
@@ -83,7 +78,6 @@ func (r *Runner) jobFileFor(job Job) (string, error) {
 	return "", UnknownJobError{Key: job.StateKey()}
 }
 
-// setJobEnabled flips the per-job `enabled:` flag on the named job entry.
 func setJobEnabled(path, name string, enabled bool) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -128,7 +122,6 @@ func setJobEnabled(path, name string, enabled bool) error {
 		if !named {
 			continue
 		}
-		// the named entry: replace an existing `enabled:` scalar in place, or append.
 		for i := 0; i+1 < len(item.Content); i += 2 {
 			key, val := item.Content[i], item.Content[i+1]
 			if key.Kind == yaml.ScalarNode && key.Value == "enabled" {
@@ -190,9 +183,9 @@ func enabledValue(enabled bool) string {
 	return "false"
 }
 
-// writeJobsYAML marshals the whole document node and replaces the file. The write is
-// the caller's responsibility to surface: a parse or lookup failure never reaches this
-// point (the file stays untouched).
+// writeJobsYAML replaces the whole document node. The write is the caller's
+// responsibility to surface: a parse or lookup failure never reaches this point (the
+// file stays untouched).
 func writeJobsYAML(path string, doc *yaml.Node) error {
 	out, err := yaml.Marshal(doc)
 	if err != nil {
