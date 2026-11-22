@@ -21,9 +21,12 @@
 #      last_heartbeat_at flips that chip to its stale face.
 #
 # The board is PINNED (j98-drag, reused across runs like recipe 78's
-# j78-a); this run's cards carry the run tag in the title and arch out
-# at exit; non-archived leftovers of a crashed earlier run are archived
-# first so the seeded order is dense from zero.
+# j78-a); this run's cards carry the run tag in the title and are DELETED
+# at exit. Archive is NOT a cleanup here: the grid reads ?status=all and
+# renders the archived lane as ordinary cards, so a tombstone left on a
+# pinned board accumulates forever (recipe 78's law). The pre-seed clear
+# reaps every row on the board - a crashed earlier run's leftovers
+# included - and PROVES it empty before seeding.
 #
 # Card t_2bfd52ac: the switcher's chip wait is TWO-MOUNT (poll, reload,
 # re-poll) - the nightly red 42166671721 was one flaky /boards fetch
@@ -91,15 +94,45 @@ ensure_board() {
   die "board ensure $1"
 }
 
-# archive_cards <ids...>: the throwaway cleanup - the store has no
-# delete, so journey cards arch out quietly.
-archive_cards() {
+# board_ids: every id on the pinned board, archived rows included (the
+# default list hides them). j98-drag is this recipe's own board, so the
+# reap takes the WHOLE board - not only this run's run-tagged rows.
+board_ids() {
+  curl -s "${JOURNEY_BASE_URL}/tasks?board=${BOARD}&status=all" \
+    | tr -d '\r' | grep -oE '"id":"t_[0-9a-f]+"' | grep -oE 't_[0-9a-f]+'
+}
+
+# delete_board_cards: DELETE every id on stdin (one per line). DELETE is the
+# reap; archived is NOT one - the grid reads ?status=all (Board.vue
+# fetchBoard -> tasksPath) and renders an archived card as an ordinary
+# `.card-title` row, so a tombstone on this pinned board accumulates run
+# after run (recipe 78's law, lib.sh's residue contract).
+delete_board_cards() {
   local id
-  for id in "$@"; do
+  while IFS= read -r id; do
     [ -n "$id" ] || continue
-    curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${id}?board=${BOARD}" \
-      -H 'Content-Type: application/json' -d '{"status":"archived"}' >/dev/null || true
+    curl -sf -X DELETE "${JOURNEY_BASE_URL}/tasks/${id}?board=${BOARD}" >/dev/null 2>&1 || true
   done
+}
+
+# clear_board: reap every row on the pinned board, then PROVE it empty. A
+# clear that quietly missed is exactly what a later count assertion cannot
+# explain, so it dies here naming the leftover ids (and says how many
+# tombstones it reaped, so a long-lived lane reads its own history).
+clear_board() {
+  local before left
+  before="$(board_ids | awk 'NF' | wc -l | tr -d ' ')"
+  board_ids | delete_board_cards
+  left="$(board_ids)"
+  [ -z "$left" ] || die "board $BOARD still carries rows after the reap (DELETE refused): $left"
+  [ "$before" = "0" ] || step "clear: reaped $before leftover row(s) (archived tombstones included) off $BOARD"
+}
+
+# reap_board: the EXIT path (a trap must never die - die runs the cleanup
+# that fires this trap).
+reap_board() {
+  board_ids | delete_board_cards
+  return 0
 }
 
 # col_ids <status>: the server's dense order for that column (the same
@@ -426,10 +459,11 @@ switch_to_board() {
 step "pinning board: $BOARD"
 ensure_board "$BOARD"
 
-# clear any non-archived leftovers of a crashed earlier run
-for st in triage todo scheduled ready running blocked review done; do
-  archive_cards $(col_ids "$st")
-done
+# reap every row a crashed earlier run left on the pinned board (archived
+# tombstones are rows too) and PROVE it empty - the trap is installed before
+# the seed so a die mid-seed reaps as well
+clear_board
+trap 'reap_board; journey_exit_cleanup' EXIT
 
 # seed: three in triage, one in todo. Fresh cards land on TOP of a column
 # (topPosition is MIN-1), so seed in REVERSE creation order - c, then b,
@@ -438,7 +472,6 @@ C=$(card_id triage c)
 B=$(card_id triage b)
 A=$(card_id triage a)
 D=$(card_id todo d)
-trap 'archive_cards "$A" "$B" "$C" "$D" "$E"' EXIT
 [ -n "$A" ] && [ -n "$B" ] && [ -n "$C" ] && [ -n "$D" ] || die "card seeding failed"
 
 # ---- boot ----------------------------------------------------------------
@@ -716,7 +749,6 @@ step "ok: the rail is the unfold control (todo back to a 236px column)"
 step "e3: an empty lane folds itself - the auto-collapse law; the pin is still there"
 S=$(card_id scheduled s)
 [ -n "$S" ] || die "scheduled-card seeding failed"
-trap 'archive_cards "$A" "$B" "$C" "$D" "$E" "$S"' EXIT
 poll_js "(function(){var c=document.querySelector('.board-col[data-status=scheduled]');return !!c&&c.dataset.count==='1'})()" 10 ||
   die "seeded card $S never rendered in scheduled"
 # pin it COLLAPSED while it holds one card, then drain it through the API: a
@@ -770,9 +802,9 @@ watch_absent \
   "$(lane_state_js scheduled)"
 step "ok: the rail click expanded the lane and the open pin holds while it holds cards"
 
-# the card seeded for this section is this recipe's to clean up (the trap
-# above owns the others)
-archive_cards "$S"
+# the card seeded for this section is this recipe's to clean up (the EXIT
+# reap owns the others)
+printf '%s\n' "$S" | delete_board_cards
 step "e: lane rails GREEN"
 
 # ---- f: card polish + the running heartbeat chip (card t_65ea61a1) ---------
@@ -805,7 +837,6 @@ LONG="a card title long enough to run past two lines on a 218px card which is ex
 L=$(card_full triage "$LONG" "j98cody" "first body line is the dimmed teaser")
 R=$(card_full todo "running card" "j98cody" "a worker is beating on this card")
 [ -n "$L" ] && [ -n "$R" ] || die "card-polish seeding failed"
-trap 'archive_cards "$A" "$B" "$C" "$D" "$E" "$S" "$L" "$R"' EXIT
 # the running lane's start stamp is the store's job: this transition sets it
 curl -s -X PATCH "${JOURNEY_BASE_URL}/tasks/${R}?board=${BOARD}" \
   -H 'Content-Type: application/json' -d '{"status":"running"}' | grep -q "\"id\":\"$R\"" ||
