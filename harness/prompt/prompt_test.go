@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/agent/loop"
+	"github.com/EndoTheDev/omega/core"
 )
 
 var (
@@ -221,5 +222,58 @@ func TestGuidelines(t *testing.T) {
 		if g[i] != want {
 			t.Errorf("Guidelines()[%d] = %q, want %q", i, g[i], want)
 		}
+	}
+}
+
+// TestDefaultBuilderRendersEachGuidelineOnce pins the composition across both layers: the
+// default builder already renders "## Guidelines", so a run through the loop must not show
+// any of those lines a second time under "## Extension Guidelines".
+func TestDefaultBuilderRendersEachGuidelineOnce(t *testing.T) {
+	b := NewPromptBuilder(&core.Context{})
+	provider := agent.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		loop.Loop{}.Run(context.Background(), agent.LoopOptions{
+			Provider:      provider,
+			Messages:      []core.Message{core.NewUser("hi")},
+			PromptBuilder: b,
+			Events:        events,
+		})
+	}()
+	var end *core.AgentEnd
+	for e := range events {
+		if v, ok := e.(core.AgentEnd); ok {
+			end = &v
+		}
+	}
+	if end == nil {
+		t.Fatal("no agent_end event")
+	}
+	if end.FinishReason != "stop" {
+		t.Fatalf("FinishReason = %q, want stop", end.FinishReason)
+	}
+	if len(provider.LastMessages) == 0 {
+		t.Fatal("no messages recorded by the provider")
+	}
+	sys, ok := provider.LastMessages[0].(core.System)
+	if !ok {
+		t.Fatalf("first message = %T, want core.System", provider.LastMessages[0])
+	}
+
+	guidelines := b.Guidelines(core.PromptBuildOptions{})
+	if len(guidelines) == 0 {
+		t.Fatal("the default builder returned no guidelines - this pin would prove nothing")
+	}
+	for _, g := range guidelines {
+		if n := strings.Count(sys.Content, "- "+g+"\n"); n != 1 {
+			t.Errorf("guideline %q rendered %d times, want 1:\n%s", g, n, sys.Content)
+		}
+	}
+	if strings.Contains(sys.Content, "## Extension Guidelines") {
+		t.Errorf("default builder still gets an extension-guidelines block appended:\n%s", sys.Content)
 	}
 }

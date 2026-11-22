@@ -6,10 +6,11 @@ import (
 	"encoding/json"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 // Compile-time assertions.
@@ -460,5 +461,70 @@ func TestLoopToolsBlockStableAcrossTurns(t *testing.T) {
 	second := run(t)
 	if !bytes.Equal(first.toolsJSON[0], second.toolsJSON[0]) {
 		t.Fatalf("tools[] differs across runs\n run 1: %s\n run 2: %s", first.toolsJSON[0], second.toolsJSON[0])
+	}
+}
+
+// systemPromptFor runs one turn with the given builder and returns the system message the
+// provider was handed.
+func systemPromptFor(t *testing.T, pb agent.PromptBuilder) string {
+	t.Helper()
+	provider := agent.NewFakeProvider("test",
+		core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	)
+	events := make(chan core.Event, 64)
+	go func() {
+		defer close(events)
+		Loop{}.Run(context.Background(), agent.LoopOptions{
+			Provider:      provider,
+			Messages:      []core.Message{core.NewUser("hi")},
+			PromptBuilder: pb,
+			Events:        events,
+		})
+	}()
+	drainEvents(t, events)
+	if len(provider.LastMessages) == 0 {
+		t.Fatal("no messages recorded by the provider")
+	}
+	sys, ok := provider.LastMessages[0].(core.System)
+	if !ok {
+		t.Fatalf("first message = %T, want core.System", provider.LastMessages[0])
+	}
+	return sys.Content
+}
+
+// TestPromptSkipsGuidelinesItAlreadyRendered pins the dedupe: a builder whose prompt carries
+// its own guideline lines gets only its EXTRA lines appended, never a second copy.
+func TestPromptSkipsGuidelinesItAlreadyRendered(t *testing.T) {
+	pb := &mockPromptBuilder{
+		prompt:     "You are a test agent.\n\n## Guidelines\n- Shared line.\n",
+		guidelines: []string{"Shared line.", "Builder-only line."},
+	}
+
+	sys := systemPromptFor(t, pb)
+
+	if n := strings.Count(sys, "Shared line."); n != 1 {
+		t.Errorf("\"Shared line.\" appears %d times, want 1:\n%s", n, sys)
+	}
+	if !strings.Contains(sys, "\n## Extension Guidelines\n- Builder-only line.\n") {
+		t.Errorf("builder-only guideline was not appended:\n%s", sys)
+	}
+}
+
+// TestPromptOmitsExtensionBlockWhenNothingIsExtra pins the other half: when every guideline
+// is already in the built prompt, the "## Extension Guidelines" header never renders.
+func TestPromptOmitsExtensionBlockWhenNothingIsExtra(t *testing.T) {
+	pb := &mockPromptBuilder{
+		prompt:     "You are a test agent.\n\n## Guidelines\n- Shared line.\n",
+		guidelines: []string{"Shared line."},
+	}
+
+	sys := systemPromptFor(t, pb)
+
+	if strings.Contains(sys, "## Extension Guidelines") {
+		t.Errorf("empty extension-guidelines block rendered:\n%s", sys)
+	}
+	if n := strings.Count(sys, "- Shared line.\n"); n != 1 {
+		t.Errorf("guideline bullet appears %d times, want 1:\n%s", n, sys)
 	}
 }

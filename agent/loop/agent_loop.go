@@ -114,9 +114,9 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			prompt = extPrompt
 		}
 		if prompt != "" {
-			if guidelines := opts.PromptBuilder.Guidelines(build); len(guidelines) > 0 {
+			if extra := unrenderedGuidelines(prompt, opts.PromptBuilder.Guidelines(build)); len(extra) > 0 {
 				prompt += "\n## Extension Guidelines\n"
-				for _, g := range guidelines {
+				for _, g := range extra {
 					prompt += "- " + g + "\n"
 				}
 			}
@@ -489,6 +489,21 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 	}
+}
+
+// unrenderedGuidelines returns the builder's guidelines the built prompt does not already
+// carry as a "- <line>" bullet. BuildPrompt owns the "## Guidelines" block, so a builder that
+// renders its own lines there (the default one does) must not get them a second time under
+// "## Extension Guidelines"; a third-party builder's extra lines still land.
+func unrenderedGuidelines(prompt string, guidelines []string) []string {
+	var extra []string
+	for _, g := range guidelines {
+		if g == "" || strings.Contains(prompt, "- "+g+"\n") {
+			continue
+		}
+		extra = append(extra, g)
+	}
+	return extra
 }
 
 // defaultYieldTimeout caps a dispatched yield-class call's wall clock when the host carries no
