@@ -9,9 +9,7 @@ import (
 // The detector is deliberately over-eager, never under: a false ask costs a click (or, in
 // smart mode, one cheap forward pass); a false pass costs whatever the command does.
 
-// Risk is the detector's verdict for one command.
 type Risk struct {
-	// WouldInterrupt - true when a reviewer must see it.
 	WouldInterrupt bool
 	Reasons []string
 	// Findings carries the same hits as structured records, one per reason with its
@@ -21,7 +19,6 @@ type Risk struct {
 	Findings []Finding
 }
 
-// Severity is a detector finding's tier.
 type Severity string
 
 const (
@@ -88,7 +85,6 @@ var reasonSeverity = map[string]Severity{
 	"redirect-writes":      SeverityLow,
 }
 
-// wordSet is one rule's command vocabulary.
 type wordSet map[string]bool
 
 func set(words ...string) wordSet {
@@ -140,7 +136,6 @@ var interpreters = set(
 var interpreterInerts = set(
 	"--version", "-V", "-v", "-h", "--help", "-help", "--usage", "-?")
 
-// actionRules: (tool, action) pairs.
 var actionRules = []struct {
 	name string
 	tool map[string]wordSet
@@ -216,7 +211,6 @@ func Assess(p Parsed) Risk {
 	return Risk{WouldInterrupt: true, Reasons: out, Findings: findings}
 }
 
-// assessSegment is the per-segment rule pass.
 func assessSegment(seg Segment) []string {
 	var out []string
 	if seg.Substitution {
@@ -334,7 +328,6 @@ func gitHardFlagsHit(seg Segment) bool {
 	return false
 }
 
-// segHitsInterpreter reports whether an interpreter word rides the segment.
 func segHitsInterpreter(seg Segment) bool {
 	for _, w := range seg.Words {
 		if interpreters[baseWord(w)] {
@@ -388,7 +381,6 @@ func dataEgressHit(seg Segment) bool {
 	return false
 }
 
-// secretMaterialHit: credential-material paths and names ride the would-interrupt set.
 var secretVocabulary = []string{
 	".ssh", "id_rsa", "id_ed25519", "id_ecdsa", ".aws/credentials",
 	".netrc", ".git-credentials", ".env", "auth.json", "keyring",
@@ -408,7 +400,6 @@ func secretMaterialHit(seg Segment) bool {
 	return false
 }
 
-// writesThrough reports redirect writes in parsed form.
 func writesThrough(seg Segment) bool {
 	for _, w := range seg.Words {
 		if w == "tee" {
@@ -446,7 +437,6 @@ func isFDOperand(s string) bool {
 	return true
 }
 
-// hasScriptExtension reports whether a word names a script by extension.
 func hasScriptExtension(w string) bool {
 	low := strings.ToLower(baseWord(w))
 	if len(low) <= len(".sh") { // the bare extension and shorter

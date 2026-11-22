@@ -1,7 +1,5 @@
 package provider
 
-// The mock provider pins: deterministic streams seeded by the request,.
-
 import (
 	"context"
 	"fmt"
@@ -117,7 +115,6 @@ func TestMockFullAgentTurn(t *testing.T) {
 }
 
 func TestMockModelPathsNeverDial(t *testing.T) {
-	// A model name plus list request: ListModels/ModelInfo must answer without touching.
 	// The baseURL below is never read by the mock paths - if the mock ever dials, the dead
 	// port fails the test.
 	p := &Provider{typ: "mock", modelName: "mock-model", baseURL: "http://127.0.0.1:1"}

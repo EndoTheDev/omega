@@ -42,7 +42,6 @@ type finishedThings interface {
 	Emit(n core.Notice) (core.Notice, error)
 }
 
-// The run-origin values the gate compares.
 const (
 	originScheduled = "cron"
 	originSubagent  = "delegate"
@@ -64,7 +63,6 @@ func NewGate(cfg Config, verdicts func() verdictHub, notifications func() finish
 	}
 }
 
-// SetConfig replaces the gate's config at runtime.
 func (g *Gate) SetConfig(cfg Config) {
 	g.cfgMu.Lock()
 	defer g.cfgMu.Unlock()
@@ -93,7 +91,6 @@ const (
 // followUpReasonPrefix marks a follow-up resolution's reason.
 const followUpReasonPrefix = "follow-up guidance: "
 
-// followUpMax is the guidance size cap.
 const followUpMax = 2000
 const stampGuidanceMax = 240
 
@@ -295,7 +292,6 @@ func (g *Gate) decide(ctx context.Context, toolName string, args map[string]any,
 	return stamp, outcomeError(outcome)
 }
 
-// mode returns the live config's normalized mode.
 func (g *Gate) mode() string { return g.config().NormalizedMode() }
 
 // outcomeError maps a resolution to the tool error (nil runs).
@@ -598,7 +594,6 @@ type rowInput struct {
 	latency               time.Duration
 }
 
-// row renders the audit record.
 func (g *Gate) row(in rowInput) AuditRow {
 	answers, rawVerdict, outcome := in.answers, in.rawVerdict, in.outcome
 	if in.cached {

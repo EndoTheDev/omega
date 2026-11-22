@@ -17,7 +17,7 @@ import (
 
 func (p *Provider) streamOllama(ctx context.Context, events chan<- core.ProviderStreamEvent, messages, tools []map[string]any) core.StreamEnd {
 	end, retriable := p.streamOllamaAttempt(ctx, events, messages, tools)
-	// done_reason "load" rides a 200 OK stream and produces nothing, so RetryHTTP never.
+	// done_reason "load" rides a 200 OK stream and produces nothing.
 	for attempt := 0; retriable; attempt++ {
 		if attempt >= llm.MaxRetries() {
 			return core.StreamEnd{
@@ -103,7 +103,6 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 				return core.StreamEnd{Type: "stream_end", FinishReason: "error", Error: fmt.Sprintf("parse error: %v", jsonErr)}, false
 			}
 
-			// In-stream error payloads surface as an error StreamEnd.
 			switch eval := chunk["error"].(type) {
 			case string:
 				if eval != "" {
@@ -199,8 +198,6 @@ func (p *Provider) streamOllamaAttempt(ctx context.Context, events chan<- core.P
 		}
 	}
 }
-
-// OpenAI
 
 // pendingCall accumulates OpenAI tool-call fragments.
 type pendingCall struct {

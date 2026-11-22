@@ -5,7 +5,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Plugin mounts the approval capsule.
 type Plugin struct {
 	gate *Gate
 }
@@ -18,18 +17,15 @@ func (p *Plugin) Description() string {
 	return "approval: the smart approval gate - risky shell commands reach a decision model + deterministic ladder, escalations ride verdict cards"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "approvals" }
 
 // Provides approvals (exclusive). Requires verdicts: an escalation HARD-PAUSES inside
-// the gate on a verdict card (Q13) - a host without verdict cards cannot block for a
-// human. Read-only use of the Context's notifications emitter (Q11) is nil-safe; no
-// Requires edge (kanban's emitter pattern - a disabled notifications module still
-// gates, it just does not ring).
+// the gate on a verdict card - a host without verdict cards cannot block for a human.
+// Read-only use of the Context's notifications emitter is nil-safe; no Requires edge (a
+// disabled notifications module still gates, it just does not ring).
 func (p *Plugin) Provides() []string { return []string{"approvals"} }
 func (p *Plugin) Requires() []string { return []string{"verdicts"} }
 
-// MountWithAPI registers the seam; nothing else exists.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["approvals"].(Config); ok {
@@ -66,8 +62,7 @@ func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSecti
 	return []core.PromptSection{{Title: "Approval Gate", Body: body, Order: promptSectionOrder}}
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule as a module capsule.
 func (p *Plugin) Toggleable() bool { return true }
 
-// NewPlugin returns the approval Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }

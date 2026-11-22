@@ -1,7 +1,5 @@
 package provider
 
-// The wire pin for the async re-entry contract.
-
 import (
 	"encoding/json"
 	"testing"
@@ -56,14 +54,12 @@ func TestYieldResultSerializesAsToolRow(t *testing.T) {
 			if got, _ := wire[3]["content"].(string); got != "a.txt\nb.txt" {
 				t.Errorf("yield row content = %q, want the listing", got)
 			}
-			// No row may reach the wire role-less: a role-less row is exactly how the result.
 			for i, m := range wire {
 				if role, _ := m["role"].(string); role == "" {
 					body, _ := json.Marshal(m)
 					t.Errorf("row %d serialized without a role: %s", i, body)
 				}
 			}
-			// The Anthropic path folds every "tool" row into a tool_result block keyed.
 			_, conv := anthropicConvertMessages(wire)
 			last := conv[len(conv)-1]
 			if role, _ := last["role"].(string); role != "user" {

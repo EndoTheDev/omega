@@ -203,8 +203,6 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	}
 }
 
-// Anthropic
-
 // pendingTool accumulates Anthropic tool-call fragments.
 type pendingTool struct {
 	id        string

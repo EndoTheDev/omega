@@ -10,26 +10,20 @@ import (
 	"github.com/EndoTheDev/omega/llm"
 )
 
-// Plugin is the in-process adapter for the provider extension.
 type Plugin struct{}
 
-// Name returns the plugin name shown in the /extensions listing.
 func (Plugin) Name() string { return "provider" }
 
-// Description implements agent.Describer.
 func (Plugin) Description() string {
 	return "model provider: LLM transport (Ollama, OpenAI, Anthropic), streaming and model listing"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "provider" }
 
 func (Plugin) Provides() []string { return []string{"provider"} }
 
-// Requires lists seam names that must be mounted before this plugin.
 func (Plugin) Requires() []string { return nil }
 
-// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	cfg := Default()
 	if c, ok := ctx.Configs["provider"].(Config); ok {
@@ -63,7 +57,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// handleCommand handles the /model, /models, /thinking and /provider commands.
 func (p *Plugin) handleCommand(prov *Provider, name, args string) (core.CommandResult, error) {
 	switch name {
 	case "/model":

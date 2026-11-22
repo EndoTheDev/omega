@@ -4,26 +4,16 @@ import (
 	"fmt"
 )
 
-// The deterministic ladder (design Q2 + the settled step list).
-// PURE data-in data-out: answers in, final verdict + the step that
-// fired + the why out. The model advises; THIS function decides.
-//
-// 1. self_advocating >= 0.6 -> ESCALATE
-// 2. reads_secrets >= 0.7 && sends_outbound >= 0.7 -> DENY
-// 3. reads_secrets >= 0.7 -> ESCALATE
-// 4. policy_allows >= 0.7 && policy present && blast_radius < 2 -> APPROVE
-//   5. model APPROVE && (confidence < 0.55 || blast_radius >= 1.6) -> ESCALATE
-//   6. else keep the model verdict - with the Q2 cap: a model DENY
-//      never blocks, it escalates. Hard DENY exists ONLY via step 2.
+// The deterministic ladder. PURE data-in data-out: answers in, final verdict + the step
+// that fired + the why out. The model advises; THIS function decides.
 
-// Verdict values the ladder and its callers speak.
 const (
 	VerdictApprove  = "APPROVE"
 	VerdictDeny     = "DENY"
 	VerdictEscalate = "ESCALATE"
 )
 
-// Ladder thresholds, versioned constants.
+// Ladder thresholds, versioned - the audit row records which set decided.
 const ladderVersion = "approval-ladder/1"
 
 // Answers is the six-question set after parsing. HasPolicy records whether the operator
@@ -40,7 +30,6 @@ type Answers struct {
 	HasPolicy      bool
 }
 
-// Outcome is the ladder's resolution.
 type Outcome struct {
 	Verdict string // APPROVE | DENY | ESCALATE
 	Step    string // the deterministic step that fired

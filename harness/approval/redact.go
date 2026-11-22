@@ -13,7 +13,6 @@ import (
 
 var schemaPairRes = schemaPairPatterns()
 
-// schemaPairPatterns builds one regex per wire fragment the reviewer answers.
 func schemaPairPatterns() []*regexp.Regexp {
 	keys := []string{"verdict", "policy_allows", "blast_radius", "self_advocating",
 		"reads_secrets", "sends_outbound", "choice", "confidence",

@@ -8,16 +8,14 @@ import (
 	"time"
 )
 
-// The audit log (design Q6): every verdict appends ONE JSONL record to the omega home.
-// Append-only, best-effort: a logging failure never changes a gate decision.
+// The audit log: every verdict appends ONE JSONL record to the omega home. Append-only,
+// best-effort: a logging failure never changes a gate decision.
 
-// AuditLog appends decision records to <home>/approval-decisions.jsonl.
 const (
 	auditFileName = "approval-decisions.jsonl"
 	auditMaxBytes = 4 << 20
 )
 
-// AuditRow is one decision record.
 type AuditRow struct {
 	TS             string   `json:"ts"`
 	Mode           string   `json:"mode"`

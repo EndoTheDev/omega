@@ -208,10 +208,6 @@ type anthropicUsage struct {
 	CacheReadInputTokens *int `json:"cache_read_input_tokens"`
 }
 
-// Anthropic message conversion
-
-// userImageBlocks lifts a user message's images key.
-// Messages without images yield nil.
 func userImageBlocks(msg map[string]any) []any {
 	imgs, ok := msg["images"].([]any)
 	if !ok || len(imgs) == 0 {
@@ -240,7 +236,6 @@ func userImageBlocks(msg map[string]any) []any {
 	return blocks
 }
 
-// anthropicConvertMessages converts generic message maps to Anthropic format.
 func anthropicConvertMessages(messages []map[string]any) (system string, result []map[string]any) {
 	for i := 0; i < len(messages); i++ {
 		role, _ := messages[i]["role"].(string)
@@ -316,11 +311,6 @@ func anthropicConvertMessages(messages []map[string]any) (system string, result 
 	system = strings.TrimSuffix(system, "\n")
 	return system, result
 }
-
-// shared helpers
-
-// sendEvent sends an event on the channel, respecting context cancellation.
-// Non-blocking: if the context is cancelled, the event is dropped.
 
 func anthropicBudgetTokens(level string) int {
 	switch level {

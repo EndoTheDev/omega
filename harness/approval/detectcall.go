@@ -38,7 +38,6 @@ const (
 	DetectorJudgeFailure  = "judge-failure"
 )
 
-// maxTaskChars caps the human task text the judge reads.
 const maxTaskChars = 2000
 
 // Provenance is the conversation's human-authored text - the only citation that sources a
@@ -133,7 +132,6 @@ func (c Call) Text() string {
 	return strings.Join(c.lines(), "\n")
 }
 
-// lines is the decoded argument tree as text lines, keys walked in sorted order.
 func (c Call) lines() []string {
 	var out []string
 	walkArgValue(c.Args, &out)
@@ -180,10 +178,6 @@ var (
 	ipv4Pattern = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
 	// reachToolPattern: a tool NAME that can reach a network.
 	reachToolPattern = regexp.MustCompile(`(?i)fetch|browse|browser|web|http|url|download`)
-	// reachLinePattern: command lines that open a connection - the
-	// rule's set (curl, wget, nc, ssh, git clone, pip install,
-	// /dev/tcp/, requests., httpx.) plus the clients the legacy
-	// detector already knows.
 	reachLinePattern = regexp.MustCompile(`(?i)(\bcurl\b|\bwget\b|\bnc\b|\bncat\b|\bnetcat\b|\btelnet\b|\bssh\b|\bscp\b|\bsftp\b|\bgit\s+clone\b|\bpip3?\s+install\b|\bnpm\s+(?:i|install)\b|/dev/tcp/|\brequests\.|\bhttpx\b|\bhttp\.client\b|\burllib\b|\baiohttp\b)`)
 
 	// the Cohere-report behaviours: what an agent does when it decides
@@ -197,7 +191,6 @@ var (
 	readVerbPattern        = regexp.MustCompile(`(?i)(?:^|[\s;&|(])(?:cat|less|more|head|tail|strings|xxd|hexdump|od|base64|grep|rg|awk|sed|cp|scp|tar|zip|python3?|node|perl|ruby|php|curl|wget|nc)\b`)
 )
 
-// allowlistDomains: the package/tooling hosts the rule allows verbatim.
 var allowlistDomains = []string{
 	"github.com", "pypi.org", "pythonhosted.org", "huggingface.co",
 	"hf.co", "npmjs.org", "crates.io",
@@ -334,7 +327,6 @@ func DetectCall(call Call, prov Provenance) []Finding {
 	return out
 }
 
-// urlHosts extracts the host of every URL on one line.
 func urlHosts(line string) []string {
 	var out []string
 	for _, m := range urlHostPattern.FindAllStringSubmatch(line, -1) {
@@ -366,7 +358,6 @@ func ipv4Hosts(line string) []string {
 	return out
 }
 
-// validIPv4: four dot-separated octets, each 0..255.
 func validIPv4(s string) bool {
 	parts := strings.Split(s, ".")
 	if len(parts) != 4 {

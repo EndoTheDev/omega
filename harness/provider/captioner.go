@@ -13,12 +13,11 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// captionPrompt is the deterministic instruction the vision model gets
-// once per image. Cheap, factual, plain text - the main model (glm-5.3)
-// reasons over the description, never over pixels.
+// captionPrompt is the deterministic instruction the vision model gets once per image.
+// Cheap, factual, plain text - the main model reasons over the description, never over
+// pixels.
 const captionPrompt = "Describe this image factually and completely, plain text."
 
-// captionTimeout caps one vision-model call.
 const captionTimeout = 2 * time.Minute
 
 // DefaultAuxModel is the vision_model sentinel. The word persists in config.yaml
@@ -73,7 +72,6 @@ func (c *Captioner) CaptioningEnabled() bool {
 	return c.model != ""
 }
 
-// providerFor resolves the provider one caption call streams through.
 func (c *Captioner) providerFor(ctx context.Context) (agent.Provider, error) {
 	c.mu.RLock()
 	on, followMain, prov, base := c.model != "", c.followMain, c.prov, c.base
@@ -96,7 +94,6 @@ func (c *Captioner) providerFor(ctx context.Context) (agent.Provider, error) {
 	return prov, nil
 }
 
-// Caption returns the caption for one image.
 func (c *Captioner) Caption(ctx context.Context, img core.ImageContent) (string, error) {
 	id := ImageID(img)
 	if v, ok := c.cache.Load(id); ok {
