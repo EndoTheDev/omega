@@ -16,7 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-//go:embed static/*
+//go:embed all:static/*
 var staticFS embed.FS
 
 // webuiFS is the embedded SPA at the FS root, where the FileServer at "/" looks.
