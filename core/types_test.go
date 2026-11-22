@@ -46,3 +46,77 @@ func TestStampDisabledToolsDefaultsEnabled(t *testing.T) {
 		}
 	}
 }
+
+// TestToolEnabledJudgesFoldAndInventory pins the prompt-side reading of "on the wire": a
+// tool is offered when the inventory carries it and the fold does not name it. An absent
+// inventory is unknown, never empty, so a caller-less build keeps its prompt.
+func TestToolEnabledJudgesFoldAndInventory(t *testing.T) {
+	infos := []ExtensionInfo{{Name: "tools", ToolList: []ToolInfo{
+		{Name: "files.read"},
+		{Name: "shell.run"},
+	}}}
+	opts := PromptBuildOptions{Extensions: infos, DisabledTools: []string{"shell.run"}}
+
+	if !opts.ToolEnabled("files.read") {
+		t.Error("files.read is in the inventory and unfolded, want enabled")
+	}
+	if opts.ToolEnabled("shell.run") {
+		t.Error("shell.run is folded, want disabled")
+	}
+	if opts.ToolEnabled("kanban.list") {
+		t.Error("kanban.list is in no inventory, want disabled")
+	}
+	if !opts.ToolEnabled("") {
+		t.Error("an empty name gates nothing, want enabled")
+	}
+	if !opts.ToolsEnabled("shell.run", "files.read") {
+		t.Error("one of the family is enabled, want true")
+	}
+	if opts.ToolsEnabled("shell.run", "kanban.list") {
+		t.Error("no member of the family is enabled, want false")
+	}
+
+	unknown := PromptBuildOptions{DisabledTools: []string{"shell.run"}}
+	if !unknown.ToolEnabled("kanban.list") {
+		t.Error("an unsupplied inventory is unknown, want the name judged by the fold alone")
+	}
+}
+
+func TestHasToolsReadsTheStampedInventory(t *testing.T) {
+	infos := []ExtensionInfo{{Name: "tools", ToolList: []ToolInfo{
+		{Name: "files.read"},
+		{Name: "shell.run"},
+	}}}
+	if !(PromptBuildOptions{}).HasTools() {
+		t.Error("an unsupplied inventory is unknown, want HasTools true (no posture change)")
+	}
+	if !(PromptBuildOptions{Extensions: infos}).HasTools() {
+		t.Error("two enabled tools, want HasTools true")
+	}
+	if (PromptBuildOptions{Extensions: StampDisabledTools(infos, []string{"files.read", "shell.run"})}).HasTools() {
+		t.Error("every tool folded, want HasTools false")
+	}
+	if (PromptBuildOptions{Extensions: []ExtensionInfo{{Name: "empty"}}}).HasTools() {
+		t.Error("an inventory carrying no tools at all, want HasTools false")
+	}
+}
+
+func TestToolNamesIsTheWholeInventory(t *testing.T) {
+	infos := []ExtensionInfo{
+		{Name: "tools", ToolList: []ToolInfo{{Name: "shell.run"}, {Name: "files.read"}}},
+		{Name: "empty"},
+	}
+	got := ToolNames(infos)
+	want := []string{"files.read", "shell.run"}
+	if len(got) != len(want) {
+		t.Fatalf("ToolNames = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ToolNames = %v, want %v (sorted)", got, want)
+		}
+	}
+	if ToolNames(nil) != nil {
+		t.Error("ToolNames(nil) must stay nil - an empty fold, not an allocation")
+	}
+}

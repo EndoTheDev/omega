@@ -63,3 +63,26 @@ func TestMountWithAPIShape(t *testing.T) {
 	}
 	_ = context.Background()
 }
+
+// TestPromptSectionObeysTheFold pins the prose law: the Verdict Cards section is the
+// verdict.request tool's contract, so a fold that switches that tool off takes the
+// contract with it - the model must not be taught a card it cannot raise.
+func TestPromptSectionObeysTheFold(t *testing.T) {
+	p := NewPlugin()
+
+	on := p.PromptSections(core.PromptBuildOptions{})
+	if len(on) != 1 || on[0].Title != "Verdict Cards" {
+		t.Fatalf("unfolded: sections = %+v, want one Verdict Cards", on)
+	}
+
+	off := p.PromptSections(core.PromptBuildOptions{DisabledTools: []string{"verdict.request"}})
+	if len(off) != 0 {
+		t.Fatalf("verdict.request folded: sections = %+v, want none", off)
+	}
+
+	// A fold that names other tools leaves the section alone.
+	other := p.PromptSections(core.PromptBuildOptions{DisabledTools: []string{"shell.run", "files.read"}})
+	if len(other) != 1 || other[0].Title != "Verdict Cards" {
+		t.Fatalf("other tools folded: sections = %+v, want Verdict Cards kept", other)
+	}
+}

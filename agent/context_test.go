@@ -20,7 +20,7 @@ func (s *stubPromptBuilder) BuildPrompt(_ context.Context, _ core.PromptBuildOpt
 	return s.prompt, s.prompt != ""
 }
 
-func (s *stubPromptBuilder) Guidelines() []string { return s.guidelines }
+func (s *stubPromptBuilder) Guidelines(_ core.PromptBuildOptions) []string { return s.guidelines }
 
 // stubLogger satisfies LoggerProvider for testing.
 type stubLogger struct {

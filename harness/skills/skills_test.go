@@ -480,6 +480,38 @@ func TestPromptSections(t *testing.T) {
 	}
 }
 
+// TestPromptSectionsObeyTheFold pins the prose law on the skills inventory: the lead
+// sentence names the skills verbs, so a folded verb never renders, and an inventory whose
+// every verb the fold switched off drops with them (a list nothing can load is a lie).
+func TestPromptSectionsObeyTheFold(t *testing.T) {
+	sp := NewSkillsProvider(makeSkillDir(t))
+
+	// Reading off, writing on: the sentence keeps the writer and drops the reader.
+	got := sp.PromptSections(core.PromptBuildOptions{DisabledTools: []string{"skills.read"}})
+	if len(got) != 1 {
+		t.Fatalf("read folded: sections = %v, want the inventory kept for skills.write", got)
+	}
+	want := "skills.write creates a new skill and skills.update patches an existing one.\n- test-skill: A test skill\n"
+	if got[0].Body != want {
+		t.Errorf("read folded: Body = %q, want %q", got[0].Body, want)
+	}
+
+	// Only the writer left.
+	got = sp.PromptSections(core.PromptBuildOptions{DisabledTools: []string{"skills.read", "skills.update"}})
+	if len(got) != 1 {
+		t.Fatalf("write only: sections = %v, want one", got)
+	}
+	want = "skills.write creates a new skill.\n- test-skill: A test skill\n"
+	if got[0].Body != want {
+		t.Errorf("write only: Body = %q, want %q", got[0].Body, want)
+	}
+
+	// Every verb off: no section at all.
+	if got := sp.PromptSections(core.PromptBuildOptions{DisabledTools: []string{"skills.read", "skills.write", "skills.update"}}); got != nil {
+		t.Errorf("every verb folded: sections = %v, want none", got)
+	}
+}
+
 func TestSkillsProviderImplementsPromptSectioner(t *testing.T) {
 	var _ core.PromptSectioner = (*SkillsProvider)(nil)
 }

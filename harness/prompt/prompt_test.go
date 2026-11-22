@@ -150,10 +150,63 @@ func TestBuildPromptNilContext(t *testing.T) {
 	}
 }
 
-// TestGuidelines returns the expected guideline lines.
+// TestBuildPromptFoldedGuidelines pins the guideline half of the prose law: a line that
+// names a folded capability never renders, and the opening posture stops claiming tools
+// once the inventory carries none.
+func TestBuildPromptFoldedGuidelines(t *testing.T) {
+	b := NewPromptBuilder(&core.Context{})
+	exts := []core.ExtensionInfo{{
+		Name: "tools",
+		ToolList: []core.ToolInfo{
+			{Name: "files.read", Description: "Read a file."},
+			{Name: "files.edit", Description: "Edit a file."},
+			{Name: "shell.run", Description: "Run a command."},
+			{Name: "sessions.search", Description: "Search sessions."},
+		},
+	}}
+	fold := []string{"files.read", "files.grep", "files.glob", "files.write", "files.edit", "files.batch", "shell.run", "sessions.search", "sessions.hygiene"}
+	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{
+		CWD:           "/test/cwd",
+		Extensions:    core.StampDisabledTools(exts, fold),
+		DisabledTools: fold,
+	})
+	if !ok {
+		t.Fatal("BuildPrompt returned ok=false")
+	}
+	for _, banned := range []string{"access to tools", "Use tools to read files", "When editing files", "store tools"} {
+		if strings.Contains(prompt, banned) {
+			t.Errorf("fully folded prompt still claims %q:\n%s", banned, prompt)
+		}
+	}
+	for _, want := range []string{"No tools are enabled for this session", "- Prefer the simplest solution that works.", "## Environment"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("fully folded prompt missing %q:\n%s", want, prompt)
+		}
+	}
+
+	// A partial fold drops only the lines that name the folded family: the whole files
+	// write family and the store go, the file readers and the shell stay.
+	partial := []string{"files.write", "files.edit", "files.batch", "sessions.search", "sessions.hygiene"}
+	prompt, _ = b.BuildPrompt(context.Background(), core.PromptBuildOptions{
+		CWD:           "/test/cwd",
+		Extensions:    core.StampDisabledTools(exts, partial),
+		DisabledTools: partial,
+	})
+	if strings.Contains(prompt, "When editing files") {
+		t.Error("files tools folded but the editing guideline still renders")
+	}
+	if strings.Contains(prompt, "store tools") {
+		t.Error("store tools folded but the omega.db guideline still renders")
+	}
+	if !strings.Contains(prompt, "Use tools to read files and run commands") {
+		t.Error("shell.run is still on the wire, want the read/run guideline kept")
+	}
+}
+
+// TestGuidelines returns the expected guideline lines on an unfolded run.
 func TestGuidelines(t *testing.T) {
 	b := NewPromptBuilder(&core.Context{})
-	g := b.Guidelines()
+	g := b.Guidelines(core.PromptBuildOptions{})
 	if len(g) != 6 {
 		t.Fatalf("Guidelines() returned %d lines, want 6", len(g))
 	}

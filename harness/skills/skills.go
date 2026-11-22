@@ -174,8 +174,34 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	if len(skills) == 0 {
 		return nil
 	}
+	// The lead sentence names the skills verbs, so it is built from the verbs the fold
+	// left on the wire: an inventory whose only loader is disabled is dead weight, and
+	// naming a disabled verb is the same lie as listing a disabled tool.
+	var verbs []string
+	if opts.ToolEnabled("skills.read") {
+		verbs = append(verbs, "Call skills.read with a skill name to load its full content")
+	}
+	if opts.ToolEnabled("skills.write") {
+		verbs = append(verbs, "skills.write creates a new skill")
+	}
+	if opts.ToolEnabled("skills.update") {
+		verbs = append(verbs, "skills.update patches an existing one")
+	}
+	if len(verbs) == 0 {
+		return nil
+	}
 	var sb strings.Builder
-	sb.WriteString("Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.\n")
+	// Clauses join the way the original prose did: "a; b and c" - the all-on case stays
+	// byte-identical to the pre-fold sentence.
+	switch len(verbs) {
+	case 1:
+		sb.WriteString(verbs[0])
+	default:
+		sb.WriteString(strings.Join(verbs[:len(verbs)-1], "; "))
+		sb.WriteString(" and ")
+		sb.WriteString(verbs[len(verbs)-1])
+	}
+	sb.WriteString(".\n")
 	for _, s := range skills {
 		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
 	}

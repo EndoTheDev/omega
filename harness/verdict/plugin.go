@@ -71,8 +71,12 @@ func NewPlugin() *Plugin { return &Plugin{} }
 const promptSectionOrder = 35 // after memory (10), skills (20), tools (30)
 
 // PromptSections renders the model guidance for the verdict tool: when to ask (the
-// agent decides, no gate or config) and the block/answer contract.
+// agent decides, no gate or config) and the block/answer contract. The contract is the
+// verdict.request tool's, so it renders only while that tool is on the wire.
 func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSection {
+	if !opts.ToolEnabled("verdict.request") {
+		return nil
+	}
 	body := "- verdict: ask the user when a decision materially affects them and you cannot proceed without their input - approval (two options, \"yes\" / \"no\"), a pick between options, a multi-select, or free text (allow_text). It BLOCKS the turn until they answer, the card expires (20 minutes default), or the run is cancelled - so ask only when you cannot proceed without them, and decide autonomously for everything else.\n- Prefer concrete options over open questions; give each option a one-line description when the choice needs explaining. Options render as a list, one per row.\n- The verdict returns as JSON: {verdict:\"answer\",option,option_index} | {verdict:\"answer\",options,option_indexes} (multi) | {verdict:\"skip\"} | {verdict:\"expired\"}. Act on it through your normal tools; the card itself executes nothing.\n"
 	return []core.PromptSection{
 		{Title: "Verdict Cards", Body: body, Order: promptSectionOrder},
