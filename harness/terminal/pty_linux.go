@@ -14,7 +14,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// spawnProcess starts the shell on a fresh pty pair, cwd=workdir.
 func spawnProcess(workdir string) (process, error) {
 	shell := shellPath()
 	masterFD, slave, err := openpty()
@@ -43,11 +42,10 @@ func spawnProcess(workdir string) (process, error) {
 		master.Close()
 		return nil, fmt.Errorf("start %s: %w", shell, err)
 	}
-	slave.Close() // the child owns the slave now; the parent holds the master
+	slave.Close()
 	return &ptyProcess{master: master, cmd: cmd}, nil
 }
 
-// openpty allocates a pty pair (open /dev/ptmx, unlock, resolve the slave).
 func openpty() (int, *os.File, error) {
 	m, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
 	if err != nil {
@@ -89,7 +87,6 @@ func shellPath() string {
 	return "/bin/sh"
 }
 
-// ptyProcess is the unix process: master + child command.
 type ptyProcess struct {
 	master *os.File
 	cmd    *exec.Cmd
@@ -114,7 +111,6 @@ type ptyProcess struct {
 	inFlight int
 }
 
-// enter announces one op about to touch the master; false = closed.
 func (p *ptyProcess) enter() bool {
 	p.mu.Lock()
 	if p.closed {
@@ -126,7 +122,6 @@ func (p *ptyProcess) enter() bool {
 	return true
 }
 
-// leave settles one op; the last op out after a close request owns the master's close.
 func (p *ptyProcess) leave() {
 	p.mu.Lock()
 	p.inFlight--
@@ -153,12 +148,10 @@ func (p *ptyProcess) Write(b []byte) (int, error) {
 	return p.master.Write(b)
 }
 
-// Close hands the master its close without ever overlapping a parked op. Idempotent.
 func (p *ptyProcess) Close() error {
 	return p.closeMaster()
 }
 
-// closeMaster marks the close and performs it only when no op is parked on the master.
 func (p *ptyProcess) closeMaster() error {
 	p.mu.Lock()
 	if p.closed {
@@ -194,7 +187,6 @@ func (p *ptyProcess) Done() <-chan struct{} {
 	return p.done
 }
 
-// Kill signals the child's process group.
 func (p *ptyProcess) Kill() error {
 	if p.cmd.Process == nil {
 		return nil
@@ -207,7 +199,6 @@ func (p *ptyProcess) Kill() error {
 
 func (p *ptyProcess) ExitCode() int { return p.code }
 
-// Resize sets the child's window size on the master.
 func (p *ptyProcess) Resize(rows, cols uint16) error {
 	ws := unix.Winsize{Row: rows, Col: cols, Xpixel: 0, Ypixel: 0}
 	if err := unix.IoctlSetWinsize(int(p.master.Fd()), unix.TIOCSWINSZ, &ws); err != nil {

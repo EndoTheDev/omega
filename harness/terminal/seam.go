@@ -24,9 +24,9 @@ func seam[T any](ctx *core.Context, key string) T {
 	return need
 }
 
-// sessionStores is the workspace-pin face the claim's root chain reads (the store. The
-// capsule's own local interface per the seam grammar; nil-safe absence = the chain
-// falls through to the default_workspace knob and the process cwd.
+// sessionStores is the workspace-pin face the claim's root chain reads. The capsule's
+// own local interface per the seam grammar; nil-safe absence = the chain falls through
+// to the default_workspace knob and the process cwd.
 type sessionStores interface {
 	GetSession(ctx context.Context, id string) (core.Session, error)
 }
