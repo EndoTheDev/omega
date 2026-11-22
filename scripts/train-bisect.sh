@@ -21,6 +21,14 @@ set -euo pipefail
 #         (refs/train/0001-* ^1); pass an explicit anchor as arg 2 if the
 #         chain's start predates a good base.
 #
+#     scripts/train-bisect.sh <bad-sha> --cmd <test-cmd> --chain <id=sha,...>
+#         Walk an EXPLICIT candidate list instead of the marker refs: the
+#         train's batch, whose merges carry no markers yet (a marker is a
+#         LANDING, and the battery decides that). Candidates are
+#         "<label>=<sha>" in landing order; the default anchor is the first
+#         candidate's first parent - the tip the batch was merged onto. The
+#         culprit line names the label, which is the card id.
+#
 # Without --cmd the script prints the exact manual git commands instead
 # of guessing - it never runs something interactive it cannot score.
 #
@@ -52,15 +60,17 @@ if [ "${1:-}" = "--list" ]; then
   exit 0
 fi
 
-[ $# -ge 1 ] || { echo "usage: train-bisect.sh --list | <bad-sha> [--cmd <test>] [good-anchor]" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: train-bisect.sh --list | <bad-sha> [--cmd <test>] [--chain <id=sha,...>] [good-anchor]" >&2; exit 2; }
 bad="$1"; shift
 
 cmd="${TRAIN_BISECT_CMD:-}"
+chain=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --cmd) cmd="${2:?--cmd needs a value}"; shift 2 ;;
-    -h|--help) echo "usage: train-bisect.sh --list | <bad-sha> [--cmd <test>] [good-anchor]" >&2; exit 0 ;;
-    *) Good="${1:?anchor}"; break ;;
+    --cmd) cmd="${2:?--cmd needs a value}"; shift ;;
+    --chain) chain="${2:?--chain needs a value}"; shift ;;
+    -h|--help) echo "usage: train-bisect.sh --list | <bad-sha> [--cmd <test>] [--chain <id=sha,...>] [good-anchor]" >&2; exit 0 ;;
+    *) Good="${1:?anchor}" ;;
   esac
   shift
 done
@@ -68,16 +78,38 @@ Good="${Good:-}"
 
 git cat-file -e "$bad^{commit}" 2>/dev/null || die "bad candidate $bad is not a commit here"
 
-mapfile -t M < <(markers | cut -d' ' -f1)
-n=${#M[@]}
-[ "$n" -gt 0 ] || die "no marker refs - nothing to walk (refs/train/* empty)"
-[ "$n" -ge 1 ] || die "no markers"
+LABELS=()
+chain_mode=0
+if [ -n "$chain" ]; then
+  # Explicit candidates (the train's batch): "<label>=<sha>" in landing
+  # order. No marker refs exist for a landing that has not been gated yet.
+  chain_mode=1
+  IFS=',' read -r -a _entries <<<"$chain"
+  for _e in "${_entries[@]}"; do
+    _lab="${_e%%=*}"; _sha="${_e#*=}"
+    { [ -n "$_lab" ] && [ "$_sha" != "$_e" ]; } \
+      || die "malformed --chain entry '$_e' (expected label=sha)"
+    git cat-file -e "$_sha^{commit}" 2>/dev/null \
+      || die "chain candidate $_lab ($_sha) is not a commit here"
+    M+=("$_sha")
+    LABELS+=("$_lab")
+  done
+  n=${#M[@]}
+  [ "$n" -gt 0 ] || die "--chain named no candidates"
+  git merge-base --is-ancestor "${M[$((n-1))]}" "$bad" || \
+    die "$bad does not descend the chain's last candidate (${LABELS[$((n-1))]})"
+else
+  mapfile -t M < <(markers | cut -d' ' -f1)
+  n=${#M[@]}
+  [ "$n" -gt 0 ] || die "no marker refs - nothing to walk (refs/train/* empty)"
+  [ "$n" -ge 1 ] || die "no markers"
 
-git merge-base --is-ancestor "${M[$((n-1))]}" "$bad" || \
-  die "$bad does not descend the marker chain (last landing $(basename "${M[$((n-1))]}"))"
+  git merge-base --is-ancestor "${M[$((n-1))]}" "$bad" || \
+    die "$bad does not descend the marker chain (last landing $(basename "${M[$((n-1))]}"))"
+fi
 
-First="$(printf '%s\n' "${M[@]}" | head -1)"
-last="$(printf '%s\n' "${M[@]}" | tail -1)"
+First="${M[0]}"
+last="${M[$((n-1))]}"
 anchor=""
 if [ -n "$Good" ]; then
   git cat-file -e "$Good^{commit}" 2>/dev/null || die "good anchor $Good is not a commit"
@@ -85,7 +117,7 @@ if [ -n "$Good" ]; then
   git merge-base --is-ancestor "${M[0]}" "$bad" || true
   anchor="$Good"
 else
-  anchor="$(git rev-parse "$First^1")"   # dev tip before the first landing
+  anchor="$(git rev-parse "$First^1")"   # the tip the first candidate landed on
 fi
 
 # The test at the bad tip must fail, or the whole walk is meaningless.
@@ -128,7 +160,11 @@ done
 
 Cul_ref="${M[$((lo-1))]}"
 Cul="$(git rev-parse "$Cul_ref")"
-name="$(basename "$Cul_ref")"
+if [ "$chain_mode" = "1" ]; then
+  name="${LABELS[$((lo-1))]}"
+else
+  name="$(basename "$Cul_ref")"
+fi
 echo "culprit: landing $name"
 echo "  merge commit: $(git rev-parse --short "$Cul_ref")"
 echo "  subject: $(git log -1 --format=%s "$Cul_ref")"
