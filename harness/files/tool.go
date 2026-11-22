@@ -21,7 +21,6 @@ import (
 // holds per-path file locks so concurrent tool calls on the same file are serialized,
 // and the db-door guard every file path must pass.
 type FileProvider struct {
-	// fileLocks serializes read/write/edit on the same path.
 	fileLocks sync.Map // map[string]*sync.Mutex, keyed by abs path
 
 	// guard refuses any file path that resolves into the instance database. nil and
@@ -29,8 +28,6 @@ type FileProvider struct {
 	guard *datadir.Guard
 }
 
-// Tools returns the dotted file wire: one tool per verb plus files.batch for the atomic
-// multi-file change.
 func (p *FileProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"files.read": {
@@ -78,10 +75,8 @@ func (p *FileProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// fileBatchVerbs is the batch contract's per-op action enum.
 var fileBatchVerbs = []string{"write", "edit"}
 
-// prop assembles one typed schema property.
 func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
@@ -96,8 +91,6 @@ func object(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-// runBatchTool is files.batch's Run: parse the operations array (its own per-op action
-// contract), then hand it to the atomic batch engine.
 func (p *FileProvider) runBatchTool(ctx context.Context, args map[string]any) (string, error) {
 	ops, err := parseFileOperations(args["operations"])
 	if err != nil {
@@ -117,7 +110,6 @@ func resolveToolPath(ctx context.Context, path string) string {
 	return filepath.Join(dir, path)
 }
 
-// fileOp is one operation in a files batch.
 type fileOp struct {
 	Action    string `json:"action"`
 	Path      string `json:"path"`
@@ -126,7 +118,6 @@ type fileOp struct {
 	NewString string `json:"new_string"`
 }
 
-// parseFileOperations converts the raw interface{} from tool args into a slice.
 func parseFileOperations(raw any) ([]fileOp, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -150,7 +141,6 @@ func parseFileOperations(raw any) ([]fileOp, error) {
 	return ops, nil
 }
 
-// runFileBatch applies a multi-file operation list atomically.
 func (p *FileProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, error) {
 	// Root every op at the run's session workspace FIRST.
 	for i := range ops {
@@ -198,7 +188,6 @@ func (p *FileProvider) runFileBatch(ctx context.Context, ops []fileOp) (string, 
 	return out.String(), nil
 }
 
-// opArgs converts a fileOp back into the tool-args map its handlers read.
 func opArgs(op fileOp) map[string]any {
 	args := map[string]any{"path": op.Path}
 	switch op.Action {
@@ -230,7 +219,6 @@ func restoreFiles(snap map[string][]byte, existed map[string]bool, modes map[str
 	}
 }
 
-// fileMutex returns a per-path mutex, creating one if needed.
 func (p *FileProvider) fileMutex(path string) *sync.Mutex {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -240,7 +228,6 @@ func (p *FileProvider) fileMutex(path string) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
-// argString extracts a required string argument.
 func argString(args map[string]any, key string) (string, error) {
 	v, ok := args[key]
 	if !ok {
@@ -253,7 +240,6 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argOptionalInt reads an optional integer argument (absent or null = not present).
 func argOptionalInt(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -285,7 +271,6 @@ func argOptionalInt(args map[string]any, key string) (int, bool, error) {
 	return int(f), true, nil
 }
 
-// RunReadFile reads a file with line numbers, honoring offset/limit.
 func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (string, error) {
 	// Session workspace rooting: the alias shims and the fold dispatch root the path
 	// before this handler reads it - resolve again for the direct-call safety (idempotent
@@ -352,7 +337,6 @@ func (p *FileProvider) RunReadFile(ctx context.Context, args map[string]any) (st
 	return out.String(), nil
 }
 
-// RunWriteFile writes content to a file, creating parent dirs.
 func (p *FileProvider) RunWriteFile(ctx context.Context, args map[string]any) (string, error) {
 	if v, ok := args["path"].(string); ok {
 		args["path"] = resolveToolPath(ctx, v)
@@ -388,7 +372,6 @@ func (p *FileProvider) RunWriteFile(ctx context.Context, args map[string]any) (s
 	return fmt.Sprintf("wrote %d bytes to %s", len(content), path), nil
 }
 
-// RunEdit applies a find-and-replace patch to a file.
 func (p *FileProvider) RunEdit(ctx context.Context, args map[string]any) (string, error) {
 	if v, ok := args["path"].(string); ok {
 		args["path"] = resolveToolPath(ctx, v)
@@ -442,7 +425,6 @@ func (p *FileProvider) RunEdit(ctx context.Context, args map[string]any) (string
 	return fmt.Sprintf("patched %s\n%s", path, summary), nil
 }
 
-// diffSummary produces a simple +/- diff of old vs new string.
 func diffSummary(oldString, newString string) string {
 	var out strings.Builder
 	for _, line := range strings.Split(strings.TrimSuffix(oldString, "\n"), "\n") {

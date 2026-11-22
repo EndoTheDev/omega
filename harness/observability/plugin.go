@@ -10,9 +10,9 @@ import (
 )
 
 // Plugin is the observability capsule: BOTH logging directions under one registration.
-// One module means one row in /modules and one ledger entry: the tier re-law keeps it
-// ALWAYS ON (Endo: "always on: agent-loop, provider and logging"), so it carries no
-// Toggleable opt-in - a host cannot disable the machinery that records what it did.
+// One module means one row in /modules and one ledger entry, and it is ALWAYS ON, so it
+// carries no Toggleable opt-in - a host cannot disable the machinery that records what it
+// did.
 type Plugin struct {
 	logger agent.LoggerProvider
 	ring   *Ring
@@ -22,22 +22,18 @@ type Plugin struct {
 
 var _ agent.Plugin = (*Plugin)(nil)
 
-// NewPlugin returns an observability capsule instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string { return "observability" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "observability: file logging (OMEGA_HOME/omega.log) + the structured run-event ring and the omega.log tail (read-only)"
 }
 
-// ConfigKey implements agent.Describer.
 func (p *Plugin) ConfigKey() string { return "logging" }
 
-// Provides implements agent.Plugin: the logger seam, exactly as the
-// pre-fold logging module did - dependents (delegate, skills, verdict)
-// keep their `logger` edge and never learn the module changed name.
+// Provides implements agent.Plugin: the logger seam dependents (delegate,
+// skills, verdict) hold their `logger` edge against.
 func (p *Plugin) Provides() []string { return []string{"logger"} }
 
 func (p *Plugin) Requires() []string { return nil }

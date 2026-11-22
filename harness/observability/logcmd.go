@@ -1,7 +1,5 @@
 package observability
 
-// Module-owned command surface.
-
 import (
 	"context"
 	"fmt"
@@ -10,10 +8,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// defaultLogLines is the /logs line count.
 const defaultLogLines = 200
 
-// logsHandler tails the log file the logger carries.
 func logsHandler(ctx *core.Context) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/logs" {

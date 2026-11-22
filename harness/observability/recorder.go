@@ -53,7 +53,6 @@ const (
 	errorRunes   = 400
 )
 
-// callStart is one in-flight tool call.
 type callStart struct {
 	tool string
 	at   time.Time
@@ -90,13 +89,11 @@ func NewRecorder(ring *Ring) *Recorder {
 	return r
 }
 
-// Start arms recording (the lifecycle handle's Start).
 func (r *Recorder) Start() { r.active.Store(true) }
 
 // Stop disarms recording (the lifecycle handle's Stop, and the capsule's Dismount).
 func (r *Recorder) Stop() { r.active.Store(false) }
 
-// Observe is the spine subscription.
 func (r *Recorder) Observe(session string, ev core.Event) {
 	if !r.active.Load() {
 		return
@@ -177,7 +174,6 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 	}
 }
 
-// observeStream handles the wrapped provider events.
 func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Time) {
 	switch s := e.Event.(type) {
 	case core.ToolCallEvent:
@@ -213,10 +209,8 @@ func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Ti
 		}
 		r.add(session, record)
 	}
-	// ThinkingChunk / ResponseChunk.
 }
 
-// add stamps the session and appends to the ring.
 func (r *Recorder) add(session string, e Event) {
 	e.Session = session
 	r.ring.Append(e)
@@ -282,7 +276,6 @@ func (r *Recorder) sweepCallsLocked(now time.Time) {
 	}
 }
 
-// sinceMs is the elapsed milliseconds between two observations, floored at zero.
 func sinceMs(start, now time.Time) int64 {
 	if start.IsZero() {
 		return 0
@@ -293,7 +286,6 @@ func sinceMs(start, now time.Time) int64 {
 	return 0
 }
 
-// finishReason names an empty finish reason honestly.
 func finishReason(fr string) string {
 	if fr == "" {
 		return "no finish reason"
@@ -301,7 +293,6 @@ func finishReason(fr string) string {
 	return fr
 }
 
-// shorten collapses whitespace and cuts s to n runes with a plain trailing marker.
 func shorten(s string, n int) string {
 	s = strings.Join(strings.Fields(s), " ")
 	if s == "" {

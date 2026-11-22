@@ -1,7 +1,5 @@
 package files
 
-// Regression pins for, carried onto the dotted wire.
-
 import (
 	"context"
 	"fmt"
@@ -10,7 +8,6 @@ import (
 	"testing"
 )
 
-// TestReadDeclaresTypedParamSchema pins the schema contract.
 func TestReadDeclaresTypedParamSchema(t *testing.T) {
 	p := &FileProvider{}
 	tools := p.Tools()
@@ -34,7 +31,6 @@ func TestReadDeclaresTypedParamSchema(t *testing.T) {
 	}
 }
 
-// TestReadWithLimitAndOffsetWindowsExactly is the acceptance probe.
 func TestReadWithLimitAndOffsetWindowsExactly(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/f.txt"
@@ -58,7 +54,6 @@ func TestReadWithLimitAndOffsetWindowsExactly(t *testing.T) {
 	}
 }
 
-// TestReadAcceptsStringifiedLimit pins the convenience half.
 func TestReadAcceptsStringifiedLimit(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/f.txt"

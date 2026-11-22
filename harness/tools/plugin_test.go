@@ -7,10 +7,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// ------------------------------------------------------------------------
-// firstLineOfDesc
-// ------------------------------------------------------------------------
-
 func TestFirstLineOfDescShort(t *testing.T) {
 	got := firstLineOfDesc("list files")
 	if got != "list files" {
@@ -69,9 +65,6 @@ func TestFirstLineOfDescExactly60(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------ listTools
-// ------------------------------------------------------------------------
-
 func TestListToolsEmpty(t *testing.T) {
 	ctx := &core.Context{}
 	res := listTools(ctx)
@@ -81,7 +74,7 @@ func TestListToolsEmpty(t *testing.T) {
 }
 
 func TestListToolsEmptyToolListSkipped(t *testing.T) {
-	// An extension with an empty ToolList should be skipped, and since no extension has.
+	// An extension with an empty ToolList must be skipped.
 	ctx := &core.Context{
 		Infos: []core.ExtensionInfo{
 			{Name: "empty", ToolList: []core.ToolInfo{}},
@@ -181,10 +174,6 @@ func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
 		t.Fatalf("should not show '[no tools available]' when tools exist, got %q", res.Text)
 	}
 }
-
-// ------------------------------------------------------------------------
-// handleToolsCommand
-// ------------------------------------------------------------------------
 
 func TestHandleToolsCommandNoArgs(t *testing.T) {
 	ctx := &core.Context{}
@@ -343,7 +332,6 @@ func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 	}
 }
 
-// TestListToolsShowsDisabledState pins the listing surface.
 func TestListToolsShowsDisabledState(t *testing.T) {
 	ctx := &core.Context{
 		DisabledTools: []string{"files.write"},

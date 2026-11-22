@@ -9,7 +9,6 @@ import (
 	"testing"
 )
 
-// rawGet runs a GET request against the file surface's raw route and returns.
 func rawGet(t *testing.T, path string) (*http.Response, []byte) {
 	t.Helper()
 	s := filesRouteMux(t)

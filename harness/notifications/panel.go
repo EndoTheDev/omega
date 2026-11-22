@@ -11,7 +11,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Panel ids and action ids of the capsule.
 const (
 	listPanelID  = "notifications"
 	toastPanelID = "toast"
@@ -19,17 +18,14 @@ const (
 	actionAll    = "notifications.mark_all"
 )
 
-// listPanelRows caps the list panel's payload.
 const listPanelRows = 20
 
-// rowAction is one action binding a row carries.
 type rowAction struct {
 	Action string `json:"action"`
 	Label  string `json:"label"`
 	Args   any    `json:"args,omitempty"`
 }
 
-// row is one list-panel line.
 type row struct {
 	ID        int64      `json:"id"`
 	Kind      string     `json:"kind"`
@@ -41,13 +37,11 @@ type row struct {
 	RowAction *rowAction `json:"action,omitempty"`
 }
 
-// listPayload is the list panel's view-model.
 type listPayload struct {
 	Unread int   `json:"unread"`
 	Rows   []row `json:"rows"`
 }
 
-// capsule is the notifications module's canvas surface.
 type capsule struct {
 	store *Store
 
@@ -69,7 +63,6 @@ func (c *capsule) SetPanelUpdate(update func(core.Panel) error) {
 	c.mu.Unlock()
 }
 
-// push routes one panel through the installed closure.
 func (c *capsule) push(p core.Panel) {
 	c.mu.Lock()
 	up := c.update
@@ -109,7 +102,7 @@ func (e *emittingStore) MarkAllRead(ctx context.Context) error {
 	return e.store.MarkAllRead(ctx)
 }
 
-// Clear drops every record and pushes the refreshed (empty) list panel so canvas.
+// Clear drops every record and pushes the refreshed (empty) list panel.
 func (e *emittingStore) Clear(ctx context.Context) (int64, error) {
 	n, err := e.store.Clear(ctx)
 	if err == nil {
@@ -122,12 +115,10 @@ func (e *emittingStore) Subscribe() (<-chan core.Notice, func()) {
 	return e.store.Subscribe()
 }
 
-// Panels declares the snapshot.
 func (c *capsule) Panels() []core.Panel {
 	return []core.Panel{c.listPanel(), c.toastPanel()}
 }
 
-// listPanel builds the list panel descriptor from the live store.
 func (c *capsule) listPanel() core.Panel {
 	notes, unread, err := c.store.List(context.Background(), false, listPanelRows, 0)
 	if err != nil {
@@ -161,7 +152,6 @@ func (c *capsule) listPanel() core.Panel {
 	}
 }
 
-// toastPanel builds the toast descriptor.
 func (c *capsule) toastPanel() core.Panel {
 	notes, _, err := c.store.List(context.Background(), false, 1, 0)
 	if err != nil || len(notes) == 0 {
@@ -175,7 +165,6 @@ func (c *capsule) toastPanel() core.Panel {
 	}
 }
 
-// noteRow strips a record to its view-model row.
 func noteRow(n core.Notice) row {
 	return row{
 		ID:        n.ID,
@@ -188,13 +177,11 @@ func noteRow(n core.Notice) row {
 	}
 }
 
-// pushEmit is the emitter wiring.
 func (c *capsule) pushEmit(n core.Notice) {
 	c.push(c.toastPanelFor(n))
 	c.push(c.listPanel())
 }
 
-// toastPanelFor builds the toast descriptor for an emitted record directly.
 func (c *capsule) toastPanelFor(n core.Notice) core.Panel {
 	return core.Panel{
 		ID:      toastPanelID,
@@ -204,7 +191,6 @@ func (c *capsule) toastPanelFor(n core.Notice) core.Panel {
 	}
 }
 
-// HandleAction routes one action-pipe call (core.PanelProvider).
 func (c *capsule) HandleAction(call core.ActionCall) (any, error) {
 	switch call.Action {
 	case actionRead:

@@ -63,7 +63,6 @@ func (s *fakeStore) roles() []string {
 	return out
 }
 
-// vo builds pick rows from labels.
 func vo(labels ...string) []core.QuestionOption {
 	out := make([]core.QuestionOption, len(labels))
 	for i, l := range labels {
@@ -90,7 +89,6 @@ type askResult struct {
 	err error
 }
 
-// waitForPending polls until at least `n` cards are pending for the session.
 func waitForPending(t *testing.T, h *Hub, session string, n int) []core.QuestionPrompt {
 	t.Helper()
 	deadline := time.Now().Add(testWaitTimeout)
@@ -116,7 +114,6 @@ func drain(t *testing.T, ch <-chan askResult) askResult {
 	}
 }
 
-// drainWithTimeout waits up to `d` for an Ask result.
 func drainWithTimeout(t *testing.T, ch <-chan askResult, d time.Duration) askResult {
 	t.Helper()
 	select {
@@ -505,7 +502,6 @@ func TestPendingFiltersBySessionAndExcludesSettled(t *testing.T) {
 	_ = drain(t, ch2)
 }
 
-// containsStr kept from the original draft; superseded by strings.Contains.
 func containsStr(s, sub string) bool {
 	return strings.Contains(s, sub)
 }

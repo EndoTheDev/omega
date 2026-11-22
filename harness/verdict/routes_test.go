@@ -50,7 +50,6 @@ func verdictGet(t *testing.T, ts *httptest.Server, path string) map[string]any {
 	return out
 }
 
-// issueCard runs hub.Ask in the background and returns a done channel plus the card.
 func issueCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})
@@ -242,10 +241,6 @@ func TestVerdictsMethodNotAllowed(t *testing.T) {
 	}
 }
 
-// ------------------------------------------------------------------------ The
-// follow-up message field.
-
-// gateHubCard issues one gate-shaped card in the background.
 func gateHubCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	t.Helper()
 	return issueCardShaped(t, h, session, id, core.QuestionPrompt{
@@ -253,7 +248,6 @@ func gateHubCard(t *testing.T, h *Hub, session, id string) <-chan struct{} {
 	})
 }
 
-// issueCardShaped is issueCard with the card shape a parameter.
 func issueCardShaped(t *testing.T, h *Hub, session, id string, card core.QuestionPrompt) <-chan struct{} {
 	t.Helper()
 	done := make(chan struct{})

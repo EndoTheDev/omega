@@ -12,7 +12,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// AnswerInline interprets one busy-time line as the answer to the session's oldest.
+// AnswerInline interprets one busy-time line as the answer to the session's oldest
+// pending card.
 func AnswerInline(vp answerSink, sessionID, line string, printf func(format string, args ...any)) bool {
 	cards := vp.Pending(sessionID)
 	if len(cards) == 0 {
@@ -33,7 +34,6 @@ func AnswerInline(vp answerSink, sessionID, line string, printf func(format stri
 	return true
 }
 
-// answerHint renders the one-line answer guide for a card.
 func answerHint(card core.QuestionPrompt) string {
 	parts := make([]string, 0, len(card.Options))
 	for i, o := range card.Options {

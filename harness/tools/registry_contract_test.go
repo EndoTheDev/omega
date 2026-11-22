@@ -9,7 +9,6 @@ import (
 
 // The registry's contract: the tools capsule ships the grep + glob search tools.
 
-// TestPluginContract pins the plugin's identity + seams.
 func TestPluginContract(t *testing.T) {
 	p := NewPlugin()
 	if p.Name() != "tools" {
@@ -30,7 +29,6 @@ func TestPluginContract(t *testing.T) {
 	}
 }
 
-// TestRegistryMountRegistersSearchTools: the mount registers the grep + glob provider.
 func TestRegistryMountRegistersSearchTools(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}
@@ -54,7 +52,6 @@ func TestRegistryMountRegistersSearchTools(t *testing.T) {
 	}
 }
 
-// TestSearchToolsShape pins the two single-purpose tools.
 func TestSearchToolsShape(t *testing.T) {
 	p := NewSearchProvider(nil)
 	tools := p.Tools()

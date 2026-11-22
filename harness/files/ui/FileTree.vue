@@ -37,7 +37,6 @@
           v-if="!entry.is_dir"
           class="size">{{ entry.size_bytes }}</span>
       </div>
-      <!-- an expanded branch renders its rows; a failed expansion renders nothing. -->
       <FileTree
         v-if="entry.is_dir && isOpen(entryPath(entry)) && !isLoading(entryPath(entry))"
         :entries="childrenOf(entryPath(entry))"
@@ -79,7 +78,6 @@
   // the chat lanes (Add file to chat) land in the focused session's own tab.
   const chatHost = inject(CHAT_HOST_KEY, null);
 
-  // one row per entry; expanding a directory lazy-loads exactly one level via /files/browse.
   const props = defineProps<{
     entries: FileEntry[];
     base: string;

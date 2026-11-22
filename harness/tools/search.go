@@ -1,10 +1,10 @@
 package tools
 
 // The search domain: content search (grep) and name match (glob) as one provider.
-// Ignored trees (.git, node_modules,.cache, dist,.) are pruned at the directory entry,
-// never walked entry by entry - a home-root grep that read every.git object cost 567s
-// and spent the file cap on path noise; include_ignored: true opts back in, and an
-// explicitly named root is never pruned.
+// Ignored trees (VCS metadata, dependency caches, build output) are pruned at the
+// directory entry, never walked entry by entry - a home-root grep that read every .git
+// object cost 567s and spent the file cap on path noise; include_ignored: true opts back
+// in, and an explicitly named root is never pruned.
 
 import (
 	"bufio"
@@ -37,14 +37,11 @@ const (
 // it into a truncation note, never a tool error.
 var errSearchCapReached = errors.New("search result cap reached")
 
-// walkErrorDetailCap bounds the per-error detail lines.
 const walkErrorDetailCap = 10
 
-// ignoredDirNoteCap bounds the pruned-directory names in the note.
 const ignoredDirNoteCap = 10
 
-// defaultIgnoreDirs is the directory-name skip set both search tools prune.
-// These trees are never what a content search means.
+// Ignored by both search tools: these trees are never what a content search means.
 var defaultIgnoreDirs = map[string]struct{}{
 	".git":         {},
 	".hg":          {},
@@ -59,7 +56,6 @@ var defaultIgnoreDirs = map[string]struct{}{
 	".stversions":  {},
 }
 
-// isIgnoredDir reports whether a directory name is in the default skip set.
 func isIgnoredDir(name string) bool {
 	_, ok := defaultIgnoreDirs[name]
 	return ok
@@ -84,7 +80,6 @@ func emitPrunedDirs(out *strings.Builder, pruned []string) {
 	out.WriteString("]\n")
 }
 
-// relSlash is an entry's path relative to the search root, slash separated.
 func relSlash(root, path string) string {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -97,7 +92,6 @@ func relSlash(root, path string) string {
 // restore it; production never touches it.
 var walkDirFn = filepath.WalkDir
 
-// emitWalkErrors writes one detail line per captured walk error.
 func emitWalkErrors(out *strings.Builder, walkErrs []string) {
 	for i, w := range walkErrs {
 		if i == walkErrorDetailCap {
@@ -114,7 +108,6 @@ type SearchProvider struct {
 	guard *datadir.Guard
 }
 
-// Tools returns the two search tools keyed by name.
 func (p *SearchProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"files.grep": {
@@ -150,7 +143,6 @@ func (p *SearchProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// argString extracts a required string argument.
 func argString(args map[string]any, key string) (string, error) {
 	v, ok := args[key]
 	if !ok {
@@ -163,7 +155,6 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argInt extracts an optional integer argument.
 func argInt(args map[string]any, key string) (int, bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -179,7 +170,6 @@ func argInt(args map[string]any, key string) (int, bool, error) {
 	return int(f), true, nil
 }
 
-// argBool extracts an optional boolean argument (absent = false).
 func argBool(args map[string]any, key string) (bool, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -253,7 +243,6 @@ func globToRegexp(pattern string) (*regexp.Regexp, error) {
 	return re, nil
 }
 
-// relMatch matches an entry's path relative to the search root (slash-separated).
 func relMatch(re *regexp.Regexp, root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	if err != nil {
@@ -268,7 +257,6 @@ func relMatch(re *regexp.Regexp, root, path string) bool {
 	return false
 }
 
-// skipReason reports why a file is out of the search's reach.
 func (p *SearchProvider) skipReason(path string) string {
 	if p.guard.DenyFile(path) {
 		return "the instance database's door"
@@ -286,7 +274,6 @@ func (p *SearchProvider) skipReason(path string) string {
 	return ""
 }
 
-// looksBinary probes the file head for a NUL byte.
 func looksBinary(f *os.File) (bool, error) {
 	head := make([]byte, headProbeSize)
 	n, err := f.Read(head)
@@ -296,7 +283,6 @@ func looksBinary(f *os.File) (bool, error) {
 	return bytes.IndexByte(head[:n], 0) >= 0, nil
 }
 
-// RunGrep searches file contents under a root for a regexp.
 func (p *SearchProvider) RunGrep(ctx context.Context, args map[string]any) (string, error) {
 	pattern, err := argString(args, "pattern")
 	if err != nil {
@@ -563,7 +549,6 @@ func emitContextBlocks(out *strings.Builder, matches []int, context int, hasCont
 	return true
 }
 
-// printLine emits one content row and bumps the global line counter.
 func printLine(out *strings.Builder, rel string, ln int, lines []string, outLines *int) {
 	body := ""
 	if ln-1 < len(lines) {
@@ -575,7 +560,6 @@ func printLine(out *strings.Builder, rel string, ln int, lines []string, outLine
 
 func scopy(b []byte) []byte { return append(make([]byte, 0, len(b)), b...) }
 
-// stringArg reads an optional string argument's value (absent = "").
 func stringArg(args map[string]any, key string) string {
 	v, ok := args[key].(string)
 	if !ok {
@@ -584,7 +568,6 @@ func stringArg(args map[string]any, key string) string {
 	return v
 }
 
-// RunGlob lists paths under a root whose slash-separated relative path matches a glob.
 func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (string, error) {
 	pattern, err := argString(args, "pattern")
 	if err != nil {
@@ -685,5 +668,4 @@ func (p *SearchProvider) RunGlob(ctx context.Context, args map[string]any) (stri
 	return strings.TrimSuffix(out.String(), "\n"), nil
 }
 
-// NewSearchProvider builds the search tool provider.
 func NewSearchProvider(guard *datadir.Guard) *SearchProvider { return &SearchProvider{guard: guard} }

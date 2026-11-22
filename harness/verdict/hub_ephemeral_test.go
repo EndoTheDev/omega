@@ -1,6 +1,7 @@
 package verdict
 
-// Ephemeral-session persistence leak: a card issued in an `eph-` session must keep.
+// Ephemeral-session persistence leak: a card issued in an `eph-` session must keep its
+// records off disk.
 
 import (
 	"testing"

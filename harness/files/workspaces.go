@@ -28,7 +28,7 @@ type workspaceDir struct {
 	Path string `json:"path"`
 }
 
-// handleWorkspacesBrowse serves GET /workspaces/browse?path=<abs>, listing one.
+// handleWorkspacesBrowse serves GET /workspaces/browse?path=<abs>.
 func (rt *Routes) handleWorkspacesBrowse(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

@@ -45,7 +45,6 @@ func mustQueryWorkspace(v string) string {
 	return b.String()
 }
 
-// TestWorkspaceBrowse: the picker's read.
 func TestWorkspaceBrowse(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 
@@ -145,7 +144,6 @@ func TestWorkspaceBrowse(t *testing.T) {
 	}
 }
 
-// TestWorkspaceFilesListing: /workspaces/files lists first-level entries.
 func TestWorkspaceFilesListing(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 	dir := t.TempDir()
@@ -199,7 +197,6 @@ func TestWorkspaceFilesListing(t *testing.T) {
 	}
 }
 
-// TestWorkspaceMethodGuard: the picker face is read-only GET; a POST is a 405, never.
 func TestWorkspaceMethodGuard(t *testing.T) {
 	rt := workspaceTestRoutes(t)
 	for _, probe := range []struct {

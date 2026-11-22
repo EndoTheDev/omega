@@ -1,7 +1,5 @@
 package files
 
-// dotted_e2e_test.go: the split's acceptance witness.
-
 import (
 	"context"
 	"os"
@@ -76,7 +74,7 @@ func TestDottedToolsEndToEndThroughTheLoop(t *testing.T) {
 		t.Fatalf("the loop executed %d tool results, want 4", results)
 	}
 
-	// the disk is the truth: the write landed, the edit patched the seed, the batch.
+	// the disk is the truth: the write landed, the edit patched the seed.
 	born, err := os.ReadFile(filepath.Join(dir, "born.txt"))
 	if err != nil || !strings.Contains(string(born), "born on the wire") {
 		t.Fatalf("files.write never landed: %q %v", string(born), err)

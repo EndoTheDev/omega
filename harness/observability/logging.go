@@ -11,7 +11,6 @@ import (
 	"time"
 )
 
-// FileLogger implements agent.LoggerProvider with a file backend.
 type FileLogger struct {
 	mu   sync.Mutex
 	path string
@@ -21,7 +20,7 @@ type FileLogger struct {
 	lastErrAt time.Time
 }
 
-// NewFileLogger opens the log file (append mode) and returns a FileLogger writing.
+// NewFileLogger opens the log file in append mode.
 func NewFileLogger(path string) (*FileLogger, error) {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -67,33 +66,26 @@ func (l *FileLogger) LastError() (string, time.Time, bool) {
 	return l.lastErr, l.lastErrAt, true
 }
 
-// Warnf writes a warning-level log entry.
 func (l *FileLogger) Warnf(format string, args ...any) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.log.Printf("WARN: "+format, args...)
 }
 
-// Close flushes and closes the log file.
 func (l *FileLogger) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.file.Close()
 }
 
-// NopLogger implements agent.LoggerProvider with no-ops.
 type NopLogger struct{}
 
-// Printf is a no-op.
 func (NopLogger) Printf(format string, args ...any) {}
 
-// Warnf is a no-op.
 func (NopLogger) Warnf(format string, args ...any) {}
 
-// Errorf is a no-op.
 func (NopLogger) Errorf(format string, args ...any) {}
 
-// Close is a no-op.
 func (NopLogger) Close() error { return nil }
 
 // NewLogger creates a LoggerProvider from config. Returns a NopLogger when disabled or

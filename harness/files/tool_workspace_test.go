@@ -79,7 +79,6 @@ func TestWorkspaceFilesRoot(t *testing.T) {
 	}
 }
 
-// TestUploadsTreeReachable pins the finding.
 func TestUploadsTreeReachable(t *testing.T) {
 	home := t.TempDir()
 	dir := filepath.Join(home, "uploads", "s1")

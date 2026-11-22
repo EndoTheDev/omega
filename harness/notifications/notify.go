@@ -16,7 +16,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// retention is the record cap: inserts beyond it prune the oldest.
 const retention = 200
 
 // subscriberBuf is the per-subscriber channel buffer. A full buffer
@@ -34,9 +33,6 @@ type Store struct {
 	subID int64
 }
 
-// The Offer under the notifications key is the mount-time assertion.
-
-// Open opens (creating if needed) the database at dsn and ensures the schema.
 func Open(dsn string) (*Store, error) {
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
@@ -56,7 +52,6 @@ func Open(dsn string) (*Store, error) {
 	return s, nil
 }
 
-// dsnParams widens a bare file dsn with the WAL + busy_timeout parameters.
 func dsnParams(dsn string) string {
 	if !strings.Contains(dsn, "?") {
 		return dsn + "?_journal_mode=WAL&_busy_timeout=5000"
@@ -83,7 +78,6 @@ CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read, id);
 	return err
 }
 
-// Close releases the handle.
 func (s *Store) Close() error {
 	s.mu.Lock()
 	for id, ch := range s.subs {
@@ -168,7 +162,6 @@ func (s *Store) Subscribe() (<-chan core.Notice, func()) {
 	return ch, cancel
 }
 
-// List returns records newest-first.
 func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([]core.Notice, int, error) {
 	unread := 0
 	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM notifications WHERE read = 0`).Scan(&unread); err != nil {
@@ -203,7 +196,6 @@ func (s *Store) List(ctx context.Context, unreadOnly bool, limit, offset int) ([
 	return out, unread, rows.Err()
 }
 
-// MarkRead flags one record read.
 func (s *Store) MarkRead(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx, `UPDATE notifications SET read = 1 WHERE id = ?`, id)
 	if err != nil {
@@ -215,13 +207,11 @@ func (s *Store) MarkRead(ctx context.Context, id int64) error {
 	return nil
 }
 
-// MarkAllRead flags every record read.
 func (s *Store) MarkAllRead(ctx context.Context) error {
 	_, err := s.db.ExecContext(ctx, `UPDATE notifications SET read = 1`)
 	return err
 }
 
-// Clear deletes every record (the webui tab's clear-all button).
 func (s *Store) Clear(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM notifications`)
 	if err != nil {
@@ -234,7 +224,6 @@ func (s *Store) Clear(ctx context.Context) (int64, error) {
 	return n, nil
 }
 
-// now is the UTC RFC3339 timestamp stamp (the module family's form).
 func now() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }

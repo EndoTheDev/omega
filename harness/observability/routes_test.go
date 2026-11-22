@@ -13,7 +13,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fakeLogger is the logger service's consumer face under test.
 type fakeLogger struct{ path string }
 
 func (f fakeLogger) Path() string { return f.path }
@@ -27,7 +26,6 @@ func newTestRoutes(ctx *core.Context, events []Event) (*Routes, *Ring) {
 	return newRoutes(ctx, ring), ring
 }
 
-// TestEventsRouteServesSessionScopedPage pins the primary endpoint's wire.
 func TestEventsRouteServesSessionScopedPage(t *testing.T) {
 	rt, _ := newTestRoutes(nil, []Event{
 		{Session: "s1", Type: "agent_start", Level: LevelInfo, Summary: "run started"},
@@ -104,7 +102,6 @@ func TestEventsRouteRefusesBadInput(t *testing.T) {
 	}
 }
 
-// TestLogsRouteServesTail pins the secondary endpoint.
 func TestLogsRouteServesTail(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "omega.log")
@@ -137,7 +134,6 @@ func TestLogsRouteServesTail(t *testing.T) {
 	}
 }
 
-// TestLogsRouteDegrades pins the two honest failures.
 func TestLogsRouteDegrades(t *testing.T) {
 	rt, _ := newTestRoutes(nil, nil)
 	res := httptest.NewRecorder()
@@ -156,7 +152,6 @@ func TestLogsRouteDegrades(t *testing.T) {
 	}
 }
 
-// TestTailLines pins the tail reader itself.
 func TestTailLines(t *testing.T) {
 	dir := t.TempDir()
 	small := filepath.Join(dir, "small.log")

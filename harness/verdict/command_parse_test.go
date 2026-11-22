@@ -7,9 +7,8 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// parseVerdictAnswer is the /verdict command's typed-answer parser (the live. Both must
-// agree on the option-number / comma-multi / y-n / skip / free-text contract, so this
-// pins the shared shape.
+// ParseCardAnswer and the /verdict command parse the same typed tokens - option number /
+// comma-multi / y-n / skip / free text - so this pins the shared shape.
 func TestParseTUIAnswer(t *testing.T) {
 	card := core.QuestionPrompt{ID: "c1", Title: "Pick", Options: vo("yes", "no")}
 

@@ -16,7 +16,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// DefaultTimeout is the per-card default deadline (design Q5): twenty minutes.
+// DefaultTimeout is the per-card default deadline: twenty minutes.
 const DefaultTimeout = 20 * time.Minute
 
 // cardHub is the consumer-side face the tool provider holds (part 3 seam constitution).
@@ -36,7 +36,6 @@ const (
 	originSubagent  = "delegate"
 )
 
-// Hub is the in-memory registry of verdict cards.
 type Hub struct {
 	store  agent.StoreProvider
 	logger agent.LoggerProvider
@@ -61,7 +60,6 @@ type cardState struct {
 	text         string
 }
 
-// NewHub builds a hub.
 func NewHub(store agent.StoreProvider, logger agent.LoggerProvider) *Hub {
 	return &Hub{store: store, logger: logger, deadline: DefaultTimeout}
 }
@@ -80,7 +78,6 @@ func (h *Hub) OnCardRegistered(fn func(core.QuestionPrompt)) {
 	h.mu.Unlock()
 }
 
-// Close is the host shutdown hook.
 func (h *Hub) Close() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -92,7 +89,6 @@ func (h *Hub) Close() {
 	}
 }
 
-// Ask implements core.VerdictsProvider.
 func (h *Hub) Ask(ctx context.Context, card core.QuestionPrompt) (core.QuestionAnswer, error) {
 	if card.ID == "" {
 		id, err := agent.NewSessionID()
@@ -338,7 +334,6 @@ func (h *Hub) persist(msg core.Message) {
 	h.persistAs(session, msg)
 }
 
-// persistAs is persist with the session already known.
 func (h *Hub) persistAs(session string, msg core.Message) {
 	cardID := cardOf(msg)
 	if h.store == nil || session == "" || cardID == "" {
@@ -358,7 +353,6 @@ func (h *Hub) persistAs(session string, msg core.Message) {
 	}
 }
 
-// cardOf extracts the CardID from the two record kinds persist carries.
 func cardOf(msg core.Message) string {
 	switch m := msg.(type) {
 	case core.QuestionCard:

@@ -17,10 +17,8 @@ type Plugin struct {
 
 var _ agent.Plugin = (*Plugin)(nil)
 
-// Name implements agent.Plugin.
 func (p *Plugin) Name() string { return "verdict" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "verdict cards: the request action hard-pauses a turn until the user answers by click or type"
 }
@@ -68,7 +66,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.RegisterPromptSectioner(p)
 }
 
-// NewPlugin returns a verdict Plugin.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 const promptSectionOrder = 35 // after memory (10), skills (20), tools (30)
@@ -82,5 +79,4 @@ func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSecti
 	}
 }
 
-// Toggleable marks this capsule as a module capsule.
 func (p *Plugin) Toggleable() bool { return true }

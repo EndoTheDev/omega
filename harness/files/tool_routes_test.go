@@ -356,7 +356,6 @@ func TestFilesRootBehindSymlink(t *testing.T) {
 	}
 }
 
-// filesPost exercises the write half the way filesGet exercises the read half.
 func filesPost(t *testing.T, path string, jsonBody string) (*http.Response, map[string]any) {
 	t.Helper()
 	s := filesRouteMux(t)

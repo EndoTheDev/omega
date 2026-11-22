@@ -1,9 +1,8 @@
 package tools
 
-// Lane A of the phantom-results probe. The probe disproved the index - grep walks the
-// live tree on every call - so these tests pin the property that was accused, in the
-// shape a future regression would break: rows served by grep must track the filesystem
-// between calls, and every content row must carry a real 1-based line number.
+// grep walks the live tree on every call, never an index. These tests pin the property a
+// future regression would break: rows served by grep must track the filesystem between
+// calls, and every content row must carry a real 1-based line number.
 
 import (
 	"context"
@@ -59,9 +58,8 @@ func TestGrepReadsLiveFilesystemNoIndex(t *testing.T) {
 	}
 }
 
-// TestGrepContentRowsAreOneBased: the row format is path:line: text and the line is.
-// The probe's red flag was a fabricated "line 0 / column -1" table; this pins the real
-// shape so a malformed row can never be served silently.
+// TestGrepContentRowsAreOneBased pins the row shape (path:line: text, 1-based) so a
+// malformed row can never be served silently.
 func TestGrepContentRowsAreOneBased(t *testing.T) {
 	cases := []struct {
 		name    string

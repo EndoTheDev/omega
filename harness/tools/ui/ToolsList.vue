@@ -4,11 +4,10 @@
     class="tools-list"
     :class="{ narrow: narrow }">
     <!--
-      the UNIVERSAL band (the shared TabBand).
-      The band renders BEFORE the scroll body: scrolling the list never moves it.: the
-      compact in-band search (TabBand's shared.band-search seat) - the query filters
-      the LOADED registry by name or description, client-side on the grouped rows
-      (hide-rows-only), still inside the tab's native only slice.
+      the UNIVERSAL band (the shared TabBand). The band renders BEFORE the scroll body:
+      scrolling the list never moves it. The compact in-band search (TabBand's
+      shared.band-search seat) filters the LOADED registry by name or description,
+      client-side on the grouped rows, inside this tab only.
     -->
     <TabBand title="Tools">
       <div class="band-search">
@@ -38,9 +37,7 @@
       class="panel-status">
       loading
     </p>
-    <!--
-      v0.14.1 registry-browser: the shared RegistryList (one pattern, three consumers).
-    -->
+    <!-- the shared RegistryList (one pattern, three consumers). -->
     <RegistryList
       v-else
       kind="tools"
@@ -65,7 +62,6 @@
   import type { ContextMenuEntry } from "~/composables/contextMenu";
   import { toolMenuItems } from "./toolMenu";
 
-  // Module-owned UI canary, now the inspector's Tools tab content.
   interface ToolInfo extends ToolWire {}
   const tools = ref<ToolInfo[]>([]);
   const fold = ref<string[]>([]);
@@ -83,7 +79,7 @@
   // `v-if="rows.length"` gate read the ARITY (0), and the list would never render.
   const rows = computed(() => toolRows(tools.value, fold.value));
 
-  // the in-band search - CLIENT-SIDE on the grouped rows (no new backend route), name.
+  // the in-band search - CLIENT-SIDE on the grouped rows (no new backend route).
   const query = ref("");
   const visibleRows = computed(() => filterToolRows(rows.value, query.value));
 

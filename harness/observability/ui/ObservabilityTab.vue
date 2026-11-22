@@ -1,5 +1,4 @@
 <template>
-  <!-- the observability TAB - the face of the observability capsule. -->
   <section
     ref="rootEl"
     class="obs-pane"
@@ -16,9 +15,7 @@
         @click="toggleScopeAll">
         {{ scopeLabel }}
       </button>
-      <!--
-        the errors-only chip: a view filter over the fetched page, never a server.
-      -->
+      <!-- the errors-only chip: a view filter over the fetched page, never a server. -->
       <button
         class="band-tool obs-chip obs-errors"
         :class="{ off: !errorsOnly }"
@@ -29,7 +26,6 @@
         @click="errorsOnly = !errorsOnly">
         errors
       </button>
-      <!-- the raw tail: the SECONDARY view inside this tab -->
       <button
         class="band-tool obs-chip obs-tail"
         :class="{ off: !tailOpen }"
@@ -48,7 +44,6 @@
       {{ readError }}
     </p>
 
-    <!-- the PRIMARY view: one row per structured event -->
     <div
       v-if="!tailOpen"
       class="obs-body">
@@ -94,7 +89,6 @@
       </p>
     </div>
 
-    <!-- the SECONDARY view: the raw tail, verbatim -->
     <div v-else ref="bodyEl" class="obs-body obs-tailbody">
       <template v-if="tailLines.length">
         <p
@@ -180,9 +174,8 @@
     return `${count} · ${errs} error${errs === 1 ? "" : "s"} · ${ring}`;
   });
 
-  // the two reads --------------------------------------------------- One in-flight
-  // read at a time: a scope flip while a fetch is airborne must not paint the OLD
-  // scope's answer over the new one.
+  // one in-flight read at a time: a scope flip while a fetch is airborne must not paint
+  // the OLD scope's answer over the new one.
   let ticket = 0;
 
   async function readStream(): Promise<void> {
@@ -241,7 +234,6 @@
   }
   watch(tailLines, followTail, { flush: "post" });
 
-  // a scope flip or a tail flip re-reads IMMEDIATELY.
   watch(scopedSession, () => void readStream());
   watch(tailOpen, () => void refresh());
 
@@ -268,7 +260,7 @@
         .map((e) => Math.round(e.contentRect.width))
         .filter((w) => w > 0);
       if (pending.length === 0) return;
-      // the flip changes the observed layout itself: mutate on the next frame, never.
+      // the flip changes the observed layout itself: mutate on the next frame.
       requestAnimationFrame(() => {
         if (resizeObs === null) return;
         for (const w of pending) narrow.value = isNarrowWidth(w);
@@ -334,7 +326,6 @@
   .obs-row:hover {
     background: var(--z1-raised);
   }
-  /* errors are VISUALLY distinct. */
   .obs-row.error {
     border-left-color: var(--err);
   }
