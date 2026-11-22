@@ -1,10 +1,8 @@
-// The shell tool rides the terminal capsule (the shell-ring shrink wave 1, Endo. The
-// Tool's NAME is builtin vocabulary: "shell.run" parses as the module.verb pair
-// ("shell", "run") and was the built-in tools capsule's natural name - so it registers
-// on the built-in VOCABULARY rail (api.RegisterBuiltinTool: machine-critical vocabulary
-// the prompt and the approval gate address byte-exact, not a module-namespaced verb),
-// keeping the model-facing name unchanged across the 0.17.3 modules fold and the
-// capsule's rename to `terminal`.
+// The shell tool's NAME is builtin vocabulary: "shell.run" parses as the module.verb
+// pair ("shell", "run") and was the built-in tools capsule's natural name - so it
+// registers on the built-in VOCABULARY rail (api.RegisterBuiltinTool: machine-critical
+// vocabulary the prompt and the approval gate address byte-exact, not a
+// module-namespaced verb), keeping the model-facing name unchanged.
 package terminal
 
 import (
@@ -40,7 +38,6 @@ func NewShellProvider(guard *datadir.Guard, reg *Registry) *ShellProvider {
 	return &ShellProvider{guard: guard, reg: reg}
 }
 
-// Tools returns the shell verb family (the capsule's whole tool face).
 func (p *ShellProvider) Tools() map[string]core.Tool {
 	return map[string]core.Tool{
 		"shell.run": {
@@ -87,7 +84,6 @@ func (p *ShellProvider) Tools() map[string]core.Tool {
 	}
 }
 
-// emptyParams is shell.list's no-argument schema.
 func emptyParams() map[string]any {
 	return map[string]any{
 		"type":       "object",
@@ -126,7 +122,6 @@ func dirOverride(ctx context.Context, args map[string]any) (string, error) {
 	return abs, nil
 }
 
-// argString extracts a required string argument.
 func argString(args map[string]any, key string) (string, error) {
 	v, ok := args[key]
 	if !ok {
@@ -142,7 +137,6 @@ func argString(args map[string]any, key string) (string, error) {
 	return s, nil
 }
 
-// argInt extracts an optional integer argument.
 func argInt(args map[string]any, key string) (int, error) {
 	v, ok := args[key]
 	if !ok || v == nil {
@@ -158,7 +152,6 @@ func argInt(args map[string]any, key string) (int, error) {
 	}
 }
 
-// shellOutputCap bounds how much of a shell's log one call reads back.
 const shellOutputCap = 1 << 20 // 1 MB
 
 // tapLog streams a running shell's log to the run's output tap as the file grows.
@@ -267,7 +260,6 @@ func (p *ShellProvider) RunShell(ctx context.Context, args map[string]any) (stri
 	return shellOutput(out, total, e.ID), nil
 }
 
-// List reports the running shells (id, command, age, log path).
 func (p *ShellProvider) List(_ context.Context, _ map[string]any) (string, error) {
 	if p.reg == nil {
 		return "", errNoRegistry
@@ -296,7 +288,6 @@ func (p *ShellProvider) List(_ context.Context, _ map[string]any) (string, error
 	return sb.String(), nil
 }
 
-// Read tails one shell's log (shell.read).
 func (p *ShellProvider) Read(_ context.Context, args map[string]any) (string, error) {
 	id, err := argString(args, "id")
 	if err != nil {
@@ -319,7 +310,6 @@ func (p *ShellProvider) Read(_ context.Context, args map[string]any) (string, er
 	return text, nil
 }
 
-// Kill stops one running shell by id (shell.kill).
 func (p *ShellProvider) Kill(_ context.Context, args map[string]any) (string, error) {
 	id, err := argString(args, "id")
 	if err != nil {
@@ -331,7 +321,7 @@ func (p *ShellProvider) Kill(_ context.Context, args map[string]any) (string, er
 	return p.reg.Kill(id)
 }
 
-// readLogHead reads at most shellOutputCap bytes from the head of a shell log and. A
+// readLogHead reads at most shellOutputCap bytes from the head of a shell log. A
 // missing log (a shell that has not written anything yet) is empty output, never an
 // error.
 func readLogHead(path string) (string, int64, error) {
@@ -355,7 +345,6 @@ func readLogHead(path string) (string, int64, error) {
 	return string(buf[:n]), info.Size(), nil
 }
 
-// shellOutput renders a capped read.
 func shellOutput(out string, total int64, id string) string {
 	if total > int64(len(out)) {
 		out += fmt.Sprintf("\n... [output truncated: kept the first %d bytes of %d - shell.read id=%s tails the log, which survives the shell]",
@@ -364,7 +353,6 @@ func shellOutput(out string, total int64, id string) string {
 	return out
 }
 
-// age renders a shell's elapsed wall clock compactly.
 func age(startedAt int64) string {
 	if startedAt <= 0 {
 		return "-"
@@ -372,7 +360,6 @@ func age(startedAt int64) string {
 	return time.Since(time.Unix(startedAt, 0)).Round(time.Second).String()
 }
 
-// shorten clips a command for the list's fixed column.
 func shorten(s string, n int) string {
 	if len(s) <= n || n < 4 {
 		return s
@@ -380,7 +367,5 @@ func shorten(s string, n int) string {
 	return s[:n-3] + "..."
 }
 
-// ShellPlugin is gone: the tool family and the pane are ONE registration. The tool
-// names never moved: shell.run / shell.list / shell.read / shell.kill stay the API
-// surface the model and the approval gate know.
+// NewShellPlugin builds the plugin under its pre-tier name.
 func NewShellPlugin() *Plugin { return NewPlugin("", "") }

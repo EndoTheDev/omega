@@ -1,5 +1,4 @@
 <template>
-  <!-- the webui Terminal tab - the integrated shell, VS Code-style with zero. -->
   <section
     class="terminal-pane"
     @contextmenu.capture="onContextMenu">
@@ -180,7 +179,7 @@
     requestAnimationFrame(() => void resize());
   }
 
-  /** keystrokes ride POST./input as raw frame bodies (control chars are data. */
+  /** keystrokes ride POST /input as raw frame bodies: control chars are data. */
   async function input(s: string) {
     const id = sessionId.value;
     if (!id || dead.value) return;

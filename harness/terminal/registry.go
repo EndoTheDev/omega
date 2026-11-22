@@ -25,10 +25,8 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// DefaultLogMaxBytes caps each process log across a rotation (5 MB).
 const DefaultLogMaxBytes = 5 * 1024 * 1024
 
-// DefaultKillGraceSeconds is the TERM-to-KILL escalation grace (10 s).
 const DefaultKillGraceSeconds = 10
 
 // retainExited is how long an exited entry (and its log generations) survive after the
@@ -40,23 +38,18 @@ const retainExited = 7 * 24 * time.Hour
 // the context-cost law: the agent reads the tail, never the whole log.
 const MaxTailLines = 2000
 
-// DefaultTailLines is the read default.
 const DefaultTailLines = 100
 
-// maxTailBytes additionally caps a read's byte size.
 const maxTailBytes = 128 * 1024
 
-// idMaxLen caps a handle name.
 const idMaxLen = 64
 
-// RegistryConfig carries the module's knobs.
 type RegistryConfig struct {
 	Home string
 	LogMaxBytes int64
 	KillGraceSeconds int
 }
 
-// WithDefaults fills zero values with the module constants.
 func (c RegistryConfig) WithDefaults() RegistryConfig {
 	if c.Home == "" {
 		c.Home = datadir.Home()
@@ -70,7 +63,6 @@ func (c RegistryConfig) WithDefaults() RegistryConfig {
 	return c
 }
 
-// Entry is one registry row: the shell's id plus its terminal state.
 type Entry struct {
 	ID         string `json:"id"`
 	Command    string `json:"command"`
@@ -88,13 +80,11 @@ type Entry struct {
 	done chan struct{}
 }
 
-// reaper watches one process spawned this omega lifetime.
 type reaper struct {
 	done chan struct{}
 	tree treeKiller
 }
 
-// Registry holds the state.
 type Registry struct {
 	cfg     RegistryConfig
 	mu      sync.Mutex
@@ -114,12 +104,10 @@ func NewRegistry(cfg RegistryConfig) *Registry {
 	}
 }
 
-// statePath is <home>/data/process.json (the datadir law: state under data/).
 func (r *Registry) statePath() string {
 	return datadir.DBPath(r.cfg.Home, "process.json")
 }
 
-// logsDir is <home>/logs/process.
 func (r *Registry) logsDir() string {
 	return filepath.Join(r.cfg.Home, "logs", "process")
 }
@@ -169,7 +157,6 @@ func (r *Registry) sweepLocked() {
 	}
 }
 
-// save writes the registry atomically. Callers hold mu.
 func (r *Registry) save() error {
 	names := make([]string, 0, len(r.entries))
 	for name := range r.entries {
@@ -190,7 +177,7 @@ func (r *Registry) save() error {
 	return agent.WriteFileAtomic(r.statePath(), data, 0o644)
 }
 
-// saveNote is the best-effort save call for paths where a failed disk write must not.
+// saveNote is the best-effort save: a failed disk write is logged, never fatal.
 func (r *Registry) saveNote() {
 	if err := r.save(); err != nil {
 		fmt.Fprintf(os.Stderr, "omega shell: save: %v\n", err)
@@ -210,8 +197,8 @@ func (r *Registry) reconcileLocked(e *Entry) {
 	r.saveNote()
 }
 
-// rotateExited renames a finished entry's live log to <name>.log.1 so a replaced. A
-// RUNNING process's file is never touched mid-flight - the child's fd would keep
+// rotateExited renames a finished entry's live log to <name>.log.1 once the child is
+// gone. A RUNNING process's file is never touched mid-flight - the fd would keep
 // appending to the renamed inode and the tail read would go stale. The finished log now
 // stays at <name>.log (the retention contract) and the size cap is enforced by
 // capExited at exit.
@@ -233,7 +220,6 @@ func (r *Registry) capExited(e *Entry) {
 	}
 }
 
-// trimLogTail rewrites path to its last keep bytes.
 func trimLogTail(path string, keep int64) error {
 	info, err := os.Stat(path)
 	if err != nil {
@@ -287,7 +273,6 @@ func trimLogTail(path string, keep int64) error {
 // concurrently), and a colliding id would be refused as "already in use".
 var shellSeq atomic.Uint64
 
-// shellID sanitizes an explicit id or generates one.
 func shellID(id string) string {
 	var clean strings.Builder
 	for _, ch := range strings.TrimSpace(id) {
@@ -308,7 +293,6 @@ func shellID(id string) string {
 	return clean.String()
 }
 
-// Spawn starts a command detached and records it under id (generated when empty).
 func (r *Registry) Spawn(ctx context.Context, command, id, dir string) (*Entry, error) {
 	if strings.TrimSpace(command) == "" {
 		return nil, fmt.Errorf("command must not be empty")
@@ -386,7 +370,6 @@ func (r *Registry) Spawn(ctx context.Context, command, id, dir string) (*Entry, 
 			e.Exited = true
 			e.ExitCode = &code
 			e.FinishedAt = time.Now().Unix()
-			// The log STAYS at <id>.log: post-mortem reads are the point.
 			r.capExited(e)
 			r.saveNote()
 		}
@@ -422,7 +405,6 @@ func (r *Registry) Close() {
 	}
 }
 
-// List resolves every liveness question and returns a snapshot sorted by id.
 func (r *Registry) List() []Entry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -441,7 +423,6 @@ func (r *Registry) List() []Entry {
 	return out
 }
 
-// Find returns a live snapshot of one entry, reconciled.
 func (r *Registry) Find(id string) (Entry, bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -454,7 +435,6 @@ func (r *Registry) Find(id string) (Entry, bool) {
 	return *e, true
 }
 
-// Read tails one shell's log.
 func (r *Registry) Read(id string, lines int) (string, int64, bool, error) {
 	if lines <= 0 {
 		lines = DefaultTailLines
@@ -565,7 +545,6 @@ func (r *Registry) Kill(id string) (string, error) {
 	return fmt.Sprintf("%q (pid %d) stopped (%s)", id, current.PID, stateOf(current)), nil
 }
 
-// stateOf renders a state line.
 func stateOf(e *Entry) string {
 	if !e.Exited {
 		return "running"
@@ -582,7 +561,6 @@ func stateOf(e *Entry) string {
 	}
 }
 
-// exitCodeOf extracts the exit code from a Wait error.
 func exitCodeOf(err error) int {
 	if err == nil {
 		return 0
@@ -594,7 +572,6 @@ func exitCodeOf(err error) int {
 	return -1
 }
 
-// waitForDeath polls pid liveness until it drops or the budget ends.
 func waitForDeath(pid int, budget time.Duration) error {
 	deadline := time.Now().Add(budget)
 	for {

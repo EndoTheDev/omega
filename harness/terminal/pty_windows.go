@@ -1,6 +1,5 @@
 //go:build windows
 
-// Package terminal - the windows pty door.
 package terminal
 
 import (
@@ -13,7 +12,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// spawnProcess starts the shell attached to a fresh pseudoconsole, cwd=workdir.
 func spawnProcess(workdir string) (process, error) {
 	var inR, inW, outR, outW windows.Handle
 	if err := windows.CreatePipe(&inR, &inW, nil, 0); err != nil {
@@ -115,7 +113,6 @@ func attachShell(hPC, inW, outR windows.Handle, workdir string) (*conptyProcess,
 	}
 
 	var pi windows.ProcessInformation
-	// startupInfo points at the STARTUPINFOEX prefix.
 	if err := windows.CreateProcess(nil, &cmd16[0], nil, nil, false,
 		windows.EXTENDED_STARTUPINFO_PRESENT,
 		nil, cwdPtr, &siex.StartupInfo, &pi); err != nil {
@@ -132,7 +129,6 @@ func attachShell(hPC, inW, outR windows.Handle, workdir string) (*conptyProcess,
 	}, nil
 }
 
-// closeHandles squashes a cleanup list.
 func closeHandles(h ...windows.Handle) {
 	for _, handle := range h {
 		_ = windows.CloseHandle(handle)
@@ -163,7 +159,6 @@ func exist(path string) bool {
 	return err == nil
 }
 
-// conptyProcess is the windows process.
 type conptyProcess struct {
 	hPC       windows.Handle
 	inW       windows.Handle // keystrokes -> ConPTY
@@ -202,15 +197,13 @@ func (p *conptyProcess) closePTY() {
 	p.closeOnce.Do(func() { windows.ClosePseudoConsole(p.hPC) })
 }
 
-// Close is the idempotent teardown.
 func (p *conptyProcess) Close() error {
 	p.closePTY()
 	closeHandles(p.inW, p.outR, p.hProcess)
 	return nil
 }
 
-// start runs the watcher: wait for exit, record the code, hang the console up,.
-// The close-before-fence order is the hangup contract - a read parked on the output
+// start's close-before-fence order is the hangup contract - a read parked on the output
 // pipe is released by the console teardown, not by the fence. The session's watchLoop
 // owns the exit broadcast, so the code must be stored BEFORE the fence closes.
 func (p *conptyProcess) start() {
@@ -235,7 +228,6 @@ func (p *conptyProcess) Done() <-chan struct{} {
 	return p.done
 }
 
-// Kill terminates the shell and hangs the console up.
 func (p *conptyProcess) Kill() error {
 	err := windows.TerminateProcess(p.hProcess, 1)
 	p.closePTY()

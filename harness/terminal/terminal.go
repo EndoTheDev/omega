@@ -11,33 +11,27 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// The hard shapes.
 const (
-	maxSessions = 4
-	// SCROLLBACK CAPS (the bounded terminal-runtime rules).
+	maxSessions     = 4
 	scrollbackMax   = 8 * 1024 * 1024
 	scrollbackLines = 5000
 	// replayTail: the restoration window - a reattach reads ONLY the
 	// bounded tail of the retained history (never the whole thing; the
 	// client may show less than the server keeps).
 	replayTail = 256 * 1024
-	// noOrphanTTL: a session no pane is attached to dies this long after its last.
+	// noOrphanTTL: a session no pane is attached to dies this long after its last use.
 	noOrphanTTL = 15 * time.Minute
-	// pruneEvery: the orphan prune's tick.
-	pruneEvery = time.Minute
+	pruneEvery  = time.Minute
 	// subBuffer: SSE frames buffered per attached pane before the pane counts as stalled.
 	subBuffer = 512
 	// maxInput: the input route's body ceiling (a paste, not a file dump).
 	maxInput = 64 * 1024
 )
 
-// process is the live shell seam a session drives. The handlers never know which side
-// they hold.
 type process interface {
 	Read([]byte) (int, error)
 	Write([]byte) (int, error)
 	Close() error
-	// Resize sets the child's window size (TIOCSWINSZ).
 	Resize(rows, cols uint16) error
 	// Done closes when the child exited AND its pid is reaped.
 	Done() <-chan struct{}
@@ -46,10 +40,8 @@ type process interface {
 	ExitCode() int
 }
 
-// spawnFunc is the spawn seam (real pty on unix, pipe pair under test).
 type spawnFunc func(workdir string) (process, error)
 
-// event is one SSE frame source.
 type event struct {
 	kind byte
 	data []byte
@@ -63,7 +55,6 @@ type subscription struct {
 	missed bool
 }
 
-// setMissed is the publisher's drop mark.
 func (sub *subscription) setMissed() {
 	sub.mu.Lock()
 	sub.missed = true
@@ -79,7 +70,6 @@ func (sub *subscription) checkMissed() bool {
 	return m
 }
 
-// Session is one live shell.
 type Session struct {
 	id   string
 	proc process
@@ -130,7 +120,6 @@ func replayTailOf(buf []byte) []byte {
 	return buf
 }
 
-// unsubscribe detaches a pane (tab switch, reconnect, page reload).
 func (s *Session) unsubscribe(sub *subscription) {
 	s.mu.Lock()
 	delete(s.subs, sub)
@@ -155,7 +144,6 @@ func (s *Session) publish(ev event) {
 	}
 }
 
-// readLoop moves shell output into the replay buffer and to the panes.
 func (s *Session) readLoop() {
 	buf := make([]byte, 32*1024)
 	for {
@@ -212,7 +200,6 @@ func (s *Session) trimLocked() {
 	}
 }
 
-// watchLoop broadcasts the exit once the child is reaped.
 func (s *Session) watchLoop() {
 	<-s.proc.Done()
 	s.mu.Lock()
@@ -227,8 +214,6 @@ func (s *Session) watchLoop() {
 	s.publish(event{kind: 'x', code: code})
 }
 
-// remove kills and forgets the session (DELETE route, cap law, prune,
-// lifecycle stop). Idempotent.
 func (s *Session) remove() {
 	s.mu.Lock()
 	if s.removed {
@@ -249,7 +234,6 @@ func (s *Session) remove() {
 	_ = s.proc.Close()
 }
 
-// write moves one input frame into the shell.
 func (s *Session) write(b []byte) (int, error) {
 	s.mu.Lock()
 	if s.removed {
@@ -266,7 +250,6 @@ func (s *Session) write(b []byte) (int, error) {
 	return n, err
 }
 
-// resize sets the shell's window (the pane's ResizeObserver).
 func (s *Session) resize(rows, cols uint16) error {
 	s.mu.Lock()
 	if s.removed {
@@ -282,10 +265,9 @@ func (s *Session) resize(rows, cols uint16) error {
 	return s.proc.Resize(rows, cols)
 }
 
-// errExited is input/resize against a dead shell.
 var errExited = errors.New("terminal: the shell has exited")
 
-// Store owns the session table. Safe for concurrent route handlers.
+// Store is safe for concurrent route handlers.
 type Store struct {
 	spawn   spawnFunc
 	workdir string
@@ -297,9 +279,6 @@ type Store struct {
 	stop     chan struct{}
 }
 
-// NewStore builds the store. spawn is the seam (spawnProcess on
-// unix); workdir is the shell's cwd (omega's working directory); now
-// is the clock (nil = time.Now; tests inject).
 func NewStore(spawn spawnFunc, workdir string, now func() time.Time) *Store {
 	if now == nil {
 		now = time.Now
@@ -313,7 +292,6 @@ func NewStore(spawn spawnFunc, workdir string, now func() time.Time) *Store {
 	}
 }
 
-// Start arms the orphan prune.
 func (st *Store) Start() {
 	go func() {
 		t := time.NewTicker(pruneEvery)
@@ -329,7 +307,6 @@ func (st *Store) Start() {
 	}()
 }
 
-// Stop ends the prune and kills every session.
 func (st *Store) Stop() error {
 	select {
 	case <-st.stop:
@@ -450,14 +427,12 @@ func (st *Store) forget(id string) {
 	}
 }
 
-// Get returns the session by id (unknown = nil).
 func (st *Store) Get(id string) *Session {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	return st.sessions[id]
 }
 
-// Drop removes one session (DELETE route).
 func (st *Store) Drop(id string) bool {
 	st.mu.Lock()
 	s := st.sessions[id]
@@ -471,7 +446,6 @@ func (st *Store) Drop(id string) bool {
 	return s != nil
 }
 
-// listing is the GET /terminal/sessions row.
 type listing struct {
 	ID       string `json:"id"`
 	Exited   bool   `json:"exited"`
@@ -479,7 +453,6 @@ type listing struct {
 	Created  string `json:"created_at"`
 }
 
-// List snapshots the table, oldest first.
 func (st *Store) List() []listing {
 	st.mu.Lock()
 	defer st.mu.Unlock()
@@ -501,7 +474,6 @@ func (st *Store) List() []listing {
 	return out
 }
 
-// prune reaps orphans: exited or unattached sessions idle past the TTL.
 func (st *Store) prune() {
 	cutoff := st.now().Add(-noOrphanTTL)
 	st.mu.Lock()
@@ -527,7 +499,6 @@ func (st *Store) prune() {
 	}
 }
 
-// capError is the spawn refusal past the cap with nothing reapable.
 type capError struct{ live int }
 
 func (e *capError) Error() string {
