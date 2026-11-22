@@ -298,11 +298,19 @@ client_attached() { # $1: session name
     port="$(tr -d '\r\n' < "$STATE/$1.port" 2>/dev/null || true)"
   fi
   case "$port" in ''|*[!0-9]*) return 2 ;; esac
+  # netstat prints two shapes: Windows uses uppercase `TCP` and no queue
+  # columns (local field 2, state field 4), Linux (net-tools) lowercase `tcp`
+  # after Recv-Q/Send-Q (local field 4, state field 6). Reading either with
+  # the other's columns finds nothing, so a live client reads as idle and the
+  # sweep closes an attached daemon. The proto's case names the shape.
   if command -v netstat >/dev/null 2>&1; then
     if netstat -ano 2>/dev/null | tr -d '\r' | awk -v p=":$port" '
-        NR > 3 {
+        {
+          proto = tolower($1)
+          if (proto != "tcp" && proto != "tcp6") next
+          if ($1 == proto) { addr = 4; state = 6 } else { addr = 2; state = 4 }
           l = length(p)
-          if ($1 == "TCP" && substr($2, length($2) - l + 1) == p && $4 == "ESTABLISHED") { found = 1; exit }
+          if (substr($(addr), length($(addr)) - l + 1) == p && toupper($(state)) == "ESTABLISHED") { found = 1; exit }
         }
         END { exit(found ? 0 : 1) }'; then
       return 0
