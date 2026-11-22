@@ -1,7 +1,5 @@
 package trust
 
-// The plugin-level pins (v0.12 phase C2).
-
 import (
 	"testing"
 

@@ -35,5 +35,5 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.Offer("trust", NewProvider(cfg.Home))
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
+// Toggleable marks this capsule (the config.yaml disabled: list may name it).
 func (p *Plugin) Toggleable() bool { return true }

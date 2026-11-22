@@ -33,5 +33,4 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return api.Offer("prompt", NewPromptBuilder(ctx))
 }
 
-// Compile-time check: Plugin implements agent.Plugin.
 var _ agent.Plugin = (*Plugin)(nil)

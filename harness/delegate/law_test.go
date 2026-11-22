@@ -179,7 +179,6 @@ func (s *stubStore) CreateDelegateSession(ctx context.Context, id, delegateParen
 	return nil
 }
 
-// writeStubArgs is writeStub pattern plus argc/argv echo.
 func writeStubArgs(t *testing.T, name string) string {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), name)
@@ -250,9 +249,9 @@ func TestChildSessionStoredAndPassed(t *testing.T) {
 	}
 }
 
-// forkOnlyStore is a store seam that predates the delegate surface (no. The spawn must
-// degrade to an UNLINKED root - a store without the split cannot express delegate
-// lineage, and the context-inheriting parent link is never an acceptable fallback.
+// forkOnlyStore is a store seam without the delegate surface. The spawn must degrade to
+// an UNLINKED root - a store without the split cannot express delegate lineage, and the
+// context-inheriting parent link is never an acceptable fallback.
 type forkOnlyStore struct {
 	agent.StoreProvider
 	created []string

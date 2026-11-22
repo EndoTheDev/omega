@@ -1,4 +1,4 @@
-// Package memory provides the persistent memory seam (core.MemoryProvider) backed.
+// Package memory provides the persistent memory seam (core.MemoryProvider).
 package memory
 
 import (
@@ -16,7 +16,6 @@ import (
 // entrySep is the delimiter between entries in the memory files.
 const entrySep = "§"
 
-// targetMemory and targetUser are the two store names.
 const (
 	targetMemory = "memory"
 	targetUser   = "user"
@@ -84,7 +83,6 @@ func (fm *FileMemory) Add(target, content string) (string, error) {
 
 	entries := fm.loadEntries(target)
 
-	// Duplicate prevention.
 	for _, e := range entries {
 		if e == content {
 			usage := fm.usage(target, entries)
@@ -211,9 +209,6 @@ func (fm *FileMemory) List(target string) ([]string, error) {
 	return fm.loadEntries(target), nil
 }
 
-// internals
-
-// load reads the file for the target and returns its raw content.
 func (fm *FileMemory) load(target string) string {
 	path := fm.targetFile(target)
 	data, err := os.ReadFile(path)
@@ -283,7 +278,6 @@ func (fm *FileMemory) entriesChars(entries []string) int {
 	return total
 }
 
-// targetFile returns the file path for the target store.
 func (fm *FileMemory) targetFile(target string) string {
 	switch target {
 	case targetMemory:
@@ -294,7 +288,6 @@ func (fm *FileMemory) targetFile(target string) string {
 	return fm.memoryFile
 }
 
-// targetLimit returns the char limit for the target.
 func (fm *FileMemory) targetLimit(target string) int {
 	switch target {
 	case targetMemory:
@@ -305,7 +298,6 @@ func (fm *FileMemory) targetLimit(target string) int {
 	return fm.memoryLimit
 }
 
-// targetEnabled returns whether the target store is enabled.
 func (fm *FileMemory) targetEnabled(target string) bool {
 	switch target {
 	case targetMemory:
@@ -316,7 +308,6 @@ func (fm *FileMemory) targetEnabled(target string) bool {
 	return false
 }
 
-// targetName returns the display name for the target.
 func (fm *FileMemory) targetName(target string) string {
 	switch target {
 	case targetMemory:
@@ -327,7 +318,6 @@ func (fm *FileMemory) targetName(target string) string {
 	return "Memory"
 }
 
-// usage returns the usage string for the current entries.
 func (fm *FileMemory) usage(target string, entries []string) string {
 	return fm.usageStr(fm.entriesChars(entries), fm.targetLimit(target))
 }
@@ -352,9 +342,6 @@ func (fm *FileMemory) formatSection(title, subtitle, snapshot string, limit int,
 	return fmt.Sprintf("%s\n%s\n%s\n%s", border, header, border, snapshot)
 }
 
-// memory tool
-
-// memoryToolProvider provides the memory tool.
 type memoryToolProvider struct {
 	mem *FileMemory
 }
@@ -421,7 +408,6 @@ func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 	}
 }
 
-// prop assembles one typed schema property.
 func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
@@ -482,7 +468,6 @@ func (p *memoryToolProvider) runBatchTool(ctx context.Context, args map[string]a
 	return p.runBatch(ops), nil
 }
 
-// runSingle executes one memory operation.
 func (p *memoryToolProvider) runSingle(action, target, content, oldText string) string {
 	var usage string
 	var err error
@@ -513,7 +498,6 @@ func (p *memoryToolProvider) errResult(target string, err error, usage string) s
 	})
 }
 
-// execOp runs a single memoryOp and returns usage + error.
 func (p *memoryToolProvider) execOp(op memoryOp) (string, error) {
 	switch op.Action {
 	case "add":
@@ -549,7 +533,6 @@ func (p *memoryToolProvider) runBatch(ops []memoryOp) string {
 	return marshalResult(memoryResult{Success: true, Target: lastTarget, Usage: lastUsage})
 }
 
-// parseOperations converts the raw interface{} from tool args into a slice of memoryOp.
 func parseOperations(raw any) ([]memoryOp, error) {
 	data, err := json.Marshal(raw)
 	if err != nil {
@@ -565,7 +548,6 @@ func parseOperations(raw any) ([]memoryOp, error) {
 	return ops, nil
 }
 
-// marshalResult converts a memoryResult to a JSON string.
 func marshalResult(r memoryResult) string {
 	b, _ := json.Marshal(r)
 	return string(b)

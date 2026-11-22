@@ -11,7 +11,6 @@ import (
 	"testing"
 )
 
-// writeStub writes a platform-appropriate stub script that echoes the given line.
 func writeStub(t *testing.T, name, out string, code int) string {
 	t.Helper()
 	bin := t.TempDir() + "/" + name
@@ -29,7 +28,6 @@ func writeStub(t *testing.T, name, out string, code int) string {
 	return bin
 }
 
-// TestRunDelegateTaskMissingBinary verifies runDelegateTask fails cleanly when no.
 func TestRunDelegateTaskMissingBinary(t *testing.T) {
 	t.Setenv("OMEGA_BIN", "")
 	d := NewDelegate()
@@ -279,7 +277,6 @@ func TestFailureStderrTailTruncates(t *testing.T) {
 	}
 }
 
-// TestFindOmegaBinary verifies binary resolution.
 func TestFindOmegaBinary(t *testing.T) {
 	t.Setenv("OMEGA_BIN", "")
 	d := NewDelegate()

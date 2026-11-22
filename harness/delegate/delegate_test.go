@@ -10,14 +10,11 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// TestCompile verifies the package compiles and the interfaces are satisfied.
 func TestCompile(t *testing.T) {
-	// ToolProvider interface.
 	var _ core.ToolProvider = (*Delegate)(nil)
 	var _ agent.Plugin = (*Plugin)(nil)
 }
 
-// TestTools verifies both tools are registered with correct names, and that the task.
 func TestTools(t *testing.T) {
 	d := NewDelegate()
 	tools := d.Tools()
@@ -38,7 +35,6 @@ func TestTools(t *testing.T) {
 	}
 }
 
-// TestDelegateStatus verifies delegate.status returns correct output when no tasks.
 func TestDelegateStatus(t *testing.T) {
 	d := NewDelegate()
 	out, err := d.runDelegateStatus(context.Background(), nil)
@@ -73,8 +69,6 @@ func (stubLogger) Warnf(format string, args ...any)  {}
 func (stubLogger) Errorf(format string, args ...any) {}
 func (stubLogger) Close() error                      { return nil }
 
-// TestPluginMount verifies the api mount populates Context correctly. The inject seam
-// retired with phase 2: a mount must not resurrect it.
 func TestPluginMount(t *testing.T) {
 	p := NewPlugin()
 	if p.Name() != "delegate" {
@@ -113,7 +107,7 @@ type pathStore struct {
 
 func (s pathStore) DBPath() string { return s.path }
 
-// plainStore is a store seam WITHOUT the accessor: the pre-fix shape.
+// plainStore is a store seam WITHOUT the accessor.
 type plainStore struct{ agent.StoreProvider }
 
 // stubStorePlugin offers a store seam so a mount can deliver it.
@@ -167,7 +161,6 @@ func (stubNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// TestEmitterDeliversSeamAtMountEnd: with the notifications module mounted,.
 func TestEmitterDeliversSeamAtMountEnd(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}

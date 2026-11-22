@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-// ProjectRoot returns the nearest directory (walking up from dir) that contains.
+// ProjectRoot returns the nearest directory (walking up from dir) that contains an
+// AGENTS.md.
 func ProjectRoot(dir string) string {
 	visited := map[string]bool{}
 	for {

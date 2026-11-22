@@ -221,7 +221,7 @@ func AncestorHost(origin string) string {
 
 func boolPtr(b bool) *bool { return &b }
 
-// writeFileAtomic writes via a temp file in the same directory + rename (v0.14.1
+// writeFileAtomic writes via a temp file in the same directory + rename (the
 // atomic-write law).
 func writeFileAtomic(path string, data []byte, mode os.FileMode) error {
 	dir := filepath.Dir(path)

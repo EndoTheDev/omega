@@ -9,7 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// Compile-time interface checks.
 var _ agent.CompactionProvider = (*Compactor)(nil)
 var _ agent.Plugin = (*Plugin)(nil)
 
@@ -227,10 +226,10 @@ func TestCompactNowDisabled(t *testing.T) {
 	}
 }
 
-// TestSummarizeDoctrinePrompt pins the billion-context KEEP/DROP doctrine as the. The
-// doctrine is the deliverable - the controlled evidence credited it with ~62% of the
-// re-fetch reduction - so a rewrite that silently drops a KEEP/DROP class or leaks the
-// fill percentage must go red HERE, not in production summaries.
+// TestSummarizeDoctrinePrompt pins the KEEP/DROP doctrine. The doctrine is the
+// deliverable - the controlled evidence credited it with ~62% of the re-fetch reduction -
+// so a rewrite that silently drops a KEEP/DROP class or leaks the fill percentage must go
+// red HERE, not in production summaries.
 func TestSummarizeDoctrinePrompt(t *testing.T) {
 	provider := agent.NewFakeProvider("test",
 		core.ResponseChunk{Type: "response_chunk", Content: "compacted."},
@@ -291,7 +290,7 @@ func TestSummarizeDoctrinePrompt(t *testing.T) {
 		}
 	}
 
-	// The no-fill-percentage rule: the prompt must never disclose how full the context.
+	// The no-fill-percentage rule: the prompt must never disclose how full the context is.
 	if strings.ContainsRune(header, '%') {
 		t.Errorf("doctrine prompt discloses a percentage\nheader:\n%s", header)
 	}
@@ -341,7 +340,6 @@ func TestCompactCommand(t *testing.T) {
 		t.Fatal("/compact command not registered")
 	}
 
-	// Verify handler returns run_compact action.
 	result, err := ctx.CommandHandler(context.Background(), "/compact", "")
 	if err != nil {
 		t.Fatalf("CommandHandler: %v", err)
@@ -365,6 +363,6 @@ func (s stubProvides) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) e
 	return nil
 }
 
-// Mount satisfies the interface until phase F retires it; the stub
-// never registers and is never dispatched (the API mount wins).
+// Mount satisfies the interface and registers nothing: the stub is never dispatched
+// (the API mount wins).
 func (s stubProvides) Mount(ctx *core.Context) error { return nil }

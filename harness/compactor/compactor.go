@@ -14,8 +14,8 @@ import (
 type Compactor struct {
 	provider agent.Provider
 	config   agent.CompactionConfig
-	// autoWindow is the context window probed from the provider once at Mount (server. The
-	// value is cached for the process lifetime - SetConfig never touches it. 0 = no usable
+	// autoWindow is the context window probed from the provider once at Mount. The value
+	// is cached for the process lifetime - SetConfig never touches it. 0 = no usable
 	// window (probe failed, offline, or the provider cannot report one).
 	autoWindow int
 }
@@ -25,7 +25,7 @@ func (c *Compactor) SetConfig(cfg agent.CompactionConfig) {
 	c.config = cfg
 }
 
-// AutoWindow returns the context window probed at startup, or 0 when the probe.
+// AutoWindow returns the context window probed at startup, or 0 when the probe found none.
 func (c *Compactor) AutoWindow() int { return c.autoWindow }
 
 // window resolves the effective context window: a manual override (>0) wins exactly.
@@ -110,12 +110,10 @@ func (c *Compactor) CompactNow(ctx context.Context, messages []core.Message) ([]
 	return append(out, messages[start:]...), nil
 }
 
-// summarize calls the provider to summarize a slice of messages.
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
-	// The summarization prompt carries the billion-context doctrine (idea-level. The
-	// summary is the only thing that survives a compact, so the classes below tell the model
-	// what must not be lost.
+	// The summary is the only thing that survives a compact, so the classes below tell the
+	// model what must not be lost.
 	b.WriteString("Summarize the conversation below for a context compaction. " +
 		"The summary is the only thing that survives a compaction; messages outside the ones below ride along verbatim, so everything below must be represented in the summary.\n" +
 		"\n" +

@@ -28,8 +28,8 @@ func (r *recordingNotifier) Subscribe() (<-chan core.Notice, func()) {
 	return ch, func() {}
 }
 
-// a dispatched run's finish emits one chat record. The emission rides the blocking wait
-// now: the tool run itself completes the task, then emits.
+// A dispatched run's finish emits one chat record: the tool run completes the task, then
+// emits.
 func TestRunEmitsNotification(t *testing.T) {
 	bin := writeStub(t, "stub-notify-omega", "done output", 0)
 	t.Setenv("OMEGA_BIN", bin)
