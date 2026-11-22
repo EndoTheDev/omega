@@ -16,7 +16,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// seedTree writes a small source tree into a fresh temp dir.
 func seedTree(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -326,8 +325,8 @@ func TestNoMatchesSentinel(t *testing.T) {
 	}
 }
 
-// Audit round: a single-file root with a glob filter must match the file by its base
-// name, not silently miss it (rel is "." for the root file itself).
+// a single-file root with a glob filter must match the file by its base name, not
+// silently miss it (rel is "." for the root file itself).
 func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
 	root := seedTree(t)
 	p := filepath.Join(root, "notes.md")
@@ -355,7 +354,7 @@ func TestGrepSingleFileRootWithGlobFilter(t *testing.T) {
 	}
 }
 
-// Audit round: a scan error mid-file must not print partial matches as if the file.
+// a scan error mid-file must not print partial matches as if the file were whole.
 func TestGrepScanErrorNotesTheFile(t *testing.T) {
 	root := t.TempDir()
 	long := strings.Repeat("x", 2*1024*1024) // 2 MB line: over the 1 MB scanner cap
@@ -382,7 +381,6 @@ func TestGrepScanErrorNotesTheFile(t *testing.T) {
 
 func itoa(n int) string { return fmt.Sprintf("%d", n) }
 
-// resultRows strips the note lines ("[.]") off a search result, so a test can assert.
 func resultRows(out string) []string {
 	var rows []string
 	for _, line := range strings.Split(out, "\n") {
@@ -425,7 +423,6 @@ func seedNoisyTree(t *testing.T, gitObjects int) string {
 	return root
 }
 
-// TestGrepPrunesIgnoredDirectories: the default skip set keeps the walk out.
 func TestGrepPrunesIgnoredDirectories(t *testing.T) {
 	root := seedNoisyTree(t, grepMaxFiles+5)
 	got, err := provider().RunGrep(context.Background(), map[string]any{
@@ -467,7 +464,6 @@ func TestGrepPrunesIgnoredDirectories(t *testing.T) {
 	}
 }
 
-// TestGrepIncludeIgnoredSearchesTheTrees: the skip set is a default,.
 func TestGrepIncludeIgnoredSearchesTheTrees(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGrep(context.Background(), map[string]any{
@@ -491,7 +487,6 @@ func TestGrepIncludeIgnoredSearchesTheTrees(t *testing.T) {
 	}
 }
 
-// TestGlobPrunesIgnoredDirectories: the same skip set on the name search, same note.
 func TestGlobPrunesIgnoredDirectories(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGlob(context.Background(), map[string]any{
@@ -524,7 +519,6 @@ func TestGlobPrunesIgnoredDirectories(t *testing.T) {
 	}
 }
 
-// TestIgnoreNeverPrunesAnExplicitRoot: naming an ignored tree as the root is.
 func TestIgnoreNeverPrunesAnExplicitRoot(t *testing.T) {
 	root := seedNoisyTree(t, 0)
 	got, err := provider().RunGrep(context.Background(), map[string]any{

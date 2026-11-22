@@ -11,31 +11,24 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// Plugin adapts the tools registry into the agent.Plugin interface.
 type Plugin struct {
 	search *SearchProvider
 }
 
-// Name returns the extension name shown in /extensions.
 func (p *Plugin) Name() string { return "tools" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "the tools registry: the grep/glob search tools, tool claim and conflict law, the /tools command, the ToolsList panel and the prompt section"
 }
 
-// Provides lists seam names this plugin mounts.
 func (p *Plugin) ConfigKey() string { return "" }
 
 func (p *Plugin) Provides() []string { return []string{"prompt_sections", "tools"} }
 
-// Requires lists seam names that must be mounted first.
 func (p *Plugin) Requires() []string { return nil }
 
-// Toggleable opts the tools registry into the toggleable tier.
 func (p *Plugin) Toggleable() bool { return true }
 
-// MountWithAPI implements agent.APIPlugin.
 func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error {
 	// The search tools pass the same db-door guard the file tools use: the guard is built
 	// from the store config (the instance db path); nil/zero-value guards are
@@ -75,7 +68,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	return nil
 }
 
-// handleToolsCommand handles the /tools command.
 func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResult, error) {
 	if name != "/tools" {
 		return core.CommandResult{}, core.CommandMiss(name)
@@ -105,7 +97,6 @@ func handleToolsCommand(ctx *core.Context, name, args string) (core.CommandResul
 	}
 }
 
-// listTools formats the tool list from ctx.Infos as text.
 func listTools(ctx *core.Context) core.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("\n")
@@ -150,7 +141,6 @@ func listTools(ctx *core.Context) core.CommandResult {
 	return core.CommandResult{Text: sb.String()}
 }
 
-// firstLineOfDesc returns the first line of a tool description, truncated to 60 chars.
 func firstLineOfDesc(desc string) string {
 	if i := strings.IndexByte(desc, '\n'); i >= 0 {
 		desc = desc[:i]
@@ -161,5 +151,4 @@ func firstLineOfDesc(desc string) string {
 	return desc
 }
 
-// NewPlugin creates a new tools plugin.
 func NewPlugin() *Plugin { return &Plugin{} }

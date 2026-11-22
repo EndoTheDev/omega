@@ -20,10 +20,8 @@ const (
 	LevelError = "error"
 )
 
-// PageMax caps one page read (?limit=).
 const PageMax = 1000
 
-// Event is one observability record: the structured row the tab renders.
 type Event struct {
 	// Seq is the ring's monotonic insertion counter (1-based, never
 	// reused), the client's stable ordering key across refetches.
@@ -49,7 +47,6 @@ type Ring struct {
 	seq  uint64 // last stamped sequence number
 }
 
-// NewRing returns a ring of the given capacity (RingCap when <= 0).
 func NewRing(capacity int) *Ring {
 	if capacity <= 0 {
 		capacity = RingCap
@@ -57,10 +54,8 @@ func NewRing(capacity int) *Ring {
 	return &Ring{buf: make([]Event, capacity)}
 }
 
-// Capacity reports the ring's fixed size.
 func (r *Ring) Capacity() int { return len(r.buf) }
 
-// Len reports how many records are buffered right now.
 func (r *Ring) Len() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -82,7 +77,6 @@ func (r *Ring) Append(e Event) {
 	r.next = (r.next + 1) % len(r.buf)
 }
 
-// snapshot returns the buffered records oldest-first.
 func (r *Ring) snapshot() []Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -118,7 +112,6 @@ func (r *Ring) Page(session, level string, limit int) []Event {
 	return out
 }
 
-// levelMatches applies the level filter.
 func levelMatches(want, got string) bool {
 	switch want {
 	case "", "all", "info":

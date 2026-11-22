@@ -1,8 +1,8 @@
 package tools
 
-// Regression pins for: a directory that failed the walk used to vanish as "[skipped N.
-// Tests restore walkDirFn via defer and never leave it swapped (no test in the package
-// uses t.Parallel).
+// Regression pins: a directory that failed the walk must name its path and cause, never
+// vanish as an anonymous skip count. Tests restore walkDirFn via defer and never leave it
+// swapped (no test in the package uses t.Parallel).
 
 import (
 	"context"
@@ -14,7 +14,6 @@ import (
 	"testing"
 )
 
-// stubDirEntry satisfies fs.DirEntry for the injected walker.
 type stubDirEntry struct{}
 
 func (stubDirEntry) Name() string               { return "stub" }
@@ -22,7 +21,6 @@ func (stubDirEntry) IsDir() bool                { return true }
 func (stubDirEntry) Type() fs.FileMode          { return fs.ModeDir }
 func (stubDirEntry) Info() (fs.FileInfo, error) { return nil, fs.ErrNotExist }
 
-// withInjectedDeniedDir swaps walkDirFn for a walker that first feeds fn one.
 func withInjectedDeniedDir(names ...string) func() {
 	orig := walkDirFn
 	walkDirFn = func(root string, fn fs.WalkDirFunc) error {
@@ -38,7 +36,6 @@ func withInjectedDeniedDir(names ...string) func() {
 	return func() { walkDirFn = orig }
 }
 
-// TestGlobWalkErrorsListPathAndCause: a denied directory appears in the result.
 func TestGlobWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "hit.txt"), []byte("x\n"), 0o644); err != nil {
@@ -83,7 +80,6 @@ func TestGlobWalkErrorSurvivesNoMatches(t *testing.T) {
 	}
 }
 
-// TestGrepWalkErrorsListPathAndCause: the grep walk carries the same detail.
 func TestGrepWalkErrorsListPathAndCause(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "quiet.txt"), []byte("nothing here\n"), 0o644); err != nil {

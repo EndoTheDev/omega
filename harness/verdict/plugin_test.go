@@ -1,7 +1,5 @@
 package verdict
 
-// The plugin-level pins (v0.12 phase C2).
-
 import (
 	"context"
 	"testing"
@@ -10,7 +8,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// stubLogger is the minimal agent.LoggerProvider.
 type stubLogger struct{}
 
 func (stubLogger) Printf(format string, args ...any) {}
@@ -18,7 +15,6 @@ func (stubLogger) Warnf(format string, args ...any)  {}
 func (stubLogger) Errorf(format string, args ...any) {}
 func (stubLogger) Close() error                      { return nil }
 
-// stubLoggerPlugin provides the logging seam for the mount pins.
 type stubLoggerPlugin struct{}
 
 func (stubLoggerPlugin) Name() string       { return "logging" }
@@ -29,7 +25,6 @@ func (stubLoggerPlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI)
 	return nil
 }
 
-// stubStorePlugin provides the store seam.
 type stubStorePlugin struct{}
 
 func (stubStorePlugin) Name() string       { return "store" }
@@ -41,7 +36,6 @@ func (stubStorePlugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) 
 	return nil
 }
 
-// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	p := NewPlugin()
 	ctx := &core.Context{}

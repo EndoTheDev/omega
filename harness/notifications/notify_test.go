@@ -203,7 +203,6 @@ func TestEmitConcurrent(t *testing.T) {
 	}
 }
 
-// TestMigrationIdempotent re-opens a file-backed store.
 func TestMigrationIdempotent(t *testing.T) {
 	dir := t.TempDir()
 	path := dir + "/data/notifications.db"

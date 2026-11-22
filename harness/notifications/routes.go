@@ -10,24 +10,19 @@ import (
 	"time"
 )
 
-// notificationsListDefault is the page size when no limit is given.
 const notificationsListDefault = 50
 
-// notificationsListMax caps a client-provided limit.
 const notificationsListMax = 200
 
 // notifySSEPing keeps the stream honest through silent stretches.
 const notifySSEPing = 30 * time.Second
 
-// Routes is the capsule's REST face over the mounted emittingStore.
 type Routes struct {
 	svc *emittingStore
 }
 
-// newRoutes builds the REST face over the mount's service handle.
 func newRoutes(e *emittingStore) *Routes { return &Routes{svc: e} }
 
-// setupSSE sets SSE response headers and returns the flusher.
 func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -40,13 +35,11 @@ func setupSSE(w http.ResponseWriter) (http.Flusher, bool) {
 	return flusher, true
 }
 
-// writeSSE writes one SSE frame in the format "event: <type>\ndata: <json>\n\n".
 func writeSSE(w io.Writer, eventType string, data []byte) {
 	fmt.Fprintf(w, "event: %s\n", eventType)
 	fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
-// writeJSON serves the JSON responses.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -65,7 +58,6 @@ func (rt *Routes) handleNotifications(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// listNotifications serves GET /notifications.
 func (rt *Routes) listNotifications(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	unreadOnly := q.Get("unread") == "1" || q.Get("unread") == "true"
@@ -112,7 +104,6 @@ func (rt *Routes) clearNotifications(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": n})
 }
 
-// handleNotificationsRead serves POST /notifications/read.
 func (rt *Routes) handleNotificationsRead(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

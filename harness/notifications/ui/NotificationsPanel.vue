@@ -6,12 +6,11 @@
   -->
   <div class="notif-pane">
     <!--
-      the head row is the UNIVERSAL band now (the shared TabBand) - the mark-all-read
-      action rides the band and the band renders before the.notif-list scrollport:
-      scrolling the feed never moves it.
+      the head row is the UNIVERSAL band (the shared TabBand) - the mark-all-read action
+      rides the band and the band renders before the .notif-list scrollport: scrolling
+      the feed never moves it.
     -->
     <TabBand title="Notifications">
-      <!-- both band actions are ICON buttons now. -->
       <button
         class="band-tool"
         title="mark all read"
@@ -20,7 +19,6 @@
         @click="markAll">
         <Icon name="mailOpen" :size="13" />
       </button>
-      <!-- the clear-all: the DELETE side of the surface. -->
       <button
         class="band-tool"
         title="clear all"
@@ -123,12 +121,11 @@
     (e: "open", n: OmegaNotification): void;
   }>();
 
-  // shortId trims a session id to its first 8 chars for the verdict row.
   function shortId(id: string): string {
     return id && id.length > 8 ? id.slice(0, 8) : id;
   }
 
-  // kindGlyph is the source chip (the old bell row's vocabulary).
+  // kindGlyph is the source chip's glyph.
   function kindGlyph(kind: string): string {
     switch (kind) {
       case "task": return "▦";
@@ -142,7 +139,7 @@
     return notificationAge(ts);
   }
 
-  // openVerdict routes a pending-card click to the card's chat session, reusing.
+  // openVerdict routes a pending-card click to the card's chat session.
   function openVerdict(p: PendingVerdictCard) {
     emit("open", {
       kind: "chat",
@@ -214,7 +211,6 @@
   }
 
   onMounted(async () => {
-    // the activation: the outlet mounts this panel exactly when the notifications tab.
     startNotificationFeed();
     await refreshNotifications();
     if (notificationsUnread.value > 0) {
@@ -231,10 +227,10 @@
     height: 100%;
   }
   /*
-   * the head is the shared TabBand - the band's own geometry
-   * replaced.notif-head/.notif-title.: the two actions are icon-only band-tools - no
-   * local look survives, the shared.band-tool contract (hover, disabled, centering)
-   * covers them; the icons pin their size at the call site.
+   * the head is the shared TabBand - the band's own geometry replaced .notif-head/
+   * .notif-title. The two actions are icon-only band-tools: no local look survives, the
+   * shared .band-tool contract (hover, disabled, centering) covers them; the icons pin
+   * their size at the call site.
    */
   .notif-list {
     list-style: none;

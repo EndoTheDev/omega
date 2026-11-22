@@ -126,7 +126,6 @@
   import { DOCK_VIEWER_OPEN_KEY, FOCUSED_SESSION_KEY } from "~/composables/viewer";
   import type { ViewerRef } from "~/composables/dockables";
   import FileTree from "./FileTree.vue";
-  // the toolbar's glyph set (icons.ts vocabulary)
   import Icon from "~/components/ui/Icon.vue";
 
   // `open` is the mobile drawer overlay state.
@@ -223,7 +222,6 @@
     toolError.value = "";
   }
 
-  // confirmCreate POSTs the validated name at the selected folder (or the tree root).
   async function confirmCreate() {
     const kind = creating.value;
     if (!kind || creatingBusy.value) return;
@@ -286,11 +284,6 @@
     overflow-x: hidden;
     padding-bottom: 8px;
   }
-  /*
-   * note: the band's 14px lead-in now rides the shared TabBand (the tuck clear-out is
-   * the component's contract).
-   */
-
   .files-add {
     display: flex;
     align-items: center;

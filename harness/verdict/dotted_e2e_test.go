@@ -1,9 +1,8 @@
 package verdict
 
-// dotted_e2e_test.go: the split's acceptance witness. A scripted provider drives
-// verdict.request through the REAL agent loop - the same wire a model rides - while a
-// concurrent answerer resolves the card through the hub, the path the /verdicts POST
-// shares.
+// The acceptance witness: a scripted provider drives verdict.request through the REAL
+// agent loop - the same wire a model rides - while a concurrent answerer resolves the card
+// through the hub, the path the /verdicts POST shares.
 
 import (
 	"context"

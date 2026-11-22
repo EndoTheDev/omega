@@ -244,7 +244,6 @@ func TestStopSilencesRecording(t *testing.T) {
 	}
 }
 
-// TestPluginMountsRoutesAndObserver pins the mount surface end to end.
 func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	ctx := &core.Context{}
 	p := NewPlugin()
@@ -292,7 +291,7 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	}
 }
 
-// TestNoTelemetryDependency is the card's no-export proof. It parses real imports
+// TestNoTelemetryDependency is the no-export proof. It parses real imports
 // rather than trusting comments: a future exporter cannot land here without turning
 // this test red.
 func TestNoTelemetryDependency(t *testing.T) {

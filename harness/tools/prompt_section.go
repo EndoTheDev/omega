@@ -7,7 +7,7 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// promptSectionOrder places the tools list last among the contributed sections,.
+// promptSectionOrder places the tools list last among the contributed sections.
 const promptSectionOrder = 30
 
 // PromptSections renders the "## Tools" section. A tool with structured Actions still
@@ -43,7 +43,6 @@ func (p *Plugin) PromptSections(opts core.PromptBuildOptions) []core.PromptSecti
 	}
 }
 
-// firstLine returns the first non-empty line of s, or s itself if it has no newlines.
 func firstLine(s string) string {
 	for _, line := range strings.Split(s, "\n") {
 		if strings.TrimSpace(line) != "" {

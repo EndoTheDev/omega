@@ -1,10 +1,9 @@
 // The file domain's REST face (the webui explorer). GET routes answer reads; POST
 // /files/write and POST /files/mkdir create nodes INSIDE the same root, guarded by the
 // SAME three layers the read half enforces: relative paths and empty segments are
-// rejected, ONLY the "." and "." traversal segments die (hidden names like.git
-// and.gitignore are ordinary paths - hiding them is the listings' job, never the
-// guard's), and the cleaned path is symlink-resolved and verified to stay under the
-// root before the disk is touched.
+// rejected, the "." and ".." traversal segments die, hidden names are ordinary paths -
+// hiding them is the listings' job, never the guard's - and the cleaned path is
+// symlink-resolved and verified to stay under the root before the disk is touched.
 
 package files
 
@@ -27,7 +26,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// fileReadCap is the preview size cap.
 const fileReadCap = 64 * 1024
 
 // fileEntry is one /files/browse row.
@@ -86,7 +84,6 @@ func resolveUnderRoot(root, rel string) (realRoot, resolved string, err error) {
 	return realRoot, resolved, nil
 }
 
-// ensureUnderRoot verifies a resolved absolute path stays inside realRoot.
 func ensureUnderRoot(realRoot, resolved string) error {
 	if resolved == realRoot {
 		return nil
@@ -116,7 +113,6 @@ func fileError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// writeJSON writes v as a JSON response with the given status code.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -130,9 +126,9 @@ const (
 	filesSourceCwd     = "cwd"
 )
 
-// sessionStores is the workspace-pin face the roots chain reads (the store capsule. The
-// capsule's own local interface per the seam grammar; nil-safe absence = the chain
-// falls through to the default knob and the cwd.
+// sessionStores is the workspace-pin face the roots chain reads - the consumer's own
+// local interface; nil-safe absence = the chain falls through to the default knob and
+// the cwd.
 type sessionStores interface {
 	GetSession(ctx context.Context, id string) (core.Session, error)
 }
@@ -150,12 +146,10 @@ type Routes struct {
 	defaultWorkspace atomic.Value
 }
 
-// SetDefaultWorkspace hot-sets the default_workspace knob.
 func (r *Routes) SetDefaultWorkspace(ws string) {
 	r.defaultWorkspace.Store(ws)
 }
 
-// newRoutes builds the route surface against the live store resolver.
 func newRoutes(ctx *core.Context) *Routes {
 	return &Routes{
 		storeFn: func() sessionStores { return seam[sessionStores](ctx, "store") },
@@ -169,8 +163,8 @@ func newRoutes(ctx *core.Context) *Routes {
 //     every request re-reads it, so a re-pin or a session switch
 //     re-roots the tab with no cache;
 //  2. else the configured default workspace;
-//  3. else the process cwd - the fallback the pre-law handlers used,
-//     so the tab still shows something on a workspace-less box.
+//  3. else the process cwd, so the tab still shows something on a
+//     workspace-less box.
 //
 // A session id the store does not know (a draft, an unknown id, a
 // no-store lane) simply falls through the chain - resolution never
@@ -195,8 +189,8 @@ func (r *Routes) resolveFilesRoot(ctx context.Context, sessionID string) (root, 
 	return wd, filesSourceCwd, nil
 }
 
-// handleFilesBrowse serves GET /files/browse?path=<rel>&session=<id>, listing one. The
-// response carries root + source so the tab's header knows exactly what it sits.
+// handleFilesBrowse serves GET /files/browse?path=<rel>&session=<id>; the response
+// carries root + source so the tab's header knows which root it lists.
 func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -257,7 +251,7 @@ func (r *Routes) handleFilesBrowse(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// handleFilesRead serves GET /files/read?path=<rel>&session=<id>, returning up to 64.
+// handleFilesRead serves GET /files/read?path=<rel>&session=<id>, capped at 64 KiB.
 func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 	if req.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -330,7 +324,6 @@ func (r *Routes) handleFilesRead(w http.ResponseWriter, req *http.Request) {
 	})
 }
 
-// detectFileMime sniffs a file's leading bytes and returns the file's mime type.
 func detectFileMime(head []byte, rel string) string {
 	sniff := http.DetectContentType(head)
 	if strings.HasSuffix(strings.ToLower(rel), ".svg") &&
@@ -423,7 +416,6 @@ func (r *Routes) handleFilesRaw(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// filesPostCap caps every POST body on the file surface.
 const filesPostCap = 1 << 20 // 1 MiB
 
 // filesPostBody decodes the JSON request body of the file surface's POST handlers into

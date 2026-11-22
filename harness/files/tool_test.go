@@ -55,7 +55,6 @@ func TestDottedWirePin(t *testing.T) {
 	}
 }
 
-// TestDottedVerbsCoverAllBehaviors is the reachability gate.
 func TestDottedVerbsCoverAllBehaviors(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "f.txt")
@@ -110,7 +109,6 @@ func TestRunFilesBatchAtomicRollback(t *testing.T) {
 	}
 }
 
-// TestRunFilesBatchSuccess covers the happy path.
 func TestRunFilesBatchSuccess(t *testing.T) {
 	dir := t.TempDir()
 	a := filepath.Join(dir, "a.txt")
@@ -134,7 +132,6 @@ func TestRunFilesBatchSuccess(t *testing.T) {
 	}
 }
 
-// TestRunFilesBatchValidation covers op-shape errors before any write.
 func TestRunFilesBatchValidation(t *testing.T) {
 	p := &FileProvider{}
 	batch := func(args map[string]any) error {

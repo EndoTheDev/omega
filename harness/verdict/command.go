@@ -1,7 +1,5 @@
 package verdict
 
-// Module-owned command surface.
-
 import (
 	"context"
 	"fmt"
@@ -11,7 +9,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// verdictHandler serves the /verdict extension command.
 func verdictHandler(p *Plugin) func(context.Context, string, string) (core.CommandResult, error) {
 	return func(_ context.Context, name, args string) (core.CommandResult, error) {
 		if name != "/verdict" {
@@ -59,7 +56,6 @@ func ParseCardAnswer(card core.QuestionPrompt, input string) (core.QuestionAnswe
 	return parseVerdictAnswer(card, strings.Fields(input))
 }
 
-// parseVerdictAnswer implements the typed-token contract above.
 func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionAnswer, error) {
 	tok := strings.TrimSpace(strings.Join(rest, " "))
 	if tok == "" {
@@ -108,7 +104,6 @@ func parseVerdictAnswer(card core.QuestionPrompt, rest []string) (core.QuestionA
 	return core.QuestionAnswer{Text: tok}, nil
 }
 
-// parseOptionIndexes parses a comma-separated pick list ("1,3").
 func parseOptionIndexes(tok string) ([]int, error) {
 	fields := strings.Split(tok, ",")
 	ixs := make([]int, 0, len(fields))

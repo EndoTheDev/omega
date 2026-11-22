@@ -1,4 +1,3 @@
-// The logging half's tests, riding the capsule they folded.
 package observability
 
 import (
@@ -181,8 +180,8 @@ func TestPluginMetadata(t *testing.T) {
 	if len(p.Requires()) != 0 {
 		t.Errorf("Requires() = %v, want empty", p.Requires())
 	}
-	// the tier re-law: logging is one of the three always-on modules, so
-	// the folded capsule must NOT opt into the toggleable tier.
+	// logging is one of the always-on modules, so the capsule must NOT opt into
+	// the toggleable tier.
 	if tg, ok := any(p).(agent.Toggleable); ok && tg.Toggleable() {
 		t.Error("observability claims Toggleable - the always-on tier is agent-loop, provider and logging")
 	}
@@ -230,7 +229,6 @@ func TestPluginMountDisabled(t *testing.T) {
 	}
 }
 
-// Path reports the file the logger writes.
 func TestFileLoggerPath(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.log")
 	l, err := NewFileLogger(path)
@@ -261,7 +259,6 @@ func TestNewLoggerEmptyFileIsNop(t *testing.T) {
 	}
 }
 
-// TestPluginMountDefaultNoCwdFile mounts the plugin with its own Default config.
 func TestPluginMountDefaultNoCwdFile(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)

@@ -51,7 +51,6 @@ func TestPromptSectionsRendersOnlyTheDelta(t *testing.T) {
 	}
 }
 
-// TestFirstLine verifies firstLine semantics.
 func TestFirstLine(t *testing.T) {
 	for in, want := range map[string]string{
 		"one\ntwo":           "one",
@@ -65,7 +64,6 @@ func TestFirstLine(t *testing.T) {
 	}
 }
 
-// TestPromptSectionsImplementsSeam verifies the plugin satisfies the prompt-section.
 func TestPromptSectionsImplementsSeam(t *testing.T) {
 	var _ core.PromptSectioner = (*Plugin)(nil)
 }

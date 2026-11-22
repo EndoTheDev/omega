@@ -11,7 +11,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 )
 
-// mountCtx mounts a fresh plugin through agent.MountAllAPI.
 func mountCtx(t *testing.T, ctx *core.Context) (*Plugin, *core.Context) {
 	t.Helper()
 	p := NewPlugin()
@@ -43,7 +42,6 @@ func offeredSeam(t *testing.T, ctx *core.Context) seamBoard {
 	return svc
 }
 
-// TestMountWiresSeamAndCommand: a home-backed mount opens the store, offers.
 func TestMountWiresSeamAndCommand(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -76,7 +74,6 @@ func TestMountWiresSeamAndCommand(t *testing.T) {
 	}
 }
 
-// TestMountWithAPIShape pins the migrated mount's registrations.
 func TestMountWithAPIShape(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
@@ -125,7 +122,6 @@ func TestMountWithAPIShape(t *testing.T) {
 	}
 }
 
-// TestMountWithConfigPathOverride: a config path mounts the store at that exact file.
 func TestMountWithConfigPathOverride(t *testing.T) {
 	dbDir := t.TempDir() + "/custom"
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {

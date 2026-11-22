@@ -20,7 +20,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// serveRoutes builds the capsule routes over a fresh emittingStore on a throwaway db.
 func serveRoutes(t *testing.T) (*httptest.Server, *Store) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "notifications.db")
@@ -118,7 +117,6 @@ func TestNotificationsListUnreadAndPagination(t *testing.T) {
 	}
 }
 
-// The clear-all: DELETE /notifications drops every record.
 func TestNotificationsClearAll(t *testing.T) {
 	ts, st := serveRoutes(t)
 	for i := 0; i < 3; i++ {

@@ -11,7 +11,6 @@ import (
 	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
-// Config is the optional knob for the store path.
 type Config struct {
 	DBPath string
 }
@@ -19,7 +18,6 @@ type Config struct {
 // Default returns the zero config (path resolved from the home).
 func Default() Config { return Config{} }
 
-// Plugin adapts the notifications Store into omega's plugin system.
 type Plugin struct {
 	store   *Store
 	capsule *capsule
@@ -28,17 +26,14 @@ type Plugin struct {
 
 var _ agent.Plugin = (*Plugin)(nil)
 
-// NewPlugin returns a notifications Plugin instance.
 func NewPlugin() *Plugin { return &Plugin{} }
 
 func (p *Plugin) Name() string { return "notifications" }
 
-// Description implements agent.Describer.
 func (p *Plugin) Description() string {
 	return "notifications: the finished-things store behind the dock's Notifications tab chip (tasks, crons, chats)"
 }
 
-// ConfigKey names the config section this plugin reads from ctx.Configs.
 func (p *Plugin) ConfigKey() string { return "notifications" }
 
 func (p *Plugin) Provides() []string { return []string{"notifications"} }
@@ -106,7 +101,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 }
 
 // handleCommand renders the newest records as a fixed-width table. Read-only on
-// purpose: reads happen in the webui, the terminal never interrupts (no TUI toasts).
+// purpose: reads happen in the webui, the terminal never interrupts.
 func (p *Plugin) handleCommand(c context.Context, args string) (core.CommandResult, error) {
 	unreadOnly := strings.TrimSpace(args) == "unread"
 	notes, unread, err := p.store.List(c, unreadOnly, 20, 0)
@@ -143,5 +138,4 @@ func (p *Plugin) Dismount(ctx *core.Context) error {
 	return err
 }
 
-// Toggleable marks this capsule as a module capsule (v0.12 E1, the tier law).
 func (p *Plugin) Toggleable() bool { return true }

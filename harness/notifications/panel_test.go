@@ -8,7 +8,6 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// newTestCapsule builds a memory-backed store wrapped in the capsule seam exactly.
 func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 	t.Helper()
 	s, err := Open(":memory:")
@@ -20,7 +19,6 @@ func newTestCapsule(t *testing.T) (*Store, *capsule, *emittingStore) {
 	return s, c, &emittingStore{store: s, capsule: c}
 }
 
-// TestCapsulePanelsShape: the provider declares exactly two panels.
 func TestCapsulePanelsShape(t *testing.T) {
 	_, _, e := newTestCapsule(t)
 	if _, err := e.Emit(core.Notice{Kind: "cron", SourceID: "n1", Title: "cron n1 finished", Verdict: "failed"}); err != nil {

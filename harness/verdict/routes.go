@@ -37,18 +37,14 @@ type verdictAnswerRequest struct {
 	Message       string `json:"message,omitempty"`
 }
 
-// maxVerdictMessage caps the resolution message.
 const maxVerdictMessage = 2000
 
-// Routes is the capsule's REST face over the hub (p.hub at mount).
 type Routes struct {
 	hub *Hub
 }
 
-// newRoutes builds the REST face on the mount's hub handle.
 func newRoutes(hub *Hub) *Routes { return &Routes{hub: hub} }
 
-// writeJSON serves the JSON responses.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -76,7 +72,6 @@ func (rt *Routes) handleVerdicts(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// serveVerdictsList answers GET /verdicts (all sessions) and GET.
 func (rt *Routes) serveVerdictsList(w http.ResponseWriter, r *http.Request, sessionID string) {
 	cards := rt.hub.Pending(sessionID)
 	out := make([]verdictCardWire, 0, len(cards))
@@ -144,7 +139,6 @@ func (rt *Routes) serveVerdictAnswer(w http.ResponseWriter, r *http.Request, ses
 	writeJSON(w, http.StatusOK, out)
 }
 
-// toVerdictWire maps one runtime card to its wire shape.
 func toVerdictWire(c core.QuestionPrompt) verdictCardWire {
 	exp := int64(0)
 	if !c.ExpiresAt.IsZero() {
@@ -163,7 +157,6 @@ func toVerdictWire(c core.QuestionPrompt) verdictCardWire {
 	}
 }
 
-// isAlreadySettled reports whether an Answer error is a lost-race.
 func isAlreadySettled(err error) bool {
 	msg := err.Error()
 	return strings.Contains(msg, "already answered") ||
@@ -171,7 +164,6 @@ func isAlreadySettled(err error) bool {
 		strings.Contains(msg, "already expired")
 }
 
-// isUnknownCard reports whether an Answer error is "no such card".
 func isUnknownCard(err error) bool {
 	return strings.Contains(err.Error(), "no pending verdict card")
 }

@@ -10,13 +10,11 @@ import (
 )
 
 
-// guardFor builds a provider whose guard knows a fake instance db in dir.
 func guardFor(t *testing.T, dir string) *FileProvider {
 	t.Helper()
 	return &FileProvider{guard: datadir.NewGuard(dir + "/omega.db")}
 }
 
-// TestGuardedFilesRefuse verifies each file tool entry point individually.
 func TestGuardedFilesRefuse(t *testing.T) {
 	dir := t.TempDir()
 	db := dir + "/omega.db"
@@ -48,7 +46,6 @@ func TestGuardedFilesRefuse(t *testing.T) {
 	}
 }
 
-// TestGuardedFilesAllowNormal: a guard-carrying provider keeps normal file operation.
 func TestGuardedFilesAllowNormal(t *testing.T) {
 	dir := t.TempDir()
 	p := guardFor(t, dir)
