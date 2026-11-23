@@ -151,6 +151,18 @@
       @remove-attachment="(i: number) => host.removeAttachment(stateKey, i)"
       @remove-file-attachment="(i: number) => host.removeFileAttachment(stateKey, i)"
       @attach-url="(u: string) => host.attachUrl(stateKey, u)" />
+
+    <ModelSwitchDialog
+      v-if="pendingSwitch"
+      :model="pendingSwitch.value"
+      :tokens="pendingSwitch.tokens"
+      :window="pendingSwitch.window"
+      :loss="pendingSwitch.loss"
+      :busy="switchBusy"
+      :error="switchError"
+      @compact="chooseModelSwitch('compact')"
+      @anyway="chooseModelSwitch('anyway')"
+      @cancel="closeModelSwitch" />
   </main>
 </template>
 
@@ -190,6 +202,7 @@
     thinkingLevelWire,
     transcriptHasPending,
     variantAnchors,
+    fetchSessionContext,
     type Appearance,
     type Session,
     type TranscriptItem,
@@ -197,12 +210,21 @@
     type ModelProviderSection,
     type ToolItem,
   } from "../composables/omega";
+  import {
+    modelSwitchDialogOpen,
+    planModelSwitch,
+    runModelSwitchChoice,
+    type ModelSwitchPlan,
+    type ModelSwitchChoice,
+  } from "../composables/modelSwitch";
+  import { dispatchCommand } from "../composables/commands";
   import type { DockTab } from "../composables/dock";
   import { groupToolRuns, isToolRun, foldAddress, type ChatEntry } from "../composables/toolGroup";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
   import GateCard from "./chat/GateCard.vue";
+  import ModelSwitchDialog from "./chat/ModelSwitchDialog.vue";
   import ToolGroup from "./chat/ToolGroup.vue";
 
   const props = defineProps<{
@@ -290,10 +312,92 @@
       if (!sessionId.value || !props.session?.model) modelValue.value = m;
     },
   );
-  function onModelChange(v: string) {
+  // The model-switch guard: a pick whose target window is smaller than the live context is
+  // a BLOCKING decision (compact and switch / switch anyway / cancel). Every pick that fits
+  // applies exactly as it always did. The numbers come from the server's own estimate, never
+  // a client-side guess, so the dialog can never quote a figure the compactor disagrees with.
+  interface PendingSwitch {
+    value: string;
+    tokens: number;
+    window: number;
+    loss: number;
+  }
+  const pendingSwitch = ref<PendingSwitch | null>(null);
+  const switchBusy = ref(false);
+  const switchError = ref("");
+  let switchProbeSeq = 0;
+
+  function applyModel(v: string) {
     modelValue.value = v;
     emit("update:model", v);
   }
+
+  async function onModelChange(v: string) {
+    if (v === modelValue.value) return;
+    const id = sessionId.value;
+    if (!id) {
+      applyModel(v);
+      return;
+    }
+    // one probe per pick; a later pick supersedes an in-flight one
+    const seq = ++switchProbeSeq;
+    let plan: ModelSwitchPlan = { kind: "apply" };
+    try {
+      plan = planModelSwitch(await fetchSessionContext(id, v));
+    } catch {
+      // an unmeasured pick applies: nothing was measured, nothing is lost
+      plan = { kind: "apply" };
+    }
+    if (seq !== switchProbeSeq) return;
+    if (plan.kind === "apply") {
+      applyModel(v);
+      return;
+    }
+    switchError.value = "";
+    pendingSwitch.value = {
+      value: v,
+      tokens: plan.tokens,
+      window: plan.window,
+      loss: plan.loss,
+    };
+    modelSwitchDialogOpen.value = true;
+  }
+
+  function closeModelSwitch() {
+    pendingSwitch.value = null;
+    switchError.value = "";
+    modelSwitchDialogOpen.value = false;
+  }
+
+  async function chooseModelSwitch(choice: ModelSwitchChoice) {
+    if (!pendingSwitch.value || switchBusy.value) return;
+    switchBusy.value = true;
+    switchError.value = "";
+    const result = await runModelSwitchChoice(choice, {
+      compact: async () => {
+        const id = sessionId.value;
+        if (!id) throw new Error("no session to compact");
+        const res = await dispatchCommand("/compact", "", id);
+        return res.text ?? "";
+      },
+      // the compact receipt lands in the pane's status line BEFORE the switch emits
+      receipt: (line) => {
+        if (state.value) {
+          state.value.statusLine = line || "compacted this conversation";
+        }
+      },
+      apply: () => applyModel(pendingSwitch.value!.value),
+    });
+    switchBusy.value = false;
+    if (!result.applied && result.error) {
+      switchError.value = `compact failed: ${result.error}`;
+      return;
+    }
+    closeModelSwitch();
+  }
+  onBeforeUnmount(() => {
+    modelSwitchDialogOpen.value = false;
+  });
 
   const canvasTranscript = createCanvasTranscript();
   const panelPayload = computed(() => {

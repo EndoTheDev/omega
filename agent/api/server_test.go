@@ -33,6 +33,9 @@ type mockProvider struct {
 	thinkingLevel string
 	seenLevels *[]string
 	seenModels *[]string
+	// contextWindow is what ModelInfo reports; 0 = "cannot report one", the shape a few
+	// real providers answer and every caller floors at DefaultContextWindow.
+	contextWindow int
 }
 
 // sseFrame is one parsed SSE frame.
@@ -80,7 +83,7 @@ func (m *mockProvider) ListModels() ([]string, error) {
 }
 
 func (m *mockProvider) ModelInfo() (llm.ModelInfo, error) {
-	return llm.ModelInfo{}, nil
+	return llm.ModelInfo{ContextWindow: m.contextWindow}, nil
 }
 
 func (m *mockProvider) Stream(_ context.Context, _ []core.Message, _ []llm.ToolSchema) <-chan core.ProviderStreamEvent {

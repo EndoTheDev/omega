@@ -550,6 +550,8 @@
     createComposerFocusSignal,
     shouldCaptureTyping,
   } from "./composables/focus";
+  // the model-switch dialog's open flag: its keystrokes are its own, never the composer's
+  import { modelSwitchDialogOpen } from "./composables/modelSwitch";
   // the canvas store: the webui's one view-model state. Panel presence lives in the
   // store, never a hardcoded list.
   import { announceCanvasReset, createCanvasStore, emitLocalToast } from "./composables/canvas";
@@ -1518,7 +1520,7 @@
     if (
       !shouldCaptureTyping(e, {
         mainView: mainView.value,
-        modalOpen: !!deleteId.value,
+        modalOpen: !!deleteId.value || modelSwitchDialogOpen.value,
       })
     )
       return;

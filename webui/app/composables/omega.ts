@@ -2899,6 +2899,24 @@ export async function setSessionContext(
   }
 }
 
+/** one GET /sessions/{id}/context answer: the model-switch dialog's two numbers. */
+export interface SessionContextInfo {
+  tokens: number;
+  context_window: number;
+  model?: string;
+}
+
+/** fetchSessionContext reads the live context estimate and the TARGET slot's window. */
+export async function fetchSessionContext(
+  id: string,
+  model: string,
+): Promise<SessionContextInfo> {
+  const q = model ? `?model=${encodeURIComponent(model)}` : "";
+  const r = await fetch(`/sessions/${encodeURIComponent(id)}/context${q}`);
+  if (!r.ok) throw new Error(`session context: ${r.status}`);
+  return (await r.json()) as SessionContextInfo;
+}
+
 // WorkspaceListing is one GET /workspaces/browse response.
 export interface WorkspaceListing {
   path: string;
