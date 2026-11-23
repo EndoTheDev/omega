@@ -702,6 +702,9 @@ type chatPrepare struct {
 	prov     agent.Provider
 	messages []core.Message
 	tools    map[string]core.Tool
+	// queued holds the rows this launch folded into messages; the launcher ACKS them once
+	// the run is launched (a prepare that never launches hands them back instead).
+	queued []queuedInput
 }
 
 // prepareRun performs the shared pre-launch steps of a session-backed chat run.
@@ -868,10 +871,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		s.wakeLaunches[req.SessionID]++
 		s.wakeMu.Unlock()
 	}
-	// The launch is committed: the rows this turn took are its input now, so they are spent.
-	// Every error return ABOVE this line handed them back through prepareFailed.
-	s.ackQueued(req.SessionID, queuedLead)
-	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
+	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools, queued: queuedLead}, nil
 }
 
 // wakeLaunchCount reports how many wake runs this server has launched for the home - an
@@ -1044,14 +1044,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		ch := s.runs.subscribe(cr.run)
 		flusher, ok := setupSSE(w)
 		if !ok {
-			s.runs.finish(cr.run)
-			s.publishRunState(cr.run.id, false)
+			s.prepareFailed(cr.run, req.SessionID)
 			return
 		}
 		if autoCreated {
 			writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
 			flusher.Flush()
 		}
+		// The rows are spent BEFORE the run goroutine exists: its finish hook returns any
+		// still-unacknowledged rows, so a fast run would otherwise re-queue rows it already
+		// persisted. Every fallible step above this line handed them back instead.
+		s.ackQueued(req.SessionID, cr.queued)
 		// Session-backed chats run DETACHED (the cron runner's detached-turn shape).
 		s.launchRun(context.WithoutCancel(r.Context()), cr.run, cr.prov, cr.messages, cr.tools, req)
 		s.serveRunFrames(w, flusher, cr.run, ch, r.Context())

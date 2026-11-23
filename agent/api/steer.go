@@ -341,10 +341,13 @@ func (s *Server) launchQueued(sessionID string, batch []queuedInput) bool {
 	if err != nil {
 		return false
 	}
-	s.launchRun(ctx, cr.run, cr.prov, cr.messages, cr.tools, req)
 	// The batch IS this turn's input now: acknowledging retires the rows from the in-flight
-	// set so the finish hook cannot re-queue them into a second identical turn.
+	// set BEFORE the run exists, so its finish hook cannot re-queue them into a second
+	// identical turn (and a fast run cannot win the race to hand them back). Rows the
+	// prepare itself took ride cr.queued (parked while this launch was in flight).
 	s.ackQueued(sessionID, batch)
+	s.ackQueued(sessionID, cr.queued)
+	s.launchRun(ctx, cr.run, cr.prov, cr.messages, cr.tools, req)
 	return true
 }
 
