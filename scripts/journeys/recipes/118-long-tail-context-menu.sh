@@ -21,24 +21,12 @@
 # The rows and the registration are pinned in webui/test/panemenu.test.ts,
 # settingsmenu.test.ts and terminalmenu.test.ts. This recipe is the browser half.
 #
-# Residue: the bottom pane's terminal claims a pty; the trap DELETEs every session id this
-# run minted (the before/after diff of GET /terminal/sessions), so the suite leaves no
-# shell behind.
+# Residue: the bottom pane's terminal claims a pty on mount, and the pane outlives the
+# page. lib.sh reaps every session this recipe minted (the source-time baseline against
+# GET /terminal/sessions, killed in journey_exit_cleanup) - this recipe carries no trap
+# of its own, so run.sh's residue trap stays installed.
 . "${JROOT:?run must export JROOT}/lib.sh"
 B="${JOURNEY_BASE_URL:?}"
-
-term_ids() {
-  curl -s "$B/terminal/sessions" | grep -oE '"id": ?"[a-f0-9-]+"' | sed 's/.*"\([a-f0-9-]*\)".*/\1/' | sort
-}
-TERM_BEFORE=$(term_ids)
-cleanup_term() {
-  local id
-  for id in $(comm -13 <(printf '%s\n' "$TERM_BEFORE") <(term_ids)); do
-    curl -s -X DELETE "$B/terminal/$id" >/dev/null 2>&1 || true
-  done
-}
-cleanup() { cleanup_term; }
-trap cleanup EXIT
 
 TAG=$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')
 PROBE="jrn-pane-menu-$TAG"

@@ -20,7 +20,10 @@
 #
 # No model needed: the "new row" is a REST session create, not a run.
 . "${JROOT:?run must export JROOT}/lib.sh"
-trap cleanup_journey_residue EXIT
+# CHAINED to the ONE exit path: this recipe cuts the tab's network on purpose,
+# so the exit must still put it back online and clear the client state a later
+# journey would inherit (journey_exit_cleanup = clean room + residue).
+trap journey_exit_cleanup EXIT
 
 open_app
 step "ok: app open"

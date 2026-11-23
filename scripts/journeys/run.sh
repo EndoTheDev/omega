@@ -907,6 +907,13 @@ for recipe in $want; do
     # a die inside a command substitution stopped only that subshell; the mark
     # it left is this recipe's real verdict (mechanism: the substitution boundary)
     journey_dead_check
+    # ... and the ONE exit path runs HERE, not only through the trap above:
+    # twelve recipes install an EXIT trap of their own (a board reap, a cron
+    # delete), and a trap REPLACES the subshell's - so the residue reap and the
+    # clean room would silently not run for them, and each of their page loads
+    # would leave a pty behind. A recipe's own trap runs after this one, at the
+    # subshell's exit, so it must not depend on the page.
+    journey_exit_cleanup
   ) >> "$log" 2>&1 9>&- &
   # >> not > on the log above: the WATCHDOG writes this same file (the cap's
   # verdict lines), and a truncating fd there keeps offset 0, so the recipe's own

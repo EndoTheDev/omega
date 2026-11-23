@@ -47,7 +47,12 @@ A recipe is bash: source `lib.sh`, `open_app`, drive the page with `js`
 `die` on red - `die` captures a screenshot and reaps the run's residue.
 File names sort the suite: `NN-slug.sh` or `NN-slug.journey.sh`, both
 matched. A recipe keeps nothing behind (sessions `jrn-*`, board tasks,
-roster agent homes are reaped at every exit path).
+roster agent homes and the terminal sessions its page loads claim are
+reaped at every exit path). The residue path runs at the recipe's return
+and again from the subshell's `EXIT` trap, so a recipe that installs its
+own `EXIT` trap still gets it - and that trap runs AFTER the residue
+path, which means it must not depend on the page (the terminal reap
+releases it).
 
 Browser-level witnesses exist because a shape is not visible to Go
 tests. Where a UI geometry or gesture contract has both halves, the
