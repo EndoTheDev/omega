@@ -8,6 +8,10 @@ The domain language, one home. Every term defined once; code, docs and UI text u
 
 **session** - a conversation tree, persisted, with a title, a context start, and a durable stats row. Auto-created on the first send; survives compaction. Not a process or a connection.
 
+**session file** - one session's append-only JSONL store at `<home>/data/sessions/<id>.jsonl`: a header line, one line per message, and one line per metadata change, each naming its session. The files are the source of truth; `omega.db` is a derived index over them and is rebuilt from them when missing.
+
+**index** - the derived SQLite database beside the session files (`data/omega.db`): folded session metadata, message rows, the FTS search tables, image captions and the pending-calls ledger. Disposable by construction - delete it and the next open rebuilds it, or run `/reindex`.
+
 **turn** - one user message and everything it triggers. The unit of the transcript. A turn may end with tool calls still pending; their results arrive later and start a new turn (see ADR 0004).
 
 **run** - one turn's execution through the agent loop; can span many provider calls. Owns usage accounting and the last-run stats. One run, many provider calls.

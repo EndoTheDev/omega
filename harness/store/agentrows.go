@@ -1,153 +1,144 @@
 package store
 
-// agentrows.go: the one-time boot migration out of the shared sessions-store shape.
-// Copy-then-verify-then-delete inside one transaction: a failed move leaves both stores
-// untouched, never truncated.
+// agentrows.go: the boot migrations that move agent-tagged sessions between stores. Under
+// the JSONL layout a session's store is a FILE, so these move files and re-index the
+// destination - copy-then-verify, and the source row goes only after the copy lands.
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
-// MigrateAgentRows moves agent-tagged rows out of mainDSN into their per-agent stores.
-// An agent with no rows in the main store is skipped entirely - no store file appears
-// for an agent that never ran. Idempotent: an already-migrated home has no rows left,
-// so the second boot is a no-op.
+// MigrateAgentRows moves agent-tagged sessions out of mainDSN into their per-agent
+// stores. An agent with no sessions in the main store is skipped entirely - no store
+// appears for an agent that never ran. Idempotent: an already-migrated home has nothing
+// left to move, so the second boot is a no-op.
 func MigrateAgentRows(mainDSN string, agentDSNs map[string]string) error {
-	if len(agentDSNs) == 0 {
+	if len(agentDSNs) == 0 || !homeHasStore(mainDSN) {
 		return nil
 	}
-	mainDB, err := sql.Open("sqlite", mainDSN+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
+	ctx := context.Background()
+	main, err := Open(mainDSN)
 	if err != nil {
 		return fmt.Errorf("agent rows migration: open main store: %w", err)
 	}
-	pending := map[string]string{}
+	defer main.Close()
 	for name, agentDSN := range agentDSNs {
-		var count int
-		if err := mainDB.QueryRow(`SELECT COUNT(*) FROM sessions WHERE agent = ?`, name).Scan(&count); err != nil {
-			mainDB.Close()
-			return fmt.Errorf("agent rows migration: count %s: %w", name, err)
+		sessions, err := main.ListAgentSessions(ctx, name)
+		if err != nil {
+			return fmt.Errorf("agent rows migration: list %s: %w", name, err)
 		}
-		if count == 0 {
-			continue // never wrote as this agent: no store file for it
+		if len(sessions) == 0 {
+			continue // never wrote as this agent: no store for it
 		}
-		pending[name] = agentDSN
-	}
-	if err := mainDB.Close(); err != nil {
-		return fmt.Errorf("agent rows migration: close main store: %w", err)
-	}
-	for name, agentDSN := range pending {
-		if err := moveAgentRows(mainDSN, name, agentDSN); err != nil {
+		if err := moveAgentFiles(ctx, main, agentDSN, name, sessions); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// sessionInsertCols / sessionSelectCols share one column order. The delegate_parent
-// link gets the same treatment: delegate lineage is display metadata, never context, so
-// a NULLed stale link costs nothing.
-const sessionInsertCols = `id, parent_id, delegate_parent, label, created_at, updated_at,
-	prompt_tokens, completion_tokens,
-	pinned, archived, title_state, last_read_at,
-	agent, last_run, model, workspace, summary, listed, context_start, context_summary`
-
-const sessionSelectCols = `id,
-	CASE WHEN parent_id IS NULL OR parent_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)
-	     THEN parent_id ELSE NULL END,
-	CASE WHEN delegate_parent IS NULL OR delegate_parent IN (SELECT id FROM maindb.sessions WHERE agent = ?1)
-	     THEN delegate_parent ELSE NULL END,
-	label, created_at, updated_at,
-	prompt_tokens, completion_tokens,
-	pinned, archived, title_state, last_read_at,
-	agent, last_run, model, workspace, summary, listed, context_start, context_summary`
-
-func moveAgentRows(mainDSN, name, agentDSN string) error {
-	agentStore, err := Open(agentDSN)
+// moveAgentFiles relocates one agent's session files and re-indexes them in the
+// destination. The count check is the verify step: every source file must land before the
+// source rows are dropped.
+func moveAgentFiles(ctx context.Context, main *Store, agentDSN, name string, sessions []core.Session) error {
+	dest, err := Open(agentDSN)
 	if err != nil {
 		return fmt.Errorf("agent rows migration: open %s store: %w", name, err)
 	}
-	defer agentStore.Close()
-	conn, err := agentStore.db.Conn(context.Background())
-	if err != nil {
-		return fmt.Errorf("agent rows migration: %s: conn: %w", name, err)
+	defer dest.Close()
+	if err := os.MkdirAll(dest.sessionsDir, 0o755); err != nil {
+		return fmt.Errorf("agent rows migration: %s: sessions dir: %w", name, err)
 	}
-	defer conn.Close()
-	tx, err := conn.BeginTx(context.Background(), nil)
-	if err != nil {
-		return fmt.Errorf("agent rows migration: %s: begin: %w", name, err)
+	moved := make([]string, 0, len(sessions))
+	// Both halves move under their store's write lock: the source loses files the main
+	// index still lists, the destination gains files nothing index-scanned yet, and a
+	// concurrent append or catch-up in either home must not see half a move.
+	if err := func() error {
+		main.writeMu.Lock()
+		defer main.writeMu.Unlock()
+		for _, sess := range sessions {
+			src := filepath.Join(main.sessionsDir, sess.ID+".jsonl")
+			dst := filepath.Join(dest.sessionsDir, sess.ID+".jsonl")
+			if err := moveFile(src, dst); err != nil {
+				return fmt.Errorf("agent rows migration: %s: %s: %w", name, sess.ID, err)
+			}
+			moved = append(moved, sess.ID)
+		}
+		return nil
+	}(); err != nil {
+		return err
 	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`ATTACH DATABASE ? AS maindb`, mainDSN); err != nil {
-		return fmt.Errorf("agent rows migration: %s: attach main: %w", name, err)
+	if err := func() error {
+		dest.writeMu.Lock()
+		defer dest.writeMu.Unlock()
+		for _, id := range moved {
+			path := filepath.Join(dest.sessionsDir, id+".jsonl")
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("agent rows migration: %s: %s did not land: %w", name, id, err)
+			}
+			if err := dest.indexFile(ctx, id, path, 0); err != nil {
+				return fmt.Errorf("agent rows migration: %s: index %s: %w", name, id, err)
+			}
+		}
+		return nil
+	}(); err != nil {
+		return err
 	}
-	stmt := `INSERT INTO sessions (` + sessionInsertCols + `)
-		SELECT ` + sessionSelectCols + ` FROM maindb.sessions WHERE agent = ?1`
-	if _, err := tx.Exec(stmt, name); err != nil {
-		return fmt.Errorf("agent rows migration: %s: copy sessions: %w", name, err)
-	}
-	if _, err := tx.Exec(`INSERT INTO messages (id, session_id, role, payload, created_at)
-		SELECT id, session_id, role, payload, created_at FROM maindb.messages
-		WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name); err != nil {
-		return fmt.Errorf("agent rows migration: %s: copy messages: %w", name, err)
-	}
-	// Verify before deleting: moved row counts must equal the source counts.
-	var movedSessions, sourceSessions, movedMessages, sourceMessages int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&movedSessions); err != nil {
-		return fmt.Errorf("agent rows migration: %s: count moved: %w", name, err)
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM maindb.sessions WHERE agent = ?1`, name).Scan(&sourceSessions); err != nil {
-		return fmt.Errorf("agent rows migration: %s: count source: %w", name, err)
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM messages WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&movedMessages); err != nil {
-		return fmt.Errorf("agent rows migration: %s: count moved messages: %w", name, err)
-	}
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM maindb.messages WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name).Scan(&sourceMessages); err != nil {
-		return fmt.Errorf("agent rows migration: %s: count source messages: %w", name, err)
-	}
-	if movedSessions != sourceSessions || movedMessages != sourceMessages {
-		return fmt.Errorf("agent rows migration: %s: moved %d/%d sessions, %d/%d messages - aborting, both stores untouched",
-			name, movedSessions, sourceSessions, movedMessages, sourceMessages)
-	}
-	if _, err := tx.Exec(`DELETE FROM maindb.messages WHERE session_id IN (SELECT id FROM maindb.sessions WHERE agent = ?1)`, name); err != nil {
-		return fmt.Errorf("agent rows migration: %s: clear source messages: %w", name, err)
-	}
-	if _, err := tx.Exec(`DELETE FROM maindb.sessions WHERE agent = ?1`, name); err != nil {
-		return fmt.Errorf("agent rows migration: %s: clear source sessions: %w", name, err)
-	}
-	// SQLite refuses a DETACH inside an open transaction.
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("agent rows migration: %s: commit: %w", name, err)
-	}
-	if _, err := conn.ExecContext(context.Background(), `DETACH DATABASE maindb`); err != nil {
-		return fmt.Errorf("agent rows migration: %s: detach: %w", name, err)
+	if err := main.catchUp(ctx); err != nil {
+		return fmt.Errorf("agent rows migration: main catch-up: %w", err)
 	}
 	return nil
 }
 
-// RetagAgentSessions rewrites the agent tag of every session row in ONE store. A
-// missing destination store is a no-op: a source that never ran has nothing to re-tag,
-// and the clone must not create a database it has no rows.
+// moveFile renames across directories, falling back to copy-and-remove when the two live
+// on different volumes.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	if err := copyFile(src, dst); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+// RetagAgentSessions rewrites the agent tag of every session in ONE store. Sessions bind
+// to an agent at creation, so a clone's copy carries the source's tag until this runs. A
+// store that never ran is a no-op: the clone must not create one.
 func RetagAgentSessions(dsn, to string, from ...string) error {
-	if _, err := os.Stat(dsn); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
+	if !homeHasStore(dsn) {
+		return nil
+	}
+	if to == "" {
+		to = "default"
+	}
+	ctx := context.Background()
+	st, err := Open(dsn)
+	if err != nil {
 		return fmt.Errorf("retag agent sessions: %w", err)
 	}
-	db, err := sql.Open("sqlite", dsn+"?_pragma=foreign_keys(1)&_journal_mode=WAL&_busy_timeout=5000")
-	if err != nil {
-		return fmt.Errorf("retag agent sessions: open: %w", err)
-	}
-	defer db.Close()
+	defer st.Close()
 	for _, src := range from {
+		if src == "" {
+			src = "default"
+		}
 		if src == to {
 			continue
 		}
-		if _, err := db.Exec(`UPDATE sessions SET agent = ? WHERE agent = ?`, to, src); err != nil {
+		sessions, err := st.ListAgentSessions(ctx, src)
+		if err != nil {
 			return fmt.Errorf("retag agent sessions %q -> %q: %w", src, to, err)
+		}
+		for _, sess := range sessions {
+			tag := to
+			if err := st.appendMeta(ctx, sess.ID, &changes{Agent: &tag}); err != nil {
+				return fmt.Errorf("retag agent sessions %q -> %q: %s: %w", src, to, sess.ID, err)
+			}
 		}
 	}
 	return nil

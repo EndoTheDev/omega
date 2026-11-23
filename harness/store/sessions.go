@@ -18,24 +18,14 @@ import (
 
 var _ agent.AgentSessionStore = (*Store)(nil)
 
-// CreateAgentSession creates a session bound to agentName - the binding is written on
-// the row itself, never inferred later. The id-must-be-new semantics are the same as
+// CreateAgentSession creates a session bound to agentName - the binding is written in
+// the file's header, never inferred later. The id-must-be-new semantics are the same as
 // CreateSession.
 func (s *Store) CreateAgentSession(ctx context.Context, id, parentID, label, agentName string) error {
 	if agentName == "" {
 		agentName = agent.DefaultAgentName
 	}
-	now := core.NowISO()
-	var parent any
-	if parentID != "" {
-		parent = parentID
-	}
-	// last_read_at = created time.
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at, agent)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		id, parent, label, now, now, now, agentName)
-	return err
+	return s.createSessionFile(ctx, id, parentID, "", label, agentName, true)
 }
 
 // ListAgentSessions returns the sessions bound to the given agent, ordered.
@@ -67,12 +57,7 @@ func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) e
 	if agentName == "" {
 		agentName = agent.DefaultAgentName
 	}
-	now := core.NowISO()
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at, agent, listed)
-		 VALUES (?, NULL, ?, ?, ?, ?, ?, 0)`,
-		id, CanonicalChatLabel, now, now, now, agentName)
-	return err
+	return s.createSessionFile(ctx, id, "", "", CanonicalChatLabel, agentName, false)
 }
 
 // SetSessionListed sets a session's list-visibility bit. `listed = 1` is the human's
@@ -80,12 +65,7 @@ func (s *Store) CreateCanonicalChat(ctx context.Context, id, agentName string) e
 // canonical chat), which opens from the agents roster and never from the sidebar. The
 // CREATE path never needs this (CreateCanonicalChat writes the bit itself).
 func (s *Store) SetSessionListed(ctx context.Context, id string, listed bool) error {
-	v := 0
-	if listed {
-		v = 1
-	}
-	_, err := s.db.ExecContext(ctx, `UPDATE sessions SET listed = ? WHERE id = ?`, v, id)
-	return err
+	return s.appendMeta(ctx, id, &changes{Listed: &listed})
 }
 
 const CanonicalChatLabel = "canonical"

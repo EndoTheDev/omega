@@ -34,10 +34,12 @@ func newFileStore(t *testing.T) *Store {
 	return s
 }
 
+// ageSession backdates a session's activity. It writes a meta line, so the file - not
+// just the derived row - carries the backdate.
 func ageSession(t *testing.T, s *Store, id string, daysAgo int) {
 	t.Helper()
-	if _, err := s.db.Exec(`UPDATE sessions SET updated_at = ? WHERE id = ?`,
-		timeAgo(daysAgo), id); err != nil {
+	stamp := timeAgo(daysAgo)
+	if err := s.appendMeta(context.Background(), id, &changes{UpdatedAt: &stamp}); err != nil {
 		t.Fatalf("backdate %s: %v", id, err)
 	}
 }

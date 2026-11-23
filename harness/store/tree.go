@@ -13,28 +13,22 @@ func conversationRole(role string) bool {
 	return role == "user" || role == "assistant" || role == "tool"
 }
 
+// loadRows reads a session's messages from its file: the truth, in append order. A
+// session with no file and no messages answers nil, never an empty slice.
 func (s *Store) loadRows(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, role, payload, created_at FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
+	folded, err := s.readSessionFile(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []core.StoredMessage
-	for rows.Next() {
-		var role, payload string
-		sm := core.StoredMessage{}
-		if err := rows.Scan(&sm.ID, &role, &payload, &sm.CreatedAt); err != nil {
-			return nil, err
-		}
-		m, err := core.DecodeMessage(role, []byte(payload))
+	for _, line := range folded.messages {
+		msg, err := core.DecodeMessage(line.Role, line.Payload)
 		if err != nil {
 			return nil, err
 		}
-		sm.Message = m
-		out = append(out, sm)
+		out = append(out, core.StoredMessage{ID: line.ID, Message: msg, CreatedAt: line.CreatedAt})
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // loadViewRows reads the rows a PARENTED session's tree reads. Pre-split delegate
@@ -135,10 +129,7 @@ func (e *parentMsgError) Error() string {
 	return "parent message " + e.parent + " not found in session " + e.session
 }
 
-// AppendMessageRow inserts an already-encoded row.
+// AppendMessageRow appends an already-encoded message line.
 func (s *Store) AppendMessageRow(ctx context.Context, sessionID, role, payload, createdAt string) error {
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
-		sessionID, role, payload, createdAt)
-	return err
+	return s.appendMessageLine(ctx, sessionID, role, []byte(payload), createdAt)
 }

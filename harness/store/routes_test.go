@@ -473,3 +473,48 @@ func TestRoutePatternsAreMethodScoped(t *testing.T) {
 		t.Fatalf("POST export status = %d, want 405", rec.Code)
 	}
 }
+
+// TestReindexRouteRebuildsAndSearchStaysShaped: the recovery verb answers its report,
+// and /sessions/search keeps the same row shape after a rebuild.
+func TestReindexRouteRebuildsAndSearchStaysShaped(t *testing.T) {
+	_, st, mux, _ := newRoutesFixture(t)
+	ctx := context.Background()
+	if err := st.CreateSession(ctx, "reidx", "", "reindex fixture"); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := st.AppendMessage(ctx, "reidx", core.NewUser("a needle in the haystack")); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+
+	before := serve(t, mux, http.MethodGet, "/sessions/search?q=needle", "")
+	if before.Code != http.StatusOK {
+		t.Fatalf("search before reindex: %d %s", before.Code, before.Body.String())
+	}
+
+	rec := serve(t, mux, http.MethodPost, "/sessions/reindex", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("reindex: %d %s", rec.Code, rec.Body.String())
+	}
+	var report reindexReport
+	if err := json.Unmarshal(rec.Body.Bytes(), &report); err != nil {
+		t.Fatalf("reindex body: %v", err)
+	}
+	if !report.Rebuilt || report.Sessions != 1 {
+		t.Fatalf("reindex report = %+v, want rebuilt with 1 session", report)
+	}
+
+	after := serve(t, mux, http.MethodGet, "/sessions/search?q=needle", "")
+	if after.Code != http.StatusOK {
+		t.Fatalf("search after reindex: %d %s", after.Code, after.Body.String())
+	}
+	var rows []searchHit
+	if err := json.Unmarshal(after.Body.Bytes(), &rows); err != nil {
+		t.Fatalf("search body after reindex: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "reidx" {
+		t.Fatalf("search after reindex = %+v, want the reidx hit", rows)
+	}
+	if rows[0].Snippet == "" {
+		t.Fatal("snippet empty after rebuild")
+	}
+}

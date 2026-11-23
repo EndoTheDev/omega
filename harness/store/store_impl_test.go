@@ -1141,6 +1141,8 @@ func TestComputeInsightsFilteredByDays(t *testing.T) {
 		t.Fatalf("create old: %v", err)
 	}
 	tenDaysAgo := time.Now().AddDate(0, 0, -10).Format(time.RFC3339)
+	// created_at lives in the session header and has no setter, so the fixture backdates
+	// the derived row - which is exactly what the insights window reads.
 	if _, err := s.db.ExecContext(ctx,
 		`UPDATE sessions SET created_at = ? WHERE id = ?`, tenDaysAgo, "old"); err != nil {
 		t.Fatalf("update old session time: %v", err)

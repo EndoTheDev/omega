@@ -45,6 +45,7 @@ unchanged.
 | `/attach-file`                            | POST               | multipart file upload -> session upload dir reference                                                                                                                                                                                                       |
 | `/sessions`                               | GET, POST          | list / create                                                                                                                                                                                                                                               |
 | `/sessions/search?q=`                     | GET                | FTS5 content+label search                                                                                                                                                                                                                                   |
+| `/sessions/reindex`                       | POST               | rebuild the derived index from the session files (the corruption-recovery verb)                                                                                                                                                                             |
 | `/sessions/{id}`                          | GET, PATCH, DELETE | detail / flags / remove                                                                                                                                                                                                                                     |
 | `/sessions/{id}/events`                   | GET                | SSE reattach to a live run                                                                                                                                                                                                                                  |
 | `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
@@ -580,9 +581,10 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
   layer plus the hand-owned `crons.yaml` schedules), the skill tree,
   `user.md`, `memory.md`, `soul.md`, and every store in the source's
   `data/` (`omega.db` sessions, `notifications.db`, `kanban.db`,
-  `ledger.db`). Stores are copied through SQLite (`VACUUM INTO`), never
-  as files: a live WAL database byte-copied is a torn snapshot. The
-  copied store's session rows are then re-tagged to the clone. A clone
+  `ledger.db`). A session store's files are copied as files and its
+  index through SQLite (`VACUUM INTO`), never a live WAL database
+  byte-copied - that is a torn snapshot. The copied store's sessions
+  are then re-tagged to the clone. A clone
   of `default` is the same copy minus the home config - that file
   carries the provider secret, and an agent file holds none - so the
   clone starts on the scaffold template; main's `crons.yaml` travels only

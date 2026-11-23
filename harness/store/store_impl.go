@@ -43,21 +43,36 @@ func (s *Store) Ping(ctx context.Context) error {
 	return nil
 }
 
-// Store persists sessions and its message history in SQLite.
-// It is safe for concurrent use via *sql.DB.
+// Store persists sessions in append-only JSONL files (the truth) and keeps a derived
+// SQLite index over them for listing and search. It is safe for concurrent use: every
+// mutation - appends, catch-up, rebuild, delete, rename - serializes on writeMu, and
+// index reads go through *sql.DB.
 type Store struct {
 	db *sql.DB
 	// identity is the store's own agent binding. Empty = main; every session row the store
 	// filters must be.
 	identity string
-	dbPath string
-	hygMu sync.RWMutex
-	hyg   HygieneConfig
-	home      string
-	agentName string
-	routeMu   sync.Mutex
-	routes    map[string]*Store
-	agents    map[string]*Store
+	dbPath  string
+	// sessionsDir is where the session files live (beside the index database).
+	sessionsDir string
+	// memDir marks a :memory: store, whose session files live in a temp directory that
+	// Close removes - the in-memory store is still file-truth, just not durable.
+	memDir bool
+	// writeMu serializes every mutation of the store's two halves. The index and the files
+	// must never move under two goroutines at once: a catch-up scanning a file an append is
+	// writing is how a line gets lost.
+	writeMu sync.Mutex
+	// maxMessageID is the highest message id any session file holds, as learned at boot
+	// and advanced by every line the store writes or indexes. The id space is the truth's;
+	// allocating it from the index would let a failed apply hand out an id twice.
+	maxMessageID int64
+	hygMu        sync.RWMutex
+	hyg          HygieneConfig
+	home         string
+	agentName    string
+	routeMu      sync.Mutex
+	routes       map[string]*Store
+	agents       map[string]*Store
 }
 
 // SetHygieneConfig swaps the hygiene pass's knobs live.
@@ -75,7 +90,8 @@ func (s *Store) HygieneConfig() HygieneConfig {
 	return s.hyg
 }
 
-// Open opens (creating if needed) the SQLite database at dsn and ensures the schema.
+// Open opens (creating if needed) the index at dsn and ensures the schema. The session
+// files beside it are the store; the database is rebuilt from them when absent.
 func Open(dsn string) (*Store, error) {
 	return openStore(dsn)
 }
@@ -85,37 +101,106 @@ func (s *Store) Open(dsn string) error {
 	if err != nil {
 		return err
 	}
-	// Field-by-field: the struct now carries hygMu and a struct copy would swap live.
+	// Field-by-field: the struct now carries mutexes and a struct copy would swap live.
 	s.hygMu.Lock()
 	defer s.hygMu.Unlock()
 	s.db = newStore.db
 	s.identity = newStore.identity
 	s.dbPath = newStore.dbPath
+	s.sessionsDir = newStore.sessionsDir
+	s.memDir = newStore.memDir
+	s.maxMessageID = newStore.maxMessageID
 	return nil
 }
 
 func openStore(dsn string) (*Store, error) {
 	// Data-dir migration runs before the handle opens: a legacy home-root db (with its
-	// -wal/-shm sidecars) is moved into data/ first - never copy-and-leave.
+	// -wal/-shm sidecars) is moved into data/ first - never copy-and-leave. The session
+	// files follow, or the moved database would open beside an empty sessions directory
+	// and every session would vanish from the index.
 	if err := datadir.Migrate(dsn); err != nil {
 		return nil, err
 	}
-	// WAL mode allows concurrent readers + one writer across multiple processes.
-	// foreign_keys rides the DSN, not a post-open PRAGMA: a SQLite pragma is
-	// per-connection, so a one-shot `PRAGMA foreign_keys = ON` covered a single connection
-	// out of the pool and left the rest (the majority under concurrent writers) with
-	// enforcement off - orphaned message rows in, missed ON DELETE CASCADE out.
-	const pragmaFK = "_pragma=foreign_keys(1)"
+	if err := migrateSessionsDir(dsn); err != nil {
+		return nil, err
+	}
+	sessionsDir := sessionsDirFor(dsn)
+	memDir := false
+	if dsn == ":memory:" {
+		dir, err := os.MkdirTemp("", "omega-sessions-")
+		if err != nil {
+			return nil, fmt.Errorf("store: memory sessions dir: %w", err)
+		}
+		sessionsDir, memDir = dir, true
+	}
+	// A memory store's session files are a scratch directory: any failure on the way up
+	// leaves nothing behind.
+	fail := func(err error) (*Store, error) {
+		if memDir {
+			_ = os.RemoveAll(sessionsDir)
+		}
+		return nil, err
+	}
+	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
+		return fail(fmt.Errorf("store: sessions dir: %w", err))
+	}
+	// A pre-JSONL database is a STORE, not an index: it migrates to files, verifies by
+	// read-back, and only then gets archived aside.
+	var carry legacyCarry
+	if isLegacyStore(dsn) {
+		migrated, err := migrateLegacyStore(dsn, sessionsDir)
+		if err != nil {
+			return fail(err)
+		}
+		if _, err := archiveLegacyStore(dsn); err != nil {
+			return fail(err)
+		}
+		carry = migrated
+	}
+	db, err := openIndexDB(dsn)
+	if err != nil {
+		return fail(err)
+	}
+	// Everything past the handle closes it on the way out.
+	closeFail := func(err error) (*Store, error) {
+		_ = db.Close()
+		return fail(err)
+	}
+	s := &Store{db: db, identity: storeAgentIdentity(), dbPath: dsn, sessionsDir: sessionsDir, memDir: memDir}
+	if err := s.ensureIndexSchema(); err != nil {
+		return closeFail(err)
+	}
+	if len(carry.captions) > 0 || len(carry.pending) > 0 {
+		if err := s.applyCarry(carry); err != nil {
+			return closeFail(err)
+		}
+	}
+	// Boot recovery runs before the store is shared, which is the only moment a session
+	// file may be cut: crash residue goes, and the id ceiling comes back from the truth.
+	ceiling, err := s.recoverSessionFiles()
+	if err != nil {
+		return closeFail(err)
+	}
+	s.maxMessageID = ceiling
+	// Boot catch-up: index only what the files grew by since the last open.
+	if err := s.catchUp(context.Background()); err != nil {
+		return closeFail(err)
+	}
+	return s, nil
+}
+
+// openIndexDB opens the derived index with the pragmas every pooled connection needs: WAL
+// mode for concurrent readers plus one writer across processes, and a busy timeout so a
+// second writer waits instead of failing. The index declares no foreign keys - lineage
+// lives in the session files and the store enforces it on the write path - so no FK
+// pragma rides here.
+func openIndexDB(dsn string) (*sql.DB, error) {
 	dsnParams := dsn
 	switch {
 	case !strings.Contains(dsn, "?"):
-		dsnParams += "?" + pragmaFK + "&_journal_mode=WAL&_busy_timeout=5000"
-	case strings.Contains(dsn, "_pragma=foreign_keys"):
-		// the caller's DSN already carries the FK pragma
-	case strings.Contains(dsn, "_journal_mode="):
-		dsnParams += "&" + pragmaFK
-	default:
-		dsnParams += "&" + pragmaFK + "&_journal_mode=WAL&_busy_timeout=5000"
+		dsnParams += "?_journal_mode=WAL&_busy_timeout=5000"
+	case !strings.Contains(dsn, "_journal_mode="):
+		dsnParams += "&_journal_mode=WAL&_busy_timeout=5000"
 	}
 	db, err := sql.Open("sqlite", dsnParams)
 	if err != nil {
@@ -128,22 +213,26 @@ func openStore(dsn string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	s := &Store{db: db, identity: storeAgentIdentity(), dbPath: dsn}
-	if err := s.migrate(); err != nil {
-		db.Close()
-		return nil, err
-	}
-	return s, nil
+	return db, nil
 }
 
 // Close closes the underlying database and every agent home store this one opened.
 func (s *Store) Close() error {
 	homesErr := s.closeHomes()
-	if err := s.db.Close(); err != nil {
-		return err
+	err := s.db.Close()
+	if s.memDir && s.sessionsDir != "" {
+		_ = os.RemoveAll(s.sessionsDir)
 	}
-	return homesErr
+	return cmpErr(err, homesErr)
 }
+
+func cmpErr(first, second error) error {
+	if first != nil {
+		return first
+	}
+	return second
+}
+
 
 // DBPath reports the dsn this store opened with - the session database file a child
 // process must open to see the rows this store wrote.
@@ -151,222 +240,13 @@ func (s *Store) DBPath() string {
 	return s.dbPath
 }
 
-func (s *Store) migrate() error {
-	_, err := s.db.Exec(`
-CREATE TABLE IF NOT EXISTS sessions (
-	id         TEXT PRIMARY KEY,
-	parent_id  TEXT REFERENCES sessions(id) ON DELETE CASCADE,
-	delegate_parent TEXT REFERENCES sessions(id) ON DELETE CASCADE,
-	label      TEXT NOT NULL DEFAULT '',
-	created_at TEXT NOT NULL,
-	updated_at TEXT NOT NULL,
-	prompt_tokens INTEGER NOT NULL DEFAULT 0,
-	completion_tokens INTEGER NOT NULL DEFAULT 0,
-	pinned INTEGER NOT NULL DEFAULT 0,
-	archived INTEGER NOT NULL DEFAULT 0,
-	title_state INTEGER NOT NULL DEFAULT 0,
-	last_read_at TEXT NOT NULL DEFAULT '',
-	agent TEXT NOT NULL DEFAULT 'default',
-	last_run TEXT NOT NULL DEFAULT '',
-	model TEXT NOT NULL DEFAULT '',
-	provider TEXT NOT NULL DEFAULT '',
-	workspace TEXT NOT NULL DEFAULT '',
-	summary TEXT NOT NULL DEFAULT '',
-	listed    INTEGER NOT NULL DEFAULT 1,
-	context_start   TEXT NOT NULL DEFAULT '',
-	context_summary TEXT NOT NULL DEFAULT ''
-);
-CREATE TABLE IF NOT EXISTS messages (
-	id         INTEGER PRIMARY KEY AUTOINCREMENT,
-	session_id TEXT NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
-	role       TEXT NOT NULL,
-	payload    TEXT NOT NULL,
-	created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, id);
-
--- FTS5 full-text index over message content for /search.
--- Column name 'payload' matches the messages table column so FTS5
--- external content mode can read it directly.
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
-	session_id UNINDEXED,
-	payload,
-	content='messages',
-	content_rowid='id'
-);
-CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
-	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
-END;
-CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
-	INSERT INTO messages_fts(messages_fts, rowid, session_id, payload) VALUES ('delete', old.id, old.session_id, old.payload);
-END;
-CREATE TRIGGER IF NOT EXISTS messages_au AFTER UPDATE ON messages BEGIN
-	INSERT INTO messages_fts(messages_fts, rowid, session_id, payload) VALUES ('delete', old.id, old.session_id, old.payload);
-	INSERT INTO messages_fts(rowid, session_id, payload) VALUES (new.id, new.session_id, new.payload);
-END;
-
--- FTS5 index over session labels and hygiene summaries - the title
--- and summary halves of the unified /sessions/search. Standalone (no
--- external content): one row per session, kept in sync by these
--- triggers on INSERT, label UPDATE, summary UPDATE and DELETE. Labels
--- change in three places (manual rename, auto-title, creation);
--- summaries arrive from the hygiene pass - trigger coverage beats a
--- hook at each call site.
-CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
-	session_id UNINDEXED,
-	label,
-	summary
-);
--- Image captions keyed by content hash (vision_model knob). Captions
--- are shared across sessions by design: one row per distinct image.
-CREATE TABLE IF NOT EXISTS image_captions (
-	image_id   TEXT PRIMARY KEY,
-	caption    TEXT NOT NULL,
-	created_at TEXT NOT NULL
-);
--- The pending-calls table: yield-class tool calls dispatched and awaiting their
--- result. Durable across restarts - the serve-start boot recovery sweep reads it
--- (All) and injects a synthetic timeout result per entry. Rows are keyed
--- (session, call id); Settle deletes.
-CREATE TABLE IF NOT EXISTS pending_calls (
-	session_id    TEXT NOT NULL,
-	call_id       TEXT NOT NULL,
-	tool_name     TEXT NOT NULL,
-	arguments     TEXT NOT NULL DEFAULT '',
-	dispatched_at TEXT NOT NULL,
-	PRIMARY KEY (session_id, call_id)
-);
-CREATE TRIGGER IF NOT EXISTS sessions_ai AFTER INSERT ON sessions BEGIN
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, new.label, new.summary);
-END;
--- The label and summary triggers both read the OTHER column from the
--- sessions row: rewriting either field reindexes both, so a rename
--- never drops the summary from the index (and the other way around).
-CREATE TRIGGER IF NOT EXISTS sessions_au AFTER UPDATE OF label ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, new.label, (SELECT summary FROM sessions WHERE id = new.id));
-END;
-CREATE TRIGGER IF NOT EXISTS sessions_asum AFTER UPDATE OF summary ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, (SELECT label FROM sessions WHERE id = new.id), new.summary);
-END;
-CREATE TRIGGER IF NOT EXISTS sessions_ad AFTER DELETE ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-END;
--- Plain DELETE FROM (not the fts5 'delete' special command): as of
--- SQLite 3.53 that command errors on regular tables - it only works
--- for contentless/external-content indexes (messages_fts uses it there
--- because its content table backs the index). A regular fts5 row
--- deletes through SQL like any table.
-`)
-	if err != nil {
-		return err
-	}
-	// Rebuild FTS index to pick up any messages that existed before the FTS table was.
-	s.db.Exec("INSERT INTO messages_fts(messages_fts) VALUES('rebuild')")
-	// Add columns that may be missing from older databases. SQLite does not support IF NOT
-	// EXISTS on ALTER TABLE, so we catch the "duplicate column" error and ignore it.
-	for _, stmt := range []string{
-		`ALTER TABLE sessions ADD COLUMN parent_id TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
-		`ALTER TABLE sessions ADD COLUMN delegate_parent TEXT REFERENCES sessions(id) ON DELETE CASCADE`,
-		`ALTER TABLE sessions ADD COLUMN label TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE sessions ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE sessions ADD COLUMN title_state INTEGER NOT NULL DEFAULT 0`,
-		`ALTER TABLE sessions ADD COLUMN last_read_at TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN agent TEXT NOT NULL DEFAULT 'default'`,
-		`ALTER TABLE sessions ADD COLUMN last_run TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN model TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN provider TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN workspace TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN listed INTEGER NOT NULL DEFAULT 1`,
-		`ALTER TABLE sessions ADD COLUMN context_start TEXT NOT NULL DEFAULT ''`,
-		`ALTER TABLE sessions ADD COLUMN context_summary TEXT NOT NULL DEFAULT ''`,
-	} {
-		if _, err := s.db.Exec(stmt); err != nil {
-			// SQLite error for duplicate column: "duplicate column name"
-			if !strings.Contains(err.Error(), "duplicate column") {
-				return err
-			}
-			continue
-		}
-		// The column landed on this open: backfill the data fix that belongs to it. Runs
-		// once, exactly when the column is new. Sessions that already carried a label before
-		// title_state existed are final (2) - a manual label is never retitled.
-		if strings.Contains(stmt, "title_state") {
-			if _, err := s.db.Exec(`UPDATE sessions SET title_state = 2 WHERE label != ''`); err != nil {
-				return err
-			}
-		}
-		// last_read_at arrives empty for every existing row.
-		if strings.Contains(stmt, "last_read_at") {
-			if _, err := s.db.Exec(`UPDATE sessions SET last_read_at = updated_at`); err != nil {
-				return err
-			}
-		}
-	}
-	// The label+summary index: standalone FTS tables have no 'rebuild', so a full.
-	s.db.Exec(`DELETE FROM sessions_fts;
-INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
-	// Existing databases predate the summary index column: a CREATE VIRTUAL TABLE IF NOT
-	// EXISTS never broadens its column list, so a stale two-column index would silently
-	// drop every summary from search.
-	var ftsSummary int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('sessions_fts') WHERE name = 'summary'`).Scan(&ftsSummary); err == nil && ftsSummary == 0 {
-		s.db.Exec(`DROP TRIGGER IF EXISTS sessions_ai; DROP TRIGGER IF EXISTS sessions_au; DROP TRIGGER IF EXISTS sessions_asum; DROP TRIGGER IF EXISTS sessions_ad; DROP TABLE sessions_fts;
-CREATE VIRTUAL TABLE sessions_fts USING fts5(session_id UNINDEXED, label, summary);
-CREATE TRIGGER sessions_ai AFTER INSERT ON sessions BEGIN
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, new.label, new.summary);
-END;
-CREATE TRIGGER sessions_au AFTER UPDATE OF label ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, new.label, (SELECT summary FROM sessions WHERE id = new.id));
-END;
-CREATE TRIGGER sessions_asum AFTER UPDATE OF summary ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-	INSERT INTO sessions_fts(session_id, label, summary)
-	VALUES (new.id, (SELECT label FROM sessions WHERE id = new.id), new.summary);
-END;
-CREATE TRIGGER sessions_ad AFTER DELETE ON sessions BEGIN
-	DELETE FROM sessions_fts WHERE session_id = old.id;
-END;
-INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
-	}
-	return nil
-}
 
 func (s *Store) CreateSession(ctx context.Context, id, parentID, label string) error {
-	now := core.NowISO()
-	// An empty parentID is stored as NULL so the FK constraint does not try to match.
-	var parent any
-	if parentID != "" {
-		parent = parentID
-	}
-	// last_read_at = created time: new sessions are born read.
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, parent_id, label, created_at, updated_at, last_read_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, parent, label, now, now, now)
-	return err
+	return s.createSessionFile(ctx, id, parentID, "", label, "", true)
 }
 
 func (s *Store) CreateDelegateSession(ctx context.Context, id, delegateParent, label string) error {
-	now := core.NowISO()
-	var parent any
-	if delegateParent != "" {
-		parent = delegateParent
-	}
-	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO sessions (id, delegate_parent, label, created_at, updated_at, last_read_at) VALUES (?, ?, ?, ?, ?, ?)`,
-		id, parent, label, now, now, now)
-	return err
+	return s.createSessionFile(ctx, id, "", delegateParent, label, "", true)
 }
 
 func scanSession(scanner interface{ Scan(...any) error }) (core.Session, error) {
@@ -421,9 +301,7 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 		}
 		encoded = string(b)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_run = ? WHERE id = ?`, encoded, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{LastRun: &encoded})
 }
 
 // SetSessionContextStart moves the conversation's provider-facing context boundary.
@@ -431,9 +309,7 @@ func (s *Store) SetSessionContextStart(ctx context.Context, sessionID, start, su
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionContextStart(ctx, sessionID, start, summary)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET context_start = ?, context_summary = ? WHERE id = ?`, start, summary, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{ContextStart: &start, ContextSummary: &summary})
 }
 
 // SetSessionModel pins the session's model_name.
@@ -441,9 +317,7 @@ func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) er
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionModel(ctx, sessionID, model)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET model = ? WHERE id = ?`, model, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Model: &model})
 }
 
 // SetSessionProvider pins the session's provider INSTANCE name.
@@ -451,9 +325,7 @@ func (s *Store) SetSessionProvider(ctx context.Context, sessionID, provider stri
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionProvider(ctx, sessionID, provider)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET provider = ? WHERE id = ?`, provider, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Provider: &provider})
 }
 
 // SetSessionWorkspace roots the session's file operations at an absolute working.
@@ -461,9 +333,7 @@ func (s *Store) SetSessionWorkspace(ctx context.Context, sessionID, workspace st
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionWorkspace(ctx, sessionID, workspace)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET workspace = ? WHERE id = ?`, workspace, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Workspace: &workspace})
 }
 
 // GetSession returns the session with the given id, or ErrNotFound.
@@ -516,23 +386,22 @@ func (s *Store) ListSessions(ctx context.Context) ([]core.Session, error) {
 	return out, rows.Err()
 }
 
-// DeleteSession removes a session. It is a no-op (nil) when the session does not exist.
+// DeleteSession removes a session, its descendants and their files. It is a no-op (nil)
+// when the session does not exist.
 func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	if o := s.owner(ctx, id); o != nil {
 		return o.DeleteSession(ctx, id)
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, id)
-	return err
+	return s.deleteSessions(ctx, []string{id})
 }
 
 func (s *Store) UpdateSession(ctx context.Context, id, label string) error {
 	if o := s.owner(ctx, id); o != nil {
 		return o.UpdateSession(ctx, id, label)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET label = ?, updated_at = ? WHERE id = ?`,
-		label, core.NowISO(), id)
-	return err
+	// A manual label IS activity: the sidebar's buckets follow it.
+	now := core.NowISO()
+	return s.appendMeta(ctx, id, &changes{Label: &label, UpdatedAt: &now})
 }
 
 // GetSessionTree returns the session forest.
@@ -586,7 +455,7 @@ func (s *Store) GetAncestorMessages(ctx context.Context, id string) ([]core.Mess
 	return out, nil
 }
 
-// AppendMessage appends a message to a session's history and touches.
+// AppendMessage appends a message to a session's file and touches the index row.
 // Without the touch, updated_at froze after the title's last write - the sidebar's time
 // buckets silently drifted off the real activity, and no unread state could ever be
 // derived from the row.
@@ -610,41 +479,24 @@ func (s *Store) AppendMessage(ctx context.Context, sessionID string, msg core.Me
 			}
 		}
 	}
-	now := core.NowISO()
-	if _, err = s.db.ExecContext(ctx,
-		`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
-		sessionID, role, string(payload), now); err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx,
-		`UPDATE sessions SET updated_at = ? WHERE id = ?`, now, sessionID)
-	return err
+	return s.appendMessageLine(ctx, sessionID, role, payload, core.NowISO())
 }
 
-// GetMessages returns a session's messages in append order.
+// GetMessages returns a session's messages in append order, read from the session file -
+// the truth, never the index.
 func (s *Store) GetMessages(ctx context.Context, sessionID string) ([]core.Message, error) {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.GetMessages(ctx, sessionID)
 	}
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT role, payload FROM messages WHERE session_id = ? ORDER BY id`, sessionID)
+	rows, err := s.loadRows(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []core.Message
-	for rows.Next() {
-		var role, payload string
-		if err := rows.Scan(&role, &payload); err != nil {
-			return nil, err
-		}
-		msg, err := core.DecodeMessage(role, []byte(payload))
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, msg)
+	for _, sm := range rows {
+		out = append(out, sm.Message)
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 func (s *Store) GetMessagesWithTimes(ctx context.Context, sessionID string) ([]core.StoredMessage, error) {
@@ -691,47 +543,46 @@ func (s *Store) SetSessionPinned(ctx context.Context, sessionID string, pinned b
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionPinned(ctx, sessionID, pinned)
 	}
-	n := boolToInt(pinned)
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET pinned = ? WHERE id = ?`, n, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Pinned: &pinned})
 }
 
 func (s *Store) SetSessionArchived(ctx context.Context, sessionID string, archived bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionArchived(ctx, sessionID, archived)
 	}
-	n := boolToInt(archived)
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET archived = ? WHERE id = ?`, n, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Archived: &archived})
 }
 
 func (s *Store) SetSessionRead(ctx context.Context, sessionID string) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionRead(ctx, sessionID)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET last_read_at = ? WHERE id = ?`, core.NowISO(), sessionID)
-	return err
+	now := core.NowISO()
+	return s.appendMeta(ctx, sessionID, &changes{LastReadAt: &now})
 }
 
 // SetSessionTitle writes a generated label and its title_state transition in one. The
-// state machine is enforced by the WHERE clause: provisional only from 0 (moves to 1),
-// final from 0 or 1 (moves to 2) - a session at 2 is never touched, including the
-// pre-title-state rows that were migrated to 2 because they carried a label. updated_at
-// is untouched: a generated label is not activity, and a title landing after a read
-// stamp must not turn the session unread.
+// state machine: provisional only from 0 (moves to 1), final from 0 or 1 (moves to 2) -
+// a session at 2 is never touched, including the pre-title-state sessions that were
+// migrated to 2 because they carried a label. updated_at is untouched: a generated label
+// is not activity, and a title landing after a read stamp must not turn the session
+// unread.
 func (s *Store) SetSessionTitle(ctx context.Context, sessionID, title string, final bool) error {
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionTitle(ctx, sessionID, title, final)
 	}
-	stmt := `UPDATE sessions SET label = ?, title_state = 1 WHERE id = ? AND title_state = 0`
-	if final {
-		stmt = `UPDATE sessions SET label = ?, title_state = 2 WHERE id = ? AND title_state <= 1`
+	current, err := s.GetSession(ctx, sessionID)
+	if err != nil {
+		return err
 	}
-	_, err := s.db.ExecContext(ctx, stmt, title, sessionID)
-	return err
+	next := 1
+	if final {
+		next = 2
+	}
+	if current.TitleState >= 2 || (!final && current.TitleState > 0) {
+		return nil // the state machine refuses the write; nothing is appended
+	}
+	return s.appendMeta(ctx, sessionID, &changes{Label: &title, TitleState: &next})
 }
 
 // SetSessionSummary writes the hygiene pass's digest on the session row. Like a
@@ -741,9 +592,7 @@ func (s *Store) SetSessionSummary(ctx context.Context, sessionID, summary string
 	if o := s.owner(ctx, sessionID); o != nil {
 		return o.SetSessionSummary(ctx, sessionID, summary)
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET summary = ? WHERE id = ?`, summary, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{Summary: &summary})
 }
 
 // SessionModels returns the last recorded model per session.
@@ -751,7 +600,7 @@ func (s *Store) SessionModels(ctx context.Context) (map[string]string, error) {
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT m.session_id, m.payload FROM messages m
 		 WHERE m.role = 'model_change'
-		   AND m.id = (SELECT MAX(id) FROM messages
+		   AND m.seq = (SELECT MAX(seq) FROM messages
 		               WHERE session_id = m.session_id AND role = 'model_change')`)
 	if err != nil {
 		return nil, err
@@ -813,11 +662,7 @@ func (s *Store) AddSessionTokens(ctx context.Context, sessionID string, prompt, 
 	if prompt == 0 && completion == 0 {
 		return nil
 	}
-	_, err := s.db.ExecContext(ctx,
-		`UPDATE sessions SET prompt_tokens = prompt_tokens + ?,
-		 completion_tokens = completion_tokens + ? WHERE id = ?`,
-		prompt, completion, sessionID)
-	return err
+	return s.appendMeta(ctx, sessionID, &changes{AddPrompt: prompt, AddCompletion: completion})
 }
 
 func quoteFTS(term string) string {
@@ -825,6 +670,9 @@ func quoteFTS(term string) string {
 }
 
 func (s *Store) SearchMessages(ctx context.Context, query string) ([]core.SearchResult, error) {
+	if err := s.catchUp(ctx); err != nil {
+		return nil, err
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT session_id, `+snippetCols("messages_fts", 1)+`
 		 FROM messages_fts WHERE messages_fts MATCH ?
@@ -904,6 +752,9 @@ func resolveSnippet(marked, plain string) (string, []core.SearchMatch) {
 // scope each index query to its own column so a summary match is never misread as a
 // label match.
 func (s *Store) SearchSessions(ctx context.Context, query string) ([]core.SearchResult, error) {
+	if err := s.catchUp(ctx); err != nil {
+		return nil, err
+	}
 	fts := quoteFTS(query)
 	labelScoped := `{label} : ` + fts
 	summaryScoped := `{summary} : ` + fts

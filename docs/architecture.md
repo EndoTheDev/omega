@@ -88,7 +88,8 @@ visible but inert until the agent enables that kind, which MATERIALIZES
 a copy into its own home. Creating an agent "from" another materializes
 a full clone - the whole `config/` directory (definition layer plus its
 hand-owned `crons.yaml`), the skill tree, persona files and every store
-in `data/`, each store copied through SQLite rather than as files, so a
+in `data/`. A session store clones as its session FILES plus the index,
+and the index half is copied through SQLite rather than as files, so a
 live WAL database cannot yield a torn copy. Copy, never link, so
 clone-then-delete is the rename path; a clone that fails mid-copy
 removes its half-built home, because folder presence is registration.
@@ -409,3 +410,55 @@ A session's surface exists in exactly one of three layers:
    scripts/proof-strip.py): the chat face answers, persistence is the
    store capsule's opinion and rides out with it - that is the proof
    script's PASS line.
+
+## The session store: JSONL files, derived index
+
+Sessions are FILES. Each one lives at
+`<home>/data/sessions/<session id>.jsonl`, append-only, one JSON object
+per line, and every line names its session (the lineage). Three line
+kinds:
+
+- `session` - the header, written once at creation: the fork and
+  delegate lineage, the agent binding, list visibility, `created_at`.
+- `message` - one stored message: the role discriminator, the encoded
+  payload exactly as the message codec wrote it, its store-wide id, its
+  timestamp.
+- `meta` - a metadata change (label, pin, archive, title state,
+  summary, model/provider/workspace, token deltas), naming only the
+  fields it changed.
+
+Reading is a FOLD: header, meta lines in order, message lines in file
+order. Nothing is ever rewritten, so the fold is the whole
+reconstruction rule. All mutation - appends, catch-up, rebuild, delete,
+rename - serializes on one write lock, so no pass ever reads a file a
+write is landing in and only the append path ever touches a byte.
+
+A crash mid-append can leave a torn final line. Readers drop it, and
+the boot pass before the store is shared cuts it off, so the next append
+lands on a line boundary. Nothing else cuts a file: a tail seen by a
+pre-search catch-up belongs to a line still being written, and the index
+path is the wrong place to decide otherwise.
+
+`<home>/data/omega.db` is DEMOTED to a derived index over those files:
+the folded session rows, the message rows, both FTS tables, the image
+captions and the pending-calls ledger. Delete the database and the next
+open rebuilds it from the files; `POST /sessions/reindex` (the
+`/reindex` command) is the same rebuild on demand, the
+corruption-recovery path. Freshness is a per-file indexed-byte
+watermark: boot and pre-search catch-up read only the bytes a file grew
+by, and a file that shrank is re-read whole. Message ids come from the
+files the same way - the ceiling is learned from them at boot and only
+moves forward, never from a `MAX(id)` over the index, which an append
+can outrun.
+
+The one-way migration out of a pre-JSONL store is guarded by read-back:
+every session is written to its file and then read back through the
+store's own fold, compared field by field and byte for byte against the
+rows it came from. Nothing counts as migrated until the whole store
+passes, and only then is the old database archived as ONE dated
+`.bak` beside the index (kept for the rollback window, deleted at the
+next stable tag). Image captions and pending calls are not session
+content and move forward into the fresh index.
+
+Ephemeral sessions (`eph-` ids) never reach the store; they stay
+memory-backed and a restart eats them, unchanged.
