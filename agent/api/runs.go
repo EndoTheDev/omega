@@ -324,6 +324,10 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// the drain must see the slot the hub finish already released, and this entry (a
 		// plain send) is what resets the runaway guard.
 		defer s.drainWakes(req.SessionID)
+		// Steer rows this run took but never persisted go back to the queue BEFORE the
+		// drain reads it: a crashed turn eats no human words, and the next turn delivers
+		// them first.
+		defer s.steers.returnInflight(req.SessionID)
 		// The runs topic's release edge rides the slot release: declared BEFORE the finish
 		// defer, so it publishes after the slot frees - a client that refetches on the edge
 		// does not race a still-occupied slot.
@@ -347,6 +351,9 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		sink := s.turnSinkFor(req)
 		ctx = agent.WithTurnSink(ctx, sink)
 		ctx = agent.WithPersistInput(ctx, req.persistInput)
+		// The live-turn input seam: the loop drains this at each batch boundary, so a steer
+		// (or a result settling mid-turn) lands at the boundary instead of a second run.
+		ctx = agent.WithSteerFeed(ctx, s.steerFeed(req.SessionID))
 		// Ephemeral: the loop filters the denied names AFTER every provider merge, so a tool
 		// an extension re-adds under the same name never runs in a no-persist session.
 		if req.Ephemeral {
@@ -362,6 +369,11 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		meter := newRunMeter()
 		runner := s.runAgent(&req)
 		for event := range runner.RunWithProvider(ctx, prov, messages, tools) {
+			// The steer delivery event is the queue's acknowledgment: the turn persisted the
+			// row, so it retires here rather than on the finish hook's return path.
+			if sd, ok := event.(core.SteerDeliveredEvent); ok {
+				s.steers.ack(req.SessionID, sd.ID)
+			}
 			s.accumulateAssistant(&recs, &rec, event, req)
 			s.chat.runEvent(req.SessionID, event)
 			meter.tick(event)

@@ -173,10 +173,15 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 		},
 		finalStep("done"),
 	})
+	// The yield call stays open until the run has ENDED: this test pins the sleeping-agent
+	// shape (a result settling into an idle home launches its own wake turn). The in-turn
+	// join has its own test.
+	release := make(chan struct{})
 	tools := map[string]core.Tool{"probe": {
 		Description: "probe (yield-class)",
 		Yield:       true,
 		Run: func(_ context.Context, args map[string]any) (string, error) {
+			<-release
 			msg, _ := args["msg"].(string)
 			return "async:" + msg, nil
 		},
@@ -207,6 +212,10 @@ func TestWakeSliceEndToEnd(t *testing.T) {
 	if !contains(endData, `"finish_reason":"yielded"`) {
 		t.Errorf("agent_end (%s / %s) carried no yielded finish_reason", endEvent, endData)
 	}
+
+	// The agent is now asleep on the call. Settle it and the wake turn must launch on its
+	// own - the run slot is free, so nothing queues behind a live turn.
+	close(release)
 
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := false

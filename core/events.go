@@ -64,6 +64,18 @@ type AssistantMessageEvent struct {
 
 func (AssistantMessageEvent) isEvent() {}
 
+// SteerDeliveredEvent reports one queued input a live turn took at a batch boundary: a
+// steer the human typed mid-turn, or a result that settled while the turn ran. ID names
+// the source queue row (the surface retires it); the message rides the transcript as
+// ordinary content, with no delivery badge.
+type SteerDeliveredEvent struct {
+	Type    string  `json:"type"`
+	ID      string  `json:"id,omitempty"`
+	Message Message `json:"message"`
+}
+
+func (SteerDeliveredEvent) isEvent() {}
+
 // EventObserver is a module subscription on the run event spine. Observers block ONE
 // goroutine of the live run - the tee forwards events to the host consumer only after
 // every observer returned - so an observer must be cheap (one local sqlite insert, a

@@ -57,6 +57,9 @@ type Server struct {
 	agentRuns AgentRunFactory
 
 	wakes       *wakeHub
+	// steers is the session-held live-turn input queue (steer.go): rows outlive the run
+	// that queued them and drain at its next batch boundary.
+	steers      *steerHub
 	bootCtx     context.Context
 	bootStop    context.CancelFunc
 	yieldLedger agent.YieldLedger
@@ -187,6 +190,9 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	// construct a bare Server) skips the harness entirely.
 	s.bootCtx, s.bootStop = context.WithCancel(context.Background())
 	s.wakes = newWakeHub()
+	// The steer queue is session-held and process-local: rows outlive the run that queued
+	// them (a crashed turn eats no human words), never the process.
+	s.steers = newSteerHub()
 	// Session-typed pending-calls table: the `eph-` lane lives in memory beside the
 	// ephRegistry - an ephemeral session's rows are process-local (restart eats its
 	// pending results: the mode's own contract, see sessionTypedLedger), and nothing it
@@ -275,6 +281,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
+	mux.HandleFunc("/sessions/{id}/queue", s.handleSessionQueue)
+	mux.HandleFunc("/sessions/{id}/queue/{row}", s.handleSessionQueueRow)
 	mux.HandleFunc("/sessions/{id}/new", s.handleSessionNew)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -694,6 +702,9 @@ type chatPrepare struct {
 	prov     agent.Provider
 	messages []core.Message
 	tools    map[string]core.Tool
+	// queued holds the rows this launch folded into messages; the launcher ACKS them once
+	// the run is launched (a prepare that never launches hands them back instead).
+	queued []queuedInput
 }
 
 // prepareRun performs the shared pre-launch steps of a session-backed chat run.
@@ -720,6 +731,16 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// "active" edge has exactly one source.
 	s.publishRunState(req.SessionID, true)
 
+	// Queued rows deliver FIRST on this turn: they were typed before the send that starts
+	// it, and a crashed turn must not reorder the conversation.
+	var queuedLead []queuedInput
+	if !req.wake && !req.Retry && req.Fork == "" {
+		if lead, batch := s.takeQueuedInto(req.SessionID); len(lead) > 0 {
+			incoming = append(lead, incoming...)
+			queuedLead = batch
+		}
+	}
+
 	var sess core.Session
 	sessionKnown := false
 	if s.store != nil && req.SessionID != "" && !req.Ephemeral {
@@ -732,8 +753,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// The host builds (and caches) it; a failure here is a loud 500, never a silent run as
 	// the wrong agent.
 	if ag, aerr := s.runAgentFor(ctx, req.SessionID); aerr != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, &runError{http.StatusInternalServerError, aerr.Error()}
 	} else {
 		req.runAgent = ag
@@ -768,9 +788,14 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	incoming = s.expandAtMentions(incoming, req.workspace)
 	messages, err := s.sessionHistory(ctx, req, incoming)
 	if err != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, err
+	}
+	// An ephemeral session has no store row: the registry IS the conversation, so the taken
+	// rows are committed the moment history adopts them - handing them back now would deliver
+	// them twice.
+	if req.Ephemeral {
+		s.ackQueued(req.SessionID, queuedLead)
 	}
 
 	// Instance pin: a wire provider name WINS and sticks on the session.
@@ -820,8 +845,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	prov, pinErr := s.pinProvider(req)
 	if pinErr != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, pinErr
 	}
 
@@ -847,7 +871,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		s.wakeLaunches[req.SessionID]++
 		s.wakeMu.Unlock()
 	}
-	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
+	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools, queued: queuedLead}, nil
 }
 
 // wakeLaunchCount reports how many wake runs this server has launched for the home - an
@@ -992,6 +1016,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A live run takes this send as a STEER instead of the 409: the row is parked in the
+	// session-held queue and delivered at the run's next batch boundary, so the agent
+	// adjusts in the SAME turn. Replay turns (retry/fork) address the persisted tree and
+	// keep their own gates.
+	if s.steerNow(&req) {
+		s.steerSend(w, r, &req, messages)
+		return
+	}
+
 	// The legacy no-store path runs inline AFTER the SSE headers.
 	if s.store != nil || req.Ephemeral {
 		cr, prepErr := s.prepareRun(r.Context(), &req, messages)
@@ -1011,14 +1044,17 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		ch := s.runs.subscribe(cr.run)
 		flusher, ok := setupSSE(w)
 		if !ok {
-			s.runs.finish(cr.run)
-			s.publishRunState(cr.run.id, false)
+			s.prepareFailed(cr.run, req.SessionID)
 			return
 		}
 		if autoCreated {
 			writeSSE(w, "session", []byte(fmt.Sprintf(`{"id":%q}`, req.SessionID)))
 			flusher.Flush()
 		}
+		// The rows are spent BEFORE the run goroutine exists: its finish hook returns any
+		// still-unacknowledged rows, so a fast run would otherwise re-queue rows it already
+		// persisted. Every fallible step above this line handed them back instead.
+		s.ackQueued(req.SessionID, cr.queued)
 		// Session-backed chats run DETACHED (the cron runner's detached-turn shape).
 		s.launchRun(context.WithoutCancel(r.Context()), cr.run, cr.prov, cr.messages, cr.tools, req)
 		s.serveRunFrames(w, flusher, cr.run, ch, r.Context())
@@ -2003,6 +2039,8 @@ func eventTypeOf(event core.Event) string {
 		return "assistant_message"
 	case core.ToolResultEvent:
 		return "tool_result"
+	case core.SteerDeliveredEvent:
+		return "steer_delivered"
 	case core.ViewModelDelta:
 		return "view_model_delta"
 	}

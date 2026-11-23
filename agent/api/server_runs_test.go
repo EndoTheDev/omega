@@ -341,7 +341,9 @@ func TestSessionEvents404(t *testing.T) {
 	}
 }
 
-// TestDetachedRunConflict: a second /chat for a session with a live run is a 409, not.
+// TestDetachedRunConflict: a second /chat for a session with a live run is not a 409 - it
+// is a STEER row (queue rule 4): parked session-held, answered 202 with the row, persisted
+// only when the live turn takes it at the next batch boundary.
 func TestDetachedRunConflict(t *testing.T) {
 	s, prov, st3, ts := newStepServer(t)
 	createSession(t, ts, "s3")
@@ -359,22 +361,32 @@ func TestDetachedRunConflict(t *testing.T) {
 	})
 	resp2, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader(body))
 	if err != nil {
-		t.Fatalf("conflict request: %v", err)
+		t.Fatalf("steer request: %v", err)
 	}
 	defer resp2.Body.Close()
-	if resp2.StatusCode != http.StatusConflict {
-		t.Fatalf("double chat status = %d, want 409", resp2.StatusCode)
+	if resp2.StatusCode != http.StatusAccepted {
+		t.Fatalf("mid-turn send status = %d, want 202 (queued steer)", resp2.StatusCode)
+	}
+	var queued struct {
+		Queued []queuedRow `json:"queued"`
+	}
+	if err := json.NewDecoder(resp2.Body).Decode(&queued); err != nil {
+		t.Fatalf("decode queued rows: %v", err)
+	}
+	if len(queued.Queued) != 1 || queued.Queued[0].Content != "again" || queued.Queued[0].ID == "" {
+		t.Fatalf("queued rows = %+v, want one row carrying %q", queued.Queued, "again")
 	}
 
-	// The 409 must not persist anything: the slot gate runs BEFORE loadSessionMessages, so
-	// the rejected user message never lands - the next successful send would otherwise
-	// double it.
+	// The queue row is NOT a transcript row yet: the live turn persists it at the boundary.
 	msgs, err := st3.GetMessages(context.Background(), "s3")
 	if err != nil {
 		t.Fatalf("messages: %v", err)
 	}
 	if len(msgs) != 1 {
-		t.Fatalf("409'd chat leaked a message: message count = %d, want 1 (the user turn)", len(msgs))
+		t.Fatalf("queued steer persisted early: message count = %d, want 1 (the user turn)", len(msgs))
+	}
+	if rows := s.steers.list("s3"); len(rows) != 1 || rows[0].ID != queued.Queued[0].ID {
+		t.Fatalf("queue list = %+v, want the parked row", rows)
 	}
 
 	prov.done()

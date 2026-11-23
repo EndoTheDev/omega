@@ -174,6 +174,13 @@ func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
 		return
 	}
 	s.publishChipFill(sessionID, res)
+	// A live turn takes its OWN result at the next boundary (one delivery law): a parallel
+	// wake launch would starve the turn of the very result it is waiting for. The row is
+	// session-held either way, so a run that ends first hands it to the next turn.
+	if s.runs.active(sessionID) {
+		s.queuedWakeResult(sessionID, res)
+		return
+	}
 	s.wakes.enqueue(sessionID, res)
 	s.drainWakes(sessionID)
 }
@@ -187,6 +194,30 @@ func (s *Server) drainWakes(sessionID string) {
 	s.wakes.drainMu.Lock()
 	defer s.wakes.drainMu.Unlock()
 	for {
+		// Queued input starts the next turn ahead of the wake FIFO: it is the human's own
+		// words (or rows a run took and died holding), and the queue's order is the
+		// conversation's order.
+		if batch := s.steers.take(sessionID); len(batch) > 0 {
+			if s.runs.userStopped(sessionID) {
+				// The human ended this conversation: the rows stay queued (a stop is not a
+				// delete) but no turn launches for them until a human send re-arms the latch.
+				s.steers.requeue(sessionID, batch)
+				return
+			}
+			if !s.launchQueued(sessionID, batch) {
+				if isEphemeralID(sessionID) && s.eph.get(sessionID) == nil {
+					// The eph home died with its process lifetime: the rows have no home left
+					// to deliver into (the mode's own restart-loss contract).
+					if lgr := s.Logger(); lgr != nil {
+						lgr.Printf("session %s queue dropped: the ephemeral home is gone", sessionID)
+					}
+					continue
+				}
+				s.steers.requeue(sessionID, batch)
+				return
+			}
+			continue
+		}
 		res, ok := s.wakes.pop(sessionID)
 		if !ok {
 			return
@@ -397,6 +428,11 @@ func (s *Server) abandonPending(sessionID string) {
 	}
 	if n := s.wakes.dropQueued(sessionID); n > 0 && lgr != nil {
 		lgr.Printf("session %s stopped by the user: dropped %d queued wake results", sessionID, n)
+	}
+	// Results parked for the live turn are the same work: they leave with the stop. The
+	// human's own queued rows stay (a stop is not a delete).
+	if n := s.steers.dropWakes(sessionID); n > 0 && lgr != nil {
+		lgr.Printf("session %s stopped by the user: dropped %d mid-turn wake results", sessionID, n)
 	}
 }
 

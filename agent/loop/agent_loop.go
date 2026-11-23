@@ -198,6 +198,15 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			messages = appendPendingPlaceholders(messages, opts.YieldLedger.Pending(sessionID))
 		}
 
+		// The boundary (one delivery law): everything entering a live turn - a steer the
+		// human typed mid-turn, a result that settled mid-turn - lands HERE, after the
+		// previous turn's batch, so the agent adjusts in the SAME turn. Placed after the
+		// placeholders so a settled result can take its placeholder's slot instead of
+		// appending a duplicate answer for one call.
+		if opts.Steer != nil {
+			messages, _ = deliverSteers(ctx, opts, sink, messages)
+		}
+
 		turns++
 		turnStart := core.TurnStart{Type: "turn_start", Turn: turns}
 		opts.Events <- turnStart
@@ -469,6 +478,17 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		opts.Events <- turnEnd
 
 		if len(loopback) == 0 {
+			// The turn produced no calls to re-enter on, so this is the run's natural end -
+			// unless the boundary still carries input. A steer typed while the last response
+			// streamed (or a result that settled as it finished) takes the same boundary law:
+			// the run CONTINUES with it rather than ending and relaunching, so the human's
+			// words never wait for a second run slot.
+			if opts.Steer != nil {
+				if next, delivered := deliverSteers(ctx, opts, sink, messages); delivered > 0 {
+					messages = next
+					continue
+				}
+			}
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			if outstanding > 0 {
 				end.FinishReason = "yielded"
@@ -484,6 +504,78 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 			return nil
 		}
 	}
+}
+
+// deliverSteers takes everything the host queued for this live turn and folds it into the
+// conversation AT the boundary: a user message appends, a settled call's result takes the
+// slot its pending placeholder held (appending it would leave that placeholder standing as
+// a second, unanswered answer for one call). Each delivery persists through the run's sink
+// and reports itself on the event stream, so the surface retires the queue row it came
+// from; the transcript itself carries no marker (a delivered steer is an ordinary user
+// message).
+func deliverSteers(ctx context.Context, opts agent.LoopOptions, sink agent.TurnSink, messages []core.Message) ([]core.Message, int) {
+	deliveries := opts.Steer()
+	delivered := 0
+	for _, d := range deliveries {
+		if d.Message == nil {
+			continue
+		}
+		if y, ok := d.Message.(core.YieldResult); ok {
+			at, answered := answerSlot(messages, y.ToolCallID)
+			if at >= 0 && answered {
+				// The call already has its answer (a double settle, a reaped call): a second
+				// row would be an answer the wire never asked for. The delivery still retires
+				// the queue row - the result is delivered, into the answer it already has.
+				if opts.Logger != nil {
+					opts.Logger.Printf("yield result for %s (%s) dropped: the call is already answered", y.ToolName, y.ToolCallID)
+				}
+				opts.Events <- core.SteerDeliveredEvent{Type: "steer_delivered", ID: d.ID, Message: y}
+				delivered++
+				continue
+			}
+			if at >= 0 {
+				// Copy-on-write: the caller's slice is not ours to mutate in place.
+				next := make([]core.Message, len(messages))
+				copy(next, messages)
+				next[at] = y
+				messages = next
+				persistTurnMessage(ctx, sink, opts.Logger, y, "steer result")
+				opts.Events <- core.SteerDeliveredEvent{Type: "steer_delivered", ID: d.ID, Message: y}
+				delivered++
+				continue
+			}
+			// No row at all: the ledger settled before a placeholder ever materialized, so
+			// appending is what answers the call - and the only thing that can.
+		}
+		messages = append(messages, d.Message)
+		persistTurnMessage(ctx, sink, opts.Logger, d.Message, "steer")
+		opts.Events <- core.SteerDeliveredEvent{Type: "steer_delivered", ID: d.ID, Message: d.Message}
+		delivered++
+	}
+	return messages, delivered
+}
+
+// answerSlot finds the row that answers callID and reports whether it is already the
+// answer: (index, false) = a still-pending placeholder the result takes over, (index, true)
+// = the row already carries an answer, (-1, _) = the call has no row at all.
+func answerSlot(messages []core.Message, toolCallID string) (int, bool) {
+	if toolCallID == "" {
+		return -1, false
+	}
+	for i, msg := range messages {
+		switch m := msg.(type) {
+		case core.ToolResult:
+			if m.ToolCallID != toolCallID {
+				continue
+			}
+			return i, !strings.HasPrefix(m.Content, "[pending: ")
+		case core.YieldResult:
+			if m.ToolCallID == toolCallID {
+				return i, true
+			}
+		}
+	}
+	return -1, false
 }
 
 // unrenderedGuidelines returns the builder's guidelines the built prompt does not already

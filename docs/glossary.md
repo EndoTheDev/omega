@@ -16,7 +16,11 @@ The domain language, one home. Every term defined once; code, docs and UI text u
 
 **run** - one turn's execution through the agent loop; can span many provider calls. Owns usage accounting and the last-run stats. One run, many provider calls.
 
-**wake** - an out-of-band message delivered into an existing session: a pending result arriving, or a user message while calls are pending. A wake starts the next turn.
+**wake** - an out-of-band message delivered into an existing session: a pending result arriving. With no turn live it starts the next turn (the agent was asleep on the call). While a turn IS live the result joins that turn at its next batch boundary through the steer queue - never a parallel run. A user message never rides the wake path: a send while the agent sleeps starts an ordinary turn now, and its own pending results keep their wakes.
+
+**steer** - a user message sent while a turn is live. The server parks it as a queue row instead of refusing the send, and the running turn takes it at its next batch boundary (after the current tool batch), so the agent adjusts in the SAME turn. A steer never starts a second run.
+
+**queue** - the per-session list of input waiting for the live turn's next boundary: steers, and results that settled mid-turn. Rows are session-held (a crashed turn never eats them; the next turn delivers them first), rendered as deletable rows until delivery, and a delivered steer persists as an ordinary user message with no transcript badge. Not the pending-calls ledger, which holds calls, not input.
 
 **compact** - the context's tier structure: the live context is summarized, and the summary
 rides a `compress` tool call plus its result appended at the TAIL of the session (never a

@@ -1132,6 +1132,17 @@ export interface StreamHandlers {
   onRunEnd?: (finishReason: string) => void;
   onSession?: (sessionId: string) => void;
   onViewModelDelta?: (panel: CanvasPanel) => void;
+  /** the send was not a run: a live turn took it as a steer and these rows are its queue */
+  onQueued?: (rows: QueuedRow[]) => void;
+  /** one queue row reached the live turn - the surface retires it by id */
+  onSteerDelivered?: (rowId: string) => void;
+}
+
+/** QueuedRow is one steer waiting for the live turn's next batch boundary. */
+export interface QueuedRow {
+  id: string;
+  content: string;
+  at: string;
 }
 
 export function parseFrame(frame: string): unknown | null {
@@ -1181,6 +1192,13 @@ export function handlePayload(
     case "view_model_delta": {
       const panel = normalizeCanvasPanel(p.panel);
       if (panel) handlers.onViewModelDelta?.(panel);
+      break;
+    }
+    case "steer_delivered": {
+      // A queued row reached the live turn: it is ordinary user content now, and the row
+      // leaves the queue surface.
+      const id = typeof p.id === "string" ? p.id : "";
+      if (id) handlers.onSteerDelivered?.(id);
       break;
     }
     case "error":
@@ -3121,21 +3139,106 @@ export async function streamChat(
   ephemeral?: boolean,
   workspace?: string,
 ): Promise<void> {
-  const body: Record<string, unknown> = { messages };
-  if (sessionId) body.session_id = sessionId;
-  if (ephemeral) body.ephemeral = true;
-  if (model) body.model = model;
-  if (thinkingLevel !== undefined) body.thinking_level = thinkingLevel;
-  if (fork) body.fork = fork;
-  if (workspace && !sessionId) body.workspace = workspace;
   const resp = await fetch("/chat", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
+    body: JSON.stringify(
+      chatBody(messages, sessionId, { model, thinkingLevel, fork, ephemeral, workspace }),
+    ),
   });
+  if (resp.status === 202) {
+    // A live run took the send as a STEER: the server parked it and answered the row. No
+    // stream started, so the caller settles the send on the queue, not on run handlers.
+    const queued = await readQueuedRows(resp);
+    handlers.onQueued?.(queued);
+    return;
+  }
   if (resp.status === 409) throw new SessionBusyError();
   if (!resp.ok || !resp.body) throw new Error(`chat: ${resp.status}`);
   await consumeSSE(resp, handlers);
+}
+
+/** chatBody builds the /chat wire body: one shape for a run send and a queued steer. */
+export function chatBody(
+  messages: OmegaMessage[],
+  sessionId: string | null,
+  opts: {
+    model?: string;
+    thinkingLevel?: number;
+    fork?: string;
+    ephemeral?: boolean;
+    workspace?: string;
+  } = {},
+): Record<string, unknown> {
+  const body: Record<string, unknown> = { messages };
+  if (sessionId) body.session_id = sessionId;
+  if (opts.ephemeral) body.ephemeral = true;
+  if (opts.model) body.model = opts.model;
+  if (opts.thinkingLevel !== undefined) body.thinking_level = opts.thinkingLevel;
+  if (opts.fork) body.fork = opts.fork;
+  if (opts.workspace && !sessionId) body.workspace = opts.workspace;
+  return body;
+}
+
+/** readQueuedRows reads the 202 body: the rows a steer send parked. */
+export async function readQueuedRows(resp: Response): Promise<QueuedRow[]> {
+  const body = (await resp.json()) as { queued?: QueuedRow[] };
+  return Array.isArray(body?.queued) ? body.queued : [];
+}
+
+// sendSteer posts one mid-turn message and returns the rows the server parked. The caller
+// only reaches for this when the session's run slot is taken; the server decides for real,
+// so a race that ends the run first falls back to the stream send (null = a run started).
+// A real refusal throws: it must speak, never read as delivery.
+export async function sendSteer(
+  messages: OmegaMessage[],
+  sessionId: string,
+  model?: string,
+  thinkingLevel?: number,
+): Promise<QueuedRow[] | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const resp = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chatBody(messages, sessionId, { model, thinkingLevel })),
+    });
+    if (resp.status === 202) return readQueuedRows(resp);
+    if (resp.status === 409 && attempt === 0) {
+      // The slot filled between the busy read and this post: the run that holds it can
+      // take the same body now, so one retry lands it as the steer the caller meant.
+      await resp.body?.cancel().catch(() => {});
+      continue;
+    }
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      throw new Error(`chat: ${resp.status}${detail ? ` ${detail.trim()}` : ""}`);
+    }
+    // 200: the run ended between the client's busy read and this post - the send STARTED a
+    // run. Its stream is detached server-side; the caller re-reads the session.
+    await resp.body?.cancel().catch(() => {});
+    return null;
+  }
+  throw new Error("chat: session busy");
+}
+
+// fetchQueue reads the session's waiting steer rows (the visible queue after a reload).
+export async function fetchQueue(sessionId: string): Promise<QueuedRow[]> {
+  const r = await fetch(`/sessions/${encodeURIComponent(sessionId)}/queue`);
+  if (!r.ok) throw new Error(`queue: ${r.status}`);
+  const body = (await r.json()) as { queued?: QueuedRow[] };
+  return Array.isArray(body?.queued) ? body.queued : [];
+}
+
+// deleteQueueRow drops one row before the boundary reaches it. A 404 is a stale row (the
+// turn already took it): the caller refreshes rather than pretending it removed anything.
+export async function deleteQueueRow(sessionId: string, rowId: string): Promise<boolean> {
+  const r = await fetch(
+    `/sessions/${encodeURIComponent(sessionId)}/queue/${encodeURIComponent(rowId)}`,
+    { method: "DELETE" },
+  );
+  if (r.status === 404) return false;
+  if (!r.ok) throw new Error(`queue delete: ${r.status}`);
+  return true;
 }
 
 // stopSessionRun is the REST stop (POST /sessions/{id}/stop): the user's hard stop of the
