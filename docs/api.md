@@ -50,7 +50,7 @@ unchanged.
 | `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
 | `/sessions/{id}/transcript`               | GET                | render-ready items (restore + live contract)                                                                                                                                                                                                                |
 | `/sessions/{id}/variants`                 | GET, POST, PATCH   | branch points + active-variant select                                                                                                                                                                                                                       |
-| `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` for the human's own row (the shell opens a fresh tab), `{"kind":"compacted"}` for a machinery-owned one (an agent's canonical chat folds in place - same id, the next run's context starts at the fold's boundary under the compactor's summary) |
+| `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` opens a fresh tab for the human's own row; `{"kind":"compacted"}` compacts a machinery-owned one in place (same id; the next run starts at the context start)                                                 |
 | `/sessions/{id}/branch`                   | POST               | fork a child session (store-linked)                                                                                                                                                                                                                         |
 | `/sessions/{id}/export`                   | GET                | active path as JSONL attachment                                                                                                                                                                                                                             |
 | `/sessions/{id}/verdicts`                 | GET, POST          | one session's verdict cards / the answer POST                                                                                                                                                                                                               |
@@ -594,11 +594,11 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
   shell opens a fresh tab, exactly as `/new` always did.
   `{"kind":"compacted"}` for a Machinery-Owned row (`machine_owned` on
   the session; an agent's canonical chat): the relationship is the
-  point, so the conversation FOLDS instead of forking. The transcript
+  point, so the conversation compacts instead of forking. The transcript
   keeps every row; the session row's `context_start` marks where the
   next run's provider context begins and `context_summary` carries the
-  compactor's summary (empty when the pre-fold history was too small to
-  earn one). Same id before and after.
+  compactor's summary (empty when the pre-compaction history was too
+  small to earn one). Same id before and after.
 
 - `DELETE /agents/{name}` - delete the HOME (0.17.3 make-over ruling
   2), sessions included: the definition file, the persona files, the
