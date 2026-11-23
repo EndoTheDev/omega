@@ -10,7 +10,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { durableTokens, estimateTokens, usageTokens } from "../app/composables/tokenstat.ts";
+import {
+  cacheShare,
+  durableTokens,
+  estimateTokens,
+  formatCacheShare,
+  usageTokens,
+} from "../app/composables/tokenstat.ts";
 import { persistedTelemetry, type Session } from "../app/composables/omega.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
@@ -91,5 +97,45 @@ describe("one writer, one meaning (source pins)", () => {
       app,
       /const tokensEstimated = computed\(\(\) => focusedChatState\.value\.tokensEstimated\)/,
     );
+  });
+});
+
+// The prompt-cache share is a SECOND, per-response figure: it never joins the
+// cumulative token total, and absence (nil) is not a measured zero.
+describe("the prompt-cache share", () => {
+  const barSrc = src("app/components/shell/StatusBar.vue");
+  const appSrc = src("app/app.vue");
+
+  it("paints cached over prompt as a percent with one decimal", () => {
+    assert.equal(formatCacheShare(cacheShare(8000, 90000)), "8.9%");
+    assert.equal(formatCacheShare(cacheShare(0, 90000)), "0%", "a reported zero IS zero");
+    assert.equal(formatCacheShare(cacheShare(90000, 90000)), "100%");
+    assert.equal(formatCacheShare(cacheShare(1, 3)), "33.3%");
+  });
+
+  it("a nil cache figure renders 'not reported', never 0%", () => {
+    const share = cacheShare(null, 90000);
+    assert.equal(share, null, "absence stays absence");
+    assert.equal(formatCacheShare(share), "not reported");
+    assert.notEqual(formatCacheShare(share), formatCacheShare(cacheShare(0, 90000)));
+  });
+
+  it("no denominator, no percent", () => {
+    assert.equal(cacheShare(0, 0), null);
+    assert.equal(cacheShare(5, 0), null);
+  });
+
+  it("the wire keeps nil distinct from zero, and both paint paths land on cachePercent", () => {
+    const omega = src("app/composables/omega.ts");
+    assert.match(omega, /cachedTokens: number \| null/, "the handler type carries the absence");
+    assert.match(omega, /p\.cached_count == null \? null : Number\(p\.cached_count\)/);
+    const chat = src("app/composables/chat.ts");
+    const paints = chat.match(/st\.cachePercent = cacheShare\(/g) ?? [];
+    assert.equal(paints.length, 2, "the reattach path and the send path both paint");
+    assert.match(chat, /cachePercent: number \| null/);
+    assert.match(appSrc, /:cache-percent="cachePercent"/);
+    assert.match(barSrc, /formatCacheShare\(props\.cachePercent\)/);
+    assert.match(barSrc, /cache \$\{NOT_REPORTED\}/, "the absent figure says so in words");
+    assert.doesNotMatch(barSrc, /cached_count as number\) \|\| 0/, "no zero fallback in the bar");
   });
 });

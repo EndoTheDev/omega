@@ -14,6 +14,7 @@ export interface StatusStat {
 export const STATUS_STATS: readonly StatusStat[] = [
   { id: "pending", label: "Pending calls" },
   { id: "tokens", label: "Tokens" },
+  { id: "cache", label: "Prompt cache" },
   { id: "context", label: "Context window" },
   { id: "throughput", label: "Throughput" },
   { id: "speed", label: "Generation speed" },

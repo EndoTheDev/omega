@@ -1127,7 +1127,8 @@ export interface StreamHandlers {
   onUsage?: (usage: {
     promptTokens: number;
     completionTokens: number;
-    cachedTokens: number;
+    /** null when the provider reported no cache figure for this response */
+    cachedTokens: number | null;
   }) => void;
   onRunEnd?: (finishReason: string) => void;
   onSession?: (sessionId: string) => void;
@@ -1174,7 +1175,9 @@ export function handlePayload(
         handlers.onUsage?.({
           promptTokens: (p.prompt_eval_count as number) || 0,
           completionTokens: (p.eval_count as number) || 0,
-          cachedTokens: (p.cached_count as number) || 0,
+          // an ABSENT cached_count is not zero: the provider reported no cache
+          // fact, and 0% would claim a measured miss.
+          cachedTokens: p.cached_count == null ? null : Number(p.cached_count),
         });
       }
       break;

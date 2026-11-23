@@ -328,6 +328,44 @@ func TestStreamOpenAIUsageReported(t *testing.T) {
 	}
 }
 
+// TestStreamOpenAICacheSpellings pins the cache facts an OpenAI-wire host may
+// send: the details spelling, DeepSeek's root spelling, absence (nil, never a
+// measured zero), and the details-wins precedence when a host sends both.
+func TestStreamOpenAICacheSpellings(t *testing.T) {
+	intp := func(n int) *int { return &n }
+	cases := []struct {
+		name  string
+		usage string
+		want  *int
+	}{
+		{"details", `{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":80}}`, intp(80)},
+		{"deepseek root spelling", `{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":64}`, intp(64)},
+		{"both spellings, details wins", `{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":64,"prompt_tokens_details":{"cached_tokens":80}}`, intp(80)},
+		{"neither spelling", `{"prompt_tokens":100,"completion_tokens":5}`, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := openaiSSEServer(t,
+				`{"choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":"stop"}]}`,
+				`{"choices":[],"usage":`+tc.usage+`}`,
+			)
+			defer srv.Close()
+			p := &Provider{typ: "openai", baseURL: srv.URL, modelName: "deepseek-chat", apiKey: "k"}
+			got := collectEvents(t, p.Stream(testContext(), []core.Message{core.NewUser("hi")}, nil))
+			end := got[len(got)-1].(core.StreamEnd)
+			if end.PromptEvalCount == nil || *end.PromptEvalCount != 100 {
+				t.Fatalf("PromptEvalCount = %v, want 100", end.PromptEvalCount)
+			}
+			if (tc.want == nil) != (end.CachedCount == nil) {
+				t.Fatalf("CachedCount = %v, want %v", end.CachedCount, tc.want)
+			}
+			if tc.want != nil && *end.CachedCount != *tc.want {
+				t.Fatalf("CachedCount = %d, want %d", *end.CachedCount, *tc.want)
+			}
+		})
+	}
+}
+
 func ollamaNDJSONServer(t *testing.T, fn func(attempt uint32) []string) (*httptest.Server, *uint32) {
 	t.Helper()
 	var hits uint32
