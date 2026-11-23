@@ -425,7 +425,8 @@
     closeModelSwitch();
   }
   onBeforeUnmount(() => {
-    modelSwitchDialogOpen.value = false;
+    // only this tab's own dialog clears the shell gate - another tab's dialog may be up
+    if (pendingSwitch.value) modelSwitchDialogOpen.value = false;
   });
 
   const canvasTranscript = createCanvasTranscript();
