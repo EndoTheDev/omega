@@ -200,7 +200,3 @@ func (m *Machine) Evidence(name string) ([]EvidenceRow, error) {
 	defer lg.Close()
 	return lg.All(context.Background())
 }
-
-func (m *Machine) WakeNow(name string) error {
-	return m.Wake(name, "", "")
-}

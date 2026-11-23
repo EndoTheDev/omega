@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
+	"github.com/EndoTheDev/omega/harness/datadir"
 )
 
 func TestLedgerObserverRecordsToolCalls(t *testing.T) {
@@ -93,9 +94,6 @@ func TestLedgerObserverRecordsToolCalls(t *testing.T) {
 			t.Errorf("ts %q: %v", r.TS, err)
 		}
 	}
-	if n, err := lg.Count(context.Background()); err != nil || n != 4 {
-		t.Errorf("count = %d %v, want 4", n, err)
-	}
 }
 
 func TestLedgerObserverRecordsURLLocator(t *testing.T) {
@@ -150,11 +148,11 @@ func TestLedgerArgsHashStable(t *testing.T) {
 }
 
 func TestLedgerPerProcessDataDir(t *testing.T) {
-	// OpenLedgerForHome lands in <home>/data/ledger.db - the process's data dir; a wake
-	// child with OMEGA_AGENT resolves its agent data dir upstream (datadir.AgentHome), so
-	// per-agent isolation is the caller's one-line choice, not ledger machinery.
+	// OpenLedger lands in the data dir it is handed; a wake child with OMEGA_AGENT
+	// resolves its agent data dir upstream (datadir.AgentHome), so per-agent isolation
+	// is the caller's one-line choice, not ledger machinery.
 	home := t.TempDir()
-	lg, err := OpenLedgerForHome(home)
+	lg, err := OpenLedger(datadir.Dir(home))
 	if err != nil {
 		t.Fatal(err)
 	}

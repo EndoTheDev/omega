@@ -146,7 +146,7 @@ func (p *Plugin) routes() []routeRow {
 // rosterHandler answers the webui roster pane.
 func rosterHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, m.Roster())
+		writeJSON(w, http.StatusOK, m.Roster())
 	}
 }
 
@@ -166,7 +166,7 @@ func createHandler(m *Machine) http.HandlerFunc {
 			httpError(w, http.StatusBadRequest, "create: %v", err)
 			return
 		}
-		writeJSON(w, map[string]string{"created": body.Name})
+		writeJSON(w, http.StatusOK, map[string]string{"created": body.Name})
 	}
 }
 
@@ -178,7 +178,7 @@ func chatHandler(m *Machine) http.HandlerFunc {
 			httpError(w, http.StatusNotFound, "%v", err)
 			return
 		}
-		writeJSON(w, view)
+		writeJSON(w, http.StatusOK, view)
 	}
 }
 
@@ -204,7 +204,7 @@ func wakeHandler(m *Machine) http.HandlerFunc {
 			httpError(w, http.StatusBadRequest, "%v", err)
 			return
 		}
-		writeJSON(w, map[string]string{"status": "awake"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "awake"})
 	}
 }
 
@@ -216,7 +216,7 @@ func evidenceHandler(m *Machine) http.HandlerFunc {
 			httpError(w, http.StatusBadRequest, "%v", err)
 			return
 		}
-		writeJSON(w, rows)
+		writeJSON(w, http.StatusOK, rows)
 	}
 }
 
@@ -224,18 +224,7 @@ func evidenceHandler(m *Machine) http.HandlerFunc {
 func sleepHandler(m *Machine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		m.Sleep(r.PathValue("name"))
-		writeJSON(w, map[string]string{"status": "asleep"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "asleep"})
 	}
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	enc := json.NewEncoder(w)
-	_ = enc.Encode(v)
-}
-
-func httpError(w http.ResponseWriter, code int, format string, args ...any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
-}

@@ -114,18 +114,6 @@ func (ar *agentRoutes) writeAgentSession(ctx context.Context, name, id string) e
 // errNoStoreSeam is the 501 lane.
 var errNoStoreSeam = errors.New("store does not support agent sessions")
 
-func (ar *agentRoutes) writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
-}
-
-func (ar *agentRoutes) httpError(w http.ResponseWriter, code int, format string, args ...any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(code)
-	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
-}
-
 func (ar *agentRoutes) registrationRows() []struct {
 	pattern string
 	handler func(http.ResponseWriter, *http.Request)
@@ -228,7 +216,7 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		profiles := agent.LoadProfiles(ar.home)
 		last := ar.fillAgentSessions(r.Context(), profiles)
-		ar.writeJSON(w, http.StatusOK, rosterRows(profiles, last))
+		writeJSON(w, http.StatusOK, rosterRows(profiles, last))
 	case http.MethodPost:
 		var req struct {
 			Name        string `json:"name"`
@@ -236,7 +224,7 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 			InheritFrom string `json:"inherit_from"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+			httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 			return
 		}
 		name := strings.TrimSpace(req.Name)
@@ -247,21 +235,21 @@ func (ar *agentRoutes) handleAgents(w http.ResponseWriter, r *http.Request) {
 				if errors.Is(err, errCloneStoreTag) {
 					status = http.StatusInternalServerError
 				}
-				ar.httpError(w, status, "clone agent: %v", err)
+				httpError(w, status, "clone agent: %v", err)
 				return
 			}
 		} else if err := agent.ScaffoldAgent(ar.home, name, req.Description); err != nil {
-			ar.httpError(w, http.StatusConflict, "scaffold agent: %v", err)
+			httpError(w, http.StatusConflict, "scaffold agent: %v", err)
 			return
 		}
 		p, err := agent.LoadProfile(ar.home, name)
 		if err != nil {
-			ar.httpError(w, http.StatusInternalServerError, "load agent: %v", err)
+			httpError(w, http.StatusInternalServerError, "load agent: %v", err)
 			return
 		}
-		ar.writeJSON(w, http.StatusCreated, p)
+		writeJSON(w, http.StatusCreated, p)
 	default:
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
 
@@ -306,33 +294,33 @@ func (ar *agentRoutes) retagClonedSessions(from, to string) error {
 // handleAgent serves GET /agents/{name}: one agent, detail payload.
 func (ar *agentRoutes) handleAgent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	name := r.PathValue("name")
 	p, err := agent.LoadProfile(ar.home, name)
 	if err != nil {
-		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
 	profiles := []agent.Profile{p}
 	last := ar.fillAgentSessions(r.Context(), profiles)
-	ar.writeJSON(w, http.StatusOK, rosterRows(profiles, last)[0])
+	writeJSON(w, http.StatusOK, rosterRows(profiles, last)[0])
 }
 
 // handleAgentUpdate serves PUT /agents/{name}. A nil field is untouched.
 func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPut {
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	name := r.PathValue("name")
 	if name == agent.DefaultAgentName {
-		ar.httpError(w, http.StatusConflict, "%s", agent.ErrAgentConfigLocked.Error())
+		httpError(w, http.StatusConflict, "%s", agent.ErrAgentConfigLocked.Error())
 		return
 	}
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
-		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
 	var req struct {
@@ -352,7 +340,7 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		APIKey       *string `json:"api_key"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+		httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 		return
 	}
 	updates := agent.AgentConfigUpdates{
@@ -375,32 +363,32 @@ func (ar *agentRoutes) handleAgentUpdate(w http.ResponseWriter, r *http.Request)
 		var scaffold *agent.AgentConfigScaffoldError
 		switch {
 		case errors.Is(agent.ErrAgentConfigLocked, err):
-			ar.httpError(w, http.StatusConflict, "%s", err.Error())
+			httpError(w, http.StatusConflict, "%s", err.Error())
 			return
 		case errors.As(err, &scaffold):
-			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+			httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 			return
 		}
-		ar.httpError(w, http.StatusConflict, "update agent config: %v", err)
+		httpError(w, http.StatusConflict, "update agent config: %v", err)
 		return
 	}
 	p, err := agent.LoadProfile(ar.home, name)
 	if err != nil {
-		ar.httpError(w, http.StatusInternalServerError, "load agent: %v", err)
+		httpError(w, http.StatusInternalServerError, "load agent: %v", err)
 		return
 	}
-	ar.writeJSON(w, http.StatusOK, p)
+	writeJSON(w, http.StatusOK, p)
 }
 
 // handleAgentDelete serves DELETE /agents/{name}.
 func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	name := r.PathValue("name")
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
-		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
 	sessions := ar.sessionCount(r.Context(), name)
@@ -412,17 +400,17 @@ func (ar *agentRoutes) handleAgentDelete(w http.ResponseWriter, r *http.Request)
 		var scaffold *agent.AgentConfigScaffoldError
 		switch {
 		case errors.Is(err, agent.ErrAgentHomeLocked):
-			ar.httpError(w, http.StatusConflict, "%s", err.Error())
+			httpError(w, http.StatusConflict, "%s", err.Error())
 		case errors.Is(err, agent.ErrAgentNotExist):
-			ar.httpError(w, http.StatusNotFound, "unknown agent")
+			httpError(w, http.StatusNotFound, "unknown agent")
 		case errors.As(err, &scaffold):
-			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+			httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 		default:
-			ar.httpError(w, http.StatusInternalServerError, "delete agent: %v", err)
+			httpError(w, http.StatusInternalServerError, "delete agent: %v", err)
 		}
 		return
 	}
-	ar.writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "sessions": sessions})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": name, "sessions": sessions})
 }
 
 // sessionCount is the delete record's number. A store that will not open answers 0 -
@@ -440,24 +428,24 @@ func (ar *agentRoutes) sessionCount(ctx context.Context, name string) int {
 // id.
 func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
 	name := r.PathValue("name")
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
-		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
 	if ar.machine == nil {
-		ar.httpError(w, http.StatusNotImplemented, "canonical chats need the continuous machinery")
+		httpError(w, http.StatusNotImplemented, "canonical chats need the continuous machinery")
 		return
 	}
 	sess, err := ar.machine.EnsureCanonical(name)
 	if err != nil {
-		ar.httpError(w, http.StatusInternalServerError, "open canonical chat: %v", err)
+		httpError(w, http.StatusInternalServerError, "open canonical chat: %v", err)
 		return
 	}
-	ar.writeJSON(w, http.StatusOK, sess)
+	writeJSON(w, http.StatusOK, sess)
 }
 
 // handleAgentSessions serves GET /agents/{name}/sessions (the agent's own session list)
@@ -469,11 +457,11 @@ func (ar *agentRoutes) handleAgentCanonical(w http.ResponseWriter, r *http.Reque
 func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	if _, err := agent.LoadProfile(ar.home, name); err != nil {
-		ar.httpError(w, http.StatusNotFound, "unknown agent")
+		httpError(w, http.StatusNotFound, "unknown agent")
 		return
 	}
 	if ar.mountedStore() == nil {
-		ar.httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
+		httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
 		return
 	}
 
@@ -481,7 +469,7 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 	case http.MethodGet:
 		sessions, err := ar.readAgentSessions(r.Context(), name)
 		if err != nil {
-			ar.httpError(w, http.StatusInternalServerError, "list sessions: %v", err)
+			httpError(w, http.StatusInternalServerError, "list sessions: %v", err)
 			return
 		}
 		// List contract: list endpoints emit arrays, never null. A zero- session agent must
@@ -489,13 +477,13 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 		if sessions == nil {
 			sessions = []core.Session{}
 		}
-		ar.writeJSON(w, http.StatusOK, sessions)
+		writeJSON(w, http.StatusOK, sessions)
 	case http.MethodPost:
 		var req struct {
 			ID string `json:"id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			ar.httpError(w, http.StatusBadRequest, "invalid request: %v", err)
+			httpError(w, http.StatusBadRequest, "invalid request: %v", err)
 			return
 		}
 		if req.ID == "" {
@@ -510,7 +498,7 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 		// durable row the store-read endpoints can never serve (the eph- lane is in-memory
 		// only).
 		if agent.IsEphemeralID(req.ID) {
-			ar.httpError(w, http.StatusBadRequest, "invalid request: reserved session id prefix "+agent.EphemeralIDPrefix)
+			httpError(w, http.StatusBadRequest, "invalid request: reserved session id prefix "+agent.EphemeralIDPrefix)
 			return
 		}
 		// the row is written to the store that will OWN it - the agent home's own
@@ -518,10 +506,10 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 		// and the roster would read zero sessions in the meantime).
 		if err := ar.writeAgentSession(r.Context(), name, req.ID); err != nil {
 			if errors.Is(err, errNoStoreSeam) {
-				ar.httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
+				httpError(w, http.StatusNotImplemented, "%s", errNoStoreSeam.Error())
 				return
 			}
-			ar.httpError(w, http.StatusConflict, "create session: %v", err)
+			httpError(w, http.StatusConflict, "create session: %v", err)
 			return
 		}
 		sess := core.Session{ID: req.ID, Agent: name}
@@ -533,8 +521,8 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 				}
 			}
 		}
-		ar.writeJSON(w, http.StatusCreated, sess)
+		writeJSON(w, http.StatusCreated, sess)
 	default:
-		ar.httpError(w, http.StatusMethodNotAllowed, "method not allowed")
+		httpError(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
 }
