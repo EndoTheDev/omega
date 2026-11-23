@@ -284,6 +284,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/events", s.handleSessionEvents)
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
+	mux.HandleFunc("/sessions/{id}/context", s.handleSessionContext)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
 	mux.HandleFunc("/sessions/{id}/queue", s.handleSessionQueue)
 	mux.HandleFunc("/sessions/{id}/queue/{row}", s.handleSessionQueueRow)

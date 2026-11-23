@@ -18,6 +18,7 @@ var censusPin = map[string]string{
 	"server_attachments.go": "chat - the composer attach surface for non-image files: /attach-file writes into the session upload dir and /chat carries the typed reference (kind, name, size, path)",
 	"server_canvas.go":      "canvas - the transport: GET /ui/canvas snapshot + POST /ui/actions, deltas fan out on the run streams",
 	"server_commands.go":    "chat - the command palette's server surface (GET /commands + POST /commands/dispatch, the composer's slash-command face over the universal registration seam)",
+	"server_context.go":     "chat - the model-switch probe (GET /sessions/{id}/context): the live context estimate of the session's active path and the context window of the model a pick would switch to",
 	"server_ephemeral.go":   "chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart)",
 	"server_images.go":      "chat - image serving + /attach-image (chat renders images)",
 	"server_settings.go":    "settings - the third shell-ring face (GET/PUT /settings)",
