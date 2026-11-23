@@ -61,7 +61,7 @@ func TestNewFromContextFull(t *testing.T) {
 	ctx.ApplyOffer("prompt", "test", pb)
 	ctx.ApplyOffer("logger", "test", logger)
 	ctx.ToolProviders = []core.ToolProvider{tp}
-	ctx.Infos = infos
+	ctx.UpdateInfos(func([]core.ExtensionInfo) []core.ExtensionInfo { return infos })
 
 	opts := AgentOptions{
 		MaxTurns:      5,

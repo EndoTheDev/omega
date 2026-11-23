@@ -101,7 +101,7 @@ func listTools(ctx *core.Context) core.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("\n")
 
-	infos := core.StampDisabledTools(ctx.Infos, ctx.DisabledTools)
+	infos := core.StampDisabledTools(ctx.Inventory(), ctx.DisabledTools)
 	nameWidth := 0
 	disabled := 0
 	for _, ext := range infos {

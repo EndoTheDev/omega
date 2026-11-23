@@ -121,7 +121,7 @@ func toolsList(args []string, w io.Writer) error {
 	if err != nil {
 		return err
 	}
-	rows := toolRows(pctx.Infos, pctx.DisabledTools)
+	rows := toolRows(pctx.Inventory(), pctx.DisabledTools)
 	_ = agent.DismountAll(reg, pctx)
 
 	if len(rows) == 0 {
@@ -182,7 +182,7 @@ func toolsToggle(args []string, enabled bool, w io.Writer) error {
 		if err != nil {
 			return err
 		}
-		known := toolInInfos(pctx.Infos, name)
+		known := toolInInfos(pctx.Inventory(), name)
 		_ = agent.DismountAll(reg, pctx)
 		if !known {
 			return fmt.Errorf("tools disable refused: no tool named %q in the registry", name)

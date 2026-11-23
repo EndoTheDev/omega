@@ -7,6 +7,14 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// ctxWithInfos builds a Context carrying an inventory the way a mount lands it: through
+// the ledger, never as a struct field.
+func ctxWithInfos(infos ...core.ExtensionInfo) *core.Context {
+	ctx := &core.Context{}
+	ctx.UpdateInfos(func([]core.ExtensionInfo) []core.ExtensionInfo { return infos })
+	return ctx
+}
+
 func TestFirstLineOfDescShort(t *testing.T) {
 	got := firstLineOfDesc("list files")
 	if got != "list files" {
@@ -75,11 +83,7 @@ func TestListToolsEmpty(t *testing.T) {
 
 func TestListToolsEmptyToolListSkipped(t *testing.T) {
 	// An extension with an empty ToolList must be skipped.
-	ctx := &core.Context{
-		Infos: []core.ExtensionInfo{
-			{Name: "empty", ToolList: []core.ToolInfo{}},
-		},
-	}
+	ctx := ctxWithInfos(core.ExtensionInfo{Name: "empty", ToolList: []core.ToolInfo{}})
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "[no tools available]") {
 		t.Fatalf("expected '[no tools available]', got %q", res.Text)
@@ -87,17 +91,13 @@ func TestListToolsEmptyToolListSkipped(t *testing.T) {
 }
 
 func TestListToolsSingleExtension(t *testing.T) {
-	ctx := &core.Context{
-		Infos: []core.ExtensionInfo{
-			{
-				Name: "files",
-				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-					{Name: "files.write", Description: "write a file"},
-				},
-			},
+	ctx := ctxWithInfos(core.ExtensionInfo{
+		Name: "files",
+		ToolList: []core.ToolInfo{
+			{Name: "files.read", Description: "read a file"},
+			{Name: "files.write", Description: "write a file"},
 		},
-	}
+	})
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "files") {
 		t.Fatalf("missing extension header 'files', got %q", res.Text)
@@ -117,22 +117,20 @@ func TestListToolsSingleExtension(t *testing.T) {
 }
 
 func TestListToolsMultipleExtensions(t *testing.T) {
-	ctx := &core.Context{
-		Infos: []core.ExtensionInfo{
-			{
-				Name: "files",
-				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-				},
-			},
-			{
-				Name: "shell",
-				ToolList: []core.ToolInfo{
-					{Name: "shell.run", Description: "run a command"},
-				},
+	ctx := ctxWithInfos(
+		core.ExtensionInfo{
+			Name: "files",
+			ToolList: []core.ToolInfo{
+				{Name: "files.read", Description: "read a file"},
 			},
 		},
-	}
+		core.ExtensionInfo{
+			Name: "shell",
+			ToolList: []core.ToolInfo{
+				{Name: "shell.run", Description: "run a command"},
+			},
+		},
+	)
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "files") {
 		t.Fatalf("missing extension 'files', got %q", res.Text)
@@ -155,17 +153,15 @@ func TestListToolsMultipleExtensions(t *testing.T) {
 }
 
 func TestListToolsMixedEmptyAndNonEmpty(t *testing.T) {
-	ctx := &core.Context{
-		Infos: []core.ExtensionInfo{
-			{
-				Name: "files",
-				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-				},
+	ctx := ctxWithInfos(
+		core.ExtensionInfo{
+			Name: "files",
+			ToolList: []core.ToolInfo{
+				{Name: "files.read", Description: "read a file"},
 			},
-			{Name: "empty", ToolList: []core.ToolInfo{}},
 		},
-	}
+		core.ExtensionInfo{Name: "empty", ToolList: []core.ToolInfo{}},
+	)
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "files.read") {
 		t.Fatalf("missing tool 'files.read', got %q", res.Text)
@@ -201,16 +197,12 @@ func TestHandleToolsCommandList(t *testing.T) {
 }
 
 func TestHandleToolsCommandListWithTools(t *testing.T) {
-	ctx := &core.Context{
-		Infos: []core.ExtensionInfo{
-			{
-				Name: "files",
-				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-				},
-			},
+	ctx := ctxWithInfos(core.ExtensionInfo{
+		Name: "files",
+		ToolList: []core.ToolInfo{
+			{Name: "files.read", Description: "read a file"},
 		},
-	}
+	})
 	res, err := handleToolsCommand(ctx, "/tools", "list")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -333,18 +325,14 @@ func TestHandleToolsCommandWhitespaceTrimmed(t *testing.T) {
 }
 
 func TestListToolsShowsDisabledState(t *testing.T) {
-	ctx := &core.Context{
-		DisabledTools: []string{"files.write"},
-		Infos: []core.ExtensionInfo{
-			{
-				Name: "files",
-				ToolList: []core.ToolInfo{
-					{Name: "files.read", Description: "read a file"},
-					{Name: "files.write", Description: "write a file"},
-				},
-			},
+	ctx := ctxWithInfos(core.ExtensionInfo{
+		Name: "files",
+		ToolList: []core.ToolInfo{
+			{Name: "files.read", Description: "read a file"},
+			{Name: "files.write", Description: "write a file"},
 		},
-	}
+	})
+	ctx.DisabledTools = []string{"files.write"}
 	res := listTools(ctx)
 	if !strings.Contains(res.Text, "files.read") || !strings.Contains(res.Text, "files.write") {
 		t.Fatalf("both rows must stay listed, got %q", res.Text)

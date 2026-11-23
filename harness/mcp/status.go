@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/EndoTheDev/omega/core"
 	"gopkg.in/yaml.v3"
 )
 
@@ -168,7 +169,33 @@ func (p *Plugin) reloadLocked() (StatusReport, error) {
 	if old != nil {
 		old.shutdown()
 	}
+	if err := p.rewireInventory(); err != nil {
+		return next.Status(), fmt.Errorf("mcp reload applied, but the inventory re-wire failed: %w", err)
+	}
 	return next.Status(), nil
+}
+
+// rewireInventory asks every live channel to re-read the Context - the same re-wire a module
+// toggle runs once it commits. The serving agent re-stamps the mcp inventory entry from the
+// bridge the reload just installed, so the Tools section and the extensions listing name the
+// live server set instead of the mount-time snapshot. A host that armed no fence has no bound
+// Context and nothing serving an inventory: the swap alone is the whole reload there.
+func (p *Plugin) rewireInventory() error {
+	ctx := p.mountedCtx()
+	if ctx == nil {
+		return nil
+	}
+	var first error
+	for _, ch := range ctx.Channels {
+		rewire, ok := ch.(core.LiveSeams)
+		if !ok {
+			continue
+		}
+		if err := rewire.RewireSeams(ctx); err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
 }
 
 // toggleRequest is the POST /mcp/toggle body: one server name, one target state.

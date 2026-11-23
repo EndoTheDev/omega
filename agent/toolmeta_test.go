@@ -134,10 +134,11 @@ func TestMountAllAliasesHiddenFromInventory(t *testing.T) {
 		},
 	}
 	mountAllHelper(t, []Plugin{p}, ctx)
-	if len(ctx.Infos) != 1 {
-		t.Fatalf("infos = %d", len(ctx.Infos))
+	infos := ctx.Inventory()
+	if len(infos) != 1 {
+		t.Fatalf("infos = %d", len(infos))
 	}
-	info := ctx.Infos[0]
+	info := infos[0]
 	if info.Tools != 1 {
 		t.Fatalf("Tools count = %d, want 1 (alias must not count)", info.Tools)
 	}

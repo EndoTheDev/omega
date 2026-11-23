@@ -83,30 +83,37 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 		if tp == nil {
 			continue
 		}
-		for name, t := range tp.Tools() {
-			if t.AliasOf != "" {
-				continue
-			}
-			info.Tools++
-			info.ToolList = append(info.ToolList, core.ToolInfo{
-				Name:        name,
-				Description: t.Description,
-				Actions:     t.Actions,
-			})
-		}
+		info.ToolList = append(info.ToolList, ToolInfos(tp.Tools())...)
 	}
 	sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
+	info.Tools = len(info.ToolList)
 	for _, cmd := range target.Commands[beforeCmds:] {
 		info.CommandNames = append(info.CommandNames, cmd.Name)
 	}
 	info.Commands = len(target.Commands) - beforeCmds
-	target.Infos = append(target.Infos, info)
+	target.AddInfo(info)
 	j.add(contribution{
-		ctxApply: func(c *core.Context) { c.Infos = append(c.Infos, info) },
-		ctxUndo:  func(c *core.Context) { c.Infos = removeOne(c.Infos, info) },
+		ctxApply: func(c *core.Context) { c.AddInfo(info) },
+		ctxUndo:  func(c *core.Context) { c.RemoveInfo(info.Name) },
 		applied:  !remount,
 	})
 	return j, nil
+}
+
+// ToolInfos stamps one tool set into the inventory shape the Tools section and the
+// extensions listing read: model-facing names sorted, the tool's own description, its
+// action one-liners, aliases dropped (an alias is never a name the model calls). The mount
+// journal and a runtime re-stamp share it, so a reload can never drift from the mount shape.
+func ToolInfos(tools map[string]core.Tool) []core.ToolInfo {
+	list := make([]core.ToolInfo, 0, len(tools))
+	for name, t := range tools {
+		if t.AliasOf != "" {
+			continue
+		}
+		list = append(list, core.ToolInfo{Name: name, Description: t.Description, Actions: t.Actions})
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
 }
 
 // bootMount is the MountAllAPI loop body over one plugin.
@@ -129,8 +136,7 @@ func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error
 	if already {
 		return fmt.Errorf("module %q already mounted - dismount it before remounting", p.Name())
 	}
-	target := *ctx         // the scoped Context proxy: the only write path during remount
-	target.Lifecycle = nil // the proxy owns a fresh run-group: a panicked mount leaves no fence entries behind
+	target := ctx.Scoped() // the scoped Context proxy: the only write path during remount
 	j, err := mountOne(&target, r, p, true)
 	if err != nil {
 		return err

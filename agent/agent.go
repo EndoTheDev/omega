@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -302,16 +303,83 @@ func (a *Agent) SetExtensionInfos(infos []core.ExtensionInfo) {
 	a.extensionInfos = infos
 }
 
-// RefreshExtensionInfos re-reads the extension metadata from the mounted Context.
+// RefreshExtensionInfos re-reads the extension metadata from the mounted Context, re-stamping
+// every module-backed entry from its providers first: a capsule whose tool set is
+// configuration (an mcp reload) is followed here, never left on a mount-time snapshot.
 func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.tpMu.Lock()
 	defer a.tpMu.Unlock()
 	if !a.tpLive || ctx == nil {
 		return
 	}
-	infos := make([]core.ExtensionInfo, len(ctx.Infos))
-	copy(infos, ctx.Infos)
-	a.extensionInfos = infos
+	// One locked read-modify-write over the Context's inventory: a mount or dismount
+	// committing on the journal lane is never lost between the re-stamp's read and its
+	// write-back, and no prompt build reads a half-rebuilt list.
+	a.extensionInfos = ctx.UpdateInfos(func(infos []core.ExtensionInfo) []core.ExtensionInfo {
+		return restampRuntimeInfos(infos, ctx.ToolProviders)
+	})
+}
+
+// restampRuntimeInfos rewrites every module-backed entry's tool list from the providers
+// bound to that module. Copy-on-write: a reader holding the previous inventory keeps a whole
+// list, never a half-rebuilt one, and an unchanged set leaves the Context's slice untouched.
+// A provider that serves nothing leaves its entry with an empty ToolList - the section renders
+// no block for it, the fold an empty set means.
+func restampRuntimeInfos(infos []core.ExtensionInfo, providers []core.ToolProvider) []core.ExtensionInfo {
+	live := make(map[string][]core.ToolProvider, len(providers))
+	for _, tp := range providers {
+		if mv, ok := tp.(moduleProvider); ok {
+			live[mv.module] = append(live[mv.module], mv)
+		}
+	}
+	if len(live) == 0 {
+		return infos
+	}
+	out := make([]core.ExtensionInfo, len(infos))
+	copy(out, infos)
+	changed := false
+	for i := range out {
+		bound, ok := live[out[i].Name]
+		if !ok {
+			continue
+		}
+		list := mergeToolInfos(bound)
+		if sameToolList(out[i].ToolList, list) {
+			continue
+		}
+		out[i].ToolList = list
+		out[i].Tools = len(list)
+		changed = true
+	}
+	if !changed {
+		return infos
+	}
+	return out
+}
+
+// mergeToolInfos stamps every provider bound to one module into one sorted list - the union
+// the mount journal stamps, so a capsule that registers static and runtime tools keeps both.
+func mergeToolInfos(providers []core.ToolProvider) []core.ToolInfo {
+	var list []core.ToolInfo
+	for _, tp := range providers {
+		list = append(list, ToolInfos(tp.Tools())...)
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
+}
+
+// sameToolList compares two stamped lists row by row. Both are sorted by name, so position is
+// the key; the disable flag is a per-read fold and never lives on the stored list.
+func sameToolList(a, b []core.ToolInfo) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].Description != b[i].Description || !slices.Equal(a[i].Actions, b[i].Actions) {
+			return false
+		}
+	}
+	return true
 }
 
 // SetCaptioner installs the image captioner (agent/caption.go). Nil = images untouched.
@@ -372,7 +440,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.tpLive = true // the Context stays the source of truth: live toggles re-read it
 	ag.SetLoopProvider(bindNeed[LoopProvider](ctx, "loop"))
 	ag.SetPromptBuilder(bindNeed[PromptBuilder](ctx, "prompt"))
-	ag.SetExtensionInfos(ctx.Infos)
+	ag.SetExtensionInfos(ctx.Inventory())
 	ag.SetLogger(bindNeed[LoggerProvider](ctx, "logger"))
 	ag.SetMaxToolOutput(opts.MaxToolOutput)
 	ag.SetPromptCustom(opts.PromptCustom)
@@ -511,6 +579,9 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		promptCustom := a.promptCustom
 		yieldLedger := a.yieldLedger
 		yieldWake := a.yieldWake
+		// The inventory snapshot rides the same read: a live re-read (a reload, a toggle)
+		// swaps it whole under the write side of this lock.
+		extensionInfos := a.extensionInfos
 		a.tpMu.RUnlock()
 		a.loop.Run(ctx, LoopOptions{
 			Provider:           provider,
@@ -522,7 +593,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			PromptBuilder:      a.promptBuilder,
 			// The registry entry's disable flag rides the prompt build: the Tools section lists
 			// what the model can actually call, never a tool the fold switched off.
-			ExtensionInfos: core.StampDisabledTools(a.extensionInfos, disabledToolList(disabledTools)),
+			ExtensionInfos: core.StampDisabledTools(extensionInfos, disabledToolList(disabledTools)),
 			MaxTurns:           maxTurns,
 			MaxToolOutput:      a.maxToolOutput,
 			CWD:                runCWD,
