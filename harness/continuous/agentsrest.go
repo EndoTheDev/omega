@@ -18,7 +18,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -29,6 +28,18 @@ type agentRoutes struct {
 	home    string
 	ctx     *core.Context
 	machine *Machine
+
+	// newSessionID mints the roster session-create ids. Nil = agent.NewSessionID;
+	// a test swaps it to force the mint-failure path.
+	newSessionID func() (string, error)
+}
+
+// mintSessionID is the roster's id source: agent.NewSessionID unless a test pinned one.
+func (ar *agentRoutes) mintSessionID() (string, error) {
+	if ar.newSessionID != nil {
+		return ar.newSessionID()
+	}
+	return agent.NewSessionID()
 }
 
 // mountedStore resolves the daemon's store seam per request (the store seam's live
@@ -487,10 +498,10 @@ func (ar *agentRoutes) handleAgentSessions(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		if req.ID == "" {
-			id, err := agent.NewSessionID()
+			id, err := ar.mintSessionID()
 			if err != nil {
-				// same fallback POST /sessions uses - crypto/rand never fails on supported.
-				id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+				httpError(w, http.StatusInternalServerError, "mint session id: %v", err)
+				return
 			}
 			req.ID = id
 		}

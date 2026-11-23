@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +20,13 @@ import (
 
 func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	t.Helper()
+	return newAgentsFixtureWithMint(t, nil)
+}
+
+// newAgentsFixtureWithMint is newAgentsFixture with the id seam pinned; nil keeps
+// agent.NewSessionID.
+func newAgentsFixtureWithMint(t *testing.T, mint func() (string, error)) (*httptest.Server, *store.Store, string) {
+	t.Helper()
 	home := t.TempDir()
 	if err := agent.ScaffoldAgent(home, "scout", "probe duty"); err != nil {
 		t.Fatal(err)
@@ -32,7 +40,7 @@ func newAgentsFixture(t *testing.T) (*httptest.Server, *store.Store, string) {
 	ctx.ApplyOffer("store", "test", st)
 	machine := NewMachine(home, Default())
 	machine.SetStoreResolver(func() agent.StoreProvider { return st })
-	ar := &agentRoutes{home: home, ctx: ctx, machine: machine}
+	ar := &agentRoutes{home: home, ctx: ctx, machine: machine, newSessionID: mint}
 	mux := http.NewServeMux()
 	for _, row := range ar.registrationRows() {
 		mux.HandleFunc(row.pattern, row.handler)
@@ -327,6 +335,29 @@ func TestAgentSessionCreateKeepsBothListsHonest(t *testing.T) {
 		if sess.ID == "scout-owned" {
 			t.Fatalf("a named agent's session entered the human's list: %+v", sess)
 		}
+	}
+}
+
+// TestAgentSessionCreateMintFailure: the roster's create mints the id at a
+// store-writing trust boundary, so a mint error answers 500 and writes no row -
+// a silent timestamp fallback would hand the store a predictable id.
+func TestAgentSessionCreateMintFailure(t *testing.T) {
+	srv, st, _ := newAgentsFixtureWithMint(t, func() (string, error) {
+		return "", errors.New("entropy source failed")
+	})
+	res, err := postAny(t, srv.URL+"/agents/"+agent.DefaultAgentName+"/sessions", map[string]any{})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if res != http.StatusInternalServerError {
+		t.Fatalf("mint failure status = %d, want 500", res)
+	}
+	rows, err := st.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("mint failure wrote %d row(s): %+v", len(rows), rows)
 	}
 }
 

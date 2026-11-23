@@ -134,8 +134,9 @@ func TestNewBridgeFromEnvBadConfig(t *testing.T) {
 }
 
 func TestNewBridgeFromEnvToolDiscovery(t *testing.T) {
-	// ponytail: connect has no injection point for test conns, so this exercises. The
-	// bridge must still be usable and the failure must be non-fatal.
+	// connect has no seam for test connections, so this drives the real HTTP
+	// connect against a closed port. The failure is recorded per server (the
+	// Status report carries it) and the bridge still boots usable with zero tools.
 	home := t.TempDir()
 	t.Setenv("OMEGA_HOME", home)
 	t.Setenv("MCP_SERVERS", `{"servers":[{"name":"dead","url":"http://127.0.0.1:1"}]}`)
