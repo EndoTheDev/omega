@@ -3170,6 +3170,8 @@ labels stopped short of the right edge. */
 }
 
 .statusbar .seg { display: flex; align-items: center; gap: 6px; }
+/* absence reads dim: the words say it, the shade keeps a missing figure from looking measured. */
+.statusbar .seg.muted { color: var(--text-dim); }
 /* the TWO zones (card t_8fd38f88): LEFT holds the work context (the
    workdir selector), RIGHT holds the live metrics + build. The right zone
    keeps the old .right class + margin-auto pull (journey 111 reads

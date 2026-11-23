@@ -386,6 +386,7 @@
       :message-count="messageCount"
       :tokens="tokens"
       :tokens-estimated="tokensEstimated"
+      :cache-percent="cachePercent"
       :context-size="contextSize"
       :tokens-per-second="tokensPerSecond"
       :live-deltas-per-second="liveDeltasPerSecond"
@@ -1263,6 +1264,7 @@
   });
   const tokens = computed(() => focusedChatState.value.tokens);
   const tokensEstimated = computed(() => focusedChatState.value.tokensEstimated);
+  const cachePercent = computed(() => focusedChatState.value.cachePercent);
   const tokensPerSecond = computed(() => focusedChatState.value.tokensPerSecond);
   const liveDeltasPerSecond = computed(() => focusedChatState.value.liveDeltasPerSecond);
   const lastChunksPerSecond = computed(() => focusedChatState.value.lastChunksPerSecond);

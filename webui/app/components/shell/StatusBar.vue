@@ -53,6 +53,14 @@
         {{ tokensEstimated ? "~" : "" }}{{ tokens }} tok
       </span>
       </template>
+      <template v-if="shows('cache')">
+      <span
+        class="seg hide-sm"
+        :class="{ muted: cachePercent == null }"
+        :title="cacheTitle">
+        {{ cacheLabel }}
+      </span>
+      </template>
       <template v-if="shows('context')">
       <span
         v-if="contextSize"
@@ -181,6 +189,7 @@
     shortVersion,
   } from "../../composables/omega";
   import { openContextMenu } from "../../composables/contextMenu";
+  import { formatCacheShare } from "../../composables/tokenstat";
   import { statMenuItems, statVisible } from "./statusStats";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
 
@@ -191,6 +200,8 @@
     tokens: number;
     // true while `tokens` carries a run-time estimate instead of reported usage
     tokensEstimated?: boolean;
+    // the latest response's prompt-cache share (percent); null = not reported
+    cachePercent?: number | null;
     contextSize: number;
     tokensPerSecond: number;
     liveDeltasPerSecond: number;
@@ -238,6 +249,19 @@
       }),
     );
   }
+
+  // the prompt-cache segment: the provider's own report, or the plain word for
+  // its absence - a nil cache figure never renders as a measured zero.
+  const cacheLabel = computed(() =>
+    props.cachePercent == null
+      ? `cache ${NOT_REPORTED}`
+      : `${formatCacheShare(props.cachePercent)} cache`,
+  );
+  const cacheTitle = computed(() =>
+    props.cachePercent == null
+      ? "prompt cache: the provider reported no cache figure for the latest response"
+      : "prompt cache hit share of the latest response",
+  );
 
   const providerSourced = computed(() => typeof props.providerReachable === "boolean");
   const databaseSourced = computed(() => typeof props.databaseHealthy === "boolean");

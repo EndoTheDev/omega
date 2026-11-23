@@ -287,11 +287,19 @@ test("a cancelled agent_end still reports its finish before the interrupt throw"
 });
 
 test("stream_end usage keeps its onUsage consumer (no transport regression)", () => {
-  let usage: { promptTokens: number; completionTokens: number } | null = null;
+  let usage: { promptTokens: number; completionTokens: number; cachedTokens: number | null } | null = null;
   const handlers: StreamHandlers = {
     onUsage: (u) => { usage = u; },
   };
+  // no cache field on the wire: absence stays null, never a measured zero
   handlePayload({ type: "stream_end", prompt_eval_count: 10, eval_count: 5 }, handlers, {});
+  assert.deepEqual(usage, { promptTokens: 10, completionTokens: 5, cachedTokens: null });
+  // a reported zero IS a measured zero and rides through as 0
+  handlePayload(
+    { type: "stream_end", prompt_eval_count: 10, eval_count: 5, cached_count: 0 },
+    handlers,
+    {},
+  );
   assert.deepEqual(usage, { promptTokens: 10, completionTokens: 5, cachedTokens: 0 });
 });
 

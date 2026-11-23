@@ -72,6 +72,7 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	finishReason := "stop"
 	promptTokens, completionTokens, cachedTokens := 0, 0, 0
 	sawUsage := false
+	cachedSeen := false
 
 	for {
 		payloadLine, ok, readErr := llm.SSEData(reader)
@@ -111,7 +112,10 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 			Usage *struct {
 				PromptTokens     *int `json:"prompt_tokens"`
 				CompletionTokens *int `json:"completion_tokens"`
-				PromptDetails    *struct {
+				// DeepSeek and other OpenAI-compatible hosts report the cached
+				// prompt prefix at the usage root, not under prompt_tokens_details.
+				PromptCacheHitTokens *int `json:"prompt_cache_hit_tokens"`
+				PromptDetails        *struct {
 					CachedTokens *int `json:"cached_tokens"`
 				} `json:"prompt_tokens_details"`
 			} `json:"usage"`
@@ -131,7 +135,9 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 				completionTokens = *chunk.Usage.CompletionTokens
 			}
 			if chunk.Usage.PromptDetails != nil && chunk.Usage.PromptDetails.CachedTokens != nil {
-				cachedTokens = *chunk.Usage.PromptDetails.CachedTokens
+				cachedTokens, cachedSeen = *chunk.Usage.PromptDetails.CachedTokens, true
+			} else if chunk.Usage.PromptCacheHitTokens != nil {
+				cachedTokens, cachedSeen = *chunk.Usage.PromptCacheHitTokens, true
 			}
 		}
 		if len(chunk.Choices) == 0 {
@@ -188,18 +194,23 @@ func (p *Provider) streamOpenAI(ctx context.Context, events chan<- core.Provider
 	)
 
 	pt, ct := promptTokens, completionTokens
-	ca := cachedTokens
 	// Parity with the ollama native path: when the host never sent a
 	// usage chunk, report absent counters (nil) instead of fake zeros.
 	if !sawUsage {
 		return core.StreamEnd{Type: "stream_end", FinishReason: finishReason}
+	}
+	// Same truth for the cache: a host that reported prompt usage without a
+	// cache figure reported NO cache fact - nil, never a measured zero.
+	var ca *int
+	if cachedSeen {
+		ca = &cachedTokens
 	}
 	return core.StreamEnd{
 		Type:            "stream_end",
 		FinishReason:    finishReason,
 		PromptEvalCount: &pt,
 		EvalCount:       &ct,
-		CachedCount:     &ca,
+		CachedCount:     ca,
 	}
 }
 

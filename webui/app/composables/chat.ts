@@ -1,6 +1,6 @@
 
 import { computed, reactive, ref, type ComputedRef, type InjectionKey, type Ref } from "vue";
-import { durableTokens, estimateTokens, usageTokens, type SessionTokens } from "./tokenstat.ts";
+import { cacheShare, durableTokens, estimateTokens, usageTokens, type SessionTokens } from "./tokenstat.ts";
 import {
   attachSession,
   chatPanelContent,
@@ -95,6 +95,9 @@ export interface ChatState {
   tokensEstimated: boolean;
   // the last STORE-reported cumulative total: the base a live run counts onto
   tokensDurable: number;
+  // the latest response's prompt-cache share (percent, one decimal); null = the
+  // provider reported no cache figure - the bar says "not reported", never 0%
+  cachePercent: number | null;
   tokensPerSecond: number;
   liveDeltasPerSecond: number;
   lastDeltasPerSecond: number;
@@ -136,6 +139,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   tokens: 0,
   tokensEstimated: false,
   tokensDurable: 0,
+  cachePercent: null,
   tokensPerSecond: 0,
   liveDeltasPerSecond: 0,
   lastDeltasPerSecond: 0,
@@ -393,6 +397,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         tokens: 0,
         tokensEstimated: false,
         tokensDurable: 0,
+        cachePercent: null,
         tokensPerSecond: 0,
         liveDeltasPerSecond: 0,
         lastDeltasPerSecond: 0,
@@ -417,6 +422,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       st.sessionId = sessionId;
       // a DIFFERENT session starts at its own total: the previous one is not its base
       paintDurable(st, 0);
+      st.cachePercent = null;
     }
     if (ephemeral !== undefined) st.ephemeral = ephemeral;
     return st;
@@ -446,6 +452,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       const handlers: StreamHandlers = {
         onUsage: (u) => {
           paintTokens(st, usageTokens(st.tokensDurable, u.promptTokens, u.completionTokens));
+          st.cachePercent = cacheShare(u.cachedTokens, u.promptTokens);
         },
         onViewModelDelta: (panel) => deps.canvasDelta?.(panel),
         onRunEnd: (finishReason) => {
@@ -508,6 +515,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       onUsage: (usage) => {
         usageSeen = true;
         paintTokens(st, usageTokens(base, usage.promptTokens, usage.completionTokens));
+        st.cachePercent = cacheShare(usage.cachedTokens, usage.promptTokens);
         const seconds = (Date.now() - sentAt) / 1000;
         st.tokensPerSecond =
           seconds > 0.2 ? Math.round(usage.completionTokens / seconds) : 0;
