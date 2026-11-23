@@ -344,9 +344,7 @@ func (s *Server) launchQueued(sessionID string, batch []queuedInput) bool {
 	s.launchRun(ctx, cr.run, cr.prov, cr.messages, cr.tools, req)
 	// The batch IS this turn's input now: acknowledging retires the rows from the in-flight
 	// set so the finish hook cannot re-queue them into a second identical turn.
-	for _, item := range batch {
-		s.steers.ack(sessionID, item.ID)
-	}
+	s.ackQueued(sessionID, batch)
 	return true
 }
 

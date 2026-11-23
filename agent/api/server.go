@@ -788,6 +788,12 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		s.prepareFailed(run, req.SessionID)
 		return nil, err
 	}
+	// An ephemeral session has no store row: the registry IS the conversation, so the taken
+	// rows are committed the moment history adopts them - handing them back now would deliver
+	// them twice.
+	if req.Ephemeral {
+		s.ackQueued(req.SessionID, queuedLead)
+	}
 
 	// Instance pin: a wire provider name WINS and sticks on the session.
 	// No wire name serves the session's pinned one - which is exactly how a removed
@@ -862,6 +868,9 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 		s.wakeLaunches[req.SessionID]++
 		s.wakeMu.Unlock()
 	}
+	// The launch is committed: the rows this turn took are its input now, so they are spent.
+	// Every error return ABOVE this line handed them back through prepareFailed.
+	s.ackQueued(req.SessionID, queuedLead)
 	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools}, nil
 }
 

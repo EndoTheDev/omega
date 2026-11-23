@@ -222,14 +222,19 @@ pre-launch window.
 
 **The queue is session-held.** Rows outlive the run that parked them: a
 turn that dies on a provider error (or a crashed turn) hands its
-undelivered rows to the next turn, which delivers them first. The queue
+undelivered rows to the next turn, which delivers them first. A launch
+that fails before its turn runs hands the rows it had taken back the same
+way - the `202` is a receipt for delivery, never for loss. The queue
 is process-local (never persisted): a server restart drops it.
 
 - `GET /sessions/{id}/queue` - `{"queued": [{id, content, at}]}`, in
-  delivery order. Answers for any session; an idle one is empty.
+  delivery order. Answers for any session; an idle one is empty. Only the
+  human's own rows appear: a settled result waiting for the live turn is
+  machinery for that turn, never a row.
 - `DELETE /sessions/{id}/queue/{row}` - `204` when the row leaves the
-  queue, `404` when it is unknown or already delivered (the surface's row
-  is stale and the truth is the queue read).
+  queue, `404` when it is unknown, already delivered, or not a row the
+  surface shows (a result the live turn is waiting on is refused the same
+  way: the surface's row is stale and the truth is the queue read).
 
 **Stop is a hard stop, not a stopped stream.** The endpoint latches the
 session's run stop (`core.RunStop`), then cancels the run context. The
