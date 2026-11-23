@@ -38,7 +38,97 @@ type Context struct {
 	// registers a handle - Reach it through RunGroup, never assign it directly.
 	Lifecycle *Lifecycle
 
-	Infos []ExtensionInfo
+	// inv is the mounted extension inventory. Two lanes write it - the mount journal
+	// (ctxApply/ctxUndo) and a runtime re-stamp - so it carries its own lock; read it
+	// through Inventory, never as a field.
+	inv *infoLedger
+}
+
+// infoLedger is the guarded extension inventory: one mutex for the whole slice, so a
+// re-stamp's read-modify-write is atomic against a mount or dismount committing beside it.
+type infoLedger struct {
+	mu    sync.RWMutex
+	infos []ExtensionInfo
+}
+
+// InitInventory allocates the inventory ledger. MountAllAPI calls it before the first
+// mount, so the ledger every serving surface later reads is fixed before a goroutine runs.
+func (c *Context) InitInventory() {
+	if c.inv == nil {
+		c.inv = &infoLedger{}
+	}
+}
+
+// ledger returns the inventory ledger, creating it for a hand-built Context. The first
+// write to such a Context is its mount - boot-serially, before any reader exists.
+func (c *Context) ledger() *infoLedger {
+	if c.inv == nil {
+		c.inv = &infoLedger{}
+	}
+	return c.inv
+}
+
+// Inventory returns a copy of the mounted extension inventory: the rows the Tools
+// section and the extensions listing render. A Context nothing has mounted answers nil.
+func (c *Context) Inventory() []ExtensionInfo {
+	inv := c.inv
+	if inv == nil {
+		return nil
+	}
+	inv.mu.RLock()
+	defer inv.mu.RUnlock()
+	out := make([]ExtensionInfo, len(inv.infos))
+	copy(out, inv.infos)
+	return out
+}
+
+// AddInfo appends one module's inventory entry - the mount journal's forward write.
+func (c *Context) AddInfo(info ExtensionInfo) {
+	l := c.ledger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.infos = append(l.infos, info)
+}
+
+// RemoveInfo drops one module's inventory entry by name - the journal's undo. Module
+// names are unique (the registry refuses a second mount of one name) and an entry's tool
+// list is a live snapshot a runtime re-stamp rewrites, so value identity would miss.
+func (c *Context) RemoveInfo(module string) {
+	l := c.ledger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for i, info := range l.infos {
+		if info.Name != module {
+			continue
+		}
+		out := make([]ExtensionInfo, 0, len(l.infos)-1)
+		out = append(out, l.infos[:i]...)
+		out = append(out, l.infos[i+1:]...)
+		l.infos = out
+		return
+	}
+}
+
+// UpdateInfos applies fn to the inventory under the write lock and returns the stored
+// result: the one read-modify-write door for entries that change under a live mount. fn
+// must not retain or mutate the slice it is handed.
+func (c *Context) UpdateInfos(fn func([]ExtensionInfo) []ExtensionInfo) []ExtensionInfo {
+	l := c.ledger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.infos = fn(l.infos)
+	out := make([]ExtensionInfo, len(l.infos))
+	copy(out, l.infos)
+	return out
+}
+
+// Scoped returns the Context copy a remount mounts into: its own inventory (a panicked
+// mount leaves the live one untouched) and no fence (a fresh run-group is the proxy's).
+func (c *Context) Scoped() Context {
+	out := *c
+	out.Lifecycle = nil
+	out.inv = &infoLedger{infos: c.Inventory()}
+	return out
 }
 
 // applyOffer lands one validated offer on this Context's registry.

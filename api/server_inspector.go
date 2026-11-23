@@ -48,7 +48,7 @@ type extensionListing struct {
 // handleExtensions serves GET /extensions. Mount order is the dependency order
 // MountAllAPI built, the same order the inspector renders; keep it, don't alphabetize
 // away the seams-require-providers structure. THE LAW: this endpoint lists the MOUNTED
-// capsules exactly - ctx.Infos, the inventory the mount journal keeps exact across
+// capsules exactly - the Context's inventory, which the mount journal keeps exact across
 // boot-disables (never mounted, never a row) and live toggles (dismount ctxUndo,
 // remount ctxApply). A disabled module therefore cannot appear here while GET /modules
 // reports it disabled, and a re-enabled one is back the moment it remounts.

@@ -91,10 +91,10 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 		info.CommandNames = append(info.CommandNames, cmd.Name)
 	}
 	info.Commands = len(target.Commands) - beforeCmds
-	target.Infos = append(target.Infos, info)
+	target.AddInfo(info)
 	j.add(contribution{
-		ctxApply: func(c *core.Context) { c.Infos = append(c.Infos, info) },
-		ctxUndo:  func(c *core.Context) { c.Infos = removeModuleInfo(c.Infos, info.Name) },
+		ctxApply: func(c *core.Context) { c.AddInfo(info) },
+		ctxUndo:  func(c *core.Context) { c.RemoveInfo(info.Name) },
 		applied:  !remount,
 	})
 	return j, nil
@@ -114,22 +114,6 @@ func ToolInfos(tools map[string]core.Tool) []core.ToolInfo {
 	}
 	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
 	return list
-}
-
-// removeModuleInfo drops one module's inventory entry by name. Module names are unique (the
-// registry refuses a second mount of one name) and the entry's tool list is a live snapshot a
-// runtime re-stamp rewrites, so value identity would leave a ghost row behind after a reload.
-func removeModuleInfo(infos []core.ExtensionInfo, module string) []core.ExtensionInfo {
-	for i, info := range infos {
-		if info.Name != module {
-			continue
-		}
-		out := make([]core.ExtensionInfo, 0, len(infos)-1)
-		out = append(out, infos[:i]...)
-		out = append(out, infos[i+1:]...)
-		return out
-	}
-	return infos
 }
 
 // bootMount is the MountAllAPI loop body over one plugin.
@@ -152,8 +136,7 @@ func (r *Registry) Mount(ctx *core.Context, p Plugin, deps core.StartDeps) error
 	if already {
 		return fmt.Errorf("module %q already mounted - dismount it before remounting", p.Name())
 	}
-	target := *ctx         // the scoped Context proxy: the only write path during remount
-	target.Lifecycle = nil // the proxy owns a fresh run-group: a panicked mount leaves no fence entries behind
+	target := ctx.Scoped() // the scoped Context proxy: the only write path during remount
 	j, err := mountOne(&target, r, p, true)
 	if err != nil {
 		return err

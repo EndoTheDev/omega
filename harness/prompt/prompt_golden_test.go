@@ -37,7 +37,7 @@ func scrubEnv(prompt string) string {
 }
 
 // wireContext mounts the production extension set the same way cmd/omega does.
-// Extensions then come from ctx.Infos, exactly like the real loop.
+// Extensions then come from ctx.Inventory(), exactly like the real loop.
 func wireContext(t *testing.T, skillDir string, memCfg memory.Config) *core.Context {
 	t.Helper()
 	ctx := &core.Context{
@@ -98,7 +98,7 @@ func fullOpts(ctx *core.Context) core.PromptBuildOptions {
 		ProjectContext: "# AGENTS.md\n\nProject rules live here.\n",
 		Custom:         "Tone: direct.\nStay terse.",
 		Append:         []string{"Extra appended prompt one.", "Extra appended prompt two."},
-		Extensions:     ctx.Infos,
+		Extensions:     ctx.Inventory(),
 	}
 }
 
@@ -106,7 +106,7 @@ func fullOpts(ctx *core.Context) core.PromptBuildOptions {
 func minimalOpts(ctx *core.Context) core.PromptBuildOptions {
 	return core.PromptBuildOptions{
 		CWD:        "/test/cwd",
-		Extensions: ctx.Infos,
+		Extensions: ctx.Inventory(),
 	}
 }
 
@@ -217,13 +217,13 @@ func TestPromptToolsFoldDropsSections(t *testing.T) {
 
 	// Every tool folded: the sections that describe them are gone, and the posture stops
 	// claiming tools.
-	fold := core.ToolNames(ctx.Infos)
+	fold := core.ToolNames(ctx.Inventory())
 	if len(fold) == 0 {
 		t.Fatal("inventory carries no tools, the pin proves nothing")
 	}
 	opts := minimalOpts(ctx)
 	opts.DisabledTools = fold
-	opts.Extensions = core.StampDisabledTools(ctx.Infos, fold)
+	opts.Extensions = core.StampDisabledTools(ctx.Inventory(), fold)
 	off, ok := builder.BuildPrompt(context.Background(), opts)
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")

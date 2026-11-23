@@ -68,7 +68,7 @@ func TestReloadRebuildsTheToolSnapshot(t *testing.T) {
 	}
 	ctx, ag := mountInventoryPlugin(t, p)
 	both := []string{"alpha.echo", "beta.echo"}
-	if got := names(t, ctx.Infos); !reflect.DeepEqual(got, both) {
+	if got := names(t, ctx.Inventory()); !reflect.DeepEqual(got, both) {
 		t.Fatalf("mount inventory: got %v, want %v", got, both)
 	}
 	if got := names(t, ag.ExtensionInfos()); !reflect.DeepEqual(got, both) {
@@ -80,7 +80,7 @@ func TestReloadRebuildsTheToolSnapshot(t *testing.T) {
 		t.Fatalf("POST /mcp/reload: %d %s", w.Code, w.Body.String())
 	}
 	only := []string{"alpha.echo"}
-	if got := names(t, ctx.Infos); !reflect.DeepEqual(got, only) {
+	if got := names(t, ctx.Inventory()); !reflect.DeepEqual(got, only) {
 		t.Fatalf("the inventory the section reads still names the removed server: got %v, want %v", got, only)
 	}
 	if got := names(t, ag.ExtensionInfos()); !reflect.DeepEqual(got, only) {
@@ -106,7 +106,7 @@ func TestReloadToZeroToolsLeavesNoBlock(t *testing.T) {
 	// The module stays mounted - only its tool set is gone, so the entry keeps an empty
 	// ToolList and the section renders no mcp block for it.
 	entry := false
-	for _, info := range ctx.Infos {
+	for _, info := range ctx.Inventory() {
 		if info.Name != "mcp" {
 			continue
 		}

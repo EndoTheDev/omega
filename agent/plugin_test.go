@@ -295,8 +295,8 @@ func TestMountAllPopulatesSlots(t *testing.T) {
 	if offered.ModelName() != "test-model" {
 		t.Fatalf("expected model name %q, got %q", "test-model", offered.ModelName())
 	}
-	if len(ctx.Infos) != 1 || ctx.Infos[0].Name != "provider" {
-		t.Fatalf("expected 1 info entry for provider, got %v", ctx.Infos)
+	if infos := ctx.Inventory(); len(infos) != 1 || infos[0].Name != "provider" {
+		t.Fatalf("expected 1 info entry for provider, got %v", infos)
 	}
 }
 
@@ -345,11 +345,12 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		t.Fatalf("MountAll: %v", err)
 	}
 
-	if len(ctx.Infos) != 2 {
-		t.Fatalf("expected 2 infos, got %d", len(ctx.Infos))
+	infos := ctx.Inventory()
+	if len(infos) != 2 {
+		t.Fatalf("expected 2 infos, got %d", len(infos))
 	}
 
-	ti := ctx.Infos[0]
+	ti := infos[0]
 	if ti.Name != "tools-ext" {
 		t.Fatalf("expected tools-ext, got %q", ti.Name)
 	}
@@ -366,7 +367,7 @@ func TestMountAllPopulatesInfos(t *testing.T) {
 		t.Fatalf("unexpected tool entry: %+v", ti.ToolList[0])
 	}
 
-	ci := ctx.Infos[1]
+	ci := infos[1]
 	if ci.Name != "cmd-ext" {
 		t.Fatalf("expected cmd-ext, got %q", ci.Name)
 	}

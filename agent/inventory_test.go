@@ -6,6 +6,7 @@ package agent
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
@@ -48,7 +49,7 @@ func TestRefreshExtensionInfosRestampsTheRuntimeEntry(t *testing.T) {
 	if _, err := MountAllAPI([]Plugin{plugin}, ctx, nil, nil); err != nil {
 		t.Fatalf("mount: %v", err)
 	}
-	names, ok := infoToolNames(ctx.Infos, "bridge")
+	names, ok := infoToolNames(ctx.Inventory(), "bridge")
 	if !ok || !reflect.DeepEqual(names, []string{"alpha.echo", "beta.list"}) {
 		t.Fatalf("mount inventory: %v (present %v), want [alpha.echo beta.list]", names, ok)
 	}
@@ -57,7 +58,7 @@ func TestRefreshExtensionInfosRestampsTheRuntimeEntry(t *testing.T) {
 	plugin.tools = map[string]core.Tool{"alpha.echo": {Description: "Echoes input"}}
 	ag.RefreshExtensionInfos(ctx)
 
-	names, _ = infoToolNames(ctx.Infos, "bridge")
+	names, _ = infoToolNames(ctx.Inventory(), "bridge")
 	if !reflect.DeepEqual(names, []string{"alpha.echo"}) {
 		t.Fatalf("the mounted inventory kept the stale tool: got %v, want [alpha.echo]", names)
 	}
@@ -65,7 +66,7 @@ func TestRefreshExtensionInfosRestampsTheRuntimeEntry(t *testing.T) {
 	if !reflect.DeepEqual(names, []string{"alpha.echo"}) {
 		t.Fatalf("the agent snapshot kept the stale tool: got %v, want [alpha.echo]", names)
 	}
-	for _, info := range ctx.Infos {
+	for _, info := range ctx.Inventory() {
 		if info.Name != "bridge" {
 			continue
 		}
@@ -78,7 +79,7 @@ func TestRefreshExtensionInfosRestampsTheRuntimeEntry(t *testing.T) {
 	// tools, never a dropped module and never a block.
 	plugin.tools = nil
 	ag.RefreshExtensionInfos(ctx)
-	for _, info := range ctx.Infos {
+	for _, info := range ctx.Inventory() {
 		if info.Name == "bridge" && (info.Tools != 0 || len(info.ToolList) != 0) {
 			t.Fatalf("shrunk-to-zero entry: %+v", info)
 		}
@@ -101,8 +102,99 @@ func TestDismountRemovesTheRestampedEntry(t *testing.T) {
 	if err := reg.Dismount(ctx, "bridge"); err != nil {
 		t.Fatalf("dismount: %v", err)
 	}
-	if _, present := infoToolNames(ctx.Infos, "bridge"); present {
+	if _, present := infoToolNames(ctx.Inventory(), "bridge"); present {
 		t.Fatal("dismount left the re-stamped inventory entry behind")
+	}
+}
+
+// staticAndRuntimePlugin registers one static tool beside a runtime set: the mount journals
+// the union, so a re-stamp has to rebuild that same union.
+type staticAndRuntimePlugin struct {
+	name    string
+	runtime map[string]core.Tool
+}
+
+func (p *staticAndRuntimePlugin) Name() string       { return p.name }
+func (p *staticAndRuntimePlugin) Provides() []string { return []string{"tools"} }
+func (p *staticAndRuntimePlugin) Requires() []string { return nil }
+func (p *staticAndRuntimePlugin) MountWithAPI(_ *Context, api *ExtensionAPI) error {
+	if err := api.RegisterBuiltinTool(p.name+".static", core.Tool{Description: "a static tool"}); err != nil {
+		return err
+	}
+	return api.RegisterRuntimeTools(p)
+}
+func (p *staticAndRuntimePlugin) Tools() map[string]core.Tool { return p.runtime }
+
+// TestRefreshKeepsAMixedModulesStaticTools pins the merged stamp: a capsule that registers
+// static and runtime tools keeps both rows through a re-stamp - the runtime half alone never
+// replaces the module's entry.
+func TestRefreshKeepsAMixedModulesStaticTools(t *testing.T) {
+	plugin := &staticAndRuntimePlugin{
+		name:    "mixed",
+		runtime: map[string]core.Tool{"mixed.alpha": {Description: "runtime alpha"}},
+	}
+	ctx := &Context{}
+	if _, err := MountAllAPI([]Plugin{plugin}, ctx, nil, nil); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	names, ok := infoToolNames(ctx.Inventory(), "mixed")
+	if !ok || !reflect.DeepEqual(names, []string{"mixed.alpha", "mixed.static"}) {
+		t.Fatalf("mount inventory: %v (present %v), want both rows", names, ok)
+	}
+
+	ag := NewFromContext(ctx, AgentOptions{})
+	plugin.runtime = map[string]core.Tool{"mixed.beta": {Description: "runtime beta"}}
+	ag.RefreshExtensionInfos(ctx)
+
+	want := []string{"mixed.beta", "mixed.static"}
+	for _, infos := range [][]core.ExtensionInfo{ctx.Inventory(), ag.ExtensionInfos()} {
+		names, ok := infoToolNames(infos, "mixed")
+		if !ok || !reflect.DeepEqual(names, want) {
+			t.Fatalf("re-stamped inventory: %v (present %v), want %v", names, ok, want)
+		}
+	}
+}
+
+// TestInventoryUpdateCannotClobberAConcurrentMount pins the one-lock law: the journal lane and
+// the re-stamp lane write the same inventory, so an entry mounted while a re-stamp holds its
+// read-modify-write open waits for it and survives - never lost in the stale window.
+func TestInventoryUpdateCannotClobberAConcurrentMount(t *testing.T) {
+	ctx := &Context{}
+	ctx.AddInfo(core.ExtensionInfo{Name: "mounted"})
+
+	inside := make(chan struct{})
+	release := make(chan struct{})
+	updated := make(chan struct{})
+	go func() {
+		defer close(updated)
+		ctx.UpdateInfos(func(infos []core.ExtensionInfo) []core.ExtensionInfo {
+			close(inside)
+			<-release
+			return infos // a no-op re-stamp: the concurrent mount must still land
+		})
+	}()
+	<-inside
+
+	added := make(chan struct{})
+	go func() {
+		ctx.AddInfo(core.ExtensionInfo{Name: "mounted-while-restamping"})
+		close(added)
+	}()
+	select {
+	case <-added:
+		t.Fatal("a mount landed inside the re-stamp's read-modify-write window")
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	<-updated
+	<-added
+
+	infos := ctx.Inventory()
+	if _, ok := infoToolNames(infos, "mounted-while-restamping"); !ok {
+		t.Fatalf("the re-stamp clobbered an entry mounted against it: %+v", infos)
+	}
+	if _, ok := infoToolNames(infos, "mounted"); !ok {
+		t.Fatalf("the re-stamp dropped the entry it read: %+v", infos)
 	}
 }
 

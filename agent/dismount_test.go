@@ -285,8 +285,8 @@ func TestDisableList(t *testing.T) {
 	if reg.isActive("kanban") {
 		t.Fatal("disabled module mounted")
 	}
-	if len(ctx.Infos) != 0 {
-		t.Fatalf("disabled module left inventory: %+v", ctx.Infos)
+	if infos := ctx.Inventory(); len(infos) != 0 {
+		t.Fatalf("disabled module left inventory: %+v", infos)
 	}
 	dep := &dependentCapsule{name: "depper", requires: []string{"kanban"}}
 	_, err = MountAllAPI([]Plugin{off, dep}, ctx, nil, []string{"kanban"})

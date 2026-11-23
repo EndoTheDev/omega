@@ -142,7 +142,7 @@ func TestMountAllIntegration(t *testing.T) {
 	if _, err := agent.MountAllAPI([]agent.Plugin{p}, ctx, nil, nil); err != nil {
 		t.Fatalf("MountAll: %v", err)
 	}
-	if len(ctx.Infos) != 1 || ctx.Infos[0].Name != "mcp" {
-		t.Fatalf("Infos: got %+v", ctx.Infos)
+	if infos := ctx.Inventory(); len(infos) != 1 || infos[0].Name != "mcp" {
+		t.Fatalf("Infos: got %+v", infos)
 	}
 }

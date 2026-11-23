@@ -261,7 +261,7 @@ func TestHandleExtensionsFollowsLiveToggle(t *testing.T) {
 		t.Fatalf("toggle-on: cron row counts tools=%d commands=%d, want 1/1", cronRow.Tools, cronRow.Commands)
 	}
 
-	if got := a.ExtensionInfos(); len(got) != len(ctx.Infos) {
-		t.Fatalf("agent inventory %d rows, ctx.Infos has %d", len(got), len(ctx.Infos))
+	if got := a.ExtensionInfos(); len(got) != len(ctx.Inventory()) {
+		t.Fatalf("agent inventory %d rows, ctx.Inventory has %d", len(got), len(ctx.Inventory()))
 	}
 }

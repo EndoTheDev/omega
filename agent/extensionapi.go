@@ -52,6 +52,7 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 	if refusals == nil {
 		refusals = NewRefusalLedger()
 	}
+	ctx.InitInventory()
 	enabled, err := filterDisabled(plugins, disabled)
 	if err != nil {
 		return nil, err
@@ -379,7 +380,10 @@ func (api *ExtensionAPI) RegisterBuiltinTool(name string, t core.Tool) error {
 	return nil
 }
 
-// landTool assembles one registration into the provider the loop reads and arms.
+// landTool assembles one registration into the provider the loop reads and arms. The
+// provider is module-bound like a runtime one: the mount journal stamps this module's
+// whole tool set, so an inventory re-stamp must rebuild it from every provider the
+// module landed, static and runtime alike.
 func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	if api.tools == nil {
 		api.tools = make(map[string]core.Tool)
@@ -387,7 +391,7 @@ func (api *ExtensionAPI) landTool(name string, t core.Tool) {
 	api.tools[name] = t
 	if !api.wired {
 		api.wired = true
-		provider := toolMap(api.tools)
+		provider := core.ToolProvider(moduleProvider{module: api.module, inner: toolMap(api.tools)})
 		api.writeSlot(
 			func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, provider) },
 			func(c *core.Context) { c.ToolProviders = removeOne[core.ToolProvider](c.ToolProviders, provider) },

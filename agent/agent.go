@@ -304,7 +304,7 @@ func (a *Agent) SetExtensionInfos(infos []core.ExtensionInfo) {
 }
 
 // RefreshExtensionInfos re-reads the extension metadata from the mounted Context, re-stamping
-// every runtime-backed entry from its provider first: a capsule whose tool set is
+// every module-backed entry from its providers first: a capsule whose tool set is
 // configuration (an mcp reload) is followed here, never left on a mount-time snapshot.
 func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	a.tpMu.Lock()
@@ -312,22 +312,24 @@ func (a *Agent) RefreshExtensionInfos(ctx *Context) {
 	if !a.tpLive || ctx == nil {
 		return
 	}
-	ctx.Infos = restampRuntimeInfos(ctx.Infos, ctx.ToolProviders)
-	infos := make([]core.ExtensionInfo, len(ctx.Infos))
-	copy(infos, ctx.Infos)
-	a.extensionInfos = infos
+	// One locked read-modify-write over the Context's inventory: a mount or dismount
+	// committing on the journal lane is never lost between the re-stamp's read and its
+	// write-back, and no prompt build reads a half-rebuilt list.
+	a.extensionInfos = ctx.UpdateInfos(func(infos []core.ExtensionInfo) []core.ExtensionInfo {
+		return restampRuntimeInfos(infos, ctx.ToolProviders)
+	})
 }
 
-// restampRuntimeInfos rewrites every module-backed entry's tool list from its provider's live
-// set. Copy-on-write: a reader holding the previous inventory keeps a whole list, never a
-// half-rebuilt one, and an unchanged set leaves the Context's slice untouched. A provider that
-// serves nothing leaves its entry with an empty ToolList - the section renders no block for it,
-// the fold an empty set means.
+// restampRuntimeInfos rewrites every module-backed entry's tool list from the providers
+// bound to that module. Copy-on-write: a reader holding the previous inventory keeps a whole
+// list, never a half-rebuilt one, and an unchanged set leaves the Context's slice untouched.
+// A provider that serves nothing leaves its entry with an empty ToolList - the section renders
+// no block for it, the fold an empty set means.
 func restampRuntimeInfos(infos []core.ExtensionInfo, providers []core.ToolProvider) []core.ExtensionInfo {
-	live := make(map[string]core.ToolProvider, len(providers))
+	live := make(map[string][]core.ToolProvider, len(providers))
 	for _, tp := range providers {
 		if mv, ok := tp.(moduleProvider); ok {
-			live[mv.module] = mv
+			live[mv.module] = append(live[mv.module], mv)
 		}
 	}
 	if len(live) == 0 {
@@ -337,11 +339,11 @@ func restampRuntimeInfos(infos []core.ExtensionInfo, providers []core.ToolProvid
 	copy(out, infos)
 	changed := false
 	for i := range out {
-		tp, ok := live[out[i].Name]
+		bound, ok := live[out[i].Name]
 		if !ok {
 			continue
 		}
-		list := ToolInfos(tp.Tools())
+		list := mergeToolInfos(bound)
 		if sameToolList(out[i].ToolList, list) {
 			continue
 		}
@@ -353,6 +355,17 @@ func restampRuntimeInfos(infos []core.ExtensionInfo, providers []core.ToolProvid
 		return infos
 	}
 	return out
+}
+
+// mergeToolInfos stamps every provider bound to one module into one sorted list - the union
+// the mount journal stamps, so a capsule that registers static and runtime tools keeps both.
+func mergeToolInfos(providers []core.ToolProvider) []core.ToolInfo {
+	var list []core.ToolInfo
+	for _, tp := range providers {
+		list = append(list, ToolInfos(tp.Tools())...)
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
 }
 
 // sameToolList compares two stamped lists row by row. Both are sorted by name, so position is
@@ -427,7 +440,7 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.tpLive = true // the Context stays the source of truth: live toggles re-read it
 	ag.SetLoopProvider(bindNeed[LoopProvider](ctx, "loop"))
 	ag.SetPromptBuilder(bindNeed[PromptBuilder](ctx, "prompt"))
-	ag.SetExtensionInfos(ctx.Infos)
+	ag.SetExtensionInfos(ctx.Inventory())
 	ag.SetLogger(bindNeed[LoggerProvider](ctx, "logger"))
 	ag.SetMaxToolOutput(opts.MaxToolOutput)
 	ag.SetPromptCustom(opts.PromptCustom)
