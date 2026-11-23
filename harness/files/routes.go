@@ -568,7 +568,7 @@ func (r *Routes) handleFilesRename(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	if !validLeafName(body.Name) {
-		fileError(w, http.StatusBadRequest, "name must be one segment (no separators, no dot-prefix)")
+		fileError(w, http.StatusBadRequest, "name must be one segment (no separators, no traversal)")
 		return
 	}
 	root, _, err := r.resolveFilesRoot(req.Context(), body.Session)

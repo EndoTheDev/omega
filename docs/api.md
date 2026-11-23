@@ -943,8 +943,9 @@ up edits without restart.
   POST-only bodies.
 - `POST /files/rename` (`{path, name}`) + `POST /files/delete`
   (`{path}`) - the file tree row's two verbs, under the same root jail.
-  Rename edits ONE leaf in place (no separators, no dot-prefix; the
-  target's existing leaf is a loud 409, the source must exist). Delete
+  Rename edits ONE leaf in place (no separators, no traversal; a dotfile
+  is an ordinary row, so `.env` -> `.env.bak` is fine; the target's
+  existing leaf is a loud 409, the source must exist). Delete
   removes a file or a folder; the workspace root itself is refused. A
   directory row renames and deletes like a file row - the tree's own
   confirm (the armed second pick) is the delete's gate.
