@@ -7,6 +7,7 @@
 import { computed, ref } from "vue";
 import {
   clearAllNotifications,
+  clearOneNotification,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -165,6 +166,22 @@ export async function clearAll(): Promise<void> {
   } catch {
     list.value = before.list;
     unread.value = before.unread;
+  }
+}
+
+// clearOne drops ONE record optimistically: the row leaves the feed at the click, and a
+// refused DELETE puts the feed back (the clearAll posture, one row narrower).
+export async function clearOne(id: number): Promise<void> {
+  const before = { unread: unread.value, list: list.value };
+  const gone = list.value.find((n) => n.id === id);
+  list.value = list.value.filter((n) => n.id !== id);
+  if (gone && !gone.read) unread.value = Math.max(0, unread.value - 1);
+  try {
+    await clearOneNotification(id);
+  } catch {
+    list.value = before.list;
+    unread.value = before.unread;
+    throw new Error(`clear ${id} refused`);
   }
 }
 

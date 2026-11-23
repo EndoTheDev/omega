@@ -46,6 +46,8 @@
         @open="(p) => emit('open', p)"
         @select="(s) => emit('select', s)"
         @create="(n) => emit('create', n)"
+        @rename="(p) => emit('rename', p)"
+        @delete="(p) => emit('delete', p)"
         @notice="(m) => emit('notice', m)" />
       <p
         v-else-if="entry.is_dir && isLoading(entryPath(entry))"
@@ -58,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, inject, provide } from "vue";
+  import { computed, inject, provide, ref } from "vue";
   import {
     createFileTreeStore,
     type FileTreeStore,
@@ -92,6 +94,10 @@
     select: [sel: { path: string; isDir: boolean }];
     // New: the host owns the one new-node form (POST /files/write + /files/mkdir).
     create: [node: { path: string; isDir: boolean }];
+    // Rename: the host's one form opens in rename mode with this node as the target.
+    rename: [path: string];
+    // Delete: the host runs POST /files/delete (the menu already armed the second pick).
+    delete: [path: string];
     // the tab's status line: a copy or an attach answers through it, never a silent no-op.
     notice: [text: string];
   }>();
@@ -227,21 +233,53 @@
   }
 
   /**
-   * THE ROW MENU: New targets this row, Open/Copy/Add file to chat need a FILE row, Copy
-   * path always works, and the chat rows are absent without a bound chat tab.
+   * THE ROW MENU: New targets this row, Rename hands the path to the tab's one form,
+   * Open/Copy/Add file to chat need a FILE row, Copy path always works, and the chat rows
+   * are absent without a bound chat tab. Delete arms on the first pick (the row re-reads
+   * "Confirm delete") and fires on the second - the board card's one shape.
    */
+  const armedDelete = ref("");
+  let armedTimer: ReturnType<typeof setTimeout> | undefined;
+  const DELETE_ARM_MS = 6000;
+
+  function disarmDelete() {
+    armedDelete.value = "";
+    if (armedTimer) {
+      clearTimeout(armedTimer);
+      armedTimer = undefined;
+    }
+  }
+
+  function onDeleteRow(path: string) {
+    if (armedDelete.value !== path) {
+      disarmDelete();
+      armedDelete.value = path;
+      armedTimer = setTimeout(disarmDelete, DELETE_ARM_MS);
+      emit("notice", `right-click ${path.split("/").pop()} again and pick "Confirm delete"`);
+      return;
+    }
+    disarmDelete();
+    emit("delete", path);
+  }
+
   function onRowMenu(e: MouseEvent, entry: FileEntry) {
     const path = entryPath(entry);
     // a right-click selects what it menus (the shared menu's own law)
     emit("select", { path, isDir: entry.is_dir });
     const items = fileMenuItems(
-      { isDir: entry.is_dir, chatBound: chatKey() !== null },
+      {
+        isDir: entry.is_dir,
+        chatBound: chatKey() !== null,
+        armedDelete: armedDelete.value === path,
+      },
       {
         create: () => createIn(entry),
+        rename: () => emit("rename", path),
         open: () => emit("open", path),
         copy: () => void copyFile(path),
         copyPath: () => void copyPath(path),
         addToChat: () => void addToChat(path),
+        remove: () => onDeleteRow(path),
       },
     );
     if (items.length === 0) return;

@@ -72,10 +72,12 @@ unchanged.
 | `/tasks/{id}`                             | GET, PATCH         | task detail (task+comments+events) / edits                                                                                                                                                                                                                  |
 | `/tasks/{id}/comments`                    | POST               | add a comment (author default: `web`)                                                                                                                                                                                                                       |
 | `/notifications`                          | GET, DELETE        | finished-things list + unread (`?unread=1`, `?limit/?offset`) / clear-all (every record drops; the reply carries `cleared`)                                                                                                                                 |
+| `/notifications/{id}`                     | DELETE             | clear ONE record by id; a ghost id answers 404, the reply carries `cleared: 1`                                                                                                                                                                              |
 | `/notifications/read`                     | POST               | mark one (`{"id": N}`) or all (`{"all": true}`)                                                                                                                                                                                                             |
 | `/notifications/events`                   | GET                | SSE record stream (the public API surface; the webui's toasts ride the canvas)                                                                                                                                                                              |
 | `/files/browse`, `/files/read`            | GET                | read-only working-dir surface for the inspector; read carries `mime`                                                                                                                                                                                        |
 | `POST /files/write`, `POST /files/mkdir`  | POST               | the toolbar's write half: add file / add folder (same root jail)                                                                                                                                                                                            |
+| `POST /files/rename`, `POST /files/delete`| POST               | the row's rename (`{path, name}`: one leaf, same directory, 409 on an existing target) and delete (`{path}`: file or folder, the root refused) - same root jail                                    |
 | `/files/raw`                              | GET                | raw bytes under the read surface's root jail: `image/*` + `application/pdf` render, `?download=1` serves ANY file as a `Content-Disposition: attachment` never rendered                                                                        |
 | `/tools`                                  | GET                | tool inventory (bare = executable registry; `?disabled=1` = fold-aware management read)                                                                                                                                                                     |
 | `/mcp/servers`                            | GET                | configured MCP servers (name, transport, command/url, args, env and headers, connection state, recorded failure, server-qualified tools) over the live bridge; env and header VALUES ride masked (`****`)                                                      |
@@ -86,11 +88,14 @@ unchanged.
 | `/cron/jobs`                              | GET                | cron job list (empty when unmounted - not 501); rows carry the authored `prompt`, the fire-pinned `skills`, the last fire's `status` + `last` + `status_note`, and `agent_owned` (the file-ownership mark: true only on an agent home's own wake row)       |
 | `/cron/save`                              | POST               | upsert one full job definition into the main crons.yaml (schema-validated, hot-reloaded); returns the fresh job set                                                                                                                                         |
 | `/cron/delete`                            | POST               | remove one job from the main crons.yaml; unknown name 404                                                                                                                                                                                                   |
-| `/cron/toggle`                            | POST               | the row's toggle commit: writes the per-job `enabled:` flag only                                                                                                                                                                                            |
+| `/cron/toggle`                            | POST               | the row's toggle commit: writes the per-job `enabled:` flag only                                                                                                                                                                                           |
+| `/cron/run`, `/cron/stop`                 | POST               | manual fire control: `{"key": ...}` starts one fire now (409 while one is in flight, 404 on an unknown key) / cancels the fire in flight (409 when idle); both answer the fresh job set with `running` |
 | `/skills`                                 | GET                | loaded skills (name + description only)                                                                                                                                                                                                                     |
 | `/skills/content`                         | GET                | one skill's SKILL.md body for the viewer tab (64 KiB cap)                                                                                                                                                                                                   |
 | `/skills/save`                            | POST               | the skills tab editor's upsert: a new name composes `<dir>/<name>/SKILL.md` (frontmatter composed, loader-parsed), an existing name rewrites the body under the fence while the operator's other frontmatter keys stay byte-true; answers the fresh listing |
 | `/skills/delete`                          | POST               | remove one skill: backed up to `.curator/backups`, ledger row at `.curator/ledger.jsonl` (`actor: webui`), folder removed; unknown name 404                                                                                                                 |
+| `/skills/archive`                         | POST               | the reversible exit: `{"name": ...}` backs the folder up, appends an `archive` ledger row and moves it into `<skills>/.archive/<stamp>-<name>`; answers the fresh listing                                                                                    |
+| `/skills/export`                          | GET                | `?name=` serves the whole skill folder as a `application/gzip` tar.gz attachment (`<name>.tar.gz`)                                                                                                                                                          |
 | `/browser/last`, `/browser/frameable`     | GET, PUT           | module REST (browser capsule): the resume URL + the embed-permission probe                                                                                                                                                                                  |
 | `/commands`                               | GET                | extension command registry (palette rows)                                                                                                                                                                                                                   |
 | `/commands/dispatch`                      | POST               | run one command/skill locally - never the agent                                                                                                                                                                                                             |
@@ -705,6 +710,9 @@ kanban.batch {operations: [
   or everything (`{"all": true}`).
 - `DELETE /notifications` - clear-all: every record drops (the webui
   tab's button); the reply carries `{"ok":true,"cleared":N}`.
+- `DELETE /notifications/{id}` - clear ONE record (the row menu's
+  Clear); a ghost or malformed id 404/400s, the reply carries
+  `{"ok":true,"cleared":1}`.
 - `GET /notifications/events` - SSE: each subsequent emit becomes one
   `notification` frame.
 
@@ -853,9 +861,26 @@ up edits without restart.
   name on a wake row, the authored `agent:` on a main-home job - so
   the editor's read-only refusal and the toggle's state key
   (`<agent>/<name>` for wakes, the bare name for main) both read the
-  mark.
+  mark. `running` is the live-fire mark (true while that job's turn or
+  wake is in flight); it is what the row's Stop run row gates on.
+- `POST /cron/run` (`{key}`) - start ONE fire now, in the background.
+  A manual fire bypasses the `enabled:` flag (the operator asked for
+  this occurrence) and a fire already in flight is a 409, never a
+  queue; a manual fire leaves the catch-up ledger alone (it is not a
+  covered scheduled time) but still lands the last-status record.
+- `POST /cron/stop` (`{key}`) - cancel the fire in flight for that key;
+  idle is a 409, an unknown key a 404. Both routes answer the fresh job
+  set (the toggle's one-response contract), so the caller paints the
+  live mark it landed.
 - `GET /skills` - name + description only; skill content, directories,
   and the prompt section never ride the wire.
+- `POST /skills/archive` (`{name}`) - the reversible exit: the folder is
+  backed up into `.curator/backups`, an `archive` ledger row is appended,
+  and the folder moves into `<skills>/.archive/<stamp>-<name>`; the
+  answer is the fresh listing, so the row leaves without a refetch.
+- `GET /skills/export?name=` - the whole skill folder as a
+  `application/gzip` tar.gz attachment (`<name>.tar.gz`, `Content-
+  Disposition: attachment`), references included.
 - `GET /logs?lines=N` - tail of the omega log (default 200, clamped
   1..2000, 512 KiB read window); 404 when there is no log file
   (logging disabled).
@@ -878,6 +903,13 @@ up edits without restart.
 - `POST /files/write` + `POST /files/mkdir` - the Files tab toolbar's
   write half (add file / add folder), same root jail and guard,
   POST-only bodies.
+- `POST /files/rename` (`{path, name}`) + `POST /files/delete`
+  (`{path}`) - the file tree row's two verbs, under the same root jail.
+  Rename edits ONE leaf in place (no separators, no dot-prefix; the
+  target's existing leaf is a loud 409, the source must exist). Delete
+  removes a file or a folder; the workspace root itself is refused. A
+  directory row renames and deletes like a file row - the tree's own
+  confirm (the armed second pick) is the delete's gate.
 
 ## Commands (the slash palette's server surface)
 

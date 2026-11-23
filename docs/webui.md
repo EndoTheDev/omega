@@ -246,15 +246,21 @@ the store does the rest.
   last tab; Close others appears only when another closable tab exists.
 - **Sidebar rows are the second** (`sessionMenuItems`,
   `agentMenuItems`, `cronMenuItems`, one pure builder per capsule's
-  `ui/` dir): a session row menus New session, Branch, Export,
-  Copy id and, on a running row only, Stop; an agent row menus New
-  agent and Delete (never the locked default); a cron row menus Pause
-  or Resume and Delete (never an agent-owned job, whose file main's
-  delete route cannot touch). Every row is an existing verb - a route
-  or a client intent the surface already carried - so the menu is a
-  second door to the same paths. `RegistryList` takes the builder as
-  `row-menu`; a row surface that registers nothing keeps the browser's
-  own menu.
+  `ui/` dir): a session row menus New session, Rename (the row's
+  inline editor), Branch, Export, Copy id, Archive or Unarchive,
+  Delete and, on a running row only, Stop; an agent row menus New
+  agent, Sleep (only while the roster says awake - it ends a running
+  wake) and Delete (never the locked default); a cron row menus Run
+  now (`POST /cron/run`, one fire the schedule did not order) or Stop
+  run (`POST /cron/stop`, only while the row carries the live mark),
+  Pause or Resume (the `enabled` flag) and Delete (never an agent-owned
+  job, whose file main's delete route cannot touch). Every row is an
+  existing verb - a route or a client intent the surface already
+  carried - so the menu is a second door to the same paths.
+  `RegistryList` takes the builder as `row-menu`; a row surface that
+  registers nothing keeps the browser's own menu. The cron console
+  row also wears its last fire's status dot (green ok / red error /
+  orange never fired), pulsing while a fire is live.
 - **The statusbar is the third** (`components/shell/statusStats.ts`):
   every stat with a check state, one click hiding or showing it, then
   Reset statusbar - the last row, and the one write that clears the
@@ -270,13 +276,16 @@ the store does the rest.
   `harness/kanban/ui/board/cardMenu.ts`): Open (the card's own click -
   the detail drawer), Copy id (client-side through the one clipboard
   path; the notice follows the copy's own answer, so a refused copy
-  never reads as "copied"), Archive, which is the lane arrow's own
-  PATCH to the archived lane, and Delete, the drawer's DELETE
-  /tasks/{id}. A card already archived carries no Archive row: the verb
-  cannot act, so the row is absent. Delete is irreversible, so it arms
-  on the first pick (the row reads Confirm delete on the next open) and
-  only fires on the second - the drawer's own armed confirm stays its
-  door's, one confirm per pick.
+  never reads as "copied"), Stop on a running card (the lane arrow's
+  own PATCH to blocked, plus the card's live session run stopped
+  through `POST /sessions/{id}/stop`), Archive, which is the lane
+  arrow's own PATCH to the archived lane, and Delete, the drawer's
+  DELETE /tasks/{id}. A card already archived carries no Archive row
+  and an idle card carries no Stop: the verb cannot act, so the row is
+  absent. Delete is irreversible, so it arms on the first pick (the row
+  reads Confirm delete on the next open) and only fires on the second -
+  the drawer's own armed confirm stays its door's, one confirm per
+  pick.
 - **The board surface is the fifth** (`boardMenuItems` in
   `harness/kanban/ui/board/boardMenu.ts`): Rename and Delete, the board
   dropdown's own two picks (PATCH and DELETE /boards/{name}). Delete
@@ -287,19 +296,25 @@ the store does the rest.
 - **The capsule interiors are the sixth** (`skillMenuItems`,
   `toolMenuItems`, `mcpMenuItems`, `fileMenuItems`,
   `notificationMenuItems`, one pure builder per capsule's `ui/` dir): a
-  skills row menus Open (its viewer tab), Enable or Disable and Delete
-  (the editor's one armed confirm); a tools row menus Enable or Disable
+  skills row menus Open (its viewer tab), Export (`GET /skills/export`,
+  the folder as a tar.gz download), Enable or Disable, Archive
+  (`POST /skills/archive`: the folder moves into `.archive`, backed up
+  and ledgered, so the exit is reversible) and Delete (the editor's one
+  armed confirm); a tools row menus Enable or Disable
   and nothing else, because that is the only verb the tab owns; an MCP
   server row menus Open (its detail), Edit (the detail's entry form, saved
   through `POST /mcp/save` - the route the CLI rides), Enable or Disable
   and Delete (the detail's one confirm); a file tree row menus New (the
   tab's own new-node form,
-  file mode, with the row as target) and, on a file, Open, Copy and Copy
+  file mode, with the row as target), Rename (the same form in rename
+  mode, `POST /files/rename`) and, on a file, Open, Copy and Copy
   path through the one clipboard path, plus Add file to chat through the
   composer's own attach lane (absent without a bound chat tab), while a
-  directory row keeps New and Copy path; a notification record menus
-  Clear all, one row for the whole feed because the feed has no
-  per-entry clear.
+  directory row keeps New, Rename and Copy path; Delete
+  (`POST /files/delete`) arms on the first pick and removes on the
+  second, the board card's one shape; a notification record menus Clear
+  (this record, `DELETE /notifications/{id}`) and Clear all (the whole
+  feed).
 - **The canvas has no rows to register.** In 0.17.4 the canvas
   view-model has no rendered node surface - the generic panel renderer
   left with the canvas tab fold (`canvas.test.ts` pins its absence), so

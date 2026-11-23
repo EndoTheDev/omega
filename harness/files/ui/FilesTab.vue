@@ -56,13 +56,13 @@
           <input
             v-model="createName"
             class="files-add-name"
-            :placeholder="creating === 'file' ? 'new file name' : 'new folder name'"
+            :placeholder="creating === 'file' ? 'new file name' : creating === 'folder' ? 'new folder name' : 'new name'"
             aria-label="new node name" />
           <button
             type="submit"
             class="files-add-go"
             :disabled="!createName.trim() || creatingBusy">
-            {{ creating === "file" ? "create file" : "create folder" }}
+            {{ creating === "file" ? "create file" : creating === "folder" ? "create folder" : "rename" }}
           </button>
         </form>
         <p
@@ -97,6 +97,8 @@
           @open="openFile"
           @select="onSelect"
           @create="onCreateNode"
+          @rename="onRenameNode"
+          @delete="onDeleteNode"
           @notice="(m) => (toolError = m)" />
       </div>
     </div>
@@ -115,7 +117,9 @@
     filesHeaderVisible,
     filesRootName,
     joinRelPath,
+    postFilesDelete,
     postFilesMkdir,
+    postFilesRename,
     postFilesWrite,
     sortFileEntries,
   } from "~/composables/omega";
@@ -209,17 +213,39 @@
   // this tab" - refresh must stay live to recover it, collapse is cheap
   const toolsLocked = computed(() => !!rootError.value || loadingRoot.value);
 
-  type CreateKind = "file" | "folder";
+  type CreateKind = "file" | "folder" | "rename";
   const creating = ref<CreateKind | null>(null);
   const createName = ref("");
   const creatingBusy = ref(false);
   const toolError = ref("");
   const selected = ref<SelectedNode | null>(null);
+  // the node a rename form is editing (the path the menu pointed at)
+  const renameTarget = ref("");
 
-  function startCreate(kind: CreateKind) {
+  function startCreate(kind: "file" | "folder") {
     creating.value = kind;
     createName.value = "";
+    renameTarget.value = "";
     toolError.value = "";
+  }
+
+  // Rename reuses the ONE form: the target stays where it is, only the leaf changes.
+  function onRenameNode(path: string) {
+    creating.value = "rename";
+    renameTarget.value = path;
+    createName.value = path.split("/").pop() ?? "";
+    toolError.value = "";
+  }
+
+  async function onDeleteNode(path: string) {
+    toolError.value = "";
+    try {
+      await postFilesDelete(path, sessionId.value);
+    } catch (e) {
+      toolError.value = e instanceof Error ? e.message : String(e);
+      return;
+    }
+    await refreshFiles();
   }
 
   async function confirmCreate() {
@@ -229,6 +255,19 @@
     if (!name) return;
     creatingBusy.value = true;
     toolError.value = "";
+    if (kind === "rename") {
+      try {
+        await postFilesRename(renameTarget.value, name, sessionId.value);
+      } catch (e) {
+        toolError.value = e instanceof Error ? e.message : String(e);
+        creatingBusy.value = false;
+        return;
+      }
+      creatingBusy.value = false;
+      creating.value = null;
+      await refreshFiles();
+      return;
+    }
     const path = joinRelPath(createTargetDir(selected.value), name);
     try {
       if (kind === "file") {

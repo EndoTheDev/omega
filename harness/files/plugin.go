@@ -62,6 +62,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		func() error { return api.RegisterRoute("/files/raw", p.routes.handleFilesRaw) },
 		func() error { return api.RegisterRoute("POST /files/write", p.routes.handleFilesWrite) },
 		func() error { return api.RegisterRoute("POST /files/mkdir", p.routes.handleFilesMkdir) },
+		func() error { return api.RegisterRoute("POST /files/rename", p.routes.handleFilesRename) },
+		func() error { return api.RegisterRoute("POST /files/delete", p.routes.handleFilesDelete) },
 		func() error { return api.RegisterRoute("/workspaces/browse", p.routes.handleWorkspacesBrowse) },
 		func() error { return api.RegisterRoute("/workspaces/files", p.routes.handleWorkspaceFiles) },
 		func() error { p.routes.SetDefaultWorkspace(cfg.DefaultWorkspace); return nil },

@@ -492,12 +492,15 @@
       e.clientX,
       e.clientY,
       sessionMenuItems(
-        { id: s.id, running: props.streamingIds.has(s.id) },
+        { id: s.id, running: props.streamingIds.has(s.id), archived: !!s.archived },
         {
           newSession: () => emit("new"),
+          rename: () => startRename(s.id),
           branch: () => emit("branch", s.id),
           exportSession: () => exportSession(s.id),
           copyId: () => void copySessionId(s.id),
+          archive: () => emit("archive", s.id, !s.archived),
+          remove: () => emit("remove", s.id),
           stop: () => void stopSession(s.id),
         },
       ),

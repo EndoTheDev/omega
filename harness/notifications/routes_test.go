@@ -33,6 +33,7 @@ func serveRoutes(t *testing.T) (*httptest.Server, *Store) {
 	mux.HandleFunc("/notifications", rt.handleNotifications)
 	mux.HandleFunc("/notifications/read", rt.handleNotificationsRead)
 	mux.HandleFunc("/notifications/events", rt.handleNotificationEvents)
+	mux.HandleFunc("/notifications/{id}", rt.handleNotificationDelete)
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	return ts, st
@@ -175,6 +176,66 @@ func TestNotificationsClearAll(t *testing.T) {
 		if res.StatusCode != http.StatusMethodNotAllowed {
 			t.Fatalf("%s /notifications = %d, want 405", m, res.StatusCode)
 		}
+	}
+}
+
+func TestNotificationsClearOne(t *testing.T) {
+	ts, st := serveRoutes(t)
+	for i := 0; i < 3; i++ {
+		if _, err := st.Emit(core.Notice{Kind: "task", SourceID: "t_one", Title: "task t_one done"}); err != nil {
+			t.Fatalf("emit: %v", err)
+		}
+	}
+	// the middle record goes; its neighbours stay
+	req, _ := http.NewRequest(http.MethodDelete, ts.URL+"/notifications/2", nil)
+	res, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body struct {
+		OK      bool  `json:"ok"`
+		Cleared int64 `json:"cleared"`
+	}
+	json.NewDecoder(res.Body).Decode(&body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK || !body.OK || body.Cleared != 1 {
+		t.Fatalf("clear one = http %d {ok=%v cleared=%d}, want 200/true/1", res.StatusCode, body.OK, body.Cleared)
+	}
+
+	var page struct {
+		Notifications []core.Notice `json:"notifications"`
+		Unread        int           `json:"unread"`
+	}
+	get, _ := http.Get(ts.URL + "/notifications")
+	json.NewDecoder(get.Body).Decode(&page)
+	get.Body.Close()
+	if len(page.Notifications) != 2 || page.Unread != 2 {
+		t.Fatalf("after clear one: %d rows / %d unread, want 2/2", len(page.Notifications), page.Unread)
+	}
+	for _, n := range page.Notifications {
+		if n.ID == 2 {
+			t.Fatalf("record 2 survived its clear: %+v", page.Notifications)
+		}
+	}
+
+	// a ghost id is a loud 404, a malformed one a 400, and a non-DELETE a 405
+	ghost, _ := http.NewRequest(http.MethodDelete, ts.URL+"/notifications/99", nil)
+	gres, _ := http.DefaultClient.Do(ghost)
+	gres.Body.Close()
+	if gres.StatusCode != http.StatusNotFound {
+		t.Fatalf("ghost clear = %d, want 404", gres.StatusCode)
+	}
+	bad, _ := http.NewRequest(http.MethodDelete, ts.URL+"/notifications/abc", nil)
+	badres, _ := http.DefaultClient.Do(bad)
+	badres.Body.Close()
+	if badres.StatusCode != http.StatusBadRequest {
+		t.Fatalf("bad id clear = %d, want 400", badres.StatusCode)
+	}
+	put, _ := http.NewRequest(http.MethodPut, ts.URL+"/notifications/1", nil)
+	putres, _ := http.DefaultClient.Do(put)
+	putres.Body.Close()
+	if putres.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("PUT /notifications/1 = %d, want 405", putres.StatusCode)
 	}
 }
 

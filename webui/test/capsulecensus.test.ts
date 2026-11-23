@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 
 import {
   clearAll,
+  clearOne,
   markAllRead,
   markRecordRead,
   notificationsList,
@@ -42,6 +43,7 @@ const harnessRoot = path.join(repoRoot, "harness");
 const BRIDGE: Readonly<Record<string, Readonly<Record<string, unknown>>>> = {
   "components/shell/notificationFeed.ts": {
     clearAll,
+    clearOne,
     markAllRead,
     markRecordRead,
     notificationsList,

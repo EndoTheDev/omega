@@ -135,6 +135,26 @@ func (rt *Routes) handleNotificationsRead(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+// handleNotificationDelete serves DELETE /notifications/{id}: the row's own clear. A
+// non-numeric or ghost id answers 404 (MarkRead's lane: the record the caller pointed at
+// is not there), and the reply carries the count so the caller can say what it removed.
+func (rt *Routes) handleNotificationDelete(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodDelete {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid notification id", http.StatusBadRequest)
+		return
+	}
+	if err := rt.svc.Delete(r.Context(), id); err != nil {
+		http.Error(w, "clear notification: "+err.Error(), http.StatusNotFound)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "cleared": 1})
+}
+
 // handleNotificationEvents streams every subsequently emitted record as an SSE. The
 // client closes (the browser tab, the fetch's cancel); the context cancellation path
 // releases the store subscription - the store itself never holds the response writer.

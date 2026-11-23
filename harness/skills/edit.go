@@ -212,4 +212,39 @@ func (rt *Routes) handleSkillsDelete(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleSkillsArchive serves POST /skills/archive {name}: the row's reversible exit. The
+// folder lands in .archive beside the skills dir it was read from, backed up and ledgered
+// first, and the answer is the fresh listing (the editor routes' one-response contract).
+func (rt *Routes) handleSkillsArchive(w http.ResponseWriter, r *http.Request) {
+	serveEditorAction(w, r, "skills archive", func(req skillDeleteRequest) ([]Skill, error) {
+		return rt.svc.ArchiveSkillAs(req.Name, ActorWebui, "archived from the skills tab")
+	})
+}
+
+// handleSkillsExport serves GET /skills/export?name=<skill>: the skill's whole folder as
+// a tar.gz download. The name law is the content route's (one folder name, no traversal).
+func (rt *Routes) handleSkillsExport(w http.ResponseWriter, r *http.Request) {
+	if !getOnly(w, r) {
+		return
+	}
+	name := r.URL.Query().Get("name")
+	if !validSkillRequestName(name) {
+		fileError(w, http.StatusBadRequest, "name must be a single skill folder name")
+		return
+	}
+	data, err := rt.svc.ExportSkill(name)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			fileError(w, http.StatusNotFound, err.Error())
+			return
+		}
+		fileError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/gzip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", name+".tar.gz"))
+	w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+	_, _ = w.Write(data)
+}
+
 var _ SkillsEditor = (*SkillsProvider)(nil)

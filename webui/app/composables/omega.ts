@@ -1606,6 +1606,16 @@ export function postFilesMkdir(path: string, session?: string): Promise<void> {
   return filesPost("/files/mkdir", session ? { path, session } : { path });
 }
 
+// postFilesRename moves one node's leaf in place (POST /files/rename {path, name}).
+export function postFilesRename(path: string, name: string, session?: string): Promise<void> {
+  return filesPost("/files/rename", session ? { path, name, session } : { path, name });
+}
+
+// postFilesDelete removes one node (POST /files/delete {path}); the root refuses server-side.
+export function postFilesDelete(path: string, session?: string): Promise<void> {
+  return filesPost("/files/delete", session ? { path, session } : { path });
+}
+
 export interface InsightsToolRow {
   name: string;
   count: number;

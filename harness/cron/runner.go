@@ -83,6 +83,10 @@ type Runner struct {
 	scheduled map[string]bool        // names currently scheduled (for logs/tests)
 	stop      chan struct{}          // closed by Stop() to end Start
 
+	// cancels holds the live fire's cancel handle per state key: the run-now/stop routes
+	// reach one fire by it, never by a job name main's yaml may not own.
+	cancels map[string]context.CancelFunc
+
 	// Test hooks. runTurn is swappable so guard/catch-up/fire tests
 	// don't need a live provider; now isolates time-dependent logic.
 	now          func() time.Time
@@ -101,6 +105,7 @@ func NewRunner(cfg *Config, home string) *Runner {
 		cfg:          cfg,
 		jobs:         jobs,
 		running:      map[string]bool{},
+		cancels:      map[string]context.CancelFunc{},
 		lastFire:     map[string]int64{},
 		last:         map[string]fireOutcome{},
 		scheduled:    map[string]bool{},
@@ -224,10 +229,30 @@ func (r *Runner) release(key string) {
 	r.running[key] = false
 }
 
-// fire runs one job occurrence at time `when` (the scheduled time for catch-up fires). A
-// fire arriving while the same job is still running is skipped - logged, never queued.
-// Agent jobs never turn in-process: they are WAKES, one tick through the event spine
-// (payload law: raw JSON); the continuous capsule owns what the tick means.
+// setCancel records the live fire's cancel handle: the run-now/stop routes reach one
+// fire by its state key, never by a job name main's yaml may not own.
+func (r *Runner) setCancel(key string, cancel context.CancelFunc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.cancels[key] = cancel
+}
+
+func (r *Runner) clearCancel(key string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.cancels, key)
+}
+
+func (r *Runner) isRunning(key string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.running[key]
+}
+
+// fire runs one SCHEDULED job occurrence at time `when` (the scheduled time for catch-up
+// fires). A fire arriving while the same job is still running is skipped - logged, never
+// queued. Agent jobs never turn in-process: they are WAKES, one tick through the event
+// spine (payload law: raw JSON); the continuous capsule owns what the tick means.
 func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	if !job.IsEnabled() {
 		return
@@ -240,11 +265,28 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		r.logf("job %s: skipped, previous fire still running", key)
 		return
 	}
-	defer r.release(key)
+	r.fireHeld(ctx, job, when, false)
+}
+
+// fireHeld runs one fire whose per-key guard the CALLER already holds; it always releases
+// the guard and the cancel handle. A manual run passes manual=true, which bypasses the
+// enabled flag (the operator asked for this one fire) and leaves the catch-up ledger
+// alone - a hand-run is not a covered scheduled time.
+func (r *Runner) fireHeld(ctx context.Context, job Job, when time.Time, manual bool) {
+	key := job.StateKey()
+	fireCtx, cancel := context.WithCancel(ctx)
+	r.setCancel(key, cancel)
+	defer func() {
+		r.clearCancel(key)
+		cancel()
+		r.release(key)
+	}()
 
 	if job.IsAgent() {
 		wakeErr := r.fireAgentWake(job, job.Agent, key)
-		r.recordFire(job, when)
+		if !manual {
+			r.recordFire(job, when)
+		}
 		r.recordOutcome(job, wakeErr)
 		return
 	}
@@ -257,18 +299,24 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		prof, err := agent.LoadProfile(r.home, name)
 		if err != nil {
 			r.errorf("job %s: agent %q unknown: %v", key, name, err)
-			r.recordFire(job, when)
+			if !manual {
+				r.recordFire(job, when)
+			}
 			r.recordOutcome(job, fmt.Errorf("agent %q unknown: %v", name, err))
 			return
 		}
 		if !prof.Continuous {
 			r.errorf("job %s: agent %q has no continuous session (main never wakes); deliver continuous-agent needs an agent home", key, name)
-			r.recordFire(job, when)
+			if !manual {
+				r.recordFire(job, when)
+			}
 			r.recordOutcome(job, fmt.Errorf("agent %q has no continuous session", name))
 			return
 		}
 		wakeErr := r.fireAgentWake(job, name, key)
-		r.recordFire(job, when)
+		if !manual {
+			r.recordFire(job, when)
+		}
 		r.recordOutcome(job, wakeErr)
 		return
 	}
@@ -277,7 +325,9 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	// the job log, the run never starts under the wrong persona, the schedule survives.
 	if name := job.ResolveAgent(); name != agent.DefaultAgentName {
 		r.errorf("job %s: agent %q: deliver %q runs in-process as the default agent; use deliver: continuous-agent to fire agent %s", key, name, job.DeliverTarget(), name)
-		r.recordFire(job, when)
+		if !manual {
+			r.recordFire(job, when)
+		}
 		r.recordOutcome(job, fmt.Errorf("deliver %q runs in-process as the default agent; agent %q needs deliver: continuous-agent", job.DeliverTarget(), name))
 		return
 	}
@@ -301,7 +351,7 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	}
 
 	if r.store != nil {
-		if err := r.store.CreateSession(ctx, sessionID, "", "cron:"+job.Name); err != nil {
+		if err := r.store.CreateSession(fireCtx, sessionID, "", "cron:"+job.Name); err != nil {
 			r.errorf("job %s: create session: %v", job.Name, err)
 		}
 	}
@@ -309,8 +359,8 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 	// Wall-clock cap on the turn itself: without it, one hung tool call (shell sleep,
 	// wedged provider) never returns, every later fire logs "skipped, previous fire still
 	// running", and the job's journal/memory delivery stops until a process restart.
-	turnCtx, cancel := context.WithTimeout(ctx, r.turnCap())
-	defer cancel()
+	turnCtx, turnCancel := context.WithTimeout(fireCtx, r.turnCap())
+	defer turnCancel()
 	turnCtx = core.WithRunOrigin(turnCtx, runOriginScheduled)
 
 	final, runErr := r.runTurn(turnCtx, sessionID, job, promptText)
@@ -320,8 +370,10 @@ func (r *Runner) fire(ctx context.Context, job Job, when time.Time) {
 		r.logf("job %s: fired, session %s, done in %s", job.Name, shortID(sessionID), sinceStart(start, r.now()))
 	}
 
-	r.applyDeliver(ctx, job, final)
-	r.recordFire(job, when)
+	r.applyDeliver(fireCtx, job, final)
+	if !manual {
+		r.recordFire(job, when)
+	}
 	r.recordOutcome(job, runErr)
 	r.emitFinished(job.Name, runErr == nil)
 }
@@ -718,6 +770,7 @@ func (r *Runner) Jobs() []JobInfo {
 			Prompt:     j.Prompt,
 			Skills:     j.Skills,
 			Enabled:    j.IsEnabled(),
+			Running:    r.isRunning(j.StateKey()),
 		}
 		if last, ok := r.outcomeOf(j.StateKey()); ok {
 			row.Last = time.Unix(last.At, 0).Local().Format(time.RFC3339)
