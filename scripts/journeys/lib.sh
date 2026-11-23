@@ -12,10 +12,11 @@
 #
 # Residue contract (card t_a99ffcd7): a journey keeps its recipe and its
 # result files, and NOTHING else. Its runtime actors - sessions, board
-# tasks, roster agent homes - are reaped by cleanup_journey_residue at
-# every exit path (die, recipe EXIT traps, run.sh's pre-clean); wake
-# entries in cronstate.json are the serve's own state, swept by the cron
-# runner's GC once the declaring agent home is gone.
+# tasks, roster agent homes, the terminal sessions its page loads claim -
+# are reaped by cleanup_journey_residue at every exit path (die, recipe
+# EXIT traps, run.sh's pre-clean); wake entries in cronstate.json are the
+# serve's own state, swept by the cron runner's GC once the declaring
+# agent home is gone.
 #
 # Env:
 #   JOURNEY_BASE_URL    default http://127.0.0.1:8098 (the dev lane)
@@ -586,9 +587,17 @@ journey_clean_room() {
 }
 
 # journey_exit_cleanup: the ONE exit path. run.sh's recipe subshell installs it
-# as its EXIT trap, die() calls it, and a recipe that sets its own trap chains
-# to it. Residue (sessions, board cards, agent homes) plus the client state.
+# as its EXIT trap AND calls it at the recipe's return, die() calls it, and a
+# recipe that sets its own trap chains to it. The calls overlap by design (a die
+# re-enters through the EXIT trap, a recipe whose own trap replaced the
+# subshell's still gets the explicit call), so the work runs ONCE: a second call
+# would only repeat reads and DELETEs on a store this run already emptied.
+# Residue (sessions, board cards, agent homes, the terminal sessions the recipe's
+# page loads claimed) plus the client state.
+JOURNEY_EXIT_CLEANED=0
 journey_exit_cleanup() {
+  [ "$JOURNEY_EXIT_CLEANED" = "0" ] || return 0
+  JOURNEY_EXIT_CLEANED=1
   journey_clean_room
   cleanup_journey_residue
   [ -n "${JRN_TAGFILE:-}" ] && rm -f "$JRN_TAGFILE" 2>/dev/null
@@ -827,6 +836,69 @@ cleanup_journey_sessions() {
 # cron sweepStaleState) drops them the moment the declaring agent home
 # is gone (the reload watcher polls every 5s).
 
+# --- the terminal reap (the pty a page load claims) --------------------------
+# A page load mounts the bottom pane, the pane claims a pty, and the pty
+# outlives the page by design (TerminalTab.vue: the unmount unbinds the SSE,
+# never the SHELL). Nothing reaped them: 3 live sessions accumulated across 5
+# recipes on a scratch lane, and the store's maxSessions answers the next claim
+# with 409 "session cap reached; close a terminal pane first", which the pane
+# renders as "no terminal" - a red waiting for whichever recipe next reads it.
+# The baseline is read when this file is sourced (recipe start, before any
+# page can claim) and the diff is killed in the residue path below, so every
+# recipe gets it for free - green, red and die alike.
+JOURNEY_TERM_SNAPSHOT=0
+JOURNEY_TERM_BEFORE=""
+
+# journey_term_ids: the store's live session ids, one per line, sorted. A lane
+# without the terminal capsule answers a non-listing body and this reads empty.
+journey_term_ids() {
+  local body
+  body=$(curl -s "${JOURNEY_BASE_URL}/terminal/sessions" 2>/dev/null) || return 0
+  printf '%s' "$body" | grep -oE '"id": ?"[a-f0-9-]+"' \
+    | sed 's/.*"\([a-f0-9-]*\)".*/\1/' | sort
+}
+
+# journey_term_snapshot: record the store as the recipe found it. Idempotent -
+# a recipe sources this file a second time, and the first read is the honest
+# baseline.
+journey_term_snapshot() {
+  [ "$JOURNEY_TERM_SNAPSHOT" = "1" ] && return 0
+  JOURNEY_TERM_SNAPSHOT=1
+  JOURNEY_TERM_BEFORE="$(journey_term_ids)"
+}
+
+# journey_term_reap: kill every session this recipe's page loads minted.
+# The pane RELAIMS what a bare DELETE takes: the dropped SSE reads as a missed
+# attach, so TerminalTab reconnects and claims a fresh pty half a second later
+# - a hand-rolled reap leaks one shell per run that way. Navigation is the hard
+# stop (the claim ladder dies with the document), so a live page is released
+# before the first DELETE. Bounded and never dies: this runs on exit paths.
+journey_term_reap() {
+  local now id round=0 reaped=0
+  [ "$JOURNEY_TERM_SNAPSHOT" = "1" ] || return 0
+  now="$(journey_term_ids)"
+  [ "$now" = "$JOURNEY_TERM_BEFORE" ] && return 0
+  if [ "${JOURNEY_PAGE_OPENED:-0}" = "1" ] && [ -n "${AB:-}" ]; then
+    ab open about:blank >/dev/null 2>&1 || true
+    JOURNEY_PAGE_OPENED=0
+  fi
+  # two rounds: the first kills what the recipe minted, the second catches a
+  # claim already in flight when the page went away
+  while [ "$round" -lt 2 ]; do
+    round=$((round + 1))
+    for id in $(comm -13 <(printf '%s\n' "$JOURNEY_TERM_BEFORE") <(journey_term_ids)); do
+      curl -s -X DELETE "${JOURNEY_BASE_URL}/terminal/${id}" >/dev/null 2>&1 || true
+      reaped=$((reaped + 1))
+    done
+    now="$(journey_term_ids)"
+    [ "$now" = "$JOURNEY_TERM_BEFORE" ] && break
+  done
+  [ "$reaped" = "0" ] \
+    || step "residue: killed $reaped terminal session(s) this recipe's page loads claimed"
+  [ "$now" = "$JOURNEY_TERM_BEFORE" ] \
+    || step "WARN: the store still lists $(printf '%s\n' "$now" | grep -c .) terminal session(s) beyond the recipe's baseline"
+}
+
 # cleanup_journey_residue: reap every jrn- artifact on all three
 # actor surfaces - sessions plus anything a crashed earlier run
 # leaked. Board tasks go via DELETE (archiving is a tombstone, not a
@@ -837,6 +909,7 @@ cleanup_journey_sessions() {
 # non-tasks payload and the task sweep reads zero rows.
 cleanup_journey_residue() {
   local ids id tit d reaped=0 tab
+  journey_term_reap
   cleanup_journey_sessions
   # board tasks: the FULL scan (the default list hides archived rows -
   # the exact tombstone accumulation this reaper exists to kill), one
@@ -888,3 +961,9 @@ send_journey_message() {
          "$(printf '%s' "$text" | sed 's/"/\\"/g')")
   curl -s -X POST "${JOURNEY_BASE_URL}/chat" -H 'Content-Type: application/json' -d "$body" >/dev/null
 }
+
+# THE BASELINE, read once at source time. A source is the recipe's first line,
+# so no page this recipe drives can have claimed yet, and a recipe that sources
+# this file a second time keeps the first read (journey_term_snapshot is
+# idempotent).
+journey_term_snapshot

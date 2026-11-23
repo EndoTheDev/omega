@@ -40,13 +40,15 @@ _pin_hits="$(grep -vE '^[[:space:]]*#' "$_PIN_SELF" | grep -nE "$_PIN_SHAPE" || 
 JOB="jrn-rc$(date +%d%b%H%M%S | tr 'A-Z' 'a-z')"
 LABEL="jrn-rightclick-$(date +%d%b%H%M%S)"
 
-# a red must never leave a job firing on the lane
+# a red must never leave a job firing on the lane. CHAINED to the residue path:
+# a bare trap here would replace run.sh's journey_exit_cleanup and the recipe
+# would reap neither its session nor its terminal.
 cleanup() {
   curl -s -X POST "$JOURNEY_BASE_URL/cron/delete" \
     -H 'Content-Type: application/json' \
     -d "{\"name\": \"$JOB\"}" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+trap 'cleanup; journey_exit_cleanup' EXIT
 
 menu_rows() {
   local r

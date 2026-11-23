@@ -18,9 +18,11 @@
 # 4px gutters = 1260 content px; sidebar 200 + inspector 400 fixed, the
 # chat and the terminal split the remaining 660 by their recorded 440:220.
 #
-# Residue: the terminal pane claims a pty on mount; the trap DELETEs every
-# session id this run minted (the before/after diff of GET
-# /terminal/sessions) so the suite leaves no shell behind.
+# Residue: the terminal pane claims a pty on mount, and the pane outlives the
+# page. lib.sh reaps every session this recipe minted (the source-time
+# baseline against GET /terminal/sessions, killed in journey_exit_cleanup) -
+# this recipe carries no trap of its own, so run.sh's residue trap stays
+# installed.
 #
 # Card t_6a6c3355: nightly 43807490891 read "the terminal did not shrink"
 # with the panes still at the seeded 200/440/220/400 - i.e. the press never
@@ -31,18 +33,6 @@
 # that landed without a handle taking it stays a divider regression.
 . "${JROOT:?run must export JROOT}/lib.sh"
 B="${JOURNEY_BASE_URL:?}"
-
-term_ids() {
-  curl -s "$B/terminal/sessions" | grep -oE '"id": ?"[a-f0-9-]+"' | sed 's/.*"\([a-f0-9-]*\)"/\1/' | sort
-}
-TERM_BEFORE=$(term_ids)
-cleanup_term() {
-  local id
-  for id in $(comm -13 <(printf '%s\n' "$TERM_BEFORE") <(term_ids)); do
-    curl -s -X DELETE "$B/terminal/$id" >/dev/null 2>&1 || true
-  done
-}
-trap cleanup_term EXIT
 
 open_app
 ab set viewport 1280 800 >/dev/null 2>&1
