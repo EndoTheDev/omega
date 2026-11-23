@@ -37,9 +37,10 @@ import re
 import sys
 
 MODULES = ["approval", "browser", "compactor", "continuous", "cron",
-           "delegate", "files", "kanban", "logging", "mcp", "memory",
-           "notifications", "process", "prompt", "provider", "skills",
-           "store", "terminal", "tools", "trust", "verdict"]
+           "delegate", "files", "kanban", "mcp", "memory",
+           "notifications", "observability", "process", "prompt",
+           "provider", "skills", "store", "terminal", "tools", "trust",
+           "verdict"]
 KEEP = ["datadir"]
 
 # The loud unknown-wire gate's two patterns: any dot-qual on a capsule
@@ -354,6 +355,9 @@ def strip_host():
     f.replace_line("\t\t\tSummarizeAfterHours: store.DefaultHygiene().SummarizeAfterHours,",
                    "\t\t\tSummarizeAfterHours: 24, // the store capsule's DefaultSummarizeAfterHours",
                    "config: the summarize default")
+    f.replace_line("\t\t\tMonitor: approval.MonitorLogOnly,",
+                   "\t\t\tMonitor: \"log-only\", // the approval capsule's MonitorLogOnly",
+                   "config: the approvals.monitor default")
     f.replace_func("func (c Config) ConfigSection(", [
         "// modeValid is the host's approvals.mode vocabulary - the strip's",
         "// inlining of approval.ValidMode (the approval capsule rides out).",
@@ -365,20 +369,30 @@ def strip_host():
         "\treturn false",
         "}",
         "",
+        "// monitorValid is the host's approvals.monitor vocabulary - the strip's",
+        "// inlining of approval.ValidMonitor (the approval capsule rides out).",
+        "func monitorValid(m string) bool {",
+        "\treturn m == \"\" || m == \"log-only\" || m == \"enforce\"",
+        "}",
+        "",
         "func (c Config) ConfigSection(name string) (any, bool) {",
         "\t// the every-capsule-removed host: the shell's own sections stay,",
         "\t// every capsule section rides its capsule out",
         "\tswitch name {",
         "\tcase \"http_channel\":",
-        "\t\treturn api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, TitleModel: c.TitleModel, WebTools: agentapi.WebToolsConfig{APIKey: c.Provider.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, c.Provider.Host)}}, true",
+        "\t\tprimary, _ := c.defaultInstance()",
+        "\t\treturn api.Config{Port: c.Server.Port, Bind: c.Server.Bind, RunTimeout: c.Server.RunTimeout, DefaultWorkspace: c.Server.DefaultWorkspace, TitleModel: c.TitleModel, PublicHosts: c.Server.PublicHosts, WebTools: agentapi.WebToolsConfig{APIKey: primary.APIKey, BaseURL: webBaseURL(c.Web.BaseURL, primary.Host)}}, true",
         "\tcase \"compactor\":",
         "\t\treturn c.Compaction, true",
         "\t}",
         "\treturn nil, false",
         "}",
-    ], "config: ConfigSection (+ modeValid)")
+    ], "config: ConfigSection (+ modeValid, monitorValid)")
     f.replace_line("if !approval.ValidMode(c.Approvals.Mode) {",
                    "if !modeValid(c.Approvals.Mode) {", "config: approvals.mode validation")
+    f.replace_line("if !approval.ValidMonitor(c.Approvals.Monitor) {",
+                   "if !monitorValid(c.Approvals.Monitor) {",
+                   "config: approvals.monitor validation")
     # the registry arc (ruling B, card t_7dcd4280): ConfigSection's
     # capsule sections moved into per-capsule helper funcs. The shell
     # helpers stay (compactionSection, webBaseURL, approvalSlot are
@@ -397,6 +411,10 @@ def strip_host():
         "// the every-capsule-removed host: the skills capsule's section",
         "// rides it out (the curator consult slot is capsule wiring).",
     ], "config: skillsSection rides the capsule out")
+    f.replace_func("func providerSection(", [
+        "// the every-capsule-removed host: the provider section rides the",
+        "// provider capsule out (provider.Config is its type).",
+    ], "config: providerSection rides the capsule out")
     f.assert_no_capsule_quals("config")
     f.assert_pure("config")
     f.save()
@@ -412,6 +430,12 @@ def strip_host():
                              "settings: the schema's compactor hint")
     f.replace_line("if !approval.ValidMode(m) {",
                    "if !modeValid(m) {", "settings: approvals.mode validation")
+    f.replace_line("Options: []string{approval.MonitorLogOnly, approval.MonitorEnforce},",
+                   "\t\t\t\t\tOptions: []string{\"log-only\", \"enforce\"},",
+                   "settings: the approvals.monitor options")
+    f.replace_line("if !approval.ValidMonitor(m) {",
+                   "\t\t\tif !monitorValid(m) {",
+                   "settings: approvals.monitor validation")
     # the registry arc's hot-apply tails: the approvals/store/skills
     # resolve blocks type-assert capsule types - they ride their
     # capsules out. In the every-capsule-removed build Resolve is nil
@@ -422,6 +446,12 @@ def strip_host():
                 "settings: hotApply's store tail")
     f.del_block('pctx.Services().Resolve("skills").(curatorSlotSetter)',
                 "settings: hotApply's skills tail (skillsSection rode the capsule out)")
+    f.del_block('pctx.Services().Resolve("provider").(providerConfigSetter)',
+                "settings: hotApply's provider tail (providerSection rode the capsule out)")
+    f.replace_func("type providerConfigSetter interface {", [],
+                   "settings: providerConfigSetter (the provider capsule's face)")
+    f.drop_line("// providerConfigSetter is the host's consumer-owned face for the provider.",
+                "settings: providerConfigSetter doc")
     f.assert_no_capsule_quals("settings")
     f.assert_pure("settings")
     f.save()
