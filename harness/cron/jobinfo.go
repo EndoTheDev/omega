@@ -30,6 +30,9 @@ type JobInfo struct {
 	Status     string `json:"status,omitempty"`
 	Last       string `json:"last,omitempty"`
 	StatusNote string `json:"status_note,omitempty"`
+	// Running is the live-fire mark: true while this job's turn (or wake) is in flight, so
+	// the console can offer Stop only where a fire exists to stop.
+	Running bool `json:"running,omitempty"`
 }
 
 // JobRows is the pre-marshaled wire form of Jobs.

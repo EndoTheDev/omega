@@ -637,13 +637,19 @@ const listEl = ref<{ openDetail: (name: string) => void } | null>(null);
     confirm (never a second confirm), and the locked default agent offers neither danger nor
     a duplicate home. */
 function rowMenu(row: RegistryRow): ContextMenuEntry[] {
+  const roster = rosterOf(row.name);
   return agentMenuItems(
-    { name: row.name, deletable: row.name !== DefaultAgentName },
+    {
+      name: row.name,
+      deletable: row.name !== DefaultAgentName,
+      awake: !!roster && rowStatusOf(row.name) !== "sleeping",
+    },
     {
       newAgent: () => {
         showCreate.value = true;
         createError.value = "";
       },
+      stop: () => void sleep(row.name),
       remove: () => {
         listEl.value?.openDetail(row.name);
         deleting.value = row.name;

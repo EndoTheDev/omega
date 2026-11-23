@@ -537,6 +537,130 @@ func (r *Routes) handleFilesWrite(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": rel})
 }
 
+// validLeafName is the rename half's name law: one segment, no separators, no traversal
+// segments. Dotfiles are ordinary names (the tree lists them), and a rename never moves a
+// node between directories - the form edits the leaf the user pointed at.
+func validLeafName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
+	}
+	if strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return strings.TrimSpace(name) == name
+}
+
+// handleFilesRename serves POST /files/rename {path, name, session}: rename one node in
+// place. The source runs the shared root jail; the target is the same directory plus one
+// validated leaf, so containment cannot move. An existing target is a loud 409 (a rename
+// never overwrites), a missing source 404.
+func (r *Routes) handleFilesRename(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		Path    string `json:"path"`
+		Name    string `json:"name"`
+		Session string `json:"session,omitempty"`
+	}
+	if !filesPostBody(w, req, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		fileError(w, http.StatusBadRequest, "empty path")
+		return
+	}
+	if !validLeafName(body.Name) {
+		fileError(w, http.StatusBadRequest, "name must be one segment (no separators, no dot-prefix)")
+		return
+	}
+	root, _, err := r.resolveFilesRoot(req.Context(), body.Session)
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
+		return
+	}
+	rel, resolved, err := resolveForWrite(root, body.Path)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errUncontained) {
+			status = http.StatusBadRequest
+		}
+		fileError(w, status, err.Error())
+		return
+	}
+	if rel == "" {
+		fileError(w, http.StatusBadRequest, "the workspace root cannot be renamed")
+		return
+	}
+	if _, serr := os.Stat(resolved); serr != nil {
+		fileError(w, http.StatusNotFound, "no such path: "+body.Path)
+		return
+	}
+	newRel := body.Name
+	if dir := filepath.Dir(rel); dir != "." {
+		newRel = dir + "/" + body.Name
+	}
+	_, target, terr := resolveForWrite(root, newRel)
+	if terr != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(terr, errUncontained) {
+			status = http.StatusBadRequest
+		}
+		fileError(w, status, terr.Error())
+		return
+	}
+	if _, serr := os.Stat(target); serr == nil {
+		fileError(w, http.StatusConflict, "already exists: "+newRel)
+		return
+	}
+	if rerr := os.Rename(resolved, target); rerr != nil {
+		fileError(w, http.StatusInternalServerError, "rename: "+rerr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": newRel})
+}
+
+// handleFilesDelete serves POST /files/delete {path, session}: remove one node. The root
+// itself is refused (the workspace is not a deletable row), and the path runs the shared
+// root jail before the disk is touched.
+func (r *Routes) handleFilesDelete(w http.ResponseWriter, req *http.Request) {
+	var body struct {
+		Path    string `json:"path"`
+		Session string `json:"session,omitempty"`
+	}
+	if !filesPostBody(w, req, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Path) == "" {
+		fileError(w, http.StatusBadRequest, "empty path")
+		return
+	}
+	root, _, err := r.resolveFilesRoot(req.Context(), body.Session)
+	if err != nil {
+		fileError(w, http.StatusInternalServerError, "resolve working directory: "+err.Error())
+		return
+	}
+	rel, resolved, err := resolveForWrite(root, body.Path)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if errors.Is(err, errUncontained) {
+			status = http.StatusBadRequest
+		}
+		fileError(w, status, err.Error())
+		return
+	}
+	if rel == "" {
+		fileError(w, http.StatusBadRequest, "the workspace root cannot be deleted")
+		return
+	}
+	if _, serr := os.Stat(resolved); serr != nil {
+		fileError(w, http.StatusNotFound, "no such path: "+body.Path)
+		return
+	}
+	if derr := os.RemoveAll(resolved); derr != nil {
+		fileError(w, http.StatusInternalServerError, "delete: "+derr.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "path": rel})
+}
+
 // handleFilesMkdir serves POST /files/mkdir {path, session}. Empty and existing names
 // are loud 400s; the leaf chain must already exist above the leaf - the same resolution
 // rule the write half runs under (no made-up parent chains, no symlinks smuggled

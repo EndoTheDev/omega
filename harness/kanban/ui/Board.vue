@@ -1022,9 +1022,45 @@
     void deleteCard(t.id, boardOf(t, boardName.value));
   }
 
+  // Stop: the running card's work ends - the lane move to blocked lands FIRST, then the
+  // card's live session run is cancelled when the card carries one (POST
+  // /sessions/{id}/stop; an idle session 404s, which is not an error here - the card is
+  // stopped either way). A refused lane move leaves the run alone: a dead run under a
+  // still-running card would be the worse lie.
+  async function stopCard(t: BoardTask) {
+    const board = boardOf(t, boardName.value);
+    try {
+      const res = await fetch(withBoard(`/tasks/${encodeURIComponent(t.id)}`, board), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "blocked" }),
+      });
+      if (!res.ok) throw new Error(`PATCH /tasks/${t.id}: ${res.status}`);
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : String(e), true);
+      return;
+    }
+    await fetchBoard();
+    if (selected.value?.id === t.id) await loadDetail(t.id, board);
+    if (t.session_id) {
+      try {
+        const res = await fetch(`/sessions/${encodeURIComponent(t.session_id)}/stop`, {
+          method: "POST",
+        });
+        if (!res.ok && res.status !== 404) {
+          throw new Error(`stop session: ${res.status}`);
+        }
+      } catch (e) {
+        setNotice(e instanceof Error ? e.message : String(e), true);
+        return;
+      }
+    }
+    setNotice(`card ${t.id} stopped`);
+  }
+
   // The right-click menus the card under the pointer (the closures capture it), never the
-  // drawer's selection. Archive rides moveBoard, the lane arrow's own PATCH; Delete is the
-  // drawer's DELETE, behind the arm above.
+  // drawer's selection. Archive rides moveBoard, the lane arrow's own PATCH; Stop rides the
+  // same PATCH plus the session stop; Delete is the drawer's DELETE, behind the arm above.
   function onCardMenu(e: MouseEvent, t: BoardTask) {
     e.preventDefault();
     void openContextMenu(
@@ -1035,6 +1071,7 @@
         {
           open: () => openDetail(t),
           copyId: () => void copyCardId(t.id),
+          stop: () => void stopCard(t),
           archive: () => void moveBoard(t, "archived"),
           remove: () => onCardDeleteRow(t),
         },

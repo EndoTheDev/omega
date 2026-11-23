@@ -183,9 +183,11 @@
     );
   }
 
-  // THE ROW MENU: Open is the row's own click (the viewer tab), Enable or Disable is
-  // the pill's own write, and Delete arms the editor's one confirm - never a second
-  // confirm dialog beside it. The row face is local: module UI imports no shell client.
+  // THE ROW MENU: Open is the row's own click (the viewer tab), Export downloads the
+  // folder (GET /skills/export), Enable or Disable is the pill's own write, Archive is
+  // POST /skills/archive (reversible: the folder moves into .archive), and Delete arms
+  // the editor's one confirm - never a second confirm dialog beside it. The row face is
+  // local: module UI imports no shell client.
   function rowMenu(row: { name: string; disabled: boolean; noToggle?: boolean }): ContextMenuEntry[] {
     return skillMenuItems(
       {
@@ -194,11 +196,46 @@
       },
       {
         open: () => openSkill(row),
+        exportSkill: () => exportSkill(row.name),
         // the target direction IS the row's disabled flag (RegistryList's own emit)
         toggle: () => void onToggle(row.name, !!row.disabled),
+        archive: () => void archiveSkill(row.name),
         remove: () => void startEdit(row.name, true),
       },
     );
+  }
+
+  // exportSkill is the browser's own download: an anchor to the route the tab's menu
+  // names, never a fetch whose bytes the page would have to hold.
+  function exportSkill(name: string): void {
+    const a = document.createElement("a");
+    a.href = `/skills/export?name=${encodeURIComponent(name)}`;
+    a.download = `${name}.tar.gz`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  // archiveSkill moves the folder out of the listing; the answer is the fresh inventory
+  // (the editor routes' one-response contract), so the row disappears without a refetch.
+  async function archiveSkill(name: string): Promise<void> {
+    if (busy.value !== null) return;
+    busy.value = name;
+    try {
+      const res = await fetch("/skills/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      if (editor.value && editor.value.draft.name === name) editor.value = null;
+      await load();
+      error.value = "";
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
   }
 
   async function load(): Promise<void> {

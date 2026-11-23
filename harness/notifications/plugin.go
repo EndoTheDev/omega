@@ -85,6 +85,7 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}{
 		{"/notifications", p.routes.handleNotifications},
 		{"/notifications/read", p.routes.handleNotificationsRead},
+		{"/notifications/{id}", p.routes.handleNotificationDelete},
 		{"/notifications/events", p.routes.handleNotificationEvents},
 	} {
 		if err := api.RegisterRoute(r.pattern, r.h); err != nil {

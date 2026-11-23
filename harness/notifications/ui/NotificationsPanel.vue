@@ -73,7 +73,7 @@
         class="notif-row"
         :class="{ unread: !n.read, failed: n.verdict === 'failed' }"
         @click="openRecord(n)"
-        @contextmenu="onRowMenu($event)">
+        @contextmenu="onRowMenu($event, n)">
         <span
           class="notif-kind"
           :data-kind="n.kind">{{ kindGlyph(n.kind) }}</span>
@@ -89,6 +89,10 @@
         nothing finished yet
       </li>
     </ul>
+    <p
+      v-if="clearError"
+      class="notif-clear-error"
+      role="alert">{{ clearError }}</p>
   </div>
 </template>
 
@@ -101,6 +105,7 @@
     markAllRead,
     markRecordRead,
     clearAll,
+    clearOne,
     notificationAge,
     refreshNotifications,
     startNotificationFeed,
@@ -187,6 +192,7 @@
   }
 
   const clearingAll = ref(false);
+  const clearError = ref("");
   async function clearAllRecords(): Promise<void> {
     if (clearingAll.value) return;
     clearingAll.value = true;
@@ -198,16 +204,30 @@
     }
   }
 
-  // THE ROW MENU: one row on every record row, because the verb is the whole feed's.
+  // THE ROW MENU: Clear drops the record under the pointer, Clear all drops the feed.
   // An empty feed registers nothing, so the right-click leaves the browser's own menu.
-  function onRowMenu(e: MouseEvent) {
+  function onRowMenu(e: MouseEvent, n: OmegaNotification) {
     const items = notificationMenuItems(
+      { id: n.id },
       { count: notificationsList.value.length, clearing: clearingAll.value },
-      { clearAll: () => void clearAllRecords() },
+      {
+        clearOne: () => void clearRecord(n.id),
+        clearAll: () => void clearAllRecords(),
+      },
     );
     if (items.length === 0) return;
     e.preventDefault();
     void openContextMenu(e.clientX, e.clientY, items);
+  }
+
+  // clearRecord drops one record; a refused DELETE restores the feed and says so.
+  async function clearRecord(id: number): Promise<void> {
+    try {
+      await clearOne(id);
+      clearError.value = "";
+    } catch (e) {
+      clearError.value = e instanceof Error ? e.message : String(e);
+    }
   }
 
   onMounted(async () => {
@@ -337,5 +357,11 @@
     text-align: center;
     opacity: 0.4;
     font-size: 11px;
+  }
+  .notif-clear-error {
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--err);
   }
 </style>

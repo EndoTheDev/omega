@@ -68,6 +68,8 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		},
 		func() error { return api.RegisterRoute("POST /skills/save", p.routes.handleSkillsSave) },
 		func() error { return api.RegisterRoute("POST /skills/delete", p.routes.handleSkillsDelete) },
+		func() error { return api.RegisterRoute("POST /skills/archive", p.routes.handleSkillsArchive) },
+		func() error { return api.RegisterRoute("/skills/export", p.routes.handleSkillsExport) },
 		func() error { return p.registerCuratorCLI(api, sp) },
 		func() error { return p.registerSkillsCLI(api, sp) },
 		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },

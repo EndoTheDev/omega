@@ -102,6 +102,16 @@ func (e *emittingStore) MarkAllRead(ctx context.Context) error {
 	return e.store.MarkAllRead(ctx)
 }
 
+// Delete drops one record and pushes the refreshed list panel, so the canvas list
+// follows a per-row clear the same way it follows Clear.
+func (e *emittingStore) Delete(ctx context.Context, id int64) error {
+	err := e.store.Delete(ctx, id)
+	if err == nil {
+		e.capsule.push(e.capsule.listPanel())
+	}
+	return err
+}
+
 // Clear drops every record and pushes the refreshed (empty) list panel.
 func (e *emittingStore) Clear(ctx context.Context) (int64, error) {
 	n, err := e.store.Clear(ctx)

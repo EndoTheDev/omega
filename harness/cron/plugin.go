@@ -111,6 +111,12 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	if err := api.RegisterRoute("POST /cron/delete", p.handleDeleteJob); err != nil {
 		return err
 	}
+	if err := api.RegisterRoute("POST /cron/run", p.handleRun); err != nil {
+		return err
+	}
+	if err := api.RegisterRoute("POST /cron/stop", p.handleStop); err != nil {
+		return err
+	}
 	p.capsule = newCapsule(r)
 	r.panels = p.capsule
 	return api.RegisterPanelProvider(p.capsule)

@@ -49,6 +49,12 @@ export async function clearAllNotifications(): Promise<number> {
   return typeof body.cleared === "number" ? body.cleared : 0;
 }
 
+// clearOneNotification is DELETE /notifications/{id}: the row's own clear, one record.
+export async function clearOneNotification(id: number): Promise<void> {
+  const r = await fetch(`/notifications/${id}`, { method: "DELETE" });
+  if (!r.ok) throw new Error(`clear: ${r.status}`);
+}
+
 // pure helpers (node-tested: test/notifications.test.ts)
 export function notificationAge(created_at: string, nowMs = Date.now()): string {
   const t = Date.parse(created_at);

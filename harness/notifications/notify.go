@@ -212,6 +212,19 @@ func (s *Store) MarkAllRead(ctx context.Context) error {
 	return err
 }
 
+// Delete drops ONE record. A ghost id errors like MarkRead does, so the wire can answer
+// 404 instead of claiming it cleared something.
+func (s *Store) Delete(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM notifications WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("no such notification %d", id)
+	}
+	return nil
+}
+
 func (s *Store) Clear(ctx context.Context) (int64, error) {
 	res, err := s.db.ExecContext(ctx, `DELETE FROM notifications`)
 	if err != nil {

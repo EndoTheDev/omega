@@ -1,7 +1,8 @@
 // omega webui: the board card's right-click rows - registration law and wiring pins.
 //
-// EXISTING VERBS ONLY. Open is the card's click, Copy id is client-side, Archive is
-// the PATCH the lane arrow already sends - and an already-archived card offers no Archive,
+// EXISTING VERBS ONLY. Open is the card's click, Copy id is client-side, Stop is the
+// lane move's own PATCH to blocked (offered only while the card runs), Archive is the
+// PATCH the lane arrow already sends - and an already-archived card offers no Archive,
 // since a second move to the archived lane is not a verb. Delete is the drawer's own
 // DELETE /tasks/{id}, behind an arm (the first pick only warns). The browser half is
 // recipe 118.
@@ -32,14 +33,29 @@ function calls() {
     log,
     open: () => log.push("open"),
     copyId: () => log.push("copy"),
+    stop: () => log.push("stop"),
     archive: () => log.push("archive"),
     remove: () => log.push("delete"),
   };
 }
 
-describe("board cards: Open, Copy id, Archive, Delete", () => {
-  it("offers the two live verbs plus Archive and Delete, below a separator", () => {
+describe("board cards: Open, Copy id, Stop, Archive, Delete", () => {
+  it("a running card carries Stop above Archive and Delete", () => {
     const items = cardMenuItems({ id: "t_1", status: "running" }, calls());
+    assert.deepEqual(ids(items), [
+      "card:open",
+      "card:copy-id",
+      "separator",
+      "card:stop",
+      "card:archive",
+      "card:delete",
+    ]);
+    const stop = items[3] as { danger?: boolean; run: () => void };
+    assert.equal(stop.danger, true, "a stop wears the danger color");
+  });
+
+  it("an idle card offers no Stop (the verb cannot act)", () => {
+    const items = cardMenuItems({ id: "t_1", status: "todo" }, calls());
     assert.deepEqual(ids(items), [
       "card:open",
       "card:copy-id",
@@ -75,10 +91,10 @@ describe("board cards: Open, Copy id, Archive, Delete", () => {
 
   it("each row runs the verb it names, and only that one", () => {
     const d = calls();
-    for (const item of cardMenuItems({ id: "t_1", status: "todo" }, d)) {
+    for (const item of cardMenuItems({ id: "t_1", status: "running" }, d)) {
       if ((item as { id?: string }).id) (item as { run: () => void }).run();
     }
-    assert.deepEqual(d.log, ["open", "copy", "archive", "delete"]);
+    assert.deepEqual(d.log, ["open", "copy", "stop", "archive", "delete"]);
   });
 
   it("the row list is a menu the shared store opens (no local menu)", () => {
@@ -112,10 +128,20 @@ describe("Board.vue wiring", () => {
     const body = handler.slice(0, handler.indexOf("\n  }"));
     assert.match(body, /e\.preventDefault\(\)/, "the browser menu never wins on a card");
     assert.match(body, /cardMenuItems\(\s*\{ id: t\.id, status: t\.status \}/, "the pointed card, not the selection");
+    assert.match(body, /stop: \(\) => void stopCard\(t\)/, "Stop rides the card's own stop");
     assert.match(body, /archive: \(\) => void moveBoard\(t, "archived"\)/, "Archive is the lane move's own PATCH");
     assert.match(body, /remove: \(\) => onCardDeleteRow\(t\)/, "Delete rides the arm gate");
     assert.match(body, /armedCardDelete\.value === t\.id/, "the arm is the pointed card's own");
     assert.match(body, /open: \(\) => openDetail\(t\)/, "Open is the card's own click");
+  });
+
+  it("Stop moves the card to blocked and stops its live session run", () => {
+    const fn = boardVue.slice(boardVue.indexOf("async function stopCard"));
+    const body = fn.slice(0, fn.indexOf("\n  }"));
+    assert.match(body, /status: "blocked"/, "the stop is the lane PATCH");
+    assert.match(body, /\/sessions\/\$\{encodeURIComponent\(t\.session_id\)\}\/stop/, "the card's live run is cancelled");
+    assert.match(body, /res\.status !== 404/, "an idle session is not an error");
+    assert.match(body, /if \(!res\.ok\) throw new Error\(`PATCH/, "a refused lane move returns early");
   });
 
   it("Delete fires the drawer's DELETE route, on the card's own board", () => {

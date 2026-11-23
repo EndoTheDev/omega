@@ -285,7 +285,13 @@
         @contextmenu="onRowMenu($event, j)">
         <div class="cron-head reg-row-head">
           <div class="reg-row-main">
-            <span class="cron-name reg-row-name">{{ j.name }}</span>
+            <span class="cron-name reg-row-name">
+              <i
+                class="cron-dot"
+                :class="[`cron-dot-${cronDotOf(j)}`, { live: j.running }]"
+                :title="cronDotLabel(j)"
+                :aria-label="cronDotLabel(j)"
+                role="img"></i>{{ j.name }}</span>
             <span class="reg-row-sub">
               <span class="cron-meta reg-row-sub-text">
                 {{ cadenceOf(j) }}<template v-if="j.next"> - next {{ shortTime(j.next) }}</template>{{ lastMeta(j) }}{{ jobMeta(j) }}
@@ -339,9 +345,12 @@
   import { CRON_EMPTY_HINT, CRON_EMPTY_TEXT } from "./emptyState";
   import {
     cronKeyOf,
+    runCronJobNow,
     setCronJobEnabled,
+    stopCronRun,
     type CronJobWire,
   } from "./toggle";
+  import { cronDotLabel, cronDotOf } from "./statusDot";
   import { filterCronJobs } from "./search";
   import {
     DELIVER_TARGETS,
@@ -769,6 +778,8 @@
       e.clientX,
       e.clientY,
       cronMenuItems(j, {
+        runNow: () => void applyRun(j, runCronJobNow),
+        stopRun: () => void applyRun(j, stopCronRun),
         toggle: () => onToggle(j),
         remove: () => {
           startEdit(j);
@@ -776,6 +787,42 @@
         },
       }),
     );
+  }
+
+  // applyRun commits one run-control verb and paints the fresh job set, then keeps the
+  // live mark honest: while any fire is in flight the console re-reads on a short ladder,
+  // so Stop run appears and disappears with the fire itself (never a stale row).
+  let runPollTimer: ReturnType<typeof setTimeout> | undefined;
+  function pollRunning(): void {
+    if (runPollTimer) clearTimeout(runPollTimer);
+    runPollTimer = undefined;
+    if (!jobs.value.some((j) => j.running)) return;
+    runPollTimer = setTimeout(async () => {
+      runPollTimer = undefined;
+      try {
+        await load();
+      } catch {
+        return;
+      }
+      pollRunning();
+    }, 2000);
+  }
+  onBeforeUnmount(() => {
+    if (runPollTimer) clearTimeout(runPollTimer);
+  });
+
+  async function applyRun(j: CronJobWire, act: (key: string) => Promise<CronJobWire[]>): Promise<void> {
+    if (busy.value !== null) return;
+    busy.value = cronKeyOf(j);
+    try {
+      jobs.value = await act(cronKeyOf(j));
+      error.value = "";
+      pollRunning();
+    } catch (e) {
+      error.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
   }
 
   async function apply(j: CronJobWire) {
@@ -978,6 +1025,41 @@
   }
   .cron-meta {
     font-family: var(--mono, monospace);
+  }
+  /*
+   * THE STATUS DOT: the last fire's outcome, one word per color (green ok / red error /
+   * amber never fired). A live fire pulses the same dot; the color still tells the last
+   * outcome, the pulse tells the present.
+   */
+  .cron-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    margin-inline-end: 6px;
+    border-radius: 50%;
+    vertical-align: middle;
+    background: var(--text-dim, #8a8a92);
+  }
+  .cron-dot-ok {
+    background: var(--ok);
+  }
+  .cron-dot-error {
+    background: var(--err);
+  }
+  .cron-dot-never {
+    background: var(--accent);
+  }
+  .cron-dot.live {
+    animation: cron-dot-pulse 1.1s ease-in-out infinite;
+  }
+  @keyframes cron-dot-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
   }
   .cron-field-note {
     margin: 2px 0 0;
