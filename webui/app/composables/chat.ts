@@ -523,6 +523,14 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         // ordinary transcript content (a panel repaint carries it)
         st.queued = dropQueuedRow(st.queued, id);
       },
+      onQueued: (rows) => {
+        // The busy snapshot was stale: this send took the stream path while a run was
+        // already live, and the server parked it as a steer row. Show it like any other
+        // parked row - the send was accepted, so it must never vanish.
+        st.queued = mergeQueuedRows(st.queued, rows);
+        st.statusLine = "";
+        deps.refreshSessions();
+      },
     };
   }
 

@@ -3188,23 +3188,37 @@ export async function readQueuedRows(resp: Response): Promise<QueuedRow[]> {
 
 // sendSteer posts one mid-turn message and returns the rows the server parked. The caller
 // only reaches for this when the session's run slot is taken; the server decides for real,
-// so a race that ends the run first falls back to the stream send.
+// so a race that ends the run first falls back to the stream send (null = a run started).
+// A real refusal throws: it must speak, never read as delivery.
 export async function sendSteer(
   messages: OmegaMessage[],
   sessionId: string,
   model?: string,
   thinkingLevel?: number,
 ): Promise<QueuedRow[] | null> {
-  const resp = await fetch("/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(chatBody(messages, sessionId, { model, thinkingLevel })),
-  });
-  if (resp.status === 202) return readQueuedRows(resp);
-  // The run ended between the client's busy read and this post: the send STARTED a run.
-  // Its stream is detached server-side; the caller re-reads the session.
-  await resp.body?.cancel().catch(() => {});
-  return null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const resp = await fetch("/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(chatBody(messages, sessionId, { model, thinkingLevel })),
+    });
+    if (resp.status === 202) return readQueuedRows(resp);
+    if (resp.status === 409 && attempt === 0) {
+      // The slot filled between the busy read and this post: the run that holds it can
+      // take the same body now, so one retry lands it as the steer the caller meant.
+      await resp.body?.cancel().catch(() => {});
+      continue;
+    }
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      throw new Error(`chat: ${resp.status}${detail ? ` ${detail.trim()}` : ""}`);
+    }
+    // 200: the run ended between the client's busy read and this post - the send STARTED a
+    // run. Its stream is detached server-side; the caller re-reads the session.
+    await resp.body?.cancel().catch(() => {});
+    return null;
+  }
+  throw new Error("chat: session busy");
 }
 
 // fetchQueue reads the session's waiting steer rows (the visible queue after a reload).

@@ -267,6 +267,17 @@ func TestWakeResultJoinsTheLiveTurn(t *testing.T) {
 	if rows := s.steers.list("s1"); len(rows) != 1 || rows[0].Kind != queuedWake {
 		t.Fatalf("queued wake rows = %+v, want the parked result", rows)
 	}
+	// The wake entry feeds the live turn; it is never a row the surface shows or lets the
+	// human delete (deleting it would eat the result the live turn is waiting for).
+	if got := fetchQueue(t, ts, "s1"); len(got) != 0 {
+		t.Fatalf("queue surface = %v, want empty: a wake entry is machinery, not a row", rowContents(got))
+	}
+	if code := deleteRow(t, ts, "s1", s.steers.list("s1")[0].ID); code != http.StatusNotFound {
+		t.Fatalf("delete of a wake entry = %d, want 404", code)
+	}
+	if rows := s.steers.list("s1"); len(rows) != 1 || rows[0].Kind != queuedWake {
+		t.Fatalf("a refused delete ate the wake entry: %+v", rows)
+	}
 	close(toolRelease)
 
 	readFrames(t, sc, "steer_delivered", 1)
@@ -344,6 +355,52 @@ func TestIdleSendStartsATurn(t *testing.T) {
 	prov.done()
 	readFrames(t, sc, "agent_end", 1)
 	resp.Body.Close()
+}
+
+// TestQueuedRowsSurviveAFailedLaunch: a launch that takes the queue and then dies BEFORE
+// any turn runs hands the rows back. The 202 the human already received is a receipt for
+// delivery, so it may not cover a silent loss (rule 7).
+func TestQueuedRowsSurviveAFailedLaunch(t *testing.T) {
+	s, _, _, ts := newSteerServer(t)
+	// A row parked for a session the store no longer holds: reachable when a session is
+	// deleted between the send that parked the row and the turn that delivers it.
+	parked := s.steers.push("gone", queuedSteer, []core.Message{core.NewUser("kept")})
+
+	body, _ := json.Marshal(map[string]any{
+		"messages":   []map[string]any{{"role": "user", "content": "sent"}},
+		"session_id": "gone",
+	})
+	resp, err := http.Post(ts.URL+"/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("chat post: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("failed launch status = %d, want 404 (the session row is gone)", resp.StatusCode)
+	}
+	rows := s.steers.list("gone")
+	if len(rows) != 1 || rows[0].ID != parked.ID {
+		t.Fatalf("queue after a failed launch = %+v, want the parked row back", rows)
+	}
+	if s.runs.active("gone") {
+		t.Fatal("a failed launch kept the run slot")
+	}
+}
+
+// TestRequeueNeverDoublesARow: a failed launch is requeued by the machinery that took the
+// batch AND by the prepare path that handed its rows back - one row, one delivery.
+func TestRequeueNeverDoublesARow(t *testing.T) {
+	h := newSteerHub()
+	item := h.push("s1", queuedSteer, []core.Message{core.NewUser("once")})
+	batch := h.take("s1")
+	if len(batch) != 1 {
+		t.Fatalf("taken batch = %+v, want one", batch)
+	}
+	h.returnInflight("s1")
+	h.requeue("s1", batch)
+	if rows := h.list("s1"); len(rows) != 1 || rows[0].ID != item.ID {
+		t.Fatalf("queue after two requeues = %+v, want one row", rows)
+	}
 }
 
 // --- helpers ---------------------------------------------------------------------------

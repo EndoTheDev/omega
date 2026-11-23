@@ -91,14 +91,31 @@ func (h *steerHub) list(sessionID string) []queuedInput {
 	return append([]queuedInput(nil), h.byID[sessionID]...)
 }
 
-// remove drops one waiting entry (delete-before-delivery). False = it was never there, or
-// it is already inflight and its delivery is no longer the surface's to cancel.
+// listSteers returns the session's waiting HUMAN rows in delivery order: the queue
+// surface's view. A wake entry is machinery for the live turn it feeds - it is not a row
+// the human reads, and it is not the surface's to delete.
+func (h *steerHub) listSteers(sessionID string) []queuedInput {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	q := h.byID[sessionID]
+	out := make([]queuedInput, 0, len(q))
+	for _, item := range q {
+		if item.Kind == queuedSteer {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// remove drops one waiting row (delete-before-delivery). False = it was never there, it is
+// already inflight and its delivery is no longer the surface's to cancel, or it is a wake
+// entry the surface never showed.
 func (h *steerHub) remove(sessionID, id string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	q := h.byID[sessionID]
 	for i, item := range q {
-		if item.ID != id {
+		if item.ID != id || item.Kind != queuedSteer {
 			continue
 		}
 		h.byID[sessionID] = append(append([]queuedInput(nil), q[:i]...), q[i+1:]...)
@@ -151,11 +168,25 @@ func (h *steerHub) returnInflight(sessionID string) {
 	h.byID[sessionID] = append(append([]queuedInput(nil), q...), h.byID[sessionID]...)
 }
 
-// requeue puts a batch back after a launch lost the run-slot race.
+// requeue puts a batch back at the front. An id the queue already holds is not added
+// twice: a failed launch is requeued by the machinery that took the batch AND by the
+// prepare path that handed its rows back, and one row is still one delivery.
 func (h *steerHub) requeue(sessionID string, batch []queuedInput) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.byID[sessionID] = append(append([]queuedInput(nil), batch...), h.byID[sessionID]...)
+	held := make(map[string]bool, len(h.byID[sessionID]))
+	for _, item := range h.byID[sessionID] {
+		held[item.ID] = true
+	}
+	lead := make([]queuedInput, 0, len(batch))
+	for _, item := range batch {
+		if held[item.ID] {
+			continue
+		}
+		held[item.ID] = true
+		lead = append(lead, item)
+	}
+	h.byID[sessionID] = append(lead, h.byID[sessionID]...)
 }
 
 // dropWakes removes every wake-kind entry for the session, waiting and inflight: a stop
@@ -247,8 +278,9 @@ func writeQueuedRows(w http.ResponseWriter, status int, batch []queuedInput) {
 	_ = json.NewEncoder(w).Encode(map[string]any{"queued": rows})
 }
 
-// handleSessionQueue serves GET /sessions/{id}/queue: the rows waiting for the session,
-// rehydrated by any surface that reattaches mid-turn.
+// handleSessionQueue serves GET /sessions/{id}/queue: the human rows waiting for the
+// session, rehydrated by any surface that reattaches mid-turn. A wake entry (a settled
+// result feeding the live turn) is machinery, not a row - it never appears here.
 func (s *Server) handleSessionQueue(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -259,12 +291,14 @@ func (s *Server) handleSessionQueue(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing session id", http.StatusBadRequest)
 		return
 	}
-	writeQueuedRows(w, http.StatusOK, s.steers.list(id))
+	writeQueuedRows(w, http.StatusOK, s.steers.listSteers(id))
 }
 
 // handleSessionQueueRow serves DELETE /sessions/{id}/queue/{row}: drop one row before the
 // boundary reaches it. An unknown (or already delivered) row is a 404 - the surface's row
-// is stale, which is honest rather than a silent no-op.
+// is stale, which is honest rather than a silent no-op. A wake entry draws the same 404:
+// it was never a row the surface could show, and deleting it would eat a result the live
+// turn is waiting for.
 func (s *Server) handleSessionQueueRow(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -328,21 +362,36 @@ func (s *Server) steerNow(req *chatRequest) bool {
 	return s.runs.active(req.SessionID)
 }
 
-// takeQueuedInto moves the session's queued rows into the incoming messages of the turn
-// about to run: rows were typed BEFORE this send, and a turn that died holding them must
-// not reorder the conversation - the next turn delivers them first.
-func (s *Server) takeQueuedInto(sessionID string) []core.Message {
+// takeQueuedInto moves the session's queued rows into this turn's incoming messages and
+// hands the batch back: the caller ACKS it once the launch is committed, so a prepare that
+// dies first returns the rows instead of eating them (rule 7).
+func (s *Server) takeQueuedInto(sessionID string) ([]core.Message, []queuedInput) {
 	batch := s.steers.take(sessionID)
 	if len(batch) == 0 {
-		return nil
+		return nil, nil
 	}
 	var lead []core.Message
 	for _, item := range batch {
 		lead = append(lead, item.Messages...)
-		// The turn about to persist them is their acknowledgment: they are its input now.
+	}
+	return lead, batch
+}
+
+// ackQueued retires rows a committed turn took: the turn is their delivery, so they are
+// spent.
+func (s *Server) ackQueued(sessionID string, batch []queuedInput) {
+	for _, item := range batch {
 		s.steers.ack(sessionID, item.ID)
 	}
-	return lead
+}
+
+// prepareFailed releases a run slot whose prepare never reached a launch, and hands the
+// rows the prepare had already taken off the queue back to it: the human's 202 is a
+// receipt for DELIVERY, so a launch that dies before its turn runs eats nothing (rule 7).
+func (s *Server) prepareFailed(run *activeRun, sessionID string) {
+	s.steers.returnInflight(sessionID)
+	s.runs.finish(run)
+	s.publishRunState(sessionID, false)
 }
 
 // queuedWakeResult parks a settled result for the session's live turn.

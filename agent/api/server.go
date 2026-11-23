@@ -730,9 +730,11 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	// Queued rows deliver FIRST on this turn: they were typed before the send that starts
 	// it, and a crashed turn must not reorder the conversation.
+	var queuedLead []queuedInput
 	if !req.wake && !req.Retry && req.Fork == "" {
-		if lead := s.takeQueuedInto(req.SessionID); len(lead) > 0 {
+		if lead, batch := s.takeQueuedInto(req.SessionID); len(lead) > 0 {
 			incoming = append(lead, incoming...)
+			queuedLead = batch
 		}
 	}
 
@@ -748,8 +750,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// The host builds (and caches) it; a failure here is a loud 500, never a silent run as
 	// the wrong agent.
 	if ag, aerr := s.runAgentFor(ctx, req.SessionID); aerr != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, &runError{http.StatusInternalServerError, aerr.Error()}
 	} else {
 		req.runAgent = ag
@@ -784,8 +785,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	incoming = s.expandAtMentions(incoming, req.workspace)
 	messages, err := s.sessionHistory(ctx, req, incoming)
 	if err != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, err
 	}
 
@@ -836,8 +836,7 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 
 	prov, pinErr := s.pinProvider(req)
 	if pinErr != nil {
-		s.runs.finish(run)
-		s.publishRunState(req.SessionID, false)
+		s.prepareFailed(run, req.SessionID)
 		return nil, pinErr
 	}
 

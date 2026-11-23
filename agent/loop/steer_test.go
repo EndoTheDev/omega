@@ -259,6 +259,54 @@ func TestWakeResultTakesItsPlaceholder(t *testing.T) {
 	}
 }
 
+// TestAnsweredCallTakesNoSecondAnswer: a settled result whose call already carries its
+// answer (a double settle, a reaped call) never appends a second row for it. The delivery
+// still reports, so the queue row retires instead of looping back forever.
+func TestAnsweredCallTakesNoSecondAnswer(t *testing.T) {
+	provider := agent.NewFakeProviderScripts("test", []core.ProviderStreamEvent{
+		core.ResponseChunk{Type: "response_chunk", Content: "done"},
+		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+	})
+	assistant := core.NewAssistant("")
+	assistant.ToolCalls = []core.ToolCall{{ID: "c1", Name: "echo"}}
+	answered := core.NewYieldResult("async:first", "c1", false, false)
+	feed := &steerFeedOf{batches: [][]agent.SteerDelivery{
+		{{ID: "w1", Message: core.NewYieldResult("async:second", "c1", false, false)}},
+	}}
+	sink := &memSink{}
+	opts := agent.LoopOptions{
+		Provider: provider,
+		Messages: []core.Message{core.NewUser("go"), assistant, answered},
+		Steer:    feed.feed,
+	}
+	ctx := agent.WithSessionID(agent.WithTurnSink(context.Background(), sink), "s1")
+	events := runLoopEvents(t, ctx, opts)
+
+	answers := 0
+	for _, m := range provider.LastMessages {
+		y, ok := m.(core.YieldResult)
+		if !ok || y.ToolCallID != "c1" {
+			continue
+		}
+		answers++
+		if y.Content != "async:first" {
+			t.Errorf("second answer for c1 = %q, want the original kept", y.Content)
+		}
+	}
+	if answers != 1 {
+		t.Fatalf("answers for c1 = %d, want 1 (the call is already answered)", answers)
+	}
+	delivered := 0
+	for _, e := range events {
+		if sd, ok := e.(core.SteerDeliveredEvent); ok && sd.ID == "w1" {
+			delivered++
+		}
+	}
+	if delivered != 1 {
+		t.Fatalf("steer_delivered frames for w1 = %d, want 1 (the queue row retires)", delivered)
+	}
+}
+
 // sinkHas reports whether the sink persisted a message carrying the text.
 func sinkHas(s *memSink, text string) bool {
 	s.mu.Lock()

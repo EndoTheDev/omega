@@ -140,8 +140,9 @@ Terse operational rules. Layer references live in `docs/` (map below);
   baked sessions are never rewritten: user -> assistant(A + thinking +
   calls) -> tool results -> assistant(B). List-row concerns
   (pinned/read/archived) never touch `updated_at`. Runs are detached
-  from the request (runHub): a disconnect never cancels, one live run
-  per session (409), `server.run_timeout` ends hung runs, detached
+  from the request (runHub): a disconnect never cancels, a mid-turn send
+  parks as a steer row (202), one live run per session still holds for
+  run starts, `server.run_timeout` ends hung runs, detached
   title generation fails silently (last write wins under races). Pure
   logic tests go in `server_pure_test.go`, handler tests in
   `server_test.go`. SPA-affecting changes ship via

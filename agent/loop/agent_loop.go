@@ -521,7 +521,19 @@ func deliverSteers(ctx context.Context, opts agent.LoopOptions, sink agent.TurnS
 			continue
 		}
 		if y, ok := d.Message.(core.YieldResult); ok {
-			if at := placeholderIndex(messages, y.ToolCallID); at >= 0 {
+			at, answered := answerSlot(messages, y.ToolCallID)
+			if at >= 0 && answered {
+				// The call already has its answer (a double settle, a reaped call): a second
+				// row would be an answer the wire never asked for. The delivery still retires
+				// the queue row - the result is delivered, into the answer it already has.
+				if opts.Logger != nil {
+					opts.Logger.Printf("yield result for %s (%s) dropped: the call is already answered", y.ToolName, y.ToolCallID)
+				}
+				opts.Events <- core.SteerDeliveredEvent{Type: "steer_delivered", ID: d.ID, Message: y}
+				delivered++
+				continue
+			}
+			if at >= 0 {
 				// Copy-on-write: the caller's slice is not ours to mutate in place.
 				next := make([]core.Message, len(messages))
 				copy(next, messages)
@@ -532,6 +544,8 @@ func deliverSteers(ctx context.Context, opts agent.LoopOptions, sink agent.TurnS
 				delivered++
 				continue
 			}
+			// No row at all: the ledger settled before a placeholder ever materialized, so
+			// appending is what answers the call - and the only thing that can.
 		}
 		messages = append(messages, d.Message)
 		persistTurnMessage(ctx, sink, opts.Logger, d.Message, "steer")
@@ -541,21 +555,27 @@ func deliverSteers(ctx context.Context, opts agent.LoopOptions, sink agent.TurnS
 	return messages, delivered
 }
 
-// placeholderIndex finds the still-pending sibling slot a settled call answered, or -1.
-func placeholderIndex(messages []core.Message, toolCallID string) int {
+// answerSlot finds the row that answers callID and reports whether it is already the
+// answer: (index, false) = a still-pending placeholder the result takes over, (index, true)
+// = the row already carries an answer, (-1, _) = the call has no row at all.
+func answerSlot(messages []core.Message, toolCallID string) (int, bool) {
 	if toolCallID == "" {
-		return -1
+		return -1, false
 	}
 	for i, msg := range messages {
-		tr, ok := msg.(core.ToolResult)
-		if !ok || tr.ToolCallID != toolCallID {
-			continue
-		}
-		if strings.HasPrefix(tr.Content, "[pending: ") {
-			return i
+		switch m := msg.(type) {
+		case core.ToolResult:
+			if m.ToolCallID != toolCallID {
+				continue
+			}
+			return i, !strings.HasPrefix(m.Content, "[pending: ")
+		case core.YieldResult:
+			if m.ToolCallID == toolCallID {
+				return i, true
+			}
 		}
 	}
-	return -1
+	return -1, false
 }
 
 // unrenderedGuidelines returns the builder's guidelines the built prompt does not already
