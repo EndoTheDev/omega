@@ -8,6 +8,10 @@ set -uo pipefail
 # and the newest-stable base pick (nightlies and rc tags never count).
 # Every fixture tags v1.0.0 ON the seed commit - the synthetic commits
 # are what the script must see since the stable word.
+# The suite spells its temp base NATIVELY on Windows: the SUT reads the range
+# through a native python, and a bare MSYS /tmp path resolves against the
+# current drive root there, so every fixture reads back empty. cygpath -m
+# names the SAME directory; POSIX hosts and already-native paths pass through.
 
 SUG="$(cd "$(dirname "$0")" && pwd)/release-suggest.sh"
 
@@ -42,6 +46,11 @@ GUSER=(git -c user.email=t@t -c user.name=t)
 fixture_error() {
 	echo "release-suggest_test: $* - refusing to continue (a fixture commit would land in the repo the suite was launched from)" >&2
 }
+
+# winbtw seam: the fixture base must be spelled the way a NATIVE consumer reads
+# it (see the header). cygpath is absent on POSIX hosts, where this is a no-op.
+TMPDIR_NATIVE="$(cygpath -m "${TMPDIR:-/tmp}" 2>/dev/null || true)"
+[ -n "$TMPDIR_NATIVE" ] && [ -d "$TMPDIR_NATIVE" ] && export TMPDIR="$TMPDIR_NATIVE"
 
 # Temp-parent preflight (card t_60874fa5): loud before the first fixture.
 TMPROOT_PROBE="$(mktemp -d "${TMPDIR:-/tmp}/rls-probe.XXXXXX")" \

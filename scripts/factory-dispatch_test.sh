@@ -24,9 +24,17 @@ set -uo pipefail
 # absent on win fleet hosts (proven live 2026-11-05 on winbtw). Fake-home
 # fixtures pass MIXED (C:/...) paths to any python consumer - a windows
 # python cannot read MSYS /tmp paths, so cygpath -m bridges (POSIX hosts pass
-# through). Every guard call clears the ambient hermes env and pins
-# HERMES_KANBAN_HOME to the fixture: a profile-routed host (HERMES_HOME set)
-# must never leak the REAL board into a test run.
+# through). PATH is the opposite seam: MSYS bash does not search a C:/ entry,
+# so every stub DIRECTORY rides posixpath (cygpath -u) - spelled natively it
+# is invisible and the host's REAL hermes answers the dispatch. Every guard
+# call clears the ambient hermes env and pins HERMES_KANBAN_HOME to the
+# fixture: a profile-routed host (HERMES_HOME set) must never leak the REAL
+# board into a test run.
+#
+# Runtime: one guard call is ~0.2s on Linux and ~15s on a Windows host (each
+# board read starts a fresh native python), so a Windows run is ~18 minutes and
+# prints NOTHING until the summary unless a check fails. An empty capture at a
+# 300s timeout is that slowness, not a hang.
 
 GUARD="$(cd "$(dirname "$0")" && pwd)/factory-dispatch.sh"
 
@@ -129,7 +137,16 @@ grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
 
 PY=$(command -v python3 || command -v python)
 [ -n "$PY" ] || { echo "factory-dispatch_test: no python on PATH (boards are queried through the python sqlite3 module)" >&2; exit 1; }
+# The happy path is silent until the summary, and a Windows host needs ~18
+# minutes to get there (one native python per board read). Say it once, so an
+# empty capture at a short timeout is not misread as a hang.
+echo "factory-dispatch_test: running, silent until the summary (~0.2s per guard call on Linux, ~15s on Windows - ~18 min total)" >&2
 mixpath() { cygpath -m "$1" 2>/dev/null || printf '%s' "$1"; }
+# Stub dirs on PATH must stay POSIX. MSYS bash does not search a `C:/...` PATH
+# entry, so a native-temp fixture hands the guard an invisible stub and the
+# REAL hermes on the host answers the dispatch instead - silent wrong answers,
+# not an error. mixpath's native spelling is for python consumers only.
+posixpath() { cygpath -u "$1" 2>/dev/null || printf '%s' "$1"; }
 # same reader the guard itself uses (scripts/factory-dispatch.sh DBPY)
 DBPY='
 import sqlite3, sys
@@ -337,12 +354,12 @@ PYEOF
 EOF
 chmod +x "$FDHOME/bin/hermes"
 T9COMMENTS="$FDHOME/comments.log"; : >"$T9COMMENTS"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dry-run exited $rc"
 grep -q "^hold: t_cand" <<<"$out" && ok || bad "T9: move card did not hold the webui candidate (out: $out)"
 grep -q "dry-run: no dispatch" <<<"$out" && ok || bad "T9: dry-run dispatched (out: $out)"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" HERMES_STUB_COMMENTS="$T9COMMENTS" bash "$GUARD" 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$FDB_N" HERMES_STUB_COMMENTS="$T9COMMENTS" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T9: dispatch pass exited $rc (out: $out)"
 grep -q "wanted <=2 running (snapshot 1 + slots 1)" <<<"$out" && ok || bad "T9: handoff line wrong (out: $out)"
@@ -378,7 +395,7 @@ cat >"$FDHOME/bin/hermes" <<'EOF'
 echo "Spawned: 1 (t_web)"
 EOF
 chmod +x "$FDHOME/bin/hermes"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" bash "$GUARD" --max 2 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" bash "$GUARD" --max 2 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T10: --max 2 pass exited $rc - SLOTS unset on the explicit path (out: $out)"
 grep -q "wanted <=2 running (snapshot 1 + slots 1)" <<<"$out" && ok || bad "T10: handoff line wrong (out: $out)"
@@ -421,12 +438,12 @@ print("Spawned: 0")
 PYEOF
 EOF
 chmod +x "$FDHOME/bin/hermes"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T11: dry-run exited $rc (out: $out)"
 s=$(sql "$FDB_N" "SELECT status FROM tasks WHERE id='t_hold';")
 [ "$s" = "blocked" ] && ok || bad "T11: dry-run flipped the parked hold (t_hold status=$s)"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$FDB_N" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T11: dispatch pass exited $rc (out: $out)"
 grep -q "re-parked: t_hold (ready -> blocked, named hold lifted by the dispatch sweep)" <<<"$out" \
@@ -455,12 +472,12 @@ CFB_N="$CFHOME_N/kanban/boards/project-omega/kanban.db"
 sqlex "$CFB_N" "CREATE TABLE tasks(id TEXT, status TEXT, title TEXT DEFAULT '', body TEXT DEFAULT '',
   claim_lock TEXT, claim_expires INTEGER, priority INTEGER DEFAULT 0, created_at TEXT,
   worker_pid INTEGER, last_heartbeat_at INTEGER);"
-out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
+out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$CFHOME/bin"):$PATH" bash "$GUARD" --dry-run 2>&1)
 grep -q "cap=2" <<<"$out" && ok || bad "T12: no config file -> cap must fall back to 2 (out: $out)"
 printf 'kanban:\n  max_in_progress_per_profile: 4\n' >"$CFHOME/config.yaml"
-out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run 2>&1)
+out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$CFHOME/bin"):$PATH" bash "$GUARD" --dry-run 2>&1)
 grep -q "cap=4" <<<"$out" && ok || bad "T12: config knob not read (out: $out)"
-out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$CFHOME/bin:$PATH" bash "$GUARD" --dry-run --max 1 2>&1)
+out=$(HOME="$CFHOME" HERMES_HOME= HERMES_KANBAN_HOME="$CFHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$CFHOME/bin"):$PATH" bash "$GUARD" --dry-run --max 1 2>&1)
 grep -q "cap=1" <<<"$out" && ok || bad "T12: --max must override the config cap (out: $out)"
 rm -rf "$CFHOME"
 
@@ -500,12 +517,12 @@ print("Spawned: 0")
 PYEOF
 EOF
 chmod +x "$FDHOME/bin/hermes"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$DRB_N" bash "$GUARD" --dry-run 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$DRB_N" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T13: dry-run exited $rc (out: $out)"
 s=$(sql "$DRB_N" "SELECT count(*) FROM tasks WHERE status='ready' AND coalesce(claim_lock,'') != '';")
 [ "$s" = "2" ] && ok || bad "T13: dry-run flipped the drifted holds (ready-with-hold count: $s)"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_DB="$DRB_N" bash "$GUARD" 2>&1)
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_DB="$DRB_N" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T13: dispatch pass exited $rc (out: $out)"
 grep -q "hold-drift normalized: t_drift14 (ready -> blocked" <<<"$out" \
@@ -555,24 +572,24 @@ no_side_effect() {  # rc, stub log, board shape all match refusal law
   [ "$log" = "" ] || bad "$msg: stub hermes invoked ('${log:-MISSING}')"
   [ "$rc" = "$want" ] || bad "$msg: exit $rc (expected $want)"
 }
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --help 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --help 2>&1); rc=$?
 [ "$rc" = "0" ] || bad "T14: --help exited $rc (expected 0)"
 grep -q "collision-aware dispatch" <<<"$out" || bad "T14: --help printed no usage (out: $out)"
 no_side_effect "$rc" 0 "T14 --help"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" -h 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" -h 2>&1); rc=$?
 [ "$rc" = "0" ] || bad "T14: -h exited $rc (expected 0)"
 no_side_effect "$rc" 0 "T14 -h"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --typo 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --typo 2>&1); rc=$?
 grep -q "unknown argument: --typo" <<<"$out" || bad "T14: --typo message wrong (out: $out)"
 grep -q "collision-aware dispatch" <<<"$out" || bad "T14: --typo printed no usage"
 no_side_effect "$rc" 2 "T14 --typo"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 2>&1); rc=$?
 grep -q -- "--max needs a value" <<<"$out" || bad "T14: valueless --max message wrong (out: $out)"
 no_side_effect "$rc" 2 "T14 --max missing value"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max abc 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max abc 2>&1); rc=$?
 grep -q -- "--max must be a positive integer" <<<"$out" || bad "T14: non-integer --max message wrong (out: $out)"
 no_side_effect "$rc" 2 "T14 --max abc"
-out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 0 2>&1); rc=$?
+out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --max 0 2>&1); rc=$?
 no_side_effect "$rc" 2 "T14 --max 0"
 rm -rf "$FDHOME"
 
@@ -1482,7 +1499,7 @@ stub_log="$FDHOME/stub-calls.log"; : >"$stub_log"
 
 # (a) live pass heals the named board, reports it, and reads THAT board
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
-  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+  PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24a: the healing pass exited $rc (out: $out)"
 grep -q "self-heal: board 'gone-board' was missing - recreated" <<<"$out" \
@@ -1495,7 +1512,7 @@ grep -q "boards create gone-board" "$stub_log" \
 # (b) a dry pass writes nothing and says what a live pass would do
 rm -rf "$FDHOME/kanban/boards/gone-board"; : >"$stub_log"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
-  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --dry-run 2>&1)
+  PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" --dry-run 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24b: a dry pass on a missing board exited 0 - verdicts from an absent board"
 grep -q "self-heal: board 'gone-board' is missing - a live pass recreates it" <<<"$out" \
@@ -1510,7 +1527,7 @@ grep -q "board DB not found" <<<"$out" \
 # (c) the DEFAULT board heals through `hermes kanban init`
 rm -f "$FDHOME/kanban/current" "$FDHOME/kanban.db"; : >"$stub_log"
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB= HERMES_KANBAN_BOARD= \
-  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+  PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -eq 0 ] && ok || bad "T24c: the default-board healing pass exited $rc (out: $out)"
 grep -q "self-heal: board 'default' was missing - recreated" <<<"$out" \
@@ -1521,7 +1538,7 @@ grep -q "kanban init" "$stub_log" \
 
 # (d) a PINNED db is the caller's file: never created, always refused
 out=$(HOME="$FDHOME" HERMES_HOME= HERMES_KANBAN_HOME="$FDHOME_N" HERMES_KANBAN_DB="$FDHOME_N/pinned.db" HERMES_KANBAN_BOARD= \
-  PATH="$FDHOME/bin:$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
+  PATH="$(posixpath "$FDHOME/bin"):$PATH" HERMES_STUB_LOG="$stub_log" bash "$GUARD" 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] && ok || bad "T24d: a missing PINNED db exited 0"
 [ ! -f "$FDHOME/pinned.db" ] && ok || bad "T24d: the tick created a pinned db (the pin means read exactly this)"

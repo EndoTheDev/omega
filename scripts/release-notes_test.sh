@@ -24,8 +24,11 @@ set -uo pipefail
 # Merge commits never carry a bullet - they only count; their side commits
 # ride the range and classify on their own subjects.
 #
-# The suite needs a NATIVE TMPDIR on Windows (mktemp under bare /tmp hands
-# the SUT's python a path it cannot open - the fixtures then look empty).
+# The suite spells its temp base NATIVELY on Windows: the SUT writes every
+# artifact through a native python, and a bare MSYS /tmp path resolves against
+# the current drive root there, so the fixtures read back empty (94 silent
+# reds, one card). cygpath -m names the SAME directory; POSIX hosts and
+# already-native paths pass through untouched.
 # A TMPDIR that does not exist no longer commits into the launch repo: the
 # preflight below fails loud, naming mktemp, before the first fixture.
 
@@ -57,6 +60,11 @@ _pin_sample="  printf '%s\\n' \"\$OUT\" $_PIN_TOKEN grep -qxF -- \"\$1\""
 grep -qE "$_PIN_SHAPE" <<<"$_pin_sample" && ok \
 	|| bad "PIN: the detector no longer sees the pre-fix pipe shape"
 
+
+# winbtw seam: the fixture base must be spelled the way a NATIVE consumer reads
+# it (see the header). cygpath is absent on POSIX hosts, where this is a no-op.
+TMPDIR_NATIVE="$(cygpath -m "${TMPDIR:-/tmp}" 2>/dev/null || true)"
+[ -n "$TMPDIR_NATIVE" ] && [ -d "$TMPDIR_NATIVE" ] && export TMPDIR="$TMPDIR_NATIVE"
 
 # fixture_error <msg>: the named cause plus the stake. Every fixture is a real
 # git repo driven with `git -C "$root"`, and `git -C ""` resolves to the CWD -
