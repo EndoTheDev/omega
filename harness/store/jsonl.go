@@ -172,31 +172,43 @@ func (s *Store) sessionPath(id string) (string, error) {
 	return filepath.Join(s.sessionsDir, id+".jsonl"), nil
 }
 
+// encodeLine marshals one line with HTML escaping OFF: a payload's bytes are the message
+// codec's, and escaping would rewrite stored content (the snippet verbatim contract).
+// Every line that reaches a session file comes through here, appends and rewrites alike.
+func encodeLine(line *fileLine) ([]byte, error) {
+	if line.V == 0 {
+		line.V = jsonlVersion
+	}
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(line); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // appendLines writes complete lines in ONE write. A single write keeps a concurrent
 // reader from seeing half a line interleaved with somebody else's; the trailing newline
 // is what makes a line complete. A short write is rolled back to the pre-append size, so
-// a failed append can never leave a fragment for the next one to merge into.
-func appendLines(path string, lines ...fileLine) (int64, error) {
+// a failed append can never leave a fragment for the next one to merge into. The
+// pre-append size and the byte count come back so a caller whose index apply failed can
+// drop exactly its own bytes.
+func appendLines(path string, lines ...fileLine) (before, wrote int64, err error) {
 	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	// Off: a payload's bytes are the message codec's, and HTML escaping would rewrite
-	// stored content (the snippet verbatim contract).
-	enc.SetEscapeHTML(false)
 	for i := range lines {
-		if lines[i].V == 0 {
-			lines[i].V = jsonlVersion
+		b, berr := encodeLine(&lines[i])
+		if berr != nil {
+			return 0, 0, berr
 		}
-		if err := enc.Encode(&lines[i]); err != nil {
-			return 0, err
-		}
+		buf.Write(b)
 	}
-	var before int64
-	if info, err := os.Stat(path); err == nil {
+	if info, serr := os.Stat(path); serr == nil {
 		before = info.Size()
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
-		return 0, err
+		return before, 0, err
 	}
 	n, werr := f.Write(buf.Bytes())
 	cerr := f.Close()
@@ -205,11 +217,76 @@ func appendLines(path string, lines ...fileLine) (int64, error) {
 	}
 	if werr != nil {
 		if terr := os.Truncate(path, before); terr != nil {
-			return int64(n), fmt.Errorf("store: append to %s: %v (and the partial line could not be dropped: %v)", path, werr, terr)
+			return before, int64(n), fmt.Errorf("store: append to %s: %v (and the partial line could not be dropped: %v)", path, werr, terr)
 		}
-		return int64(n), werr
+		return before, int64(n), werr
 	}
-	return int64(n), nil
+	return before, int64(n), nil
+}
+
+// recoverSessionFiles is the boot pass over the truth, run before the store is shared.
+// That is the one moment a session file may be cut: an unterminated tail is crash residue,
+// dropped so the next append lands on a line boundary. The pass also reports the highest
+// message id any file holds - the ceiling new lines allocate from, which must come from
+// the files because the index is a cache an append can outrun.
+func (s *Store) recoverSessionFiles() (int64, error) {
+	entries, err := os.ReadDir(s.sessionsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("store: recover session files: %w", err)
+	}
+	var ceiling int64
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".jsonl") {
+			continue
+		}
+		path := filepath.Join(s.sessionsDir, entry.Name())
+		highest, err := recoverSessionFile(path)
+		if err != nil {
+			return 0, fmt.Errorf("store: recover %s: %w", entry.Name(), err)
+		}
+		if highest > ceiling {
+			ceiling = highest
+		}
+	}
+	return ceiling, nil
+}
+
+// recoverSessionFile drops one file's crash residue and reports its highest message id.
+func recoverSessionFile(path string) (int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var highest int64
+	end, torn, err := scanJSONL(f, func(raw []byte, _ int64) error {
+		var line fileLine
+		if jerr := json.Unmarshal(raw, &line); jerr != nil {
+			return errCorruptLine
+		}
+		if line.ID > highest {
+			highest = line.ID
+		}
+		return nil
+	})
+	cerr := f.Close()
+	if err != nil {
+		return 0, err
+	}
+	if cerr != nil {
+		return 0, cerr
+	}
+	if torn {
+		if err := os.Truncate(path, end); err != nil {
+			return 0, fmt.Errorf("drop torn tail: %w", err)
+		}
+	}
+	return highest, nil
 }
 
 // scanJSONL hands every COMPLETE line to fn with the byte offset just past it. A final
@@ -394,17 +471,34 @@ func applyChanges(sess *core.Session, ch *changes) {
 	sess.CompletionTokens += ch.AddCompletion
 }
 
-// truncateTorn cuts a file back to its last complete line. Only a torn tail (a crash
-// mid-append) is ever cut; a healthy file is never touched.
-func truncateTorn(path string, end int64) error {
-	info, err := os.Stat(path)
+// lineageRow is the lineage one session file names today: header plus every meta line
+// that moved a pointer.
+type lineageRow struct {
+	parentID       string
+	delegateParent string
+}
+
+// sessionLineage folds the lineage of every session file. Delete walks this, not the
+// index: a derived row that never landed must not leave an orphan file behind to be
+// resurrected by the next catch-up.
+func (s *Store) sessionLineage() (map[string]lineageRow, error) {
+	ids, err := s.sessionsOnDisk()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if info.Size() == end {
-		return nil
+	out := make(map[string]lineageRow, len(ids))
+	for _, id := range ids {
+		path, perr := s.sessionPath(id)
+		if perr != nil {
+			continue
+		}
+		f, ferr := foldFile(path)
+		if ferr != nil {
+			return nil, fmt.Errorf("store: lineage of %q: %w", id, ferr)
+		}
+		out[id] = lineageRow{parentID: f.session.ParentID, delegateParent: f.session.DelegateParent}
 	}
-	return os.Truncate(path, end)
+	return out, nil
 }
 
 // readSessionFile reads one session's truth from disk.

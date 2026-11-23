@@ -225,10 +225,10 @@ func (s *Store) PruneSessions(ctx context.Context, retentionDays int) ([]string,
 		return nil, err
 	}
 	rows.Close()
-	for _, id := range ids {
-		if err := s.DeleteSession(ctx, id); err != nil {
-			return ids, err
-		}
+	// One delete pass for the whole set: the lineage walk reads the session files, and
+	// doing it per session would re-read the home once for every expired chat.
+	if err := s.deleteSessions(ctx, ids); err != nil {
+		return ids, err
 	}
 	return ids, nil
 }

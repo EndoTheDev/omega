@@ -336,7 +336,7 @@ func legacyWriteSession(db *sql.DB, sessionsDir, id string) (string, error) {
 			V: jsonlVersion, Kind: kindMeta, Session: id, At: row.session.UpdatedAt, Changes: ch,
 		})
 	}
-	if _, err := appendLines(path, lines...); err != nil {
+	if _, _, err := appendLines(path, lines...); err != nil {
 		return path, fmt.Errorf("legacy migration: write %s: %w", id, err)
 	}
 	return path, nil

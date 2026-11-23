@@ -189,7 +189,7 @@ func TestPreSearchCatchUpIndexesGrownFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("watermark: %v", err)
 	}
-	if _, err := appendLines(path, fileLine{
+	if _, _, err := appendLines(path, fileLine{
 		V: jsonlVersion, Kind: kindMessage, Session: "beta", ID: 99,
 		Role:    "assistant",
 		Payload: []byte(`{"content":"a straggler line from another writer"}`),

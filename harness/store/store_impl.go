@@ -44,8 +44,9 @@ func (s *Store) Ping(ctx context.Context) error {
 }
 
 // Store persists sessions in append-only JSONL files (the truth) and keeps a derived
-// SQLite index over them for listing and search. It is safe for concurrent use: file
-// appends serialize on appendMu, index reads go through *sql.DB.
+// SQLite index over them for listing and search. It is safe for concurrent use: every
+// mutation - appends, catch-up, rebuild, delete, rename - serializes on writeMu, and
+// index reads go through *sql.DB.
 type Store struct {
 	db *sql.DB
 	// identity is the store's own agent binding. Empty = main; every session row the store
@@ -57,17 +58,21 @@ type Store struct {
 	// memDir marks a :memory: store, whose session files live in a temp directory that
 	// Close removes - the in-memory store is still file-truth, just not durable.
 	memDir bool
-	// appendMu serializes the file-append + index-apply pairs this process writes.
-	appendMu sync.Mutex
-	// catchMu serializes catch-up and rebuild passes.
-	catchMu sync.Mutex
-	hygMu   sync.RWMutex
-	hyg     HygieneConfig
-	home      string
-	agentName string
-	routeMu   sync.Mutex
-	routes    map[string]*Store
-	agents    map[string]*Store
+	// writeMu serializes every mutation of the store's two halves. The index and the files
+	// must never move under two goroutines at once: a catch-up scanning a file an append is
+	// writing is how a line gets lost.
+	writeMu sync.Mutex
+	// maxMessageID is the highest message id any session file holds, as learned at boot
+	// and advanced by every line the store writes or indexes. The id space is the truth's;
+	// allocating it from the index would let a failed apply hand out an id twice.
+	maxMessageID int64
+	hygMu        sync.RWMutex
+	hyg          HygieneConfig
+	home         string
+	agentName    string
+	routeMu      sync.Mutex
+	routes       map[string]*Store
+	agents       map[string]*Store
 }
 
 // SetHygieneConfig swaps the hygiene pass's knobs live.
@@ -104,6 +109,7 @@ func (s *Store) Open(dsn string) error {
 	s.dbPath = newStore.dbPath
 	s.sessionsDir = newStore.sessionsDir
 	s.memDir = newStore.memDir
+	s.maxMessageID = newStore.maxMessageID
 	return nil
 }
 
@@ -169,6 +175,13 @@ func openStore(dsn string) (*Store, error) {
 			return closeFail(err)
 		}
 	}
+	// Boot recovery runs before the store is shared, which is the only moment a session
+	// file may be cut: crash residue goes, and the id ceiling comes back from the truth.
+	ceiling, err := s.recoverSessionFiles()
+	if err != nil {
+		return closeFail(err)
+	}
+	s.maxMessageID = ceiling
 	// Boot catch-up: index only what the files grew by since the last open.
 	if err := s.catchUp(context.Background()); err != nil {
 		return closeFail(err)
@@ -379,7 +392,7 @@ func (s *Store) DeleteSession(ctx context.Context, id string) error {
 	if o := s.owner(ctx, id); o != nil {
 		return o.DeleteSession(ctx, id)
 	}
-	return s.deleteSessionFiles(ctx, id)
+	return s.deleteSessions(ctx, []string{id})
 }
 
 func (s *Store) UpdateSession(ctx context.Context, id, label string) error {

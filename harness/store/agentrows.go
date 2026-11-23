@@ -55,22 +55,39 @@ func moveAgentFiles(ctx context.Context, main *Store, agentDSN, name string, ses
 		return fmt.Errorf("agent rows migration: %s: sessions dir: %w", name, err)
 	}
 	moved := make([]string, 0, len(sessions))
-	for _, sess := range sessions {
-		src := filepath.Join(main.sessionsDir, sess.ID+".jsonl")
-		dst := filepath.Join(dest.sessionsDir, sess.ID+".jsonl")
-		if err := moveFile(src, dst); err != nil {
-			return fmt.Errorf("agent rows migration: %s: %s: %w", name, sess.ID, err)
+	// Both halves move under their store's write lock: the source loses files the main
+	// index still lists, the destination gains files nothing index-scanned yet, and a
+	// concurrent append or catch-up in either home must not see half a move.
+	if err := func() error {
+		main.writeMu.Lock()
+		defer main.writeMu.Unlock()
+		for _, sess := range sessions {
+			src := filepath.Join(main.sessionsDir, sess.ID+".jsonl")
+			dst := filepath.Join(dest.sessionsDir, sess.ID+".jsonl")
+			if err := moveFile(src, dst); err != nil {
+				return fmt.Errorf("agent rows migration: %s: %s: %w", name, sess.ID, err)
+			}
+			moved = append(moved, sess.ID)
 		}
-		moved = append(moved, sess.ID)
+		return nil
+	}(); err != nil {
+		return err
 	}
-	for _, id := range moved {
-		path := filepath.Join(dest.sessionsDir, id+".jsonl")
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("agent rows migration: %s: %s did not land: %w", name, id, err)
+	if err := func() error {
+		dest.writeMu.Lock()
+		defer dest.writeMu.Unlock()
+		for _, id := range moved {
+			path := filepath.Join(dest.sessionsDir, id+".jsonl")
+			if _, err := os.Stat(path); err != nil {
+				return fmt.Errorf("agent rows migration: %s: %s did not land: %w", name, id, err)
+			}
+			if err := dest.indexFile(ctx, id, path, 0); err != nil {
+				return fmt.Errorf("agent rows migration: %s: index %s: %w", name, id, err)
+			}
 		}
-		if err := dest.indexFile(ctx, id, path, 0); err != nil {
-			return fmt.Errorf("agent rows migration: %s: index %s: %w", name, id, err)
-		}
+		return nil
+	}(); err != nil {
+		return err
 	}
 	if err := main.catchUp(ctx); err != nil {
 		return fmt.Errorf("agent rows migration: main catch-up: %w", err)

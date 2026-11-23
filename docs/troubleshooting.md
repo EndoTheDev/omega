@@ -78,6 +78,29 @@ file, verifies each one by read-back, and only then renames the old
 database to `omega.db.<date>.bak` beside the index; that archive is the
 rollback copy and is kept until the next stable tag.
 
+## The store refuses to open (a damaged session file)
+
+The session files are the truth, and a line that is COMPLETE (ends with
+a newline) but does not parse as JSON is corruption, not a crash: the
+store reports it and refuses to open rather than guess past it. A torn
+tail - a final line with no newline - is different and needs nothing:
+boot cuts it off by itself.
+
+`POST /sessions/reindex` cannot help here, because it needs the store
+open. Recovery is file surgery on the offending line:
+
+1. Start the home and read the error, which names the file and the
+   failing line (`store: recover <id>.jsonl: store: corrupt jsonl
+   line`).
+2. Open `<home>/data/sessions/<id>.jsonl` and find the line. The lines
+   before and after it are intact; a terminated line that does not parse
+   is usually an interleaved write from a second writer process against
+   the same home - the layout assumes one writer process per home.
+3. Repair or delete that ONE line (keep a copy first), keeping the file's
+   trailing newline, then start the home again. Every session file is
+   self-describing, so a single lost line costs that line, not the
+   session.
+
 ## A chat reply came back empty (`finish_reason: "load"`)
 
 An empty-but-successful turn usually means the run sent no `role` on its

@@ -144,18 +144,23 @@ func (s *Store) ensureIndexSchema() error {
 	}
 	// Standalone FTS tables have no 'rebuild': repopulate the label/summary index from
 	// the rows on every open. One row per session, so the cost is a scan we already pay.
-	_, _ = s.db.Exec(`DELETE FROM sessions_fts;
-INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`)
+	// The error is NOT discarded: a silent failure here degrades label and summary search
+	// with nothing in the log to say why.
+	if _, err := s.db.Exec(`DELETE FROM sessions_fts;
+INSERT INTO sessions_fts(session_id, label, summary) SELECT id, label, summary FROM sessions;`); err != nil {
+		return fmt.Errorf("store: repopulate label index: %w", err)
+	}
 	return nil
 }
 
 // catchUp indexes what the files grew by. Per file: a size equal to the watermark is
 // skipped; a size beyond it reads from the watermark; a size BELOW it means the file was
 // rewritten (or truncated), so the whole file is re-read. A file that vanished takes its
-// derived rows with it.
+// derived rows with it. The pass holds writeMu, the same lock every append holds, so no
+// file is read while a line is landing in it.
 func (s *Store) catchUp(ctx context.Context) error {
-	s.catchMu.Lock()
-	defer s.catchMu.Unlock()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	return s.catchUpLocked(ctx)
 }
 
@@ -231,13 +236,16 @@ func (s *Store) indexFile(ctx context.Context, id, path string, from int64) erro
 			return err
 		}
 	}
-	end, torn, err := scanJSONL(f, func(raw []byte, _ int64) error {
+	end, _, err := scanJSONL(f, func(raw []byte, _ int64) error {
 		var line fileLine
 		if jerr := json.Unmarshal(raw, &line); jerr != nil {
 			return errCorruptLine
 		}
 		if line.Session == "" {
 			line.Session = id
+		}
+		if line.ID > s.maxMessageID {
+			s.maxMessageID = line.ID
 		}
 		return applyLine(ctx, tx, line)
 	})
@@ -253,13 +261,10 @@ func (s *Store) indexFile(ctx context.Context, id, path string, from int64) erro
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	if torn {
-		// Recovery: the tail a crash left behind is dropped, so the next append lands on
-		// a line boundary instead of merging into the fragment.
-		if terr := truncateTorn(path, from+end); terr != nil {
-			return fmt.Errorf("store: drop torn tail of %s: %w", id, terr)
-		}
-	}
+	// A tail seen here is never cut. The files are only written under writeMu, which this
+	// pass holds, so an unterminated tail is residue from a crash - and the boot pass
+	// already dropped every one of those before the store was shared. Cutting a file from
+	// the index path is how an acknowledged line gets deleted.
 	return nil
 }
 
@@ -321,8 +326,8 @@ func (s *Store) pruneVanished(ctx context.Context, present map[string]bool) erro
 // build it again from the session files. Search results after a rebuild are identical to
 // the ones before it, because both are the same fold of the same files.
 func (s *Store) RebuildIndex(ctx context.Context) error {
-	s.catchMu.Lock()
-	defer s.catchMu.Unlock()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	for _, stmt := range []string{
 		`DELETE FROM messages`,
 		`DELETE FROM sessions`,
@@ -464,16 +469,13 @@ func nullIfEmpty(v string) any {
 	return v
 }
 
-// nextMessageSeq is the id a new message line takes. The id space is store-wide, not
-// per session: the ancestor merge folds a forked session's rows and its parent's rows into
-// ONE tree keyed by message id, so two sessions must never share one.
-func (s *Store) nextMessageSeq(ctx context.Context) (int64, error) {
-	var last int64
-	err := s.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(seq), 0) FROM messages`).Scan(&last)
-	if err != nil {
-		return 0, err
-	}
-	return last + 1, nil
+// nextMessageSeq is the id a new message line takes. The ceiling is the truth's, learned
+// from the session files at boot and only ever moving forward. The index cannot answer
+// for it: an apply that failed after the line landed would otherwise let the next append
+// reuse an id a file already holds - a silent drop in one session's index rows, or an
+// ancestor-merge collision across two. Callers hold writeMu.
+func (s *Store) nextMessageSeq() int64 {
+	return s.maxMessageID + 1
 }
 
 // sessionsOnDisk lists the session files, newest name last in directory order.

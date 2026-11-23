@@ -3,7 +3,13 @@ package store
 // write.go: the store's write side. Every write lands in the session file FIRST - the
 // files are the truth - and then folds the same line into the derived index inside one
 // transaction. A crash between the two leaves the index behind the file, which is
-// exactly what the per-file watermark's catch-up repairs.
+// exactly what the per-file watermark's catch-up repairs. To a caller the two halves are
+// one write: an index that cannot take the line hands an error back and the line comes
+// back out of the file.
+//
+// Everything here runs under writeMu, and so does every other mutation of the store -
+// catch-up, rebuild, delete, rename. One lock, one writer: no goroutine reads a session
+// file while another is landing a line in it, which is what makes a file scan safe.
 
 import (
 	"context"
@@ -19,12 +25,16 @@ func (s *Store) createSessionFile(ctx context.Context, id, parentID, delegatePar
 	if err := validSessionID(id); err != nil {
 		return err
 	}
+	if agentName == "" {
+		agentName = "default"
+	}
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	// The existence and lineage checks belong inside the lock: two creations of one id, or
+	// a creation racing a delete, would otherwise both pass a check the other invalidated.
 	exists := s.sessionFileExists(id) || s.hasSession(ctx, id)
 	if exists {
 		return fmt.Errorf("store: session %q already exists", id)
-	}
-	if agentName == "" {
-		agentName = "default"
 	}
 	// Lineage is a promise about a session that exists. The old schema enforced this with
 	// a foreign key; the files carry it as a write-time check.
@@ -47,7 +57,7 @@ func (s *Store) createSessionFile(ctx context.Context, id, parentID, delegatePar
 		Listed:         &listed,
 		LastReadAt:     now,
 	}
-	return s.appendAndApply(ctx, id, line)
+	return s.writeLine(ctx, id, line)
 }
 
 // appendMeta writes one metadata change and folds it into the index. An unknown session
@@ -56,17 +66,21 @@ func (s *Store) appendMeta(ctx context.Context, sessionID string, ch *changes) e
 	if ch == nil {
 		return nil
 	}
-	if !s.sessionFileExists(sessionID) {
-		return nil
-	}
 	line := fileLine{
 		V:       jsonlVersion,
 		Kind:    kindMeta,
 		Session: sessionID,
-		At:      core.NowISO(),
 		Changes: ch,
 	}
-	return s.appendAndApply(ctx, sessionID, line)
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	// Under the lock: a session deleted between the check and the append must not come back
+	// as a stray file holding only a meta line.
+	if !s.sessionFileExists(sessionID) {
+		return nil
+	}
+	line.At = core.NowISO()
+	return s.writeLine(ctx, sessionID, line)
 }
 
 // sessionFileExists reports whether the session has a file - the store's own existence
@@ -82,15 +96,15 @@ func (s *Store) sessionFileExists(id string) bool {
 
 // appendMessageLine writes one message line with the next id of the store.
 func (s *Store) appendMessageLine(ctx context.Context, sessionID, role string, payload []byte, at string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	if !s.sessionFileExists(sessionID) {
 		return fmt.Errorf("store: session %q does not exist", sessionID)
 	}
-	s.appendMu.Lock()
-	defer s.appendMu.Unlock()
-	seq, err := s.nextMessageSeq(ctx)
-	if err != nil {
-		return err
-	}
+	seq := s.nextMessageSeq()
+	// The id is burned before the write. A failed append leaves a gap in the id space,
+	// which no reader can see; a reused id is a collision every reader can.
+	s.maxMessageID = seq
 	line := fileLine{
 		V:       jsonlVersion,
 		Kind:    kindMessage,
@@ -100,30 +114,24 @@ func (s *Store) appendMessageLine(ctx context.Context, sessionID, role string, p
 		Payload: payload,
 		At:      at,
 	}
-	path, err := s.sessionPath(sessionID)
-	if err != nil {
-		return err
-	}
-	wrote, err := appendLines(path, line)
-	if err != nil {
-		return err
-	}
-	return s.applyAndWatermark(ctx, path, sessionID, line, wrote)
+	return s.writeLine(ctx, sessionID, line)
 }
 
-// appendAndApply is the metadata path's shared tail.
-func (s *Store) appendAndApply(ctx context.Context, sessionID string, line fileLine) error {
-	s.appendMu.Lock()
-	defer s.appendMu.Unlock()
+// writeLine appends one line to its session file and folds it into the index. Callers hold
+// writeMu.
+func (s *Store) writeLine(ctx context.Context, sessionID string, line fileLine) error {
 	path, err := s.sessionPath(sessionID)
 	if err != nil {
 		return err
 	}
-	wrote, err := appendLines(path, line)
+	before, wrote, err := appendLines(path, line)
 	if err != nil {
 		return err
 	}
-	return s.applyAndWatermark(ctx, path, sessionID, line, wrote)
+	if err := s.applyAndWatermark(ctx, path, sessionID, line, wrote); err != nil {
+		return rollbackAppend(path, before, wrote, err)
+	}
+	return nil
 }
 
 // applyAndWatermark folds one already-appended line into the index and advances the
@@ -157,15 +165,32 @@ func (s *Store) applyAndWatermark(ctx context.Context, path, id string, line fil
 	return tx.Commit()
 }
 
-// deleteSessionFiles removes the session's file and every descendant's file. The old
-// schema cascaded a delete through parent_id and delegate_parent; the files have to
-// follow, or the next catch-up would resurrect the children as orphans.
-func (s *Store) deleteSessionFiles(ctx context.Context, id string) error {
-	victims, err := s.descendantIDs(ctx, id)
+// rollbackAppend takes back the bytes of a line whose index apply failed, so one append is
+// all-or-nothing. The file is cut only while it still ends exactly where our write left
+// it: anything else that grew it in between keeps its bytes and the next catch-up replays
+// the whole span.
+func rollbackAppend(path string, before, wrote int64, cause error) error {
+	info, err := os.Stat(path)
+	if err != nil || info.Size() != before+wrote {
+		return cause
+	}
+	if terr := os.Truncate(path, before); terr != nil {
+		return fmt.Errorf("store: append to %s: %w (and the line could not be dropped: %v)", path, cause, terr)
+	}
+	return cause
+}
+
+// deleteSessions removes the named sessions and every descendant's file. The old schema
+// cascaded a delete through parent_id and delegate_parent; the files have to follow, or
+// the next catch-up would resurrect the children as orphans.
+func (s *Store) deleteSessions(ctx context.Context, ids []string) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	lineage, err := s.sessionLineage()
 	if err != nil {
 		return err
 	}
-	victims = append(victims, id)
+	victims := descendantSet(lineage, ids)
 	var firstErr error
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -196,39 +221,38 @@ func (s *Store) deleteSessionFiles(ctx context.Context, id string) error {
 	return firstErr
 }
 
-// descendantIDs walks the fork and delegate lineage below id.
-func (s *Store) descendantIDs(ctx context.Context, id string) ([]string, error) {
-	var out []string
-	seen := map[string]bool{id: true}
-	frontier := []string{id}
-	for len(frontier) > 0 {
-		var next []string
-		for _, parent := range frontier {
-			rows, err := s.db.QueryContext(ctx,
-				`SELECT id FROM sessions WHERE parent_id = ? OR delegate_parent = ?`, parent, parent)
-			if err != nil {
-				return nil, err
-			}
-			for rows.Next() {
-				var child string
-				if err := rows.Scan(&child); err != nil {
-					rows.Close()
-					return nil, err
-				}
-				if seen[child] {
-					continue
-				}
-				seen[child] = true
-				out = append(out, child)
-				next = append(next, child)
-			}
-			if err := rows.Err(); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			rows.Close()
+// descendantSet expands the roots to every session below them in either lineage.
+func descendantSet(lineage map[string]lineageRow, roots []string) []string {
+	children := make(map[string][]string, len(lineage))
+	for id, row := range lineage {
+		if row.parentID != "" {
+			children[row.parentID] = append(children[row.parentID], id)
 		}
-		frontier = next
+		if row.delegateParent != "" {
+			children[row.delegateParent] = append(children[row.delegateParent], id)
+		}
 	}
-	return out, nil
+	seen := make(map[string]bool, len(lineage))
+	queue := make([]string, 0, len(roots))
+	for _, root := range roots {
+		if root == "" || seen[root] {
+			continue
+		}
+		seen[root] = true
+		queue = append(queue, root)
+	}
+	out := make([]string, 0, len(queue))
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		out = append(out, id)
+		for _, child := range children[id] {
+			if seen[child] {
+				continue
+			}
+			seen[child] = true
+			queue = append(queue, child)
+		}
+	}
+	return out
 }

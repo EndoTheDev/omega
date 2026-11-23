@@ -122,7 +122,7 @@ func TestCrashBetweenFileAndIndexRepairsOnBoot(t *testing.T) {
 		t.Fatalf("session path: %v", err)
 	}
 	// The line is in the file; the derived index is untouched (the "crash window").
-	if _, err := appendLines(path, fileLine{
+	if _, _, err := appendLines(path, fileLine{
 		V: jsonlVersion, Kind: kindMessage, Session: "crash", ID: 1,
 		Role: "user", Payload: []byte(`{"content":"survives the crash window","timestamp":"2026-11-23T00:00:00Z"}`),
 		At:   "2026-11-23T00:00:00Z",

@@ -429,9 +429,15 @@ kinds:
 
 Reading is a FOLD: header, meta lines in order, message lines in file
 order. Nothing is ever rewritten, so the fold is the whole
-reconstruction rule. A crash mid-append can leave a torn final line:
-readers drop it, and boot recovery truncates it so the next append
-lands on a line boundary.
+reconstruction rule. All mutation - appends, catch-up, rebuild, delete,
+rename - serializes on one write lock, so no pass ever reads a file a
+write is landing in and only the append path ever touches a byte.
+
+A crash mid-append can leave a torn final line. Readers drop it, and
+the boot pass before the store is shared cuts it off, so the next append
+lands on a line boundary. Nothing else cuts a file: a tail seen by a
+pre-search catch-up belongs to a line still being written, and the index
+path is the wrong place to decide otherwise.
 
 `<home>/data/omega.db` is DEMOTED to a derived index over those files:
 the folded session rows, the message rows, both FTS tables, the image
@@ -440,7 +446,10 @@ open rebuilds it from the files; `POST /sessions/reindex` (the
 `/reindex` command) is the same rebuild on demand, the
 corruption-recovery path. Freshness is a per-file indexed-byte
 watermark: boot and pre-search catch-up read only the bytes a file grew
-by, and a file that shrank is re-read whole.
+by, and a file that shrank is re-read whole. Message ids come from the
+files the same way - the ceiling is learned from them at boot and only
+moves forward, never from a `MAX(id)` over the index, which an append
+can outrun.
 
 The one-way migration out of a pre-JSONL store is guarded by read-back:
 every session is written to its file and then read back through the

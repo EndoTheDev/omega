@@ -84,11 +84,12 @@ func (s *Store) renameSession(ctx context.Context, oldID, newID string) error {
 }
 
 // renameIndex swaps the derived rows: the old id's rows go, the new file is indexed whole,
-// and the pending calls follow the session. Children are DETACHED before the old row is
-// deleted - the schema's ON DELETE CASCADE would otherwise take them with it.
+// and the pending calls follow the session. Children are detached BEFORE the old row is
+// deleted: the index carries no foreign keys, so a detach is what keeps an in-flight row
+// from pointing at an id that no longer exists.
 func (s *Store) renameIndex(ctx context.Context, oldID, newID string, children []childLink) error {
-	s.appendMu.Lock()
-	defer s.appendMu.Unlock()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -103,7 +104,7 @@ func (s *Store) renameIndex(ctx context.Context, oldID, newID string, children [
 	if err := dropSessionRows(ctx, tx, oldID); err != nil {
 		return err
 	}
-	if err := indexFileTx(ctx, tx, s.sessionsDir, newID); err != nil {
+	if err := s.indexFileTx(ctx, tx, s.sessionsDir, newID); err != nil {
 		return err
 	}
 	for _, child := range children {
@@ -157,7 +158,8 @@ func (s *Store) childrenOf(ctx context.Context, id string) ([]childLink, error) 
 }
 
 // rewriteSessionID writes src's lines to dst with every line's session pointer set to
-// newID. The payload bytes are carried as they are: only the lineage line changes.
+// newID. Payload bytes are carried exactly as stored - the rename changes the lineage, and
+// nothing else, which means it goes through the same no-escape encoder an append does.
 func rewriteSessionID(src, dst, oldID, newID string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
@@ -174,12 +176,11 @@ func rewriteSessionID(src, dst, oldID, newID string) error {
 			return fmt.Errorf("rename session: %s: %w", oldID, err)
 		}
 		line.Session = newID
-		b, err := json.Marshal(&line)
+		b, err := encodeLine(&line)
 		if err != nil {
 			return fmt.Errorf("rename session: %s: %w", oldID, err)
 		}
 		out.Write(b)
-		out.WriteByte('\n')
 	}
 	tmp := dst + ".tmp"
 	if err := os.WriteFile(tmp, []byte(out.String()), 0o600); err != nil {
@@ -192,7 +193,7 @@ func rewriteSessionID(src, dst, oldID, newID string) error {
 }
 
 // indexFileTx indexes one whole session file inside an open transaction.
-func indexFileTx(ctx context.Context, tx execer, sessionsDir, id string) error {
+func (s *Store) indexFileTx(ctx context.Context, tx execer, sessionsDir, id string) error {
 	path := filepath.Join(sessionsDir, id+".jsonl")
 	f, err := os.Open(path)
 	if err != nil {
@@ -207,15 +208,18 @@ func indexFileTx(ctx context.Context, tx execer, sessionsDir, id string) error {
 		if line.Session == "" {
 			line.Session = id
 		}
+		if line.ID > s.maxMessageID {
+			s.maxMessageID = line.ID
+		}
 		return applyLine(ctx, tx, line)
 	})
 	if err != nil {
 		return err
 	}
 	if torn {
-		if err := truncateTorn(path, end); err != nil {
-			return err
-		}
+		// rewriteSessionID wrote this file line by line, so a short tail here is not a
+		// crash: it means the file we are indexing is not the one we wrote.
+		return fmt.Errorf("store: renamed file %s ends mid-line", id)
 	}
 	_, err = tx.ExecContext(ctx,
 		`INSERT INTO session_files (session_id, indexed_bytes) VALUES (?, ?)
