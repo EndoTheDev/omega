@@ -54,6 +54,10 @@ type LoopOptions struct {
 	// this latch: a user stop cancels it with core.ErrUserStopped, so a settled result never
 	// wakes a home the human just killed. Nil = a run no human can stop.
 	Stop *core.RunStop
+
+	// Steer drains the session's queued input at each turn boundary. Nil = no live-turn
+	// input (one-shot hosts): the run never takes mid-turn messages.
+	Steer SteerFeed
 }
 
 // CompactionProvider compacts history when the budget is exceeded; nil means compaction is

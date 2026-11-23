@@ -43,6 +43,10 @@ import {
   runActive,
   toolCallAnchorMs,
   transcriptHasPending,
+  fetchQueue,
+  deleteQueueRow,
+  sendSteer,
+  type QueuedRow,
   type OmegaMessage,
   type RestoreTranscript,
 } from "./omega.ts";
@@ -113,6 +117,9 @@ export interface ChatState {
   view: ChatViewState;
   // monotone per state, so the activity anchor can name its run (a phase key alone repeats across runs)
   runSeq: number;
+  // the visible steer queue: sends parked for the live turn, delivered in order at its
+  // next batch boundary. SESSION-held server-side, so a crashed turn does not eat them.
+  queued: QueuedRow[];
 }
 
 /** the dock tab's sessionRef marker for a composer-first draft. Never a real session id. */
@@ -140,6 +147,7 @@ export const DEFAULT_CHAT_STATE: ChatState = {
   workspaceIntent: "",
   view: emptyChatViewState(),
   runSeq: 0,
+  queued: [],
 };
 
 /** marks a "/" command dispatch as a SEND: a resolving skill arms AND posts its token as a message. */
@@ -197,6 +205,10 @@ export interface ChatHost {
   command(key: string, text: string, send?: CommandSend): Promise<boolean>;
   retry(key: string): Promise<boolean>;
   composerBusy(key: string): boolean;
+  /** drop one queued steer row before the live turn's boundary reaches it */
+  deleteQueued(key: string, id: string): Promise<boolean>;
+  /** re-read the session's waiting rows (server truth) */
+  refreshQueued(key: string): Promise<void>;
   closeState(key: string): void;
   closeSession(sessionId: string): void;
   noteServerActive(ids: string[]): void;
@@ -226,6 +238,40 @@ export function composerFace(
 ): ComposerFace {
   if (busy) return "stop";
   return "send";
+}
+
+/** SendHint names what the next send will DO. One line, and the idle empty state stays
+    clean: no run, no draft, nothing to explain. */
+export function sendHint(args: {
+  busy: boolean;
+  /** no run, but the session holds unsettled calls: a send wakes the agent now */
+  sleeping: boolean;
+  hasDraft: boolean;
+}): string {
+  if (args.busy) return "send steers the running turn";
+  if (args.sleeping) return "send wakes the agent now";
+  if (args.hasDraft) return "send starts a turn";
+  return "";
+}
+
+/** mergeQueuedRows appends the rows a send parked, dropping ids the caller already holds
+    (a resent/duplicated frame must not double-render a row). */
+export function mergeQueuedRows(current: QueuedRow[], incoming: QueuedRow[]): QueuedRow[] {
+  const seen = new Set(current.map((r) => r.id));
+  const out = current.slice();
+  for (const row of incoming) {
+    if (!row?.id || seen.has(row.id)) continue;
+    seen.add(row.id);
+    out.push(row);
+  }
+  return out;
+}
+
+/** dropQueuedRow retires one delivered (or deleted) row. */
+export function dropQueuedRow(current: QueuedRow[], id: string): QueuedRow[] {
+  if (!id) return current;
+  const out = current.filter((r) => r.id !== id);
+  return out.length === current.length ? current : out;
 }
 
 
@@ -360,6 +406,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         pendingSkill: null,
         view: emptyChatViewState(),
         runSeq: 0,
+        queued: [],
       };
       states.set(key, fresh);
       st = states.get(key) as ChatState;
@@ -404,6 +451,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
         onRunEnd: (finishReason) => {
           st.lastFinishReason = finishReason;
           if (finishReason === "yielded") watchPending(st);
+        },
+        onSteerDelivered: (id) => {
+          st.queued = dropQueuedRow(st.queued, id);
         },
       };
       try {
@@ -467,6 +517,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       },
       onRunEnd: (finishReason) => {
         st.lastFinishReason = finishReason;
+      },
+      onSteerDelivered: (id) => {
+        // a queued steer reached THIS turn's boundary: the row is spent and the message is
+        // ordinary transcript content (a panel repaint carries it)
+        st.queued = dropQueuedRow(st.queued, id);
       },
     };
   }
@@ -599,6 +654,9 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       if (!st.orphan && (st.lastFinishReason === "yielded" || pendingStill)) {
         watchPending(st);
       }
+      // the run slot is free again: any row the turn never reached is still the server's,
+      // and the truth is one cheap read away
+      void refreshQueued(st.key);
       if (st.orphan) {
         states.delete(st.key);
         dropEphemeralServerRecord(st.sessionId, st.key);
@@ -635,7 +693,11 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     // the reuse refusal is evidence-based (row stamp intact, no live run), never sticky; force = the caller KNOWS.
     if (!force && st.loaded && !viewIsStale(st, sessionId)) return;
     try {
-      const detail = await fetchTranscript(sessionId);
+      const [detail, queued] = await Promise.all([
+        fetchTranscript(sessionId),
+        fetchQueue(sessionId).catch(() => [] as QueuedRow[]),
+      ]);
+      st.queued = queued;
       const durable = persistedTelemetry(detail.session);
       paintDurable(st, durable.tokens);
       st.tokensPerSecond = durable.tps;
@@ -668,9 +730,7 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
   ): Promise<boolean> {
     const st = ensureState(key);
     if (!text && !st.attachments.length && !st.files.length) return false;
-    // the run slot is per session: a live run on the SAME session anywhere blocks a second send;
-    // the runHub 409 is the backstop.
-    if (st.sessionId && busyAll.value.has(st.sessionId)) return false;
+    // a draft tab with a send already streaming has no session to steer yet
     if (!st.sessionId && busyKeys.value.has(key)) return false;
     const images = st.attachments.slice();
     st.attachments = [];
@@ -695,6 +755,26 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     const ws = !st.sessionId && !st.ephemeral ? st.workspaceIntent : "";
     st.workspaceIntent = "";
     if (fork && st.forkFrom === fork) st.forkFrom = null;
+    // The run slot is per session. While it is taken the send is a STEER: the server parks
+    // the row and the live turn takes it at its next batch boundary - no second run, no 409.
+    if (st.sessionId && busyAll.value.has(st.sessionId)) {
+      try {
+        const rows = await sendSteer(messages, st.sessionId, model, thinking);
+        if (rows) {
+          st.queued = mergeQueuedRows(st.queued, rows);
+          st.statusLine = "";
+          deps.refreshSessions();
+          return true;
+        }
+        // The run ended between the busy read and the post: that send STARTED a run. Ride
+        // it (its stream is detached; the panel and the runs topic carry the rest).
+        await load(key, st.sessionId, true);
+        return true;
+      } catch (e) {
+        st.statusLine = `steer failed: ${e instanceof Error ? e.message : String(e)}`;
+        return false;
+      }
+    }
     await runStream(st, (handlers) =>
       streamChat(
         messages,
@@ -876,6 +956,41 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
       : busyKeys.value.has(key);
   }
 
+  // refreshQueued re-reads the session's waiting rows. The queue is SERVER truth
+  // (session-held, surviving the run that queued it), so a reattach, a stale delete or a
+  // crash recovery all settle on one read instead of a local guess.
+  async function refreshQueued(key: string): Promise<void> {
+    const st = states.get(key);
+    const sid = st?.sessionId;
+    if (!st || !sid) return;
+    try {
+      const rows = await fetchQueue(sid);
+      // a tab re-pointed at another session mid-read never adopts foreign rows
+      if (st.sessionId !== sid) return;
+      st.queued = rows;
+    } catch {
+      // a queue read is a nicety: a fault leaves the rows the surface already holds
+    }
+  }
+
+  // deleteQueued drops one row before the boundary reaches it (rule 4's delete).
+  async function deleteQueued(key: string, id: string): Promise<boolean> {
+    const st = states.get(key);
+    const sid = st?.sessionId;
+    if (!st || !sid || !id) return false;
+    try {
+      const removed = await deleteQueueRow(sid, id);
+      if (st.sessionId !== sid) return removed;
+      st.queued = dropQueuedRow(st.queued, id);
+      // 404 = the turn already took it: re-read, never resurrect the row locally
+      if (!removed) await refreshQueued(key);
+      return removed;
+    } catch (e) {
+      st.statusLine = `queue delete failed: ${e instanceof Error ? e.message : String(e)}`;
+      return false;
+    }
+  }
+
   async function attach(key: string): Promise<void> {
     const st = states.get(key);
     if (!st?.sessionId || st.attached) return;
@@ -937,6 +1052,8 @@ export function createChatHost(deps: ChatHostDeps): ChatHost {
     selectVariant,
     cancel,
     composerBusy,
+    deleteQueued,
+    refreshQueued,
     closeState,
     closeSession,
     noteServerActive,

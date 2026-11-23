@@ -51,6 +51,8 @@ unchanged.
 | `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
 | `/sessions/{id}/transcript`               | GET                | render-ready items (restore + live contract)                                                                                                                                                                                                                |
 | `/sessions/{id}/variants`                 | GET, POST, PATCH   | branch points + active-variant select                                                                                                                                                                                                                       |
+| `/sessions/{id}/queue`                    | GET                | the live turn's waiting steer rows (`{"queued": [{id, content, at}]}`)                                                                                                                                                                                       |
+| `/sessions/{id}/queue/{row}`              | DELETE             | drop one queued row before delivery (204; 404 when it is unknown or already delivered)                                                                                                                                                                      |
 | `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` opens a fresh tab for the human's own row; `{"kind":"compacted"}` compacts a machinery-owned one in place (same id; the next run derives its context from the compact's carrier)                                                        |
 | `/sessions/{id}/branch`                   | POST               | fork a child session (store-linked)                                                                                                                                                                                                                         |
 | `/sessions/{id}/export`                   | GET                | active path as JSONL attachment                                                                                                                                                                                                                             |
@@ -201,12 +203,33 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   unresolvable tokens stay literal in the persisted message. The
   browser never reads or expands files.
 
-**One live run per session.** A second `/chat` for a session with a
-live run is 409. Runs are DETACHED from the request (runHub): a client
+**One live run per session, and a mid-turn send is a steer.** A second
+`/chat` for a session with a live run is NOT refused: the send parks as a
+steer row and the run takes it at its next batch boundary (after the
+current tool batch), so the agent adjusts in the SAME turn. The response
+is `202` with `{"queued": [{"id", "content", "at"}]}` and no stream; the
+row renders in the composer's queue until it is delivered or deleted
+(rules in `docs/glossary.md`, "steer"/"queue"). A result settling while a
+turn is live rides the same queue and joins that turn; with no turn live
+it launches its own wake turn. Replay turns (`retry`/`fork`) are never
+steered - they address the persisted tree and keep their own gates.
+
+Runs are DETACHED from the request (runHub): a client
 disconnect never cancels the run, and `server.run_timeout` (default
 1800 s) walls off hung runs. Repeat `POST /sessions/{id}/stop` while a
 run winds down is a clean 200; stop is 404 when idle, 409 in the rare
 pre-launch window.
+
+**The queue is session-held.** Rows outlive the run that parked them: a
+turn that dies on a provider error (or a crashed turn) hands its
+undelivered rows to the next turn, which delivers them first. The queue
+is process-local (never persisted): a server restart drops it.
+
+- `GET /sessions/{id}/queue` - `{"queued": [{id, content, at}]}`, in
+  delivery order. Answers for any session; an idle one is empty.
+- `DELETE /sessions/{id}/queue/{row}` - `204` when the row leaves the
+  queue, `404` when it is unknown or already delivered (the surface's row
+  is stale and the truth is the queue read).
 
 **Stop is a hard stop, not a stopped stream.** The endpoint latches the
 session's run stop (`core.RunStop`), then cancels the run context. The
@@ -243,6 +266,7 @@ Response is `text/event-stream`; frames are `event: <name>\ndata:
 | `agent_end`         | terminal state (`finish_reason`, incl. `cancelled` from a stop and `yielded` - the run ended on an outstanding call (immediate-yield or escalated past the inline budget); its result re-enters as a wake turn, see below) |
 | `assistant_message` | the assembled assistant message                                                                                                                                                                                            |
 | `view_model_delta`  | one canvas panel descriptor (arc 3b): a module updated its panel state; dispatch on this frame, then merge the panel                                                                                                       |
+| `steer_delivered`   | one queued row reached the live turn at its batch boundary: `{"id": "<queue row id>", "message": {...}}`. The row leaves the queue; the message itself persists as ordinary turn content (no transcript badge)         |
 | `error`             | the error text (failures are events, not Go errors)                                                                                                                                                                        |
 
 The delta rides every live run stream (the chat's origin stream and

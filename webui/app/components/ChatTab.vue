@@ -106,6 +106,29 @@
       </button>
     </div>
 
+    <!-- the visible queue: sends parked for the live turn, in delivery order, deletable
+         until the boundary takes them. A delivered row becomes an ordinary user message -
+         the transcript carries no badge. -->
+    <div
+      v-if="queued.length"
+      class="steer-queue">
+      <div
+        v-for="row in queued"
+        :key="row.id"
+        class="steer-row">
+        <span class="steer-text">{{ row.content }}</span>
+        <button
+          class="steer-del"
+          type="button"
+          title="remove from the queue"
+          aria-label="remove from the queue"
+          @click="onQueueDelete(row.id)">×</button>
+      </div>
+    </div>
+    <div
+      v-if="hintText"
+      class="send-hint">{{ hintText }}</div>
+
     <AppComposer
       ref="composerEl"
       v-model:draft="draft"
@@ -143,6 +166,7 @@
     activityPhase,
     createCanvasTranscript,
     findMessageItem,
+    sendHint,
     type ChatFoldPins,
     type ChatViewState,
   } from "../composables/chat";
@@ -164,6 +188,7 @@
     scrollFlushTick,
     splitBlocks,
     thinkingLevelWire,
+    transcriptHasPending,
     variantAnchors,
     type Appearance,
     type Session,
@@ -308,6 +333,18 @@
     if (id) return host.busyAll.value.has(id);
     return host.busyKeys.value.has(stateKey);
   });
+
+  // The steer queue the surface renders, and what the next send will do. A SLEEPING agent
+  // is an idle session still holding unsettled calls (a yielded turn): a send wakes it now
+  // rather than waiting for the wake turn.
+  const queued = computed(() => state.value?.queued ?? []);
+  const sleeping = computed(() => !busy.value && transcriptHasPending(transcript.value));
+  const hintText = computed(() =>
+    sendHint({ busy: busy.value, sleeping: sleeping.value, hasDraft: draft.value.trim() !== "" }),
+  );
+  function onQueueDelete(id: string) {
+    void host.deleteQueued(stateKey, id);
+  }
   const canRetry = computed(
     // ephemeral: nothing persisted to replay, so the affordance never renders
     () =>

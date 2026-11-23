@@ -537,6 +537,9 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			YieldWake:          yieldWake,
 			YieldTimeout:       a.yieldTimeout,
 			Stop:               core.RunStopFrom(ctx),
+			// The host's live-turn input queue (the http channel's steer rows). Absent = the
+			// run takes no mid-turn message, exactly like a one-shot host.
+			Steer: SteerFeedFromContext(ctx),
 		})
 	}()
 	return events

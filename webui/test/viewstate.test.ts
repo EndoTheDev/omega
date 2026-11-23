@@ -41,12 +41,24 @@ function deps(over: Partial<ChatHostDeps> = {}): ChatHostDeps {
 }
 
 // stubTranscript answers GET /sessions/<id>/transcript and counts the fires -
-// the refetch witness the card's fifth acceptance item is about.
-function stubTranscript(stamp: () => string): { calls: string[]; restore: () => void } {
+// the refetch witness the card's fifth acceptance item is about. The queue read a load
+// also makes (GET /sessions/<id>/queue) is counted separately: the witness is about the
+// TRANSCRIPT refetch, never about how many requests one load happens to make.
+function stubTranscript(stamp: () => string): { calls: string[]; queues: string[]; restore: () => void } {
   const saved = globalThis.fetch;
   const calls: string[] = [];
+  const queues: string[] = [];
   globalThis.fetch = (async (input: unknown) => {
-    calls.push(String(input));
+    const url = String(input);
+    if (url.includes("/queue")) {
+      queues.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ queued: [] }),
+      } as unknown as Response;
+    }
+    calls.push(url);
     return {
       ok: true,
       json: async () => ({
@@ -56,7 +68,7 @@ function stubTranscript(stamp: () => string): { calls: string[]; restore: () => 
       }),
     } as unknown as Response;
   }) as typeof fetch;
-  return { calls, restore: () => (globalThis.fetch = saved) };
+  return { calls, queues, restore: () => (globalThis.fetch = saved) };
 }
 
 const realFetch = globalThis.fetch;
@@ -214,6 +226,18 @@ describe("load() does not refetch a state already loaded (unless a run went live
       await host.load("c1", "s1");
       await host.load("c1", "s1");
       assert.equal(net.calls.length, 2, "no row = no 'unchanged' claim");
+    } finally {
+      net.restore();
+    }
+  });
+
+  it("a load hydrates the steer queue beside the transcript", async () => {
+    const net = stubTranscript(() => "stamp-1");
+    const host = createChatHost(deps({ sessionRow: () => undefined }));
+    try {
+      await host.load("c1", "s1");
+      assert.equal(net.queues.length, 1, "the waiting rows are server truth, read on load");
+      assert.deepEqual(host.states.get("c1")?.queued, []);
     } finally {
       net.restore();
     }

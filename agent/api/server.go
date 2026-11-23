@@ -57,6 +57,9 @@ type Server struct {
 	agentRuns AgentRunFactory
 
 	wakes       *wakeHub
+	// steers is the session-held live-turn input queue (steer.go): rows outlive the run
+	// that queued them and drain at its next batch boundary.
+	steers      *steerHub
 	bootCtx     context.Context
 	bootStop    context.CancelFunc
 	yieldLedger agent.YieldLedger
@@ -187,6 +190,9 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	// construct a bare Server) skips the harness entirely.
 	s.bootCtx, s.bootStop = context.WithCancel(context.Background())
 	s.wakes = newWakeHub()
+	// The steer queue is session-held and process-local: rows outlive the run that queued
+	// them (a crashed turn eats no human words), never the process.
+	s.steers = newSteerHub()
 	// Session-typed pending-calls table: the `eph-` lane lives in memory beside the
 	// ephRegistry - an ephemeral session's rows are process-local (restart eats its
 	// pending results: the mode's own contract, see sessionTypedLedger), and nothing it
@@ -275,6 +281,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/sessions/{id}/stop", s.handleSessionStop)
 	mux.HandleFunc("/sessions/{id}/transcript", s.handleSessionTranscript)
 	mux.HandleFunc("/sessions/{id}/variants", s.handleSessionVariants)
+	mux.HandleFunc("/sessions/{id}/queue", s.handleSessionQueue)
+	mux.HandleFunc("/sessions/{id}/queue/{row}", s.handleSessionQueueRow)
 	mux.HandleFunc("/sessions/{id}/new", s.handleSessionNew)
 	mux.HandleFunc("/sessions/{id}", s.handleSessionByID)
 	mux.HandleFunc("/tools", s.handleTools)
@@ -720,6 +728,14 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	// "active" edge has exactly one source.
 	s.publishRunState(req.SessionID, true)
 
+	// Queued rows deliver FIRST on this turn: they were typed before the send that starts
+	// it, and a crashed turn must not reorder the conversation.
+	if !req.wake && !req.Retry && req.Fork == "" {
+		if lead := s.takeQueuedInto(req.SessionID); len(lead) > 0 {
+			incoming = append(lead, incoming...)
+		}
+	}
+
 	var sess core.Session
 	sessionKnown := false
 	if s.store != nil && req.SessionID != "" && !req.Ephemeral {
@@ -989,6 +1005,15 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 	// The non-image attachment relocation runs HERE.
 	if err := resolveAttachments(messages, req.SessionID); err != nil {
 		http.Error(w, "attachment: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// A live run takes this send as a STEER instead of the 409: the row is parked in the
+	// session-held queue and delivered at the run's next batch boundary, so the agent
+	// adjusts in the SAME turn. Replay turns (retry/fork) address the persisted tree and
+	// keep their own gates.
+	if s.steerNow(&req) {
+		s.steerSend(w, r, &req, messages)
 		return
 	}
 
@@ -2003,6 +2028,8 @@ func eventTypeOf(event core.Event) string {
 		return "assistant_message"
 	case core.ToolResultEvent:
 		return "tool_result"
+	case core.SteerDeliveredEvent:
+		return "steer_delivered"
 	case core.ViewModelDelta:
 		return "view_model_delta"
 	}
