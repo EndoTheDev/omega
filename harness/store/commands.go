@@ -268,6 +268,22 @@ func HandleLabelCommand(ctx context.Context, store agent.StoreProvider, sessionI
 	return core.CommandResult{Text: "[label: " + label + "]"}, nil
 }
 
+// handleReindexCommand is the /reindex verb: the manual rebuild of the derived index from
+// the session files, for a damaged or stale index.
+func handleReindexCommand(ctx context.Context, s *Store) (core.CommandResult, error) {
+	if s == nil {
+		return core.CommandResult{}, fmt.Errorf("no store available")
+	}
+	if err := s.RebuildIndex(ctx); err != nil {
+		return core.CommandResult{}, fmt.Errorf("reindex: %w", err)
+	}
+	sessions, err := s.sessionsOnDisk()
+	if err != nil {
+		return core.CommandResult{}, fmt.Errorf("reindex: %w", err)
+	}
+	return core.CommandResult{Text: fmt.Sprintf("[reindexed %d sessions from their files]", len(sessions))}, nil
+}
+
 // HandleExportCommand reads messages from the store and writes them as JSONL.
 func HandleExportCommand(ctx context.Context, store agent.StoreProvider, sessionID, args string) (core.CommandResult, error) {
 	if store == nil || sessionID == "" {

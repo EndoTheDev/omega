@@ -20,7 +20,7 @@ func (p *Plugin) Name() string { return "store" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "session persistence: SQLite-backed message and session store"
+	return "session persistence: append-only JSONL session files + a derived search index"
 }
 
 // ConfigKey names the config section this plugin reads from ctx.Configs.
@@ -142,6 +142,7 @@ func sessionCommands() []core.ExtensionCommand {
 		{Name: "/resume", Description: "resolve a session by #, id, or label"},
 		{Name: "/branch", Description: "branch a new session from the current (or given) one"},
 		{Name: "/label", Description: "set a label on the current session (no text clears it)"},
+		{Name: "/reindex", Description: "rebuild the derived search index from the session files"},
 		{Name: "/export", Description: "export session messages to JSONL (default: <session_id>.jsonl)"},
 	}
 }
@@ -169,6 +170,8 @@ func (p *Plugin) handleSessionCommand(s *Store, c context.Context, name, args st
 	case "/label":
 		sessionID, label := sessionPayload(c, args)
 		return HandleLabelCommand(c, s, sessionID, label)
+	case "/reindex":
+		return handleReindexCommand(c, s)
 	case "/export":
 		sessionID, path := sessionPayload(c, args)
 		return HandleExportCommand(c, s, sessionID, path)

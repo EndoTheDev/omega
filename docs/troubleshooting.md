@@ -68,6 +68,16 @@ old path never resurrects. The three yaml files moved the same way into
 `<home>/config/` earlier; resolution checks the home root first, so legacy
 installs kept working unchanged.
 
+The session store itself lives in `<home>/data/sessions/`: one
+append-only `<session id>.jsonl` file per session, the source of truth.
+`omega.db` beside it is a DERIVED search and list index over those
+files - deleting it loses nothing (the next boot rebuilds it), and
+`POST /sessions/reindex` rebuilds it without a restart. A first boot
+after upgrading from the SQLite store migrates every session to its
+file, verifies each one by read-back, and only then renames the old
+database to `omega.db.<date>.bak` beside the index; that archive is the
+rollback copy and is kept until the next stable tag.
+
 ## A chat reply came back empty (`finish_reason: "load"`)
 
 An empty-but-successful turn usually means the run sent no `role` on its

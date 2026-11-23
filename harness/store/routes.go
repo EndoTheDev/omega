@@ -48,6 +48,7 @@ func (rt *Routes) registrationRows() []struct {
 	}{
 		{"GET /sessions", rt.handleSessionsList},
 		{"GET /sessions/search", rt.handleSessionSearch},
+		{"POST /sessions/reindex", rt.handleSessionReindex},
 		{"POST /sessions/{id}/branch", rt.handleSessionBranch},
 		{"/sessions/{id}/export", rt.handleSessionExport},
 		{"GET /insights", rt.handleInsights},
@@ -168,6 +169,29 @@ func (rt *Routes) handleSessionSearch(w http.ResponseWriter, r *http.Request) {
 		out = append(out, searchHit{ID: res.SessionID, Snippet: res.Snippet, Matches: res.Matches, TitleMatch: res.Title})
 	}
 	rt.writeJSON(w, http.StatusOK, out)
+}
+
+// reindexReport is the POST /sessions/reindex answer: what the rebuild covered.
+type reindexReport struct {
+	Rebuilt  bool `json:"rebuilt"`
+	Sessions int  `json:"sessions"`
+}
+
+// handleSessionReindex serves POST /sessions/reindex - the manual rebuild of the derived
+// index from the session files. It is the corruption-recovery door: search results after
+// a rebuild are the same fold of the same files, so the only thing it can change is a
+// stale or damaged index.
+func (rt *Routes) handleSessionReindex(w http.ResponseWriter, r *http.Request) {
+	if err := rt.store.RebuildIndex(r.Context()); err != nil {
+		rt.httpError(w, http.StatusInternalServerError, "reindex: %v", err)
+		return
+	}
+	sessions, err := rt.store.sessionsOnDisk()
+	if err != nil {
+		rt.httpError(w, http.StatusInternalServerError, "reindex: %v", err)
+		return
+	}
+	rt.writeJSON(w, http.StatusOK, reindexReport{Rebuilt: true, Sessions: len(sessions)})
 }
 
 func slicesCut[T any](s []T, drop func(T) bool) []T {

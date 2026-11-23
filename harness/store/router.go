@@ -102,9 +102,9 @@ func (s *Store) probeHomes(ctx context.Context, id string) *Store {
 	return nil
 }
 
-// homeStore opens (once per process) the store of one agent home. A home
-// with no data/omega.db answers nil: opening would create an empty file
-// for an agent that never ran.
+// homeStore opens (once per process) the store of one agent home. A home with
+// neither an index database nor session files answers nil: opening would create an
+// empty store for an agent that never ran.
 func (s *Store) homeStore(name string) *Store {
 	s.routeMu.Lock()
 	defer s.routeMu.Unlock()
@@ -113,7 +113,7 @@ func (s *Store) homeStore(name string) *Store {
 	}
 	dsn := datadir.DBPath(filepath.Join(s.home, "agents", name), "omega.db")
 	var st *Store
-	if _, err := os.Stat(dsn); err == nil {
+	if homeHasStore(dsn) {
 		opened, oerr := Open(dsn)
 		if oerr == nil {
 			opened.home, opened.agentName = s.home, name
@@ -130,6 +130,24 @@ func (s *Store) homeStore(name string) *Store {
 	}
 	s.agents[name] = st
 	return st
+}
+
+// homeHasStore reports whether a home holds data worth opening: an index database or
+// session files. The files alone are enough - the index rebuilds from them.
+func homeHasStore(dsn string) bool {
+	if _, err := os.Stat(dsn); err == nil {
+		return true
+	}
+	dir, err := os.ReadDir(sessionsDirFor(dsn))
+	if err != nil {
+		return false
+	}
+	for _, entry := range dir {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".jsonl") {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) closeHomes() error {
