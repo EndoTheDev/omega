@@ -210,8 +210,6 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 	}
 }
 
-var skillsVerbs = []string{"read", "write", "update", "curate"}
-
 func prop(typ, desc string) map[string]any {
 	return map[string]any{"type": typ, "description": desc}
 }
