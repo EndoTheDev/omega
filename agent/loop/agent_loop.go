@@ -237,13 +237,15 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 				opts.Logger.Errorf("stream error: %s", streamErr)
 			}
 			// A context overflow triggers one auto-compaction and retry of the turn, skipped when
-			// content was already streamed: the user saw it and a retry would duplicate it.
+			// content was already streamed: the user saw it and a retry would duplicate it. The
+			// compact is FORCED: the provider already said the request does not fit, so the
+			// growth gate's pacing is not what may refuse it.
 			if isOverflowError(streamErr) && opts.CompactionProvider != nil && overflowRetries < maxOverflowRetries && content.Len() == 0 {
 				overflowRetries++
 				if opts.Logger != nil {
 					opts.Logger.Printf("context overflow, retrying (attempt %d/%d)", overflowRetries, maxOverflowRetries)
 				}
-				compacted, err := opts.CompactionProvider.Compact(ctx, messages)
+				compacted, err := opts.CompactionProvider.Compact(agent.WithCompactForced(ctx), messages)
 				if err != nil {
 					end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: "error", Error: err.Error()}
 					opts.Events <- end

@@ -393,11 +393,6 @@ func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 			Value: c.ContextWindow,
 			Default: d.ContextWindow,
 			Help:    "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
-		{Key: "compaction.keep_first", Label: "keep first", Type: "number",
-			Min: ptrF(0), Step: ptrF(1),
-			Value:   c.KeepFirst,
-			Default: d.KeepFirst,
-			Help:    "messages kept unsummarized at the head", Live: true},
 		{Key: "compaction.keep_last", Label: "keep last", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
 			Value:   c.KeepLast,
@@ -531,8 +526,6 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setFloat(&cfg.Compaction.Threshold, key, raw, 0.05, 1)
 		case "compaction.context_window":
 			err = setInt(&cfg.Compaction.ContextWindow, key, raw, 0, math.MaxInt32) // 0 = auto
-		case "compaction.keep_first":
-			err = setInt(&cfg.Compaction.KeepFirst, key, raw, 0, math.MaxInt32)
 		case "compaction.keep_last":
 			err = setInt(&cfg.Compaction.KeepLast, key, raw, 0, math.MaxInt32)
 		case "compaction.reserve_tokens":

@@ -1,10 +1,41 @@
 package core
 
-// ContextCompactPrefix and ContextCompactSuffix wrap a compacted context's summary head.
+// ContextCompactPrefix and ContextCompactSuffix wrap a legacy compacted context's summary
+// head - the pre-block shape, kept so old sessions read as they always did.
 const (
 	ContextCompactPrefix = "[compacted: "
 	ContextCompactSuffix = "]"
 )
+
+// CompressToolName is the tool whose call/result pair carries a compact's summary at the
+// TAIL of the session, so nothing the provider already saw changes bytes.
+const CompressToolName = "compress"
+
+// ContextBlock is one compact, recorded by the store: the span it took out of the live
+// context (From/To row ids), the first retained tail row (Keep, 0 = none), the carrier rows
+// holding its summary (Call/Carrier), and the lower-tier blocks it folds (Sources). Blocks
+// are the context's tier structure, never retired by their timestamp; the wire is derived
+// from them.
+type ContextBlock struct {
+	ID      string   `json:"id"`
+	Tier    int      `json:"tier"`
+	From    int64    `json:"from"`
+	To      int64    `json:"to"`
+	Keep    int64    `json:"keep,omitempty"`
+	Call    int64    `json:"call,omitempty"`
+	Carrier int64    `json:"carrier,omitempty"`
+	Sources []string `json:"sources,omitempty"`
+	At      string   `json:"at,omitempty"`
+}
+
+type CompactWrite struct {
+	Summary string
+	From    int64
+	To      int64
+	Keep    int64
+	Tier    int
+	Sources []string
+}
 
 type Session struct {
 	ID string `json:"id"`

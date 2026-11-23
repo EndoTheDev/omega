@@ -35,7 +35,6 @@ func summarizingCompactor() *Compactor {
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 10,
-			KeepFirst:     1,
 			KeepLast:      1,
 			ReserveTokens: 1,
 		},
@@ -52,7 +51,23 @@ func pendingHistory() []core.Message {
 	}
 }
 
-// TestCompactSkipsPendingTurn: the ledger holds c2 pending.
+// compactWire runs the manual arm and rebuilds the wire exactly as the loop does, so the
+// pending clamp is judged by the shape a provider would see.
+func compactWire(t *testing.T, c *Compactor, ctx context.Context, msgs []core.Message) []core.Message {
+	t.Helper()
+	start := agent.LiveStart(msgs)
+	answer, err := c.CompactNow(ctx, agent.CompactRequest{Wire: msgs, LiveStart: start, Keep: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.Summary == "" {
+		return msgs
+	}
+	return agent.CarrierWire(msgs, start, len(msgs)-answer.Keep, answer.Summary, 0, 0)
+}
+
+// TestCompactSkipsPendingTurn: the ledger holds c2 pending, so the compact stops at the
+// pending turn and the summary rides the tail as a carrier pair.
 func TestCompactSkipsPendingTurn(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{
@@ -61,26 +76,23 @@ func TestCompactSkipsPendingTurn(t *testing.T) {
 		t.Fatalf("register pending: %v", err)
 	}
 	c := summarizingCompactor()
-	out, err := c.Compact(pendingCtx("s1", ledger), pendingHistory())
-	if err != nil {
-		t.Fatal(err)
+	out := compactWire(t, c, pendingCtx("s1", ledger), pendingHistory())
+	if len(out) != 5 {
+		t.Fatalf("expected 5 messages (head + carrier pair + pending turn + last), got %d: %s", len(out), messageDump(out))
 	}
-	if len(out) != 4 {
-		t.Fatalf("expected 4 messages (first+summary+pending turn+last), got %d: %s", len(out), messageDump(out))
+	if !agent.IsCarrierResult(out[2]) || agent.MessageText(out[2]) != "summary of the compactable middle" {
+		t.Fatalf("no summary carrier where the compact boundary sat: %s", messageDump(out))
 	}
-	as, ok := out[2].(core.Assistant)
+	as, ok := out[3].(core.Assistant)
 	if !ok {
 		t.Fatalf("the pending call's assistant turn did not survive the compact: %s", messageDump(out))
 	}
 	if len(as.ToolCalls) == 0 || as.ToolCalls[0].ID != "c2" {
 		t.Fatalf("the surviving turn lost the pending call: %+v", as.ToolCalls)
 	}
-	if out[1].(core.System).Content != "[compacted: summary of the compactable middle]" {
-		t.Fatalf("no summary row where the compact boundary sat: %s", messageDump(out))
-	}
 }
 
-// TestCompactAfterSettle: the same history with the call settled compacts normally.
+// TestCompactAfterSettle: the same history with the call settled compacts to the kept tail.
 func TestCompactAfterSettle(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	_ = ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()})
@@ -88,14 +100,11 @@ func TestCompactAfterSettle(t *testing.T) {
 		t.Fatalf("settle: %v", err)
 	}
 	c := summarizingCompactor()
-	out, err := c.Compact(pendingCtx("s1", ledger), pendingHistory())
-	if err != nil {
-		t.Fatal(err)
+	out := compactWire(t, c, pendingCtx("s1", ledger), pendingHistory())
+	if len(out) != 4 {
+		t.Fatalf("expected 4 messages after settle, got %d: %s", len(out), messageDump(out))
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected 3 messages after settle, got %d: %s", len(out), messageDump(out))
-	}
-	if !strings.Contains(out[2].(core.User).Content, "last message") {
+	if !strings.Contains(agent.MessageText(out[3]), "last message") {
 		t.Fatalf("the kept tail lost its message: %s", messageDump(out))
 	}
 }
@@ -108,16 +117,13 @@ func TestCompactPendingOtherSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := summarizingCompactor()
-	out, err := c.Compact(pendingCtx("s1", ledger), pendingHistory())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) != 3 {
+	out := compactWire(t, c, pendingCtx("s1", ledger), pendingHistory())
+	if len(out) != 4 {
 		t.Fatalf("another session's pending call fenced the compact, got %d: %s", len(out), messageDump(out))
 	}
 }
 
-// TestCompactFullyPendingHistory: everything beyond keepFirst is under the pending call.
+// TestCompactFullyPendingHistory: everything beyond the head is under the pending call.
 func TestCompactFullyPendingHistory(t *testing.T) {
 	ledger := agent.NewMemYieldLedger()
 	if err := ledger.Register(agent.PendingCall{SessionID: "s1", CallID: "c2", DispatchedAt: core.NowISO()}); err != nil {
@@ -130,10 +136,7 @@ func TestCompactFullyPendingHistory(t *testing.T) {
 		core.NewUser("last message also long enough"),
 	}
 	c := summarizingCompactor()
-	out, err := c.Compact(pendingCtx("s1", ledger), msgs)
-	if err != nil {
-		t.Fatal(err)
-	}
+	out := compactWire(t, c, pendingCtx("s1", ledger), msgs)
 	if len(out) != 3 {
 		t.Fatalf("a fully-fenced history compacted anyway: %s", messageDump(out))
 	}

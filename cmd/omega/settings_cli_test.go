@@ -36,7 +36,7 @@ func TestSettingsCLIListsEveryKnobGroup(t *testing.T) {
 		`provider.model_name = "test-model"`,
 		"provider.instances = [", // the ONE providers list, one row per instance
 		"server",
-		"compaction.keep_first",
+		"compaction.keep_last",
 		"approvals.mode",
 	} {
 		if !strings.Contains(out, want) {

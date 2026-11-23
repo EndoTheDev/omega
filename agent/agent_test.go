@@ -655,7 +655,6 @@ func compactionConfig() *CompactionConfig {
 		Enabled:       true,
 		Threshold:     0.5,
 		ContextWindow: 100, // budget = 50 tokens
-		KeepFirst:     1,
 		KeepLast:      1,
 	}
 }

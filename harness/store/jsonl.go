@@ -40,6 +40,9 @@ const (
 	kindSession = "session"
 	kindMessage = "message"
 	kindMeta    = "meta"
+	// kindBlock is one compact: the tier structure line. The carrier rows it names are
+	// message lines appended with it, in the same write.
+	kindBlock = "block"
 )
 
 // changes names only the session fields a meta line changed. Pointers distinguish
@@ -93,6 +96,9 @@ type fileLine struct {
 
 	// meta
 	Changes *changes `json:"changes,omitempty"`
+
+	// block
+	Block *core.ContextBlock `json:"block,omitempty"`
 }
 
 // storedMsg is one message line read back.
@@ -104,10 +110,12 @@ type storedMsg struct {
 }
 
 // folded is one session file read back: metadata after the meta fold, messages in file
-// order, and the byte offset where the complete lines end.
+// order, the block lines that define the context's tiers, and the byte offset where the
+// complete lines end.
 type folded struct {
 	session  core.Session
 	messages []storedMsg
+	blocks   []core.ContextBlock
 	end      int64
 	torn     bool
 }
@@ -380,6 +388,11 @@ func foldReader(r io.Reader) (folded, error) {
 			if line.Changes.UpdatedAt != nil {
 				updated, updatedStr = laterTime(updated, updatedStr, *line.Changes.UpdatedAt)
 			}
+		case kindBlock:
+			if line.Block == nil {
+				break
+			}
+			out.blocks = append(out.blocks, *line.Block)
 		}
 		return nil
 	})

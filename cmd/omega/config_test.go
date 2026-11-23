@@ -340,8 +340,8 @@ func TestCompactionDefaults(t *testing.T) {
 	if cfg.Compaction.Threshold != 0.6 {
 		t.Errorf("compaction.threshold default = %v, want 0.6", cfg.Compaction.Threshold)
 	}
-	if cfg.Compaction.KeepFirst != 2 || cfg.Compaction.KeepLast != 10 {
-		t.Errorf("compaction keep defaults = %d/%d, want 2/10", cfg.Compaction.KeepFirst, cfg.Compaction.KeepLast)
+	if cfg.Compaction.KeepLast != 10 {
+		t.Errorf("compaction.keep_last default = %d, want 10", cfg.Compaction.KeepLast)
 	}
 }
 
@@ -367,7 +367,6 @@ provider:
 `)
 	t.Setenv("OMEGA_COMPACTION_ENABLED", "false")
 	t.Setenv("OMEGA_COMPACTION_CONTEXT_WINDOW", "65536")
-	t.Setenv("OMEGA_COMPACTION_KEEP_FIRST", "5")
 	t.Setenv("OMEGA_COMPACTION_KEEP_LAST", "20")
 	t.Setenv("OMEGA_COMPACTION_RESERVE_TOKENS", "8192")
 	t.Setenv("OMEGA_COMPACTION_MAX_TOOL_OUTPUT", "16384")
@@ -381,9 +380,6 @@ provider:
 	}
 	if cfg.Compaction.ContextWindow != 65536 {
 		t.Errorf("compaction.context_window = %d, want 65536", cfg.Compaction.ContextWindow)
-	}
-	if cfg.Compaction.KeepFirst != 5 {
-		t.Errorf("compaction.keep_first = %d, want 5", cfg.Compaction.KeepFirst)
 	}
 	if cfg.Compaction.KeepLast != 20 {
 		t.Errorf("compaction.keep_last = %d, want 20", cfg.Compaction.KeepLast)

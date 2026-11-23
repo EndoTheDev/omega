@@ -114,7 +114,7 @@ func (m mockCompactionProvider) Compact(ctx context.Context, messages []core.Mes
 	if m.Config == nil || !m.Config.Enabled {
 		return messages, nil
 	}
-	if m.Config.KeepFirst+m.Config.KeepLast >= len(messages) {
+	if 1+m.Config.KeepLast >= len(messages) {
 		return messages, nil
 	}
 	var summary strings.Builder
@@ -131,7 +131,7 @@ func (m mockCompactionProvider) Compact(ctx context.Context, messages []core.Mes
 	if summary.Len() == 0 {
 		return nil, fmt.Errorf("summarize: empty summary")
 	}
-	keepFirst, keepLast := m.Config.KeepFirst, m.Config.KeepLast
+	keepFirst, keepLast := 1, m.Config.KeepLast
 	result := make([]core.Message, 0, keepFirst+keepLast+1)
 	result = append(result, messages[:keepFirst]...)
 	result = append(result, core.NewSystem("[compacted: "+strings.TrimSpace(summary.String())+"]"))

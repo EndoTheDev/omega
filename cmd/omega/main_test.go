@@ -371,7 +371,6 @@ func TestBuildConfigs(t *testing.T) {
 		Enabled:       true,
 		Threshold:     0.42,
 		ContextWindow: 4096,
-		KeepFirst:     3,
 		KeepLast:      8,
 		ReserveTokens: 2048,
 		MaxToolOutput: 8192,

@@ -18,9 +18,25 @@ The domain language, one home. Every term defined once; code, docs and UI text u
 
 **wake** - an out-of-band message delivered into an existing session: a pending result arriving, or a user message while calls are pending. A wake starts the next turn.
 
-**compact** - the context compaction boundary: the active path is compacted, a context start plus summary persist, the session survives. Compaction runs automatically at the token budget or on the /compact command. A compact that costs context is the point; it never costs the run. (The codebase's older internal name "fold" is deprecated; any reference to folding means compacting.)
+**compact** - the context's tier structure: the live context is summarized, and the summary
+rides a `compress` tool call plus its result appended at the TAIL of the session (never a
+mid-stream system message). Compaction runs automatically when the growth gate fires (the
+context is over its token budget, at least ~50K tokens of growth since the last compact, and
+the compact recovers more than it costs) or on the `/compact` command, which outranks the
+gate. A compact that costs context is the point; it never costs the run. (The codebase's
+older internal name "fold" is deprecated; any reference to folding means compacting.)
 
-**context start** - the anchor message id where a session's live context begins; set at compact time. Everything before it is summary plus retained tail.
+**context block** - one recorded compact: the span of stored rows it took out of the live
+context, the tail it retained verbatim, and the carrier rows that hold its summary. Blocks
+are tiered (`tier` 1 summarizes stored rows; a higher tier summarizes lower blocks through
+`sources`) and carry the lineage (`from`/`to`/`keep` row ids). The provider wire is derived
+from them. A block applies only to a row set that carries it: a fork or retry at a row older
+than the compact replays its own rows instead, never a summary of turns it never saw. There
+is no age-GC: a block is never retired by its timestamp.
+
+**context start** - the pre-block shape: the anchor message id where a session's live context
+begins. Sessions written before context blocks keep such a row and read exactly as they
+always did until a compact lands, which replaces it with a carrier.
 
 **tool call** - one invocation of a tool by the agent. A tool call is either synchronous (blocks its turn) or background: it outlives its turn, and while it runs the turn preamble counts it ("2 tool calls running, 1 settled since last turn").
 
