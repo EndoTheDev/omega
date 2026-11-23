@@ -2,6 +2,7 @@ package prompt
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -138,7 +139,7 @@ func TestBuildPromptSections(t *testing.T) {
 
 // TestBuildPromptNilContext verifies the builder tolerates a nil Context.
 func TestBuildPromptNilContext(t *testing.T) {
-	b := &PromptBuilder{now: func() time.Time { return time.Date(2026, 10, 18, 0, 0, 0, 0, time.UTC) }}
+	b := &PromptBuilder{}
 	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{CWD: "/test/cwd"})
 	if !ok {
 		t.Fatal("BuildPrompt returned ok=false")
@@ -150,6 +151,28 @@ func TestBuildPromptNilContext(t *testing.T) {
 		t.Error("prompt renders Tools with nil context")
 	}
 }
+
+// TestBuildPromptNoDate pins the Environment block without the date: it is the one
+// self-moving byte the prompt used to carry, and its absence is what makes the built
+// prompt a pure function of the fold (a warm prefix survives midnight).
+func TestBuildPromptNoDate(t *testing.T) {
+	b := NewPromptBuilder(&core.Context{})
+	prompt, ok := b.BuildPrompt(context.Background(), core.PromptBuildOptions{CWD: "/test/cwd"})
+	if !ok {
+		t.Fatal("BuildPrompt returned ok=false")
+	}
+	if dateLine.MatchString(prompt) {
+		t.Errorf("prompt still carries a Date line:\n%s", prompt)
+	}
+	if dateAnywhere.MatchString(prompt) {
+		t.Errorf("prompt carries a calendar date, so the prefix root is not fold-stable:\n%s", prompt)
+	}
+}
+
+var (
+	dateLine     = regexp.MustCompile(`(?m)^Date: `)
+	dateAnywhere = regexp.MustCompile(`\b\d{4}-\d{2}-\d{2}\b`)
+)
 
 // TestBuildPromptFoldedGuidelines pins the guideline half of the prose law: a line that
 // names a folded capability never renders, and the opening posture stops claiming tools
@@ -275,5 +298,55 @@ func TestDefaultBuilderRendersEachGuidelineOnce(t *testing.T) {
 	}
 	if strings.Contains(sys.Content, "## Extension Guidelines") {
 		t.Errorf("default builder still gets an extension-guidelines block appended:\n%s", sys.Content)
+	}
+}
+
+// TestPromptStableAcrossDays pins the arc's claim end to end: the same fold through the
+// loop on two different days yields a byte-identical system prompt. Only the day's first
+// user message moves, and it is message content - so no midnight invalidates the prefix.
+func TestPromptStableAcrossDays(t *testing.T) {
+	b := NewPromptBuilder(&core.Context{})
+	build := func(day time.Time) (string, string) {
+		provider := agent.NewFakeProvider("test",
+			core.ResponseChunk{Type: "response_chunk", Content: "ok"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		)
+		ctx := agent.WithDateStampClock(context.Background(), func() time.Time { return day })
+		events := make(chan core.Event, 64)
+		go func() {
+			defer close(events)
+			loop.Loop{}.Run(ctx, agent.LoopOptions{
+				Provider:      provider,
+				Messages:      []core.Message{core.NewUser("hi")},
+				PromptBuilder: b,
+				Events:        events,
+			})
+		}()
+		for range events {
+		}
+		if len(provider.LastMessages) == 0 {
+			t.Fatal("the provider saw no messages")
+		}
+		sys, ok := provider.LastMessages[0].(core.System)
+		if !ok {
+			t.Fatalf("first message = %T, want core.System", provider.LastMessages[0])
+		}
+		user, ok := provider.LastMessages[len(provider.LastMessages)-1].(core.User)
+		if !ok {
+			t.Fatalf("last message = %T, want core.User", provider.LastMessages[len(provider.LastMessages)-1])
+		}
+		return sys.Content, user.Content
+	}
+
+	day1, user1 := build(time.Date(2026, 11, 23, 23, 58, 0, 0, time.UTC))
+	day2, user2 := build(time.Date(2026, 11, 24, 0, 2, 0, 0, time.UTC))
+	if day1 != day2 {
+		t.Errorf("system prompt moved across midnight - the prefix is not fold-stable:\n--- day 1 ---\n%s\n--- day 2 ---\n%s", day1, day2)
+	}
+	if !strings.HasPrefix(user1, "[2026-11-23] hi") {
+		t.Errorf("day 1 message = %q, want the day-1 stamp", user1)
+	}
+	if !strings.HasPrefix(user2, "[2026-11-24] hi") {
+		t.Errorf("day 2 message = %q, want the day-2 stamp", user2)
 	}
 }

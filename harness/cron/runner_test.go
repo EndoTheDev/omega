@@ -23,6 +23,16 @@ func newTestRunner(t *testing.T, home string, jobs ...Job) *Runner {
 	return r
 }
 
+// stampedPrompt reports whether content is the day-stamped form of prompt: a fire's
+// first synthetic user turn carries [YYYY-MM-DD] like any other day's first message.
+func stampedPrompt(content, prompt string) bool {
+	if !strings.HasSuffix(content, prompt) {
+		return false
+	}
+	head := content[:len(content)-len(prompt)]
+	return len(head) == len("[2006-01-02] ") && head[0] == '[' && strings.HasSuffix(head, "] ")
+}
+
 // fakeMemory records Add calls (core.MemoryProvider).
 type fakeMemory struct {
 	mu    sync.Mutex
@@ -287,7 +297,8 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 		core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
 	}
 	// WithDelay spaces the scripted events so the phase meters measure real wall-clock.
-	r.ag = agent.NewAgent(agent.NewFakeProviderScripts("test", script, final).WithDelay(5*time.Millisecond), map[string]core.Tool{
+	prov := agent.NewFakeProviderScripts("test", script, final).WithDelay(5 * time.Millisecond)
+	r.ag = agent.NewAgent(prov, map[string]core.Tool{
 		"nop": {
 			Description: "test no-op",
 			Run:         func(_ context.Context, _ map[string]any) (string, error) { return "ok", nil },
@@ -315,8 +326,19 @@ func TestFirePersistsSessionAndState(t *testing.T) {
 	if len(msgs) != 4 {
 		t.Fatalf("want prompt+assistant+result+answer persisted, got %d messages", len(msgs))
 	}
-	if u, ok := msgs[0].(core.User); !ok || u.Content != "hello" {
+	if u, ok := msgs[0].(core.User); !ok || !stampedPrompt(u.Content, "hello") {
 		t.Fatalf("first message not the prompt: %v", msgs[0])
+	}
+	// The history law: the row read back from the store is byte-identical to the message
+	// the model saw, stamp included.
+	sawUser := ""
+	for _, m := range prov.LastMessages {
+		if u, ok := m.(core.User); ok {
+			sawUser = u.Content
+		}
+	}
+	if got := msgs[0].(core.User).Content; sawUser != got {
+		t.Fatalf("wire user message = %q, store row = %q - the stamp did not survive read-back", sawUser, got)
 	}
 	a, isAssistant := msgs[1].(core.Assistant)
 	if !isAssistant || len(a.ToolCalls) != 1 {

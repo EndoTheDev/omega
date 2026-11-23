@@ -152,6 +152,11 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 	sessionID := agent.SessionIDFromContext(ctx)
 	yieldReady := opts.YieldLedger != nil && opts.YieldWake != nil && sessionID != ""
 
+	// The day's first user message carries the date: the stamp lands on the arriving
+	// message before persistence, so the fold keeps it byte-identically and the system
+	// prompt carries no clock at all.
+	messages, ctx = stampDayInput(ctx, messages, sessionID)
+
 	// Turn-copy persistence: the run's new input persists here first, then each assistant
 	// message. A sink without input persists turns only. Persistence failures log and move on -
 	// a dead store never kills a live run.
@@ -546,6 +551,11 @@ func deliverSteers(ctx context.Context, opts agent.LoopOptions, sink agent.TurnS
 			}
 			// No row at all: the ledger settled before a placeholder ever materialized, so
 			// appending is what answers the call - and the only thing that can.
+		}
+		if u, ok := d.Message.(core.User); ok {
+			// A steer is an arriving user message too: the first one of a new day carries
+			// the date, and the stamped copy is what the transcript keeps.
+			d.Message = agent.StampUserDay(ctx, agent.SessionIDFromContext(ctx), messages, u)
 		}
 		messages = append(messages, d.Message)
 		persistTurnMessage(ctx, sink, opts.Logger, d.Message, "steer")

@@ -17,7 +17,6 @@ Project rules live here.
 CWD: /test/cwd
 OS: <env>
 Shell: <env>
-Date: <date>
 
 Tone: direct.
 Stay terse.

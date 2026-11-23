@@ -8,6 +8,7 @@ package loop
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -98,7 +99,9 @@ func TestGateCallHandsTheConversation(t *testing.T) {
 	for _, m := range convo {
 		switch msg := m.(type) {
 		case core.User:
-			if msg.Content == "go" {
+			// The day's first user message carries the date stamp: the gate reads the
+			// human's words, not a fixed prefix.
+			if strings.HasSuffix(msg.Content, "go") {
 				sawUser = true
 			}
 		case core.Assistant:
