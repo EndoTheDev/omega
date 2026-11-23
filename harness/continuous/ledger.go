@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
-	"github.com/EndoTheDev/omega/harness/datadir"
 
 	_ "modernc.org/sqlite"
 )
@@ -52,10 +51,6 @@ func OpenLedger(dataDir string) (*Ledger, error) {
 		return nil, err
 	}
 	return l, nil
-}
-
-func OpenLedgerForHome(home string) (*Ledger, error) {
-	return OpenLedger(datadir.Dir(home))
 }
 
 func (l *Ledger) migrate() error {
@@ -111,12 +106,6 @@ func (l *Ledger) List(ctx context.Context, runID string) ([]record, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
-}
-
-func (l *Ledger) Count(ctx context.Context) (int, error) {
-	var n int
-	err := l.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM evidence`).Scan(&n)
-	return n, err
 }
 
 // All returns every ledger row, id order (append order) preserved. The caller caps what
