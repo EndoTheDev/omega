@@ -32,6 +32,11 @@
           tokens.
         </p>
         <p
+          v-if="notice"
+          class="ms-notice">
+          {{ notice }}
+        </p>
+        <p
           v-if="error"
           class="ms-error"
           role="alert">{{ error }}</p>
@@ -53,7 +58,7 @@
           <button
             type="button"
             class="ms-compact"
-            :disabled="busy"
+            :disabled="busy || !!notice"
             @click="$emit('compact')">
             {{ busy ? "compacting..." : "compact and switch" }}
           </button>
@@ -76,6 +81,8 @@
     /** a compact is in flight: every outcome waits for it */
     busy?: boolean;
     error?: string;
+    /** the compact ran but freed too little: the switch is held, the numbers refreshed */
+    notice?: string;
   }>();
 
   defineEmits<{
@@ -107,6 +114,12 @@
     margin: 0 0 12px;
     font-size: 12px;
     color: var(--err);
+  }
+  .ms-notice {
+    margin: 0 0 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-dim);
   }
   .ms-anyway,
   .ms-compact {

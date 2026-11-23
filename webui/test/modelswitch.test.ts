@@ -53,7 +53,10 @@ describe("the trigger: only a smaller window prompts", () => {
 });
 
 describe("the three outcomes", () => {
-  function io(log: string[], opts?: { failCompact?: boolean }): ModelSwitchIO {
+  function io(
+    log: string[],
+    opts?: { failCompact?: boolean; after?: { tokens: number; context_window: number } | null },
+  ): ModelSwitchIO {
     return {
       compact: async () => {
         log.push("compact");
@@ -61,20 +64,39 @@ describe("the three outcomes", () => {
         return "compacted this conversation - 12 rows folded";
       },
       receipt: (line) => log.push(`receipt:${line}`),
+      probe: async () => {
+        log.push("probe");
+        return opts?.after ?? null;
+      },
       apply: () => log.push("apply"),
     };
   }
 
-  it("compact and switch: the receipt lands BEFORE the switch", async () => {
+  it("compact and switch: the receipt lands BEFORE the switch, after the re-probe", async () => {
     const log: string[] = [];
-    const out = await runModelSwitchChoice("compact", io(log));
+    const out = await runModelSwitchChoice(
+      "compact",
+      io(log, { after: { tokens: 4000, context_window: 8192 } }),
+    );
     assert.deepEqual(log, [
       "compact",
       "receipt:compacted this conversation - 12 rows folded",
+      "probe",
       "apply",
     ]);
     assert.equal(out.applied, true);
     assert.match(out.receipt ?? "", /compacted/);
+  });
+
+  it("a compact that frees too little HOLDS the switch and reports the overflow", async () => {
+    const log: string[] = [];
+    const out = await runModelSwitchChoice(
+      "compact",
+      io(log, { after: { tokens: 12000, context_window: 8192 } }),
+    );
+    assert.deepEqual(log, ["compact", "receipt:compacted this conversation - 12 rows folded", "probe"]);
+    assert.equal(out.applied, false);
+    assert.deepEqual(out.stillOver, { tokens: 12000, window: 8192, loss: 3808 });
   });
 
   it("switch anyway: applies, never compacts", async () => {
@@ -119,6 +141,11 @@ describe("the wiring (SFC source pins)", () => {
   it("the compact rides the existing /compact path", () => {
     assert.match(chatTab, /dispatchCommand\("\/compact", "", id\)/, "one compact door");
     assert.match(chatTab, /receipt: \(line\)/, "the receipt is landed, not dropped");
+  });
+
+  it("the compact is re-probed, and a short compact HOLDS the switch", () => {
+    assert.match(chatTab, /probe: async \(\) =>/, "the tab re-reads the context after the compact");
+    assert.match(chatTab, /result\.stillOver/, "the overflow keeps the dialog up");
   });
 
   it("the dialog is a modal alertdialog with exactly three outcomes", () => {

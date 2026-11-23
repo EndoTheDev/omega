@@ -49,20 +49,31 @@ export interface ModelSwitchIO {
   apply(): void;
   /** land the receipt where the user reads it */
   receipt?(line: string): void;
+  /**
+   * re-read the live context AFTER the compact and BEFORE the switch lands. A compact
+   * that folded nothing (a single giant turn, compaction off) resolves a receipt but
+   * frees no room - without this read the "compact and switch" click would truncate
+   * silently, the exact outcome the dialog exists to prevent.
+   */
+  probe?(): Promise<ContextProbe | null>;
 }
 
 export interface ModelSwitchResult {
   applied: boolean;
   receipt?: string;
   error?: string;
+  /** the compact landed but the context still overflows: the switch is HELD */
+  stillOver?: { tokens: number; window: number; loss: number };
 }
 
 /**
  * runModelSwitchChoice performs one of the three dialog outcomes. A failed compact NEVER
  * applies the switch: the context did not shrink, so switching would be exactly the
  * silent truncation the dialog exists to prevent - the error goes back to the dialog
- * instead. "compact" resolves only after the receipt exists, so the receipt always lands
- * before the switch takes effect.
+ * instead. A compact that ran but freed too little holds the switch the same way and
+ * reports the remaining overflow, leaving "switch anyway" as the user's explicit door.
+ * "compact" resolves only after the receipt exists, so the receipt always lands before
+ * the switch takes effect.
  */
 export async function runModelSwitchChoice(
   choice: ModelSwitchChoice,
@@ -80,6 +91,17 @@ export async function runModelSwitchChoice(
     return { applied: false, error: e instanceof Error ? e.message : String(e) };
   }
   io.receipt?.(receipt);
+  if (io.probe) {
+    const after = await io.probe();
+    const plan = planModelSwitch(after);
+    if (plan.kind === "prompt") {
+      return {
+        applied: false,
+        receipt,
+        stillOver: { tokens: plan.tokens, window: plan.window, loss: plan.loss },
+      };
+    }
+  }
   io.apply();
   return { applied: true, receipt };
 }

@@ -160,6 +160,7 @@
       :loss="pendingSwitch.loss"
       :busy="switchBusy"
       :error="switchError"
+      :notice="switchNotice"
       @compact="chooseModelSwitch('compact')"
       @anyway="chooseModelSwitch('anyway')"
       @cancel="closeModelSwitch" />
@@ -325,6 +326,7 @@
   const pendingSwitch = ref<PendingSwitch | null>(null);
   const switchBusy = ref(false);
   const switchError = ref("");
+  const switchNotice = ref("");
   let switchProbeSeq = 0;
 
   function applyModel(v: string) {
@@ -354,6 +356,7 @@
       return;
     }
     switchError.value = "";
+    switchNotice.value = "";
     pendingSwitch.value = {
       value: v,
       tokens: plan.tokens,
@@ -366,6 +369,7 @@
   function closeModelSwitch() {
     pendingSwitch.value = null;
     switchError.value = "";
+    switchNotice.value = "";
     modelSwitchDialogOpen.value = false;
   }
 
@@ -373,6 +377,8 @@
     if (!pendingSwitch.value || switchBusy.value) return;
     switchBusy.value = true;
     switchError.value = "";
+    switchNotice.value = "";
+    const target = pendingSwitch.value.value;
     const result = await runModelSwitchChoice(choice, {
       compact: async () => {
         const id = sessionId.value;
@@ -386,12 +392,35 @@
           state.value.statusLine = line || "compacted this conversation";
         }
       },
-      apply: () => applyModel(pendingSwitch.value!.value),
+      // a compact that folded nothing still resolves a receipt - read the context again
+      // so the switch is HELD instead of truncating silently
+      probe: async () => {
+        const id = sessionId.value;
+        if (!id) return null;
+        try {
+          return await fetchSessionContext(id, target);
+        } catch {
+          return null;
+        }
+      },
+      apply: () => applyModel(target),
     });
     switchBusy.value = false;
-    if (!result.applied && result.error) {
-      switchError.value = `compact failed: ${result.error}`;
-      return;
+    if (!result.applied) {
+      if (result.error) {
+        switchError.value = `compact failed: ${result.error}`;
+        return;
+      }
+      if (result.stillOver) {
+        pendingSwitch.value = {
+          value: target,
+          tokens: result.stillOver.tokens,
+          window: result.stillOver.window,
+          loss: result.stillOver.loss,
+        };
+        switchNotice.value = "the compact freed too little - the context still overflows. switch anyway accepts the loss, or cancel.";
+        return;
+      }
     }
     closeModelSwitch();
   }
