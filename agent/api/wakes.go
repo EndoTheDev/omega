@@ -65,7 +65,8 @@ func (h *wakeHub) pop(sessionID string) (core.YieldResult, bool) {
 	return res, true
 }
 
-// dropQueued throws away every queued result for the home and reports how many it.
+// dropQueued throws away every queued result for the home and reports how many it
+// dropped.
 func (h *wakeHub) dropQueued(sessionID string) int {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -72,6 +72,10 @@ type Server struct {
 
 	titleModel string
 
+	// newSessionID mints the /sessions and /chat auto-create ids. Nil = agent.NewSessionID;
+	// a test swaps it to force the mint-failure path.
+	newSessionID func() (string, error)
+
 	defaultWorkspace string
 
 	wsMu sync.Mutex
@@ -383,9 +387,9 @@ func (s *Server) SetDefaultWorkspace(dir string) {
 	s.wsMu.Unlock()
 }
 
-// refuseWorkspace keeps the previous default workspace and logs why the submitted one.
-// The logger seam may be nil (no logging capsule) - the value is intact either way, the
-// log line is the audit trail.
+// refuseWorkspace keeps the previous default workspace and logs why the submitted one
+// was refused. The logger seam may be nil (no logging capsule) - the value is intact
+// either way, the log line is the audit trail.
 func (s *Server) refuseWorkspace(dir, why string) {
 	s.wsMu.Lock()
 	prev := s.defaultWorkspace
@@ -423,6 +427,13 @@ func GetOnly(w http.ResponseWriter, r *http.Request) bool { return getOnly(w, r)
 // WriteSettingsJSON is the exported seam for the no-store settings payloads.
 func WriteSettingsJSON(w http.ResponseWriter, payload any) { writeSettingsJSON(w, payload) }
 
+// unknownContextWindow is the context_window GET /models reports for a model whose
+// provider cannot answer (keypool, ollama-cloud). It is core.ModelInfo's own unknown (0),
+// never a guess: the picker keeps its own size on a falsy window, so a 128k model no
+// longer reads as a fabricated 32k. The loop's fallback (agent.DefaultContextWindow)
+// belongs to the budget, where compaction.context_window can override it.
+const unknownContextWindow = 0
+
 func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -456,9 +467,10 @@ func (s *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		s.ctxWindow[name] = window
 		s.ctxMu.Unlock()
 	}
-	// ponytail: keypool/ollama-cloud providers cannot report a context window, so fall.
+	// A provider that cannot report a context window (keypool, ollama-cloud) leaves the
+	// probe at 0, so fall back to the unknown sentinel rather than invent a number.
 	if window <= 0 {
-		window = 32768
+		window = unknownContextWindow
 	}
 	w.Header().Set("Content-Type", "application/json")
 	out := map[string]any{
@@ -654,7 +666,8 @@ type assistantRecord struct {
 	callStarts map[string]time.Time
 }
 
-// streamUsage totals the real provider-reported usage across every StreamEnd of one.
+// streamUsage totals the real provider-reported usage across every StreamEnd of one
+// /chat run.
 type streamUsage struct {
 	prompt     int
 	completion int
@@ -874,13 +887,9 @@ func (s *Server) prepareRun(ctx context.Context, req *chatRequest, incoming []co
 	return &chatPrepare{run: run, prov: prov, messages: messages, tools: tools, queued: queuedLead}, nil
 }
 
-// wakeLaunchCount reports how many wake runs this server has launched for the home - an
-// event record, never a sampled state. A wake run's live slot on the boot-recovery path
-// measures 2-4ms (100 boots, loaded machine), shorter than the 10ms poll interval the
-// tests used to use and far shorter than the 30s bound the wait had: polling
-// s.runs.active for the launch therefore missed the run entirely whenever the test
-// goroutine was descheduled after NewServer returned, and the deadline - not the launch
-// - decided the verdict.
+// wakeLaunchCount is a test seam, not a production read: a wake run's live slot on the
+// boot-recovery path lasts 2-4ms, too short to poll s.runs.active for, so tests count
+// launches here instead of racing the slot.
 func (s *Server) wakeLaunchCount(sessionID string) int {
 	s.wakeMu.Lock()
 	defer s.wakeMu.Unlock()
@@ -976,10 +985,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if s.store != nil && req.SessionID == "" {
-		id, err := agent.NewSessionID()
+		id, err := s.mintSessionID()
 		if err != nil {
-			// same fallback POST /sessions uses - crypto/rand never fails on supported.
-			id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+			http.Error(w, "mint session id: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 		// Born-pin: the draft intent resolves BEFORE the row write.
 		var wsDir string
@@ -1484,10 +1493,11 @@ func (s *Server) persistAssistant(ctx context.Context, prov agent.Provider, req 
 		}
 	}
 	if lastContent != "" {
-		// Detached: the title call is a second agent run, and running it in the request.
-		// ponytail: two rapid first-exchanges can interleave provisional and final writes -
-		// both go through SetSessionTitle guards and last write still wins on the label, an
-		// acceptable cosmetic race at single-user load.
+		// Detached: the title call is a second agent run, and running it in the request
+		// path starved a back-to-back /chat for up to 240s. Two rapid first-exchanges can
+		// interleave provisional and final writes - both go through SetSessionTitle's
+		// state-machine guard and last write wins on the label, an accepted cosmetic race
+		// at single-user load.
 		if sess, err := s.store.GetSession(ctx, req.SessionID); err == nil && sess.TitleState <= 1 {
 			go s.maybeTitleSession(context.WithoutCancel(ctx), prov, req, lastContent, true)
 		}
@@ -1580,6 +1590,14 @@ func truncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
+// mintSessionID is the /sessions id source: agent.NewSessionID unless a test pinned one.
+func (s *Server) mintSessionID() (string, error) {
+	if s.newSessionID != nil {
+		return s.newSessionID()
+	}
+	return agent.NewSessionID()
+}
+
 // handleSessionCreate serves POST /sessions.
 func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	if s.store == nil {
@@ -1597,10 +1615,10 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if req.ID == "" {
-			id, err := agent.NewSessionID()
+			id, err := s.mintSessionID()
 			if err != nil {
-				// ponytail: crypto/rand never fails on supported platforms.
-				id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+				http.Error(w, "mint session id: "+err.Error(), http.StatusInternalServerError)
+				return
 			}
 			req.ID = id
 		}

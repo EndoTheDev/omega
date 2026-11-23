@@ -215,7 +215,8 @@ func (h *RunHub) firstActive() (string, bool) {
 	return first, first != ""
 }
 
-// tailSnapshot returns the session's live run's transcript tail and the instant it.
+// tailSnapshot returns the session's live run's transcript tail and the instant it was
+// built.
 func (h *RunHub) tailSnapshot(id string) ([]transcriptItem, time.Time, bool) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

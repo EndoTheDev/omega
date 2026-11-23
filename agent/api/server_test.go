@@ -233,6 +233,114 @@ func TestModels(t *testing.T) {
 	}
 }
 
+// noWindowProvider reports no context window: the keypool/ollama-cloud shape.
+type noWindowProvider struct{ modelName string }
+
+func (p *noWindowProvider) ModelName() string                       { return p.modelName }
+func (p *noWindowProvider) SetThinkingLevel(string)                 {}
+func (p *noWindowProvider) WithModel(m string) agent.Provider       { return &noWindowProvider{modelName: m} }
+func (p *noWindowProvider) WithThinkingLevel(string) agent.Provider { return p }
+func (p *noWindowProvider) ListModels() ([]string, error)           { return []string{p.modelName}, nil }
+func (p *noWindowProvider) ModelInfo() (llm.ModelInfo, error)       { return llm.ModelInfo{}, nil }
+func (p *noWindowProvider) Stream(context.Context, []core.Message, []llm.ToolSchema) <-chan core.ProviderStreamEvent {
+	ch := make(chan core.ProviderStreamEvent)
+	close(ch)
+	return ch
+}
+
+// TestModelsUnknownContextWindow: a provider that cannot report a window answers the
+// named unknown sentinel, never a fabricated 32k the picker would show as truth.
+func TestModelsUnknownContextWindow(t *testing.T) {
+	a := agent.NewAgent(&noWindowProvider{modelName: "silent-window"}, nil, 0)
+	a.SetLoopProvider(testLoop{})
+	s := NewServer(a, nil, nil, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/models", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		ContextWindow *int `json:"context_window"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.ContextWindow == nil {
+		t.Fatal("context_window missing from the /models payload")
+	}
+	if *body.ContextWindow != unknownContextWindow {
+		t.Fatalf("context_window = %d, want the unknown sentinel %d", *body.ContextWindow, unknownContextWindow)
+	}
+}
+
+// TestSessionCreateMintFailure: a failed id mint refuses the create with a 500 and writes
+// no row - never a predictable fallback id at the trust boundary. The seam is the only way
+// to reach the path: the platform CSPRNG behind agent.NewSessionID does not fail on its own.
+func TestSessionCreateMintFailure(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	s.newSessionID = func() (string, error) { return "", fmt.Errorf("entropy source failed") }
+
+	rec := httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader("{}")))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body: %s)", rec.Code, rec.Body.String())
+	}
+	rows, err := st.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("mint failure wrote %d session rows, want 0", len(rows))
+	}
+
+	// The same seam's happy path still creates the row the minter named.
+	s.newSessionID = func() (string, error) { return "minted-by-seam", nil }
+	rec = httptest.NewRecorder()
+	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/sessions", strings.NewReader("{}")))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if _, err := st.GetSession(context.Background(), "minted-by-seam"); err != nil {
+		t.Fatalf("minted session not in the store: %v", err)
+	}
+}
+
+// TestChatAutoCreateMintFailure: the /chat empty-id lane mints its id at the same trust
+// boundary as POST /sessions - a failed mint refuses the request with a 500 before any row
+// write, never a predictable fallback id.
+func TestChatAutoCreateMintFailure(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	s.newSessionID = func() (string, error) { return "", fmt.Errorf("entropy source failed") }
+
+	body, _ := json.Marshal(map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	rec := postChatBody(s, body)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mint session id") {
+		t.Fatalf("body = %q, want the mint failure named", rec.Body.String())
+	}
+	rows, err := st.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("mint failure wrote %d session rows, want 0", len(rows))
+	}
+
+	// The same seam's happy path still creates the row the minter named and runs the turn.
+	s.newSessionID = func() (string, error) { return "chat-minted", nil }
+	rec = postChatBody(s, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if _, err := st.GetSession(context.Background(), "chat-minted"); err != nil {
+		t.Fatalf("the auto-created session is not in the store: %v", err)
+	}
+}
+
 // capsProvider is mockProvider with the ListModelEntries upgrade.
 type capsProvider struct {
 	*mockProvider

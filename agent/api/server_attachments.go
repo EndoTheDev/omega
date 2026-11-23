@@ -27,10 +27,11 @@ const maxChatFileBytes = maxChatImageBytes
 // uploadsDirName is the folder inside an omega home that holds every uploaded.
 const uploadsDirName = "uploads"
 
-// pendingDirName is the staging folder for a draft chat, whose upload happens.
+// pendingDirName is the staging folder for a draft chat, whose upload happens before any
+// session id exists.
 const pendingDirName = "_pending"
 
-// uploadsRoot resolves <home>/uploads, the tree every attachment lands.
+// uploadsRoot resolves <home>/uploads, the tree every attachment lands in.
 func uploadsRoot() string {
 	if d := os.Getenv("OMEGA_UPLOADS_DIR"); d != "" {
 		return filepath.Clean(d)

@@ -421,7 +421,8 @@ func omegaHome() string {
 	return canonPath(homeForExe(os.Getenv("OMEGA_HOME"), exePath, userHome))
 }
 
-// resolveConfigPath returns the --config value, or the home config.yaml when it.
+// resolveConfigPath returns the --config value, or the home config.yaml when it exists,
+// or "" to skip YAML entirely.
 func resolveConfigPath(flagPath string) string {
 	if flagPath != "" {
 		return flagPath

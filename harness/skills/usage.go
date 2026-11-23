@@ -73,17 +73,11 @@ func writeUsageLocked(dir string, m map[string]UsageRecord) {
 	if err := os.MkdirAll(filepath.Dir(usageFile(dir)), 0o755); err != nil {
 		return
 	}
-	data, err := json.MarshalIndent(sortedUsage(m), "", "  ")
+	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return
 	}
 	_ = os.WriteFile(usageFile(dir), data, 0o644)
-}
-
-// sortedUsage renders the map through a name-sorted shim so the file diffs.
-func sortedUsage(m map[string]UsageRecord) map[string]UsageRecord {
-	// json.Marshal already sorts map keys alphabetically in Go.
-	return m
 }
 
 // TouchUsage records one activity on a skill: kind "read" bumps use_count + last_used,

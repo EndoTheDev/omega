@@ -459,7 +459,8 @@ type wakeTickPayload struct {
 
 // fireAgentWake is the agent-wake fire body. The error return feeds the fire's
 // last-status record: nil tickEmit = the continuous capsule is toggled off - the tick
-// lands on an empty spine, the wake goes inert (the log names it), the schedule stays.
+// lands on an empty spine, the wake goes inert (the log names it), the schedule keeps
+// its own cadence.
 func (r *Runner) fireAgentWake(job Job, target string, key string) error {
 	if r.tickEmit == nil {
 		r.logf("wake %s: continuous not mounted, wake inert", key)

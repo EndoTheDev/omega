@@ -456,7 +456,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 	// an event can NEVER be delivered to the host before the observers saw it. The
 	// session-attributed subscribers ride the same forward goroutine: the run's session id
 	// is already settled above (the attribution default), so this is the one place a
-	// consumer can learn WHICH conversation an event belongs.
+	// consumer can learn WHICH conversation an event belongs to.
 	obs := a.eventObservers()
 	sessObs := a.sessionEventObservers()
 	if len(obs) > 0 || len(sessObs) > 0 {

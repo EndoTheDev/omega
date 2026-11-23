@@ -256,7 +256,7 @@ func (r *themeRegistry) Stop() {
 }
 
 // handleThemes serves GET /themes. Broken themes ride along flagged with Error; the
-// picker shows only the good ones and the server never falls.
+// picker shows only the good ones and the server never falls over.
 func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -266,7 +266,7 @@ func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	// (a theme edited a second ago), never a cached list.
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
-	_ = json.NewEncoder(w).Encode(map[string]any{"themes": s.themes.snapshot()}) // best-effort read response
+	_ = json.NewEncoder(w).Encode(map[string]any{"themes": s.themes.snapshot()})
 }
 
 // fingerprintEqual compares two mtime maps.
