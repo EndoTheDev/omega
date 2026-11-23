@@ -230,3 +230,94 @@ func TestWritableConfigFileRefusals(t *testing.T) {
 		t.Fatalf("json source: got %v, want the mcp.json refusal", err)
 	}
 }
+
+// A save that carries the read mask back keeps the stored secret: the panel edit that
+// never touches an env value cannot erase it.
+func TestUpsertKeepsMaskedSecrets(t *testing.T) {
+	_, path := seedHome(t, "mcp.yaml", entriesSeed)
+	if err := upsertServerEntry(path, serverConfig{
+		Name:    "local",
+		Command: "/bin/echo",
+		Args:    []string{"hi"},
+		Env:     map[string]string{"TOKEN": "s3cret", "EMPTY": ""},
+	}); err != nil {
+		t.Fatalf("seed entry: %v", err)
+	}
+
+	if err := upsertServerEntry(path, serverConfig{
+		Name:    "local",
+		Command: "/bin/echo2",
+		Args:    []string{"hi"},
+		Env:     map[string]string{"TOKEN": maskedValue, "EMPTY": ""},
+	}); err != nil {
+		t.Fatalf("masked save: %v", err)
+	}
+
+	cfg, _, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	var local *serverConfig
+	for i := range cfg.Servers {
+		if cfg.Servers[i].Name == "local" {
+			local = &cfg.Servers[i]
+		}
+	}
+	if local == nil {
+		t.Fatalf("local entry lost: %+v", cfg.Servers)
+	}
+	if local.Command != "/bin/echo2" {
+		t.Fatalf("command: %q, want the edited value", local.Command)
+	}
+	if got := local.Env["TOKEN"]; got != "s3cret" {
+		t.Fatalf("env TOKEN: %q, want the stored secret kept", got)
+	}
+	if got, ok := local.Env["EMPTY"]; !ok || got != "" {
+		t.Fatalf("env EMPTY: %q (present=%v), want the empty value kept", got, ok)
+	}
+}
+
+func TestUpsertMaskWithoutStoredValueIsRefused(t *testing.T) {
+	_, path := seedHome(t, "mcp.yaml", entriesSeed)
+	before := readFileString(t, path)
+	cases := []serverConfig{
+		// a header mask on an entry whose file carries no headers
+		{Name: "docs", URL: "http://127.0.0.1:9/mcp", Headers: map[string]string{"Authorization": maskedValue}},
+		// an env mask on an entry that does not exist yet
+		{Name: "fresh", Command: "/bin/echo", Env: map[string]string{"TOKEN": maskedValue}},
+	}
+	for _, sc := range cases {
+		err := upsertServerEntry(path, sc)
+		if err == nil || !strings.Contains(err.Error(), "no value to keep") {
+			t.Fatalf("upsert %q with a mask: got %v, want the refusal", sc.Name, err)
+		}
+	}
+	if after := readFileString(t, path); after != before {
+		t.Fatalf("a refused masked save touched the file:\n%s", after)
+	}
+}
+
+func TestUpsertMaskedHeaderResolvesAndReplaces(t *testing.T) {
+	_, path := seedHome(t, "mcp.yaml", entriesSeed)
+	if err := upsertServerEntry(path, serverConfig{
+		Name:    "docs",
+		URL:     "http://127.0.0.1:9/mcp",
+		Headers: map[string]string{"Authorization": "Bearer s3cret"},
+	}); err != nil {
+		t.Fatalf("seed header: %v", err)
+	}
+	if err := upsertServerEntry(path, serverConfig{
+		Name:    "docs",
+		URL:     "http://127.0.0.1:9/mcp2",
+		Headers: map[string]string{"Authorization": maskedValue, "X-Fresh": "v"},
+	}); err != nil {
+		t.Fatalf("masked header save: %v", err)
+	}
+	text := readFileString(t, path)
+	if !strings.Contains(text, "Authorization: Bearer s3cret") {
+		t.Fatalf("stored header not kept:\n%s", text)
+	}
+	if !strings.Contains(text, "X-Fresh: v") {
+		t.Fatalf("new header not written:\n%s", text)
+	}
+}

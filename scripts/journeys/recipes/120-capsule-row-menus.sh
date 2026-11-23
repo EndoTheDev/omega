@@ -10,8 +10,10 @@
 #                 (POST /skills/delete) which removes the seed.
 #   tools         a row menus Disable (PUT /disabled/tools) and the menu reads Enable again
 #                 once the row is off.
-#   mcp           a seeded server row menus Open / Disable / Delete. Delete unfolds the
-#                 row detail's one confirm and POST /mcp/delete empties the entry.
+#   mcp           a seeded server row menus Open / Edit / Disable / Delete. Edit opens the
+#                 entry form and saves through POST /mcp/save - the args and the masked
+#                 env token survive the edit (the lossless proof). Delete unfolds the row
+#                 detail's one confirm and POST /mcp/delete empties the entry.
 #   files         a file row menus New / Open / Copy / Copy path / Add file to chat. Open
 #                 mints the viewer tab, New opens the tab's own create form, and Copy's own
 #                 answer (copied, or refused where the page cannot reach a clipboard) lands
@@ -142,7 +144,7 @@ printf -- '---\nname: %s\ndescription: journey seed - the row menu probe\n---\nb
   "$SKILL" "$SKILL" > "$SKILL_DIR/SKILL.md" || die "seed write failed"
 
 saved=$(curl -s -X POST "$JOURNEY_BASE_URL/mcp/save" -H 'Content-Type: application/json' \
-  -d "{\"name\":\"$MCP\",\"command\":\"jrn-nonexistent-binary\"}")
+  -d "{\"name\":\"$MCP\",\"command\":\"jrn-nonexistent-binary\",\"args\":[\"--probe-arg\"],\"env\":{\"JRN_TOKEN\":\"kept-secret\"}}")
 grep -q "\"name\":\"$MCP\"" <<<"$saved" || die "POST /mcp/save did not land $MCP"
 
 created=$(curl -s -X POST "$JOURNEY_BASE_URL/tasks" -H 'Content-Type: application/json' \
@@ -264,8 +266,47 @@ wait_js "(() => [...document.querySelectorAll('.mcp-row')].some((r)=>r.innerText
 mcp_row="(() => {const row=[...document.querySelectorAll('.mcp-row')].find((r)=>r.innerText.includes('$MCP')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 right_click_js "$mcp_row"
 menu_wait "Open"
-assert_eq "$(menu_rows)" "Open|Disable|Delete" "an MCP server row menus Open, Disable and Delete"
+assert_eq "$(menu_rows)" "Open|Edit|Disable|Delete" "an MCP server row menus Open, Edit, Disable and Delete"
 step "ok: the MCP row's right-click opens the shared menu"
+
+# Edit: the entry form reads the WHOLE entry off the wire (args plain, env masked) and
+# saves it back through POST /mcp/save - the lossless proof is the token staying on disk.
+mcp_field() {
+  local label="$1" value="$2"
+  jsq "(() => {const lab=[...document.querySelectorAll('.mcp-editor-field')].find((l)=>((l.querySelector('.mcp-editor-label')||{textContent:''}).textContent.trim())==='$label'); if(!lab) return 0; const inp=lab.querySelector('input')||lab.querySelector('textarea'); if(!inp) return 0; const proto=inp.tagName==='TEXTAREA'?HTMLTextAreaElement.prototype:HTMLInputElement.prototype; const set=Object.getOwnPropertyDescriptor(proto,'value').set; set.call(inp,'$value'); inp.dispatchEvent(new Event('input',{bubbles:true})); return 1})()"
+}
+mcp_field_value() {
+  local r
+  r=$(jsq "(() => {const lab=[...document.querySelectorAll('.mcp-editor-field')].find((l)=>((l.querySelector('.mcp-editor-label')||{textContent:''}).textContent.trim())==='$1'); if(!lab) return ''; const inp=lab.querySelector('input')||lab.querySelector('textarea'); return inp?inp.value:''})()")
+  printf '%s' "${r//\"/}"
+}
+
+right_click_js "$mcp_row"
+menu_wait "Edit"
+click_row "Edit"
+wait_js '(() => {return !!document.querySelector(".mcp-editor")})()' 10 || die "the Edit row opened no entry form"
+assert_eq "$(mcp_field_value 'env (KEY=VALUE per line)')" "JRN_TOKEN=****" \
+  "the env box reads the stored key, its value masked"
+assert_eq "$(mcp_field_value 'args (one per line)')" "--probe-arg" "the args box reads the entry's args"
+step "ok: Edit opens the entry form pre-filled from the wire"
+
+assert_eq "$(mcp_field command 'jrn-edited-binary')" "1" "the command field is editable"
+jsq '(() => {const b=document.querySelector(".mcp-editor-save"); if(!b) return 0; b.click(); return 1})()' >/dev/null
+wait_js '(() => {return !document.querySelector(".mcp-editor")})()' 10 || die "the save left the entry form open"
+i=0
+edited=0
+while [ "$i" -lt 20 ]; do
+  if grep -q '"command":"jrn-edited-binary"' <<<"$(curl -s "$JOURNEY_BASE_URL/mcp/servers")"; then edited=1; break; fi
+  sleep 0.5
+  i=$((i + 1))
+done
+[ "$edited" = "1" ] || die "the entry edit never landed on the wire"
+wire=$(curl -s "$JOURNEY_BASE_URL/mcp/servers")
+grep -q '"--probe-arg"' <<<"$wire" || die "the edit dropped the entry's args"
+grep -q '"JRN_TOKEN":"' <<<"$wire" || die "the edit lost the env key"
+grep -q "JRN_TOKEN: kept-secret" "$OMEGA_HOME/config/mcp.yaml" \
+  || die "the masked save did not keep the stored token on disk"
+step "ok: the save kept the env token on disk and the args on the wire"
 
 right_click_js "$mcp_row"
 menu_wait "Open"

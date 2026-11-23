@@ -4,10 +4,11 @@ package mcp
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
 func mountPlugin(t *testing.T, p *Plugin) *core.Context {
@@ -154,5 +155,54 @@ func TestStatusRouteWithLiveServer(t *testing.T) {
 	}
 	if len(rep.Servers[0].Tools) != 1 || rep.Servers[0].Tools[0] != "proof.echo" {
 		t.Fatalf("tools: %v, want [proof.echo]", rep.Servers[0].Tools)
+	}
+}
+
+// The wire carries the whole entry so the panel can edit it: args plain (the command
+// line), env and header VALUES masked (a token never rides the read wire).
+func TestStatusWireCarriesEntryAndMasksSecrets(t *testing.T) {
+	disabled := false
+	cfg := &mcpConfig{Servers: []serverConfig{
+		{
+			Name:    "stdio",
+			Command: "/bin/echo",
+			Args:    []string{"--flag", "value"},
+			Env:     map[string]string{"TOKEN": "s3cret", "EMPTY": ""},
+			Enabled: &disabled,
+		},
+		{
+			Name:    "http",
+			URL:     "http://127.0.0.1:9/mcp",
+			Headers: map[string]string{"Authorization": "Bearer s3cret"},
+			Enabled: &disabled,
+		},
+	}}
+	b, err := NewBridge(cfg)
+	if err != nil {
+		t.Fatalf("NewBridge: %v", err)
+	}
+	rep := b.Status()
+	if len(rep.Servers) != 2 {
+		t.Fatalf("servers: got %d, want 2", len(rep.Servers))
+	}
+	stdio := rep.Servers[0]
+	if len(stdio.Args) != 2 || stdio.Args[0] != "--flag" || stdio.Args[1] != "value" {
+		t.Fatalf("args: %v, want [--flag value] plain", stdio.Args)
+	}
+	if got := stdio.Env["TOKEN"]; got != maskedValue {
+		t.Fatalf("env TOKEN: %q, want the mask", got)
+	}
+	if got, ok := stdio.Env["EMPTY"]; !ok || got != "" {
+		t.Fatalf("env EMPTY: %q (present=%v), want the empty value as itself", got, ok)
+	}
+	if got := rep.Servers[1].Headers["Authorization"]; got != maskedValue {
+		t.Fatalf("header Authorization: %q, want the mask", got)
+	}
+	raw, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "s3cret") {
+		t.Fatalf("the report carries a secret value:\n%s", raw)
 	}
 }

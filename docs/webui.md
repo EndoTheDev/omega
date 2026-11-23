@@ -290,9 +290,10 @@ the store does the rest.
   skills row menus Open (its viewer tab), Enable or Disable and Delete
   (the editor's one armed confirm); a tools row menus Enable or Disable
   and nothing else, because that is the only verb the tab owns; an MCP
-  server row menus Open (its detail), Enable or Disable and Delete (the
-  detail's one confirm - the panel has no lossless save, so it carries no
-  Edit row); a file tree row menus New (the tab's own new-node form,
+  server row menus Open (its detail), Edit (the detail's entry form, saved
+  through `POST /mcp/save` - the route the CLI rides), Enable or Disable
+  and Delete (the detail's one confirm); a file tree row menus New (the
+  tab's own new-node form,
   file mode, with the row as target) and, on a file, Open, Copy and Copy
   path through the one clipboard path, plus Add file to chat through the
   composer's own attach lane (absent without a bound chat tab), while a

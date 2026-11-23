@@ -81,29 +81,35 @@ describe("tools rows: Enable or Disable", () => {
   });
 });
 
-describe("MCP rows: Open, Enable or Disable, Delete", () => {
-  it("offers Open, the toggle and a danger Delete", () => {
-    const c = calls("open", "toggle", "remove");
+describe("MCP rows: Open, Edit, Enable or Disable, Delete", () => {
+  it("offers Open, the entry Edit, the toggle and a danger Delete", () => {
+    const c = calls("open", "edit", "toggle", "remove");
     const items = mcpMenuItems({ enabled: true }, c.deps);
-    assert.deepEqual(ids(items), ["mcp:open", "mcp:toggle", "separator", "mcp:delete"]);
-    assert.equal((items[1] as { label: string }).label, "Disable");
-    assert.equal((items[3] as { danger?: boolean }).danger, true);
+    assert.deepEqual(ids(items), [
+      "mcp:open",
+      "mcp:edit",
+      "mcp:toggle",
+      "separator",
+      "mcp:delete",
+    ]);
+    assert.equal((items[2] as { label: string }).label, "Disable");
+    assert.equal((items[4] as { danger?: boolean }).danger, true);
     fire(items);
-    assert.deepEqual(c.log, ["open", "toggle", "remove"]);
+    assert.deepEqual(c.log, ["open", "edit", "toggle", "remove"]);
   });
 
   it("reads Enable on a disabled server", () => {
-    const c = calls("open", "toggle", "remove");
+    const c = calls("open", "edit", "toggle", "remove");
     const items = mcpMenuItems({ enabled: false }, c.deps);
-    assert.equal((items[1] as { label: string }).label, "Enable");
+    assert.equal((items[2] as { label: string }).label, "Enable");
   });
 
-  it("carries no Edit row: the wire cannot round-trip args/env/headers for a save", () => {
-    const c = calls("open", "toggle", "remove");
-    const labels = mcpMenuItems({ enabled: true }, c.deps).map(
-      (e) => (e as { label?: string }).label ?? "",
-    );
-    assert.ok(!labels.includes("Edit"), "a lossy save is not offered");
+  it("Edit rides the lossless save: the wire carries the whole entry", () => {
+    const edit = read("harness", "mcp", "ui", "edit.ts");
+    assert.match(edit, /"\/mcp\/save"/, "the form POSTs the existing upsert route");
+    assert.match(edit, /env/, "the draft carries env");
+    assert.match(edit, /headers/, "the draft carries headers");
+    assert.match(edit, /args/, "the draft carries args");
   });
 });
 

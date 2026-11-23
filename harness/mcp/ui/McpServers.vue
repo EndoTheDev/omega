@@ -113,6 +113,75 @@
             v-if="openName === s.name"
             class="mcp-detail">
             <p class="mcp-detail-note">{{ MCP_DETAIL_NOTE }}</p>
+            <!--
+              THE ENTRY FORM (the menu's Edit): the whole entry comes off GET /mcp/servers,
+              so the save through POST /mcp/save cannot drop an arg or an env-carried token.
+              Name and transport are identity (the CLI's edit law): neither changes here.
+            -->
+            <div
+              v-if="editing === s.name && draft"
+              class="mcp-editor">
+              <label class="mcp-editor-field">
+                <span class="mcp-editor-label">name</span>
+                <input
+                  :value="draft.name"
+                  class="mcp-editor-input"
+                  readonly />
+              </label>
+              <template v-if="draft.transport === 'stdio'">
+                <label class="mcp-editor-field">
+                  <span class="mcp-editor-label">command</span>
+                  <input
+                    v-model="draft.command"
+                    class="mcp-editor-input" />
+                </label>
+                <label class="mcp-editor-field">
+                  <span class="mcp-editor-label">args (one per line)</span>
+                  <textarea
+                    v-model="draft.args"
+                    class="mcp-editor-input"
+                    rows="2"></textarea>
+                </label>
+                <label class="mcp-editor-field">
+                  <span class="mcp-editor-label">env (KEY=VALUE per line)</span>
+                  <textarea
+                    v-model="draft.env"
+                    class="mcp-editor-input"
+                    rows="2"></textarea>
+                </label>
+              </template>
+              <template v-else>
+                <label class="mcp-editor-field">
+                  <span class="mcp-editor-label">url</span>
+                  <input
+                    v-model="draft.url"
+                    class="mcp-editor-input" />
+                </label>
+                <label class="mcp-editor-field">
+                  <span class="mcp-editor-label">headers (key: value per line)</span>
+                  <textarea
+                    v-model="draft.headers"
+                    class="mcp-editor-input"
+                    rows="2"></textarea>
+                </label>
+              </template>
+              <p
+                v-if="editorError"
+                class="mcp-detail-error">{{ editorError }}</p>
+              <div class="mcp-editor-actions">
+                <button
+                  type="button"
+                  class="mcp-editor-save"
+                  :disabled="busy !== null"
+                  @click="saveEdit(s)">
+                  {{ busy === s.name ? "saving..." : "save entry" }}
+                </button>
+                <button
+                  type="button"
+                  class="mcp-editor-cancel"
+                  @click="cancelEdit">cancel</button>
+              </div>
+            </div>
             <p
               v-if="s.error"
               class="mcp-detail-error">{{ s.error }}</p>
@@ -146,6 +215,7 @@
   import { reloadMcpServers } from "./reload";
   import { deleteMcpServer } from "./remove";
   import { setMcpServerEnabled } from "./toggle";
+  import { draftOf, draftToBody, saveMcpServer, type McpDraft } from "./edit";
   import { openContextMenu } from "~/composables/contextMenu";
   import { mcpMenuItems } from "./mcpMenu";
   import {
@@ -188,28 +258,73 @@
   const busy = ref<string | null>(null);
 
   // the row detail (the menu's Open) is one at a time; `confirming` is the delete arm
-  // that detail carries, so a delete is never one click from a menu row.
+  // that detail carries, so a delete is never one click from a menu row. `editing` holds
+  // the one open entry form and `draft` its unsaved values.
   const openName = ref("");
   const confirming = ref("");
+  const editing = ref("");
+  const draft = ref<McpDraft | null>(null);
+  const editorError = ref("");
+
+  function openDetail(s: McpServerWire) {
+    const closing = openName.value === s.name;
+    openName.value = closing ? "" : s.name;
+    confirming.value = "";
+    if (closing || editing.value !== s.name) cancelEdit();
+  }
+
+  function startEdit(s: McpServerWire) {
+    openName.value = s.name;
+    confirming.value = "";
+    editing.value = s.name;
+    draft.value = draftOf(s);
+    editorError.value = "";
+  }
+
+  function cancelEdit() {
+    editing.value = "";
+    draft.value = null;
+    editorError.value = "";
+  }
+
+  /** The entry form's one write: POST /mcp/save answers the fresh listing, so the panel
+      re-renders from server truth. A refusal keeps the draft (and its message) on screen. */
+  async function saveEdit(s: McpServerWire): Promise<void> {
+    if (busy.value !== null || !draft.value) return;
+    const { body, error: problem } = draftToBody(draft.value);
+    if (!body) {
+      editorError.value = problem;
+      return;
+    }
+    busy.value = s.name;
+    try {
+      rows.value = serverRows(await saveMcpServer(body));
+      error.value = "";
+      openName.value = "";
+      cancelEdit();
+    } catch (e) {
+      editorError.value = e instanceof Error ? e.message : String(e);
+    } finally {
+      busy.value = null;
+    }
+  }
 
   function onToggle(s: McpServerWire) {
     if (busy.value !== null) return;
     apply(s);
   }
 
-  /** THE ROW MENU: Open unfolds the detail, Enable/Disable IS the pill, Delete arms the
-      detail's one confirm. No Edit row - see mcpMenu's header for why the panel cannot
-      offer a lossless save. */
+  /** THE ROW MENU: Open unfolds the detail, Edit unfolds the entry form, Enable/Disable IS
+      the pill, Delete arms the detail's one confirm. */
   function onRowMenu(e: MouseEvent, s: McpServerWire) {
     const items = mcpMenuItems(
       { enabled: serverEnabled(s) },
       {
-        open: () => {
-          openName.value = openName.value === s.name ? "" : s.name;
-          confirming.value = "";
-        },
+        open: () => openDetail(s),
+        edit: () => startEdit(s),
         toggle: () => onToggle(s),
         remove: () => {
+          cancelEdit();
           openName.value = s.name;
           confirming.value = s.name;
         },
@@ -479,6 +594,60 @@
     border-radius: var(--r-chip);
     padding: 1px 8px;
     cursor: pointer;
+  }
+  /* the entry form: one field per line, the name and transport fixed (identity) */
+  .mcp-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mcp-editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .mcp-editor-label {
+    font-size: 10px;
+    opacity: 0.55;
+  }
+  .mcp-editor-input {
+    font: inherit;
+    font-family: var(--mono);
+    font-size: 10.5px;
+    color: inherit;
+    background: color-mix(in srgb, currentcolor 5%, transparent);
+    border: 1px solid color-mix(in srgb, currentcolor 20%, transparent);
+    border-radius: var(--r-chip);
+    padding: 2px 6px;
+    min-width: 0;
+    resize: vertical;
+  }
+  .mcp-editor-input[readonly] {
+    opacity: 0.6;
+  }
+  .mcp-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .mcp-editor-save,
+  .mcp-editor-cancel {
+    font: inherit;
+    font-size: 10.5px;
+    color: inherit;
+    background: none;
+    border: 1px solid color-mix(in srgb, currentcolor 25%, transparent);
+    border-radius: var(--r-chip);
+    padding: 1px 8px;
+    cursor: pointer;
+  }
+  .mcp-editor-save:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .mcp-editor-save {
+    color: var(--ok);
   }
   .mcp-confirm-go:disabled {
     opacity: 0.4;

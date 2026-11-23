@@ -3,6 +3,11 @@ export interface McpServerWire {
   transport?: string;
   command?: string;
   url?: string;
+  // the whole entry rides so the panel can edit it: args plain, env and header VALUES
+  // masked (the write swaps a mask back for the stored value).
+  args?: string[];
+  env?: Record<string, string>;
+  headers?: Record<string, string>;
   connected?: boolean;
   enabled?: boolean;
   error?: string;
@@ -19,11 +24,10 @@ export const MCP_EMPTY_TEXT = "no MCP servers configured";
 export const MCP_EMPTY_HINT =
   "add a servers: array to mcp.yaml (or set MCP_SERVERS)";
 
-// the row detail's edit note: the panel owns TWO writes (the enabled flag and a delete),
-// and the entry's other keys never reach the wire - so the detail says where to edit
-// instead of pretending a form here would be lossless.
+// the row detail's edit note: Edit saves the WHOLE entry through POST /mcp/save, so the
+// detail says what a masked value means instead of letting a silent overwrite happen.
 export const MCP_DETAIL_NOTE =
-  "config: mcp.yaml - args, env and headers are authored there; this panel toggles and deletes entries";
+  "config: mcp.yaml - env and header values read as ****, a masked value is kept on save; clear the line to remove the key";
 
 export function serverEnabled(s: McpServerWire): boolean {
   return s.enabled !== false;

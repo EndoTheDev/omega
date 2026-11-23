@@ -18,15 +18,42 @@ type ServerStatus struct {
 	Transport string `json:"transport,omitempty"`
 	Command   string `json:"command,omitempty"`
 	URL       string `json:"url,omitempty"`
+	// Args rides plain; Env and Headers ride with every non-empty VALUE masked, so the
+	// panel can edit an entry without the wire (or a screenshot of it) carrying a token.
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
 	// Connected is true when a live connection survived the LIVE bridge's connect. A
 	// disabled server (Enabled false) is never connected: the toggle is a config decision,
 	// not a connect failure.
-	Connected bool `json:"connected"`
-	Enabled bool `json:"enabled"`
-	Error string `json:"error,omitempty"`
+	Connected bool   `json:"connected"`
+	Enabled   bool   `json:"enabled"`
+	Error     string `json:"error,omitempty"`
 	// Tools lists the server-qualified names ("server.mcp-tool") the bridge discovered.
 	// Unsorted source, sorted view.
 	Tools []string `json:"tools,omitempty"`
+}
+
+// maskedValue stands in for every non-empty env/header value on the read wire. POST
+// /mcp/save swaps it back for the stored value, so an edit that never touches a secret
+// cannot erase it (the settings api_key law, extended to the entry's secret maps).
+const maskedValue = "****"
+
+// maskValues renders a secret-bearing map for the wire. An empty value carries no
+// secret and rides as itself, so the editor can tell "set to nothing" from "hidden".
+func maskValues(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		if v == "" {
+			out[k] = ""
+			continue
+		}
+		out[k] = maskedValue
+	}
+	return out
 }
 
 // StatusReport is the GET /mcp/servers body.
@@ -49,6 +76,9 @@ func (b *Bridge) Status() StatusReport {
 			Name:    sc.Name,
 			Command: sc.Command,
 			URL:     sc.URL,
+			Args:    append([]string(nil), sc.Args...),
+			Env:     maskValues(sc.Env),
+			Headers: maskValues(sc.Headers),
 			Enabled: sc.isEnabled(),
 		}
 		switch {
