@@ -1,14 +1,13 @@
-// The model-switch guard. Picking a model whose context window is smaller than the live
-// context truncates the conversation, so that pick is a BLOCKING decision: compact and
-// switch / switch anyway / cancel. Pure rules only - ChatTab wires the dialog and the
-// requests, the node suite pins every branch here without a DOM.
-import { ref } from "vue";
+// The model-switch guard: a pick whose context window is smaller than the live context
+// truncates the conversation, so that pick is a BLOCKING decision. Pure rules only -
+// ChatTab wires the dialog and the requests; the node suite pins every branch here.
+import { computed, ref } from "vue";
 
 /** one server probe: GET /sessions/{id}/context?model=<slot> */
 export interface ContextProbe {
-  /** the live context size, estimated from the session's active-path wire */
+  /** live context size, estimated from the session's active-path wire */
   tokens: number;
-  /** the picked model's context window */
+  /** the picked slot's context window */
   context_window: number;
 }
 
@@ -19,10 +18,8 @@ export type ModelSwitchPlan =
   | { kind: "prompt"; tokens: number; window: number; loss: number };
 
 /**
- * planModelSwitch decides whether a pick needs the dialog. A missing probe (no session,
- * or the call failed) applies silently: nothing is measured, nothing is lost. A window of
- * 0 is the server's "provider cannot report one" answer and never triggers a prompt on
- * its own - the server floors it before it reaches here.
+ * A missing probe (no session, failed call) applies silently: nothing measured, nothing
+ * lost. A window of 0 is the server's "provider cannot report one" answer, floored there.
  */
 export function planModelSwitch(probe: ContextProbe | null): ModelSwitchPlan {
   if (
@@ -43,37 +40,32 @@ export function planModelSwitch(probe: ContextProbe | null): ModelSwitchPlan {
 export type ModelSwitchChoice = "compact" | "anyway" | "cancel";
 
 export interface ModelSwitchIO {
-  /** run the existing compact path; resolves the compact receipt line */
+  /** run the existing compact path; resolves the compact's dispatch answer */
   compact(): Promise<string>;
   /** perform the switch (the tab's update:model emit) */
   apply(): void;
-  /** land the receipt where the user reads it */
-  receipt?(line: string): void;
+  /** land the compact's answer in the pane's status line */
+  report?(line: string): void;
   /**
-   * re-read the live context AFTER the compact and BEFORE the switch lands. A compact
-   * that folded nothing (a single giant turn, compaction off) resolves a receipt but
-   * frees no room - without this read the "compact and switch" click would truncate
-   * silently, the exact outcome the dialog exists to prevent.
+   * re-read the live context after the compact. One that folded nothing frees no room,
+   * and without this read "compact and switch" would truncate exactly as silently as
+   * the bare pick the dialog exists to stop.
    */
   probe?(): Promise<ContextProbe | null>;
 }
 
 export interface ModelSwitchResult {
   applied: boolean;
-  receipt?: string;
+  report?: string;
   error?: string;
   /** the compact landed but the context still overflows: the switch is HELD */
   stillOver?: { tokens: number; window: number; loss: number };
 }
 
 /**
- * runModelSwitchChoice performs one of the three dialog outcomes. A failed compact NEVER
- * applies the switch: the context did not shrink, so switching would be exactly the
- * silent truncation the dialog exists to prevent - the error goes back to the dialog
- * instead. A compact that ran but freed too little holds the switch the same way and
- * reports the remaining overflow, leaving "switch anyway" as the user's explicit door.
- * "compact" resolves only after the receipt exists, so the receipt always lands before
- * the switch takes effect.
+ * One of the three outcomes. A failed compact never applies the switch, and a compact
+ * that freed too little holds it with the remaining overflow - "switch anyway" stays the
+ * user's explicit door. The compact's answer lands before the switch takes effect.
  */
 export async function runModelSwitchChoice(
   choice: ModelSwitchChoice,
@@ -84,30 +76,36 @@ export async function runModelSwitchChoice(
     io.apply();
     return { applied: true };
   }
-  let receipt = "";
+  let report = "";
   try {
-    receipt = await io.compact();
+    report = await io.compact();
   } catch (e) {
     return { applied: false, error: e instanceof Error ? e.message : String(e) };
   }
-  io.receipt?.(receipt);
+  io.report?.(report);
   if (io.probe) {
     const after = await io.probe();
     const plan = planModelSwitch(after);
     if (plan.kind === "prompt") {
       return {
         applied: false,
-        receipt,
+        report,
         stillOver: { tokens: plan.tokens, window: plan.window, loss: plan.loss },
       };
     }
   }
   io.apply();
-  return { applied: true, receipt };
+  return { applied: true, report };
 }
 
-/**
- * true while a model-switch dialog is up. The shell's type-to-capture gate reads it: a
- * printable key belongs to the open dialog, never to the composer behind it.
- */
-export const modelSwitchDialogOpen = ref(false);
+/** open model-switch dialogs, one per chat pane; the shell's type-to-capture gate reads >0 */
+const openDialogs = ref(0);
+export const modelSwitchDialogOpen = computed(() => openDialogs.value > 0);
+
+export function openModelSwitchDialog(): void {
+  openDialogs.value += 1;
+}
+
+export function closeModelSwitchDialog(): void {
+  openDialogs.value = Math.max(0, openDialogs.value - 1);
+}

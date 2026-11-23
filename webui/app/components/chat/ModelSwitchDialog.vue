@@ -94,8 +94,9 @@
   const dialogEl = ref<HTMLElement | null>(null);
   const short = (n: number) => formatTokens(Math.max(0, Math.round(n)));
 
-  // the dialog takes focus on open so Escape and Tab land inside it; the primary action
-  // is deliberately NOT pre-focused - Enter never compacts a conversation by accident.
+  // focus on open so Escape lands here; the primary action is NOT pre-focused, so Enter
+  // never compacts a conversation by accident. No Tab trap - the shell's other confirm
+  // dialogs leave the page reachable the same way.
   onMounted(() => dialogEl.value?.focus());
 </script>
 

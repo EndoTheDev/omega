@@ -10,6 +10,9 @@ import { join } from "node:path";
 import { fileURLToPath, URL } from "node:url";
 
 import {
+  closeModelSwitchDialog,
+  modelSwitchDialogOpen,
+  openModelSwitchDialog,
   planModelSwitch,
   runModelSwitchChoice,
   type ModelSwitchIO,
@@ -63,7 +66,7 @@ describe("the three outcomes", () => {
         if (opts?.failCompact) throw new Error("compactor offline");
         return "compacted this conversation - 12 rows folded";
       },
-      receipt: (line) => log.push(`receipt:${line}`),
+      report: (line) => log.push(`report:${line}`),
       probe: async () => {
         log.push("probe");
         return opts?.after ?? null;
@@ -72,7 +75,7 @@ describe("the three outcomes", () => {
     };
   }
 
-  it("compact and switch: the receipt lands BEFORE the switch, after the re-probe", async () => {
+  it("compact and switch: the answer lands BEFORE the switch, after the re-probe", async () => {
     const log: string[] = [];
     const out = await runModelSwitchChoice(
       "compact",
@@ -80,12 +83,12 @@ describe("the three outcomes", () => {
     );
     assert.deepEqual(log, [
       "compact",
-      "receipt:compacted this conversation - 12 rows folded",
+      "report:compacted this conversation - 12 rows folded",
       "probe",
       "apply",
     ]);
     assert.equal(out.applied, true);
-    assert.match(out.receipt ?? "", /compacted/);
+    assert.match(out.report ?? "", /compacted/);
   });
 
   it("a compact that frees too little HOLDS the switch and reports the overflow", async () => {
@@ -94,7 +97,7 @@ describe("the three outcomes", () => {
       "compact",
       io(log, { after: { tokens: 12000, context_window: 8192 } }),
     );
-    assert.deepEqual(log, ["compact", "receipt:compacted this conversation - 12 rows folded", "probe"]);
+    assert.deepEqual(log, ["compact", "report:compacted this conversation - 12 rows folded", "probe"]);
     assert.equal(out.applied, false);
     assert.deepEqual(out.stillOver, { tokens: 12000, window: 8192, loss: 3808 });
   });
@@ -140,7 +143,7 @@ describe("the wiring (SFC source pins)", () => {
 
   it("the compact rides the existing /compact path", () => {
     assert.match(chatTab, /dispatchCommand\("\/compact", "", id\)/, "one compact door");
-    assert.match(chatTab, /receipt: \(line\)/, "the receipt is landed, not dropped");
+    assert.match(chatTab, /report: \(line\)/, "the answer is landed, not dropped");
   });
 
   it("the compact is re-probed, and a short compact HOLDS the switch", () => {
@@ -172,5 +175,34 @@ describe("the wiring (SFC source pins)", () => {
 
   it("type-to-capture yields to the open model dialog", () => {
     assert.match(app, /modalOpen: !!deleteId\.value \|\| modelSwitchDialogOpen\.value/);
+    assert.match(chatTab, /openModelSwitchDialog\(\)/, "a pane claims its gate slot on open");
+    assert.match(chatTab, /closeModelSwitchDialog\(\)/, "and gives it back on close");
+    assert.doesNotMatch(
+      chatTab,
+      /modelSwitchDialogOpen\.value\s*=/,
+      "panes never assign the shared gate directly",
+    );
+  });
+});
+
+describe("the shell gate counts one slot per open pane", () => {
+  it("stays closed while a second pane's dialog is still up", () => {
+    assert.equal(modelSwitchDialogOpen.value, false);
+    openModelSwitchDialog();
+    openModelSwitchDialog();
+    assert.equal(modelSwitchDialogOpen.value, true);
+    closeModelSwitchDialog();
+    assert.equal(
+      modelSwitchDialogOpen.value,
+      true,
+      "one pane closing must not re-arm type-to-capture behind another modal",
+    );
+    closeModelSwitchDialog();
+    assert.equal(modelSwitchDialogOpen.value, false);
+  });
+
+  it("never goes below closed", () => {
+    closeModelSwitchDialog();
+    assert.equal(modelSwitchDialogOpen.value, false);
   });
 });

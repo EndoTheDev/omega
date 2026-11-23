@@ -212,7 +212,8 @@
     type ToolItem,
   } from "../composables/omega";
   import {
-    modelSwitchDialogOpen,
+    closeModelSwitchDialog,
+    openModelSwitchDialog,
     planModelSwitch,
     runModelSwitchChoice,
     type ModelSwitchPlan,
@@ -363,14 +364,14 @@
       window: plan.window,
       loss: plan.loss,
     };
-    modelSwitchDialogOpen.value = true;
+    openModelSwitchDialog();
   }
 
   function closeModelSwitch() {
     pendingSwitch.value = null;
     switchError.value = "";
     switchNotice.value = "";
-    modelSwitchDialogOpen.value = false;
+    closeModelSwitchDialog();
   }
 
   async function chooseModelSwitch(choice: ModelSwitchChoice) {
@@ -386,13 +387,13 @@
         const res = await dispatchCommand("/compact", "", id);
         return res.text ?? "";
       },
-      // the compact receipt lands in the pane's status line BEFORE the switch emits
-      receipt: (line) => {
+      // the compact's answer lands in the pane's status line BEFORE the switch emits
+      report: (line) => {
         if (state.value) {
           state.value.statusLine = line || "compacted this conversation";
         }
       },
-      // a compact that folded nothing still resolves a receipt - read the context again
+      // a compact that folded nothing still answers - read the context again
       // so the switch is HELD instead of truncating silently
       probe: async () => {
         const id = sessionId.value;
@@ -425,8 +426,8 @@
     closeModelSwitch();
   }
   onBeforeUnmount(() => {
-    // only this tab's own dialog clears the shell gate - another tab's dialog may be up
-    if (pendingSwitch.value) modelSwitchDialogOpen.value = false;
+    // an unmounted pane gives back only its own gate slot - another tab's dialog may be up
+    if (pendingSwitch.value) closeModelSwitchDialog();
   });
 
   const canvasTranscript = createCanvasTranscript();
