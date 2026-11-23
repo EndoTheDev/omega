@@ -1556,8 +1556,10 @@ func (s *Server) maybeTitleSession(ctx context.Context, prov agent.Provider, req
 	// The title turn is metadata, not a conversation - it must never call a tool. Before
 	// the toolless run this was exactly the live defect shipped with: the user content
 	// invited tool use and the title model SPAWNED REAL subagents (delegate:task-3/6), one
-	// parentless - the title ctx carries no WithSessionID.
+	// parentless - the title ctx carries no WithSessionID. Metadata carries no date stamp
+	// either: the title model reads the exchange, not the calendar.
 	ctx = agent.WithToolless(ctx)
+	ctx = agent.WithDayStampOff(ctx)
 
 	events := s.agent.RunWithProvider(ctx, prov, []core.Message{core.NewUser(prompt)}, nil)
 	title := ""

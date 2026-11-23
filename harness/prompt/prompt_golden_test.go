@@ -24,19 +24,15 @@ import (
 var updateGolden = os.Getenv("OMEGA_UPDATE_GOLDEN") == "1"
 
 // envLine matches the environment stamp lines that vary by host.
-var envLine = regexp.MustCompile(`(?m)^(Date|OS|Shell): .*$`)
+var envLine = regexp.MustCompile(`(?m)^(OS|Shell): .*$`)
 
 // scrubEnv replaces the host-varying environment lines with placeholders.
 func scrubEnv(prompt string) string {
 	return envLine.ReplaceAllStringFunc(prompt, func(line string) string {
-		switch {
-		case strings.HasPrefix(line, "Date: "):
-			return "Date: <date>"
-		case strings.HasPrefix(line, "OS: "):
+		if strings.HasPrefix(line, "OS: ") {
 			return "OS: <env>"
-		default:
-			return "Shell: <env>"
 		}
+		return "Shell: <env>"
 	})
 }
 

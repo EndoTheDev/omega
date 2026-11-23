@@ -38,7 +38,6 @@ After a difficult or iterative turn, offer to save a new skill.
 CWD: /test/cwd
 OS: <env>
 Shell: <env>
-Date: <date>
 
 Tone: direct.
 Stay terse.

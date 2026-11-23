@@ -7,20 +7,20 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/EndoTheDev/omega/core"
 )
 
-// PromptBuilder is the in-process system prompt builder.
+// PromptBuilder is the in-process system prompt builder. It reads no clock: the date
+// rides the day's first user message (agent.StampUserDay), so the built prompt is a pure
+// function of the fold and a session's warm prefix survives midnight.
 type PromptBuilder struct {
 	pctx *core.Context
-	now  func() time.Time // injectable clock for tests
 }
 
 // NewPromptBuilder creates a PromptBuilder.
 func NewPromptBuilder(ctx *core.Context) *PromptBuilder {
-	return &PromptBuilder{pctx: ctx, now: time.Now}
+	return &PromptBuilder{pctx: ctx}
 }
 
 // BuildPrompt assembles the full system prompt from the build options.
@@ -49,7 +49,6 @@ func (b *PromptBuilder) BuildPrompt(_ context.Context, opts core.PromptBuildOpti
 	} else {
 		sb.WriteString("Shell: bash\n")
 	}
-	fmt.Fprintf(&sb, "Date: %s\n", b.now().Format("2006-01-02"))
 
 	if opts.Custom != "" {
 		sb.WriteString("\n")

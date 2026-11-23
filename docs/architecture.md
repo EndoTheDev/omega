@@ -211,6 +211,25 @@ rest degrade to nil-safe floors: no logging, no compaction (context
 overflow surfaces a friendly error), no system prompt, no
 gate.
 
+### The day stamp (the fold-stable prefix)
+
+The system prompt carries no clock: the Environment block has no `Date`
+line, so the built prompt is a pure function of the fold and a
+session's warm prefix cache survives midnight. Instead the day's first
+user message carries a `[YYYY-MM-DD]` prefix (`agent.StampUserDay`, the
+per-session ledger in `agent/datestamp.go`; the loop applies it in
+`agent/loop/datestamp.go` before the turn sink persists anything). The
+stamp is message CONTENT: it lands on the arriving message, the
+transcript keeps it byte-identically and history is never rewritten. A
+message that already carries a stamp is a replay (retry, fork, wake
+re-entry) and is left alone; a run with no session id keeps no ledger,
+so its own fold decides. Every later message that day rides unstamped.
+Cron and wake fires take the same path - their first synthetic user
+turn of the day is stamped, no special case. A metadata turn (session
+title generation) is marked off and carries no date at all. The ledger
+seeds itself from the fold on first sight of a session, so a process
+restart mid-day does not stamp the day twice.
+
 ### Yield-class calls (the async loop; escalation)
 
 A tool registered with `core.Tool.Yield = true` is IMMEDIATE-yield
