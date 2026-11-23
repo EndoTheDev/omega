@@ -139,4 +139,13 @@ func TestPromptSectionsEmptyCasesContributeNothing(t *testing.T) {
 	if len(disabled) != 0 {
 		t.Fatalf("all-disabled set rendered a section: %#v", disabled)
 	}
+	// A mounted capsule whose runtime tool set shrank to nothing (an mcp reload to zero
+	// servers) keeps its inventory entry and renders no block: an empty list is the absent
+	// block, never a dangling "### mcp" heading.
+	slipped := p.PromptSections(core.PromptBuildOptions{
+		Extensions: []core.ExtensionInfo{{Name: "mcp", Seams: []string{"tools"}}},
+	})
+	if len(slipped) != 0 {
+		t.Fatalf("a toolless mounted capsule rendered a section: %#v", slipped)
+	}
 }

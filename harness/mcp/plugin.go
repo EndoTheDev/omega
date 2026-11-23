@@ -1,6 +1,7 @@
 package mcp
 
 import (
+	"context"
 	"sync"
 
 	"github.com/EndoTheDev/omega/core"
@@ -13,6 +14,10 @@ type Plugin struct {
 	mu       sync.RWMutex
 	reloadMu sync.Mutex
 	bridge   *Bridge
+	// live is the mounted Context, bound by the fence start. A reload rewires the serving
+	// surfaces through it so the inventory follows the bridge the swap installed.
+	liveMu sync.RWMutex
+	live   *core.Context
 }
 
 // NewPlugin creates an MCP plugin from an existing Bridge. A nil bridge makes the plugin
@@ -90,7 +95,29 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	}
 	// The tool provider registers even on a nil bridge: Tools follows the live bridge per
 	// call, so the provider never changes after mount and only the bridge swaps beneath it.
-	return api.RegisterRuntimeTools(bridgeToolProvider{p: p})
+	if err := api.RegisterRuntimeTools(bridgeToolProvider{p: p}); err != nil {
+		return err
+	}
+	// The fence handle binds the mounted Context and runs nothing: a reload needs it to
+	// re-wire the serving surfaces after a swap, and the fence is where a mount receives the
+	// live Context (a remount's proxy is not it).
+	return api.RegisterLifecycle("inventory", p.bindLive, nil)
+}
+
+// bindLive captures the mounted Context at fence start.
+func (p *Plugin) bindLive(_ context.Context, deps core.StartDeps) error {
+	p.liveMu.Lock()
+	defer p.liveMu.Unlock()
+	p.live = deps.Ctx
+	return nil
+}
+
+// mountedCtx returns the bound Context, nil before the fence starts or on a host that
+// armed none.
+func (p *Plugin) mountedCtx() *core.Context {
+	p.liveMu.RLock()
+	defer p.liveMu.RUnlock()
+	return p.live
 }
 
 type bridgeToolProvider struct {

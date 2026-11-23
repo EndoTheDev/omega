@@ -83,19 +83,10 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 		if tp == nil {
 			continue
 		}
-		for name, t := range tp.Tools() {
-			if t.AliasOf != "" {
-				continue
-			}
-			info.Tools++
-			info.ToolList = append(info.ToolList, core.ToolInfo{
-				Name:        name,
-				Description: t.Description,
-				Actions:     t.Actions,
-			})
-		}
+		info.ToolList = append(info.ToolList, ToolInfos(tp.Tools())...)
 	}
 	sort.SliceStable(info.ToolList, func(i, j int) bool { return info.ToolList[i].Name < info.ToolList[j].Name })
+	info.Tools = len(info.ToolList)
 	for _, cmd := range target.Commands[beforeCmds:] {
 		info.CommandNames = append(info.CommandNames, cmd.Name)
 	}
@@ -103,10 +94,42 @@ func mountOne(target *core.Context, reg *Registry, p Plugin, remount bool) (j *j
 	target.Infos = append(target.Infos, info)
 	j.add(contribution{
 		ctxApply: func(c *core.Context) { c.Infos = append(c.Infos, info) },
-		ctxUndo:  func(c *core.Context) { c.Infos = removeOne(c.Infos, info) },
+		ctxUndo:  func(c *core.Context) { c.Infos = removeModuleInfo(c.Infos, info.Name) },
 		applied:  !remount,
 	})
 	return j, nil
+}
+
+// ToolInfos stamps one tool set into the inventory shape the Tools section and the
+// extensions listing read: model-facing names sorted, the tool's own description, its
+// action one-liners, aliases dropped (an alias is never a name the model calls). The mount
+// journal and a runtime re-stamp share it, so a reload can never drift from the mount shape.
+func ToolInfos(tools map[string]core.Tool) []core.ToolInfo {
+	list := make([]core.ToolInfo, 0, len(tools))
+	for name, t := range tools {
+		if t.AliasOf != "" {
+			continue
+		}
+		list = append(list, core.ToolInfo{Name: name, Description: t.Description, Actions: t.Actions})
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].Name < list[j].Name })
+	return list
+}
+
+// removeModuleInfo drops one module's inventory entry by name. Module names are unique (the
+// registry refuses a second mount of one name) and the entry's tool list is a live snapshot a
+// runtime re-stamp rewrites, so value identity would leave a ghost row behind after a reload.
+func removeModuleInfo(infos []core.ExtensionInfo, module string) []core.ExtensionInfo {
+	for i, info := range infos {
+		if info.Name != module {
+			continue
+		}
+		out := make([]core.ExtensionInfo, 0, len(infos)-1)
+		out = append(out, infos[:i]...)
+		out = append(out, infos[i+1:]...)
+		return out
+	}
+	return infos
 }
 
 // bootMount is the MountAllAPI loop body over one plugin.

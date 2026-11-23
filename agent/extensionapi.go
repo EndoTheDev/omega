@@ -415,12 +415,26 @@ func (api *ExtensionAPI) RegisterRuntimeTools(p core.ToolProvider) error {
 	api.j.add(contribution{
 		regUndo: func(r *Registry) { r.releaseClaim("ns:"+module+".", module) },
 	})
+	// The provider is bound to its module here: the inventory entry the mount journal stamps
+	// is the one this provider's live Tools() backs, so an inventory re-read re-stamps that
+	// entry instead of freezing the mount-time snapshot.
+	wired := core.ToolProvider(moduleProvider{module: module, inner: p})
 	api.writeSlot(
-		func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, p) },
-		func(c *core.Context) { c.ToolProviders = removeOne(c.ToolProviders, p) },
+		func(c *core.Context) { c.ToolProviders = append(c.ToolProviders, wired) },
+		func(c *core.Context) { c.ToolProviders = removeOne(c.ToolProviders, wired) },
 	)
 	return nil
 }
+
+// moduleProvider is a runtime tool provider bound to the capsule that registered it. Its
+// tool set is configuration data, not registered vocabulary, so it can change under a live
+// mount without a remount - and the inventory entry has to follow it.
+type moduleProvider struct {
+	module string
+	inner  core.ToolProvider
+}
+
+func (m moduleProvider) Tools() map[string]core.Tool { return m.inner.Tools() }
 
 // RegisterPanelProvider registers a panel provider.
 func (api *ExtensionAPI) RegisterPanelProvider(p core.PanelProvider) error {
