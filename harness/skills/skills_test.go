@@ -469,7 +469,11 @@ func TestPromptSections(t *testing.T) {
 	if s.Order != promptSectionOrder {
 		t.Errorf("Order = %d, want %d", s.Order, promptSectionOrder)
 	}
-	want := "Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.\n- test-skill: A test skill\n"
+	want := "Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.\n" +
+		"Before acting, consult this registry: load any skill whose description matches the task.\n" +
+		"If a skill you used was missing steps, had wrong commands, or needed a pitfall you discovered mid-run, update it before you finish the turn.\n" +
+		"After a difficult or iterative turn, offer to save a new skill.\n\n" +
+		"- test-skill: A test skill\n"
 	if s.Body != want {
 		t.Errorf("Body = %q, want %q", s.Body, want)
 	}
@@ -491,7 +495,12 @@ func TestPromptSectionsObeyTheFold(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("read folded: sections = %v, want the inventory kept for skills.write", got)
 	}
-	want := "skills.write creates a new skill and skills.update patches an existing one.\n- test-skill: A test skill\n"
+	// Reading off, writing on: the sentence keeps the writer and drops the reader, and each
+	// law line leaves with its own verb.
+	want := "skills.write creates a new skill and skills.update patches an existing one.\n" +
+		"If a skill you used was missing steps, had wrong commands, or needed a pitfall you discovered mid-run, update it before you finish the turn.\n" +
+		"After a difficult or iterative turn, offer to save a new skill.\n\n" +
+		"- test-skill: A test skill\n"
 	if got[0].Body != want {
 		t.Errorf("read folded: Body = %q, want %q", got[0].Body, want)
 	}
@@ -501,7 +510,9 @@ func TestPromptSectionsObeyTheFold(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("write only: sections = %v, want one", got)
 	}
-	want = "skills.write creates a new skill.\n- test-skill: A test skill\n"
+	want = "skills.write creates a new skill.\n" +
+		"After a difficult or iterative turn, offer to save a new skill.\n\n" +
+		"- test-skill: A test skill\n"
 	if got[0].Body != want {
 		t.Errorf("write only: Body = %q, want %q", got[0].Body, want)
 	}

@@ -25,7 +25,7 @@ func (p *Plugin) Description() string {
 
 func (p *Plugin) ConfigKey() string { return "skills" }
 
-func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections", "nudger"} }
+func (p *Plugin) Provides() []string { return []string{"skills", "tools", "prompt_sections"} }
 
 // Requires names the logger seam: Mount runs WarnLegacyShape, which
 // resolves the logging offer to mirror the legacy-format boot warning
@@ -55,11 +55,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 	// to discovery - one boot warning per hit, never a silent skip.
 	sp.WarnLegacyShape(seam[agent.LoggerProvider](ctx, "logger"))
 
-	interval := cfg.NudgeInterval
-	if interval < 0 {
-		interval = 0
-	}
-
 	steps := []func() error{
 		func() error { return api.Offer("skills", sp) },
 		func() error {
@@ -72,7 +67,6 @@ func (p *Plugin) MountWithAPI(ctx *core.Context, api *agent.ExtensionAPI) error 
 		func() error { return api.RegisterRoute("/skills/export", p.routes.handleSkillsExport) },
 		func() error { return p.registerCuratorCLI(api, sp) },
 		func() error { return p.registerSkillsCLI(api, sp) },
-		func() error { return api.Offer("nudger", NewTurnNudger(interval)) },
 		func() error {
 			for name, t := range sp.Tools() {
 				if err := api.RegisterTool(name, t); err != nil {

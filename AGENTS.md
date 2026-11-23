@@ -79,13 +79,13 @@ Terse operational rules. Layer references live in `docs/` (map below);
   mechanism (part 3, the seam constitution): at mount a capsule
   declares its surface (the additive rails, `api.Register*`) and
   offers services (`api.Offer(key, svc)`, one tenant per key on the
-  `Services` registry). Two closed offer namespaces, 14 keys:
-  - the 8 NEED keys - `provider`, `store`, `loop`, `logger`,
-    `compactor`, `prompt`, `nudger`, `approvals` - the loop
+  `Services` registry). Two closed offer namespaces, 13 keys:
+   - the 7 NEED keys - `provider`, `store`, `loop`, `logger`,
+     `compactor`, `prompt`, `approvals` - the loop
     machinery's shopping list (the faces live in `agent/seams.go`,
     resolved + shape-asserted at bind; missing supply = the documented
-    floor, wrong shape = loud boot failure naming the need). Proposing
-    a ninth need key is a design event, argued in a card.
+    floor, wrong shape = loud boot failure naming the need). Proposing a
+    need key outside the list is a design event, argued in a card.
   - the 6 capsule-SERVICE keys - `skills`, `memory`, `trust`, `cron`,
     `notifications`, `verdicts` - consumed by other capsules, the
     serving surface and the host through consumer-owned local

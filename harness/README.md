@@ -99,7 +99,6 @@ the need:
 | `logger`    | operational logging        | `observability/` (the folded logging half) |
 | `compactor` | context compaction         | `compactor/`    |
 | `prompt`    | system prompt + guidelines | `prompt/`       |
-| `nudger`    | the learning-loop reminder | `skills/`       |
 | `approvals` | the smart approval gate    | `approval/`     |
 
 ### Capsule-service keys (6; owner-offered sharing)
@@ -147,7 +146,7 @@ the disable list. No web module exists.
 | --------------- | --------------- | ---------------------------------------------------- |
 | `provider/`     | provider       | Ollama, OpenAI, Anthropic streaming                  |
 | `store/`        | store, tools   | SQLite session store + sessions.search tool. The three-layer sessions law's MANAGEMENT face (wave 2): `GET /sessions`, `GET /sessions/search`, `POST /sessions/{id}/branch`, `/sessions/{id}/export`, `GET /insights` ride the capsule's `routes.go`. When the capsule is absent the host's default supply opens `<home>/data/omega.db` itself (never :memory:) - a fresh chat boots and persists, only the management face is gone; in the every-capsule-removed proof build the fallback is the host's in-memory proof supply (`cmd/omega/proofstore.go`, written by scripts/proof-strip.py) |
-| `skills/`       | skills, nudger, tools, prompt_sections | Skill loading + the skills tool set (`skills.read`/`skills.write`/`skills.update`/`skills.curate`, phase-2 split) + /skills command + Available Skills section (the capsule offers the `nudger` need supply too) + the skills content view's REST (`/skills/content`, wave 3) |
+| `skills/`       | skills, tools, prompt_sections | Skill loading + the skills tool set (`skills.read`/`skills.write`/`skills.update`/`skills.curate`, phase-2 split) + /skills command + the Available Skills section (the learning law rides it: scan-and-load, the finish-gate, save-after-iteration) + the skills content view's REST (`/skills/content`, wave 3) |
 | `compactor/`    | compactor      | Context compaction (keep-first/last + LLM summarize) |
 | `observability/` | logger        | OPERATIONAL LOGGING + the run-event view, one module since the 0.17.3 fold: the file logger behind the `logger` seam (the `logging:` config section stays the operator's) + the /logs module command, and the read-only observability face (the structured event ring, 1024 records, fed from the session-attributed spine, and the omega.log tail over `GET /observability/events` (`?session=`, `?level=error\|warn`, `?limit=`) + `GET /observability/logs` (`?lines=`)). ALWAYS ON - it carries no Toggleable opt-in. Nothing is exported (no OTLP; `TestNoTelemetryDependency` holds the door) |
 | `memory/`       | memory, tools, prompt_sections | Persistent memory (the `memory.add`/`memory.replace`/`memory.remove`/`memory.batch` tool set, phase-2 split; two-file store) + snapshot block. The born-capsule: seam + tool + prompt section all ship from the same Mount; no command, REST route or canvas panel exists. Removal proof `TestMemoryRemovalProof` - arc 6 capsule |

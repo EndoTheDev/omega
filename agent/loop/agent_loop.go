@@ -466,13 +466,6 @@ func (Loop) Run(ctx context.Context, opts agent.LoopOptions) error {
 		turnEnd := core.TurnEnd{Type: "turn_end", Turn: turns, ToolCalls: executed, PendingCalls: outstanding}
 		opts.Events <- turnEnd
 
-		// Nudge delivery: after the tool batch lands in the history exactly one reminder.
-		if opts.Nudge != nil && executed > 0 {
-			if line := opts.Nudge.NudgeLine(); line != "" {
-				messages = append(messages, core.NewUser(line))
-			}
-		}
-
 		if len(loopback) == 0 {
 			end := core.AgentEnd{Type: "agent_end", Turns: turns, FinishReason: finishReason, Message: assistant}
 			if outstanding > 0 {
@@ -575,9 +568,6 @@ func (ex *inlineExec) run() {
 	}
 	ex.start = time.Now()
 	result, err := ex.tool.Run(ex.ctx, ex.call.Arguments)
-	if ex.opts.Nudge != nil {
-		ex.opts.Nudge.ObserveToolRun(ex.call.Name, ex.call.Arguments, err)
-	}
 
 	content, isErr := result, false
 	if err != nil {
@@ -761,9 +751,6 @@ func dispatchYieldCall(runCtx context.Context, call core.ToolCall, tool core.Too
 			if opts.MaxToolOutput > 0 && len(result) > opts.MaxToolOutput {
 				content = truncateToolOutput(result, opts.MaxToolOutput)
 			}
-		}
-		if opts.Nudge != nil {
-			opts.Nudge.ObserveToolRun(call.Name, call.Arguments, err)
 		}
 	}
 

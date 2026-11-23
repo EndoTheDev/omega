@@ -17,7 +17,7 @@ import (
 // resolve.
 func TestBindWrongShapeDiesLoud(t *testing.T) {
 	// The store key is bound by the serving surface, not NewFromContext.
-	for _, key := range []string{"provider", "loop", "prompt", "logger", "compactor", "approvals", "nudger"} {
+	for _, key := range []string{"provider", "loop", "prompt", "logger", "compactor", "approvals"} {
 		var ctx Context
 		ctx.ApplyOffer(key, "test", struct{}{}) // satisfies no need interface
 		err := func() (err error) {
@@ -62,7 +62,6 @@ var needKeys = []string{
 	"logger",
 	"compactor",
 	"prompt",
-	"nudger",
 	"approvals",
 }
 
@@ -87,7 +86,7 @@ func TestBindMissingNeedsAreTheFloor(t *testing.T) {
 
 	// The optional needs stay absent on purpose. The bind resolution must not fabricate
 	// one.
-	for _, key := range []string{"loop", "logger", "compactor", "prompt", "nudger", "approvals"} {
+	for _, key := range []string{"loop", "logger", "compactor", "prompt", "approvals"} {
 		if ctx.Services().Resolve(key) != nil {
 			t.Fatalf("need %q: nothing offered, the registry must resolve nil", key)
 		}
@@ -194,7 +193,6 @@ func TestClassANounsLiveAtTheirConsumers(t *testing.T) {
 		"logger":    "LoggerProvider",
 		"compactor": "CompactionProvider",
 		"prompt":    "PromptBuilder",
-		"nudger":    "TurnNudger",
 		"approvals": "ApprovalProvider",
 	}
 	for key, face := range faces {
@@ -271,10 +269,10 @@ func TestCapsuleOwnerFacesLeaveTheTree(t *testing.T) {
 }
 
 // TestOffersStayInClosedKeys walks every Offer AND ApplyOffer call site in the tree.
-// Offering a 16th key is a design event, argued in a card - not a line a capsule may
-// add silently. The ApplyOffer walk closes the one-abstraction bypass: a census that
-// only pins.Offer( call sites is decoration - the raw core primitive is the mount
-// machinery's own, and every literal-key caller (the host's store offer, the shell's
+// Offering a key outside the closed list is a design event, argued in a card - not a line
+// a capsule may add silently. The ApplyOffer walk closes the one-abstraction bypass: a
+// census that only pins.Offer( call sites is decoration - the raw core primitive is the
+// mount machinery's own, and every literal-key caller (the host's store offer, the shell's
 // chat-runs) must sit in the same closed list.
 func TestOffersStayInClosedKeys(t *testing.T) {
 	closed := map[string]bool{}

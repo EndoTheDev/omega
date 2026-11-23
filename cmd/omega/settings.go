@@ -296,11 +296,6 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Value:   cfg.Skills.Dir,
 					Default: def.Skills.Dir,
 					Help:    "loaded at startup; applies on restart"},
-				{Key: "skills.nudge_interval", Label: "nudge interval", Type: "number",
-					Min: ptrF(0), Step: ptrF(1),
-					Value: cfg.Skills.NudgeInterval,
-					Default: def.Skills.NudgeInterval,
-					Help:    "learning-loop reminder cadence: tool iterations without a persisted lesson before the next turn prep carries one reminder line; 0 = off; applies on restart"},
 				// The curator's model moved to provider settings: provider.skills_model.
 			},
 		},
@@ -525,8 +520,6 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "store.db_path", "system_prompt", "theme",
 			"skills.dir", "memory.file", "memory.user_file", "logging.file":
 			err = setStringField(cfg, key, raw)
-		case "skills.nudge_interval":
-			err = setInt(&cfg.Skills.NudgeInterval, key, raw, 0, math.MaxInt32) // 0 = off
 		case "sessions.retention_days":
 			err = setInt(&cfg.Sessions.RetentionDays, key, raw, 0, math.MaxInt32) // 0 = never prune
 		case "sessions.summarize_after_hours":

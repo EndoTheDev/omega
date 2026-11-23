@@ -182,15 +182,15 @@ claim: a key held by another tenant is a boot error
 (`core.ErrSeamForeignTenant`, `core/registry.go`). Import law
 unchanged: harness -> agent -> llm -> core.
 
-### The need-key namespace (the closed list, 8)
+### The need-key namespace (the closed list, 7)
 
 The loop machinery declares its needs in `agent/seams.go` (Go
 implicit interfaces - the interface belongs to the consumer), and
 resolves + asserts every need at bind: a missing supply is the
 documented floor, a wrong-shaped offer is a loud boot failure naming
 the need. Never a silent nil discovered mid-turn, never a lazy
-resolve. Capsules offer supplies under these keys; proposing a ninth
-is a design event, argued in a card:
+resolve. Capsules offer supplies under these keys; proposing a key
+outside the list is a design event, argued in a card:
 
 | Key         | The need                   | Supplying capsule                                    |
 | ----------- | -------------------------- | ---------------------------------------------------- |
@@ -200,7 +200,6 @@ is a design event, argued in a card:
 | `logger`    | operational logging        | `harness/observability` (the folded logging half)    |
 | `compactor` | context compaction         | `harness/compactor`                                  |
 | `prompt`    | system prompt + guidelines | `harness/prompt`                                     |
-| `nudger`    | the learning-loop reminder | `harness/skills`                                     |
 | `approvals` | the smart approval gate    | `harness/approval`                                   |
 
 Floor detail: `provider` refuses the boot upstream (the unconfigured
@@ -209,7 +208,7 @@ newAgent): a wrong shape is the loud named-need boot failure, and a
 MISSING store capsule makes the host offer its own in-memory fallback
 under the same key ("host" tenant, sessions will not persist). The
 rest degrade to nil-safe floors: no logging, no compaction (context
-overflow surfaces a friendly error), no system prompt, no nudger, no
+overflow surfaces a friendly error), no system prompt, no
 gate.
 
 ### Yield-class calls (the async loop; escalation)

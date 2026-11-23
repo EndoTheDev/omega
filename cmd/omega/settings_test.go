@@ -48,7 +48,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"http_timeout":                   true,
 		"max_turns":                      true,
 		"skills.dir":                     true,
-		"skills.nudge_interval":          true,
 		"memory.enabled":                 true,
 		"memory.user_profile_enabled":    true,
 		"memory.char_limit":              true,

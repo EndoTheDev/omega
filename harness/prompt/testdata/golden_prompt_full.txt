@@ -27,6 +27,10 @@ The user lives in Springfield.
 
 ## Available Skills
 Call skills.read with a skill name to load its full content; skills.write creates a new skill and skills.update patches an existing one.
+Before acting, consult this registry: load any skill whose description matches the task.
+If a skill you used was missing steps, had wrong commands, or needed a pitfall you discovered mid-run, update it before you finish the turn.
+After a difficult or iterative turn, offer to save a new skill.
+
 - alpha: Alpha does the first thing
 - beta: Beta does the second thing
 

@@ -10,12 +10,9 @@ type Config struct {
 	// difference, and an empty slice cannot carry it.
 	Allow    []string `yaml:"-"`
 	AllowSet bool     `yaml:"-"`
-	NudgeInterval int `yaml:"nudge_interval"`
 	CuratorModel string `yaml:"curator_model"`
 }
 
-const DefaultNudgeInterval = 15
-
 func Default() Config {
-	return Config{Dir: "skills", NudgeInterval: DefaultNudgeInterval}
+	return Config{Dir: "skills"}
 }
