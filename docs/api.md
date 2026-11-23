@@ -156,7 +156,10 @@ Body: `{"messages": [...], "session_id": "...?", "model": "...?",
   an arbitrary branch point. A user-turn target behaves like a retry
   pinned there (no messages); an assistant/tool target CONTINUES FROM
   it - it takes the fork's user message and runs. Mutually exclusive
-  with `retry` (400).
+  with `retry` (400). The replayed context is the branch's own rows: a
+  compact that landed after the fork point is not applied to it (its
+  span and carriers are not on the branch), so the branch neither
+  collapses nor receives a summary of turns it never saw.
 - **`provider`**: the named provider
   INSTANCE the run serves through (a `provider.instances` row; the webui
   provider picker sends it). Empty = the row named `default`, the

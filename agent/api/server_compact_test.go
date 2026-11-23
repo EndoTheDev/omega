@@ -190,6 +190,79 @@ func TestCompactCarrierIsTheOnlyThingAppended(t *testing.T) {
 	}
 }
 
+// TestSessionHistoryForkIntoACompactedSpan pins the branch law: fork and retry hand a
+// truncated active path, and the derivation must replay the branch's own rows. A fork older
+// than the compact used to collapse to the bare head because the block's cut was applied to
+// a path that never contained its span or carriers.
+func TestSessionHistoryForkIntoACompactedSpan(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	seedSession(t, s, st, "s-fork", "one", "two", "three", "four", "five")
+	mountCompactor(t, s, &compactCompactor{answer: agent.CompactAnswer{Summary: "the middle", Keep: 1}})
+	if code, _, body := compactCall(t, s, "s-fork"); code != http.StatusOK {
+		t.Fatalf("compact status = %d (%s)", code, body)
+	}
+	for _, row := range []string{"six", "seven"} {
+		if err := st.AppendMessage(ctx, "s-fork", core.NewUser(row)); err != nil {
+			t.Fatalf("append %q: %v", row, err)
+		}
+	}
+	view, err := st.GetActiveView(ctx, "s-fork")
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if len(view.Path) != 9 {
+		t.Fatalf("path = %d rows, want 5 user rows + carrier pair + 2 more", len(view.Path))
+	}
+	msgID := func(i int) string { return core.MsgID(view.Path[i].ID) }
+	render := func(msgs []core.Message) string {
+		parts := make([]string, 0, len(msgs))
+		for _, m := range msgs {
+			switch {
+			case agent.IsCarrierCall(m):
+				parts = append(parts, "<compress>")
+			case agent.IsCarrierResult(m):
+				parts = append(parts, "<summary:"+agent.MessageText(m)+">")
+			default:
+				parts = append(parts, agent.MessageText(m))
+			}
+		}
+		return strings.Join(parts, "|")
+	}
+
+	// Fork into the summarized span: the branch replays exactly the rows it had.
+	branch, err := s.sessionHistory(ctx, &chatRequest{SessionID: "s-fork", Fork: msgID(2)}, nil)
+	if err != nil {
+		t.Fatalf("fork history: %v", err)
+	}
+	if got := render(branch); got != "one|two|three" {
+		t.Fatalf("fork-into-span branch = %q, want the branch's own rows", got)
+	}
+	for i := range branch {
+		if !sameEncoded(branch[i], view.Path[i].Message) {
+			t.Fatalf("fork-into-span row %d changed bytes", i)
+		}
+	}
+
+	// Fork past the compact: the carrier rides along, the span is still summarized.
+	after, err := s.sessionHistory(ctx, &chatRequest{SessionID: "s-fork", Fork: msgID(8)}, nil)
+	if err != nil {
+		t.Fatalf("fork after compact: %v", err)
+	}
+	if got := render(after); got != "one|<compress>|<summary:the middle>|five|six|seven" {
+		t.Fatalf("fork-after-compact branch = %q, want head + carrier + tail", got)
+	}
+
+	// Retry of the last user turn takes the same path through the derivation.
+	retried, err := s.sessionHistory(ctx, &chatRequest{SessionID: "s-fork", Retry: true}, nil)
+	if err != nil {
+		t.Fatalf("retry history: %v", err)
+	}
+	if got := render(retried); got != "one|<compress>|<summary:the middle>|five|six|seven" {
+		t.Fatalf("retry context = %q, want head + carrier + tail", got)
+	}
+}
+
 func sameEncoded(a, b core.Message) bool {
 	ra, pa, errA := core.EncodeMessage(a)
 	rb, pb, errB := core.EncodeMessage(b)

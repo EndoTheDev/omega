@@ -141,13 +141,24 @@ func planFromRows(rows []core.StoredMessage, blocks []core.ContextBlock, sess co
 		}
 		return plan.withLiveStart()
 	}
-	wire, ids := deriveFromBlocks(rows, blocks)
-	return ContextPlan{Wire: wire, IDs: ids, Blocks: blocks}.withLiveStart()
+	wire, ids, applied := deriveFromBlocks(rows, blocks)
+	return ContextPlan{Wire: wire, IDs: ids, Blocks: applied}.withLiveStart()
 }
 
 // deriveFromBlocks is the block derivation: first user message, then every carrier in
-// compact order, then the rows the last compact left live.
-func deriveFromBlocks(rows []core.StoredMessage, blocks []core.ContextBlock) ([]core.Message, []int64) {
+// compact order, then the rows the last compact left live. Only the blocks the handed rows
+// can carry apply; with none of them the rows replay whole (a fork or a retry at a row that
+// predates the compact hands a truncated path, and its block summarizes rows the branch
+// never saw).
+func deriveFromBlocks(rows []core.StoredMessage, blocks []core.ContextBlock) ([]core.Message, []int64, []core.ContextBlock) {
+	byID := make(map[int64]core.StoredMessage, len(rows))
+	for _, sm := range rows {
+		byID[sm.ID] = sm
+	}
+	blocks = coveredBlocks(rows, blocks, byID)
+	if len(blocks) == 0 {
+		return StoredMessages(rows), rowIDs(rows), nil
+	}
 	carrier := make(map[int64]bool, 2*len(blocks))
 	for _, b := range blocks {
 		if b.Call != 0 {
@@ -156,10 +167,6 @@ func deriveFromBlocks(rows []core.StoredMessage, blocks []core.ContextBlock) ([]
 		if b.Carrier != 0 {
 			carrier[b.Carrier] = true
 		}
-	}
-	byID := make(map[int64]core.StoredMessage, len(rows))
-	for _, sm := range rows {
-		byID[sm.ID] = sm
 	}
 	var wire []core.Message
 	var ids []int64
@@ -199,7 +206,41 @@ func deriveFromBlocks(rows []core.StoredMessage, blocks []core.ContextBlock) ([]
 		}
 		add(sm.ID, sm.Message)
 	}
-	return wire, ids
+	return wire, ids, blocks
+}
+
+// coveredBlocks keeps the blocks a row set can carry: the block's span must end inside the
+// rows, and both carrier rows must be in them. A truncated view predates the compact, so
+// its block is dropped and the branch replays its own rows rather than a cut that would
+// leave it with nothing.
+func coveredBlocks(rows []core.StoredMessage, blocks []core.ContextBlock, byID map[int64]core.StoredMessage) []core.ContextBlock {
+	if len(rows) == 0 {
+		return nil
+	}
+	var last int64
+	for _, sm := range rows {
+		if sm.ID > last {
+			last = sm.ID
+		}
+	}
+	out := make([]core.ContextBlock, 0, len(blocks))
+	for _, b := range blocks {
+		if b.To > last {
+			continue
+		}
+		if b.Call != 0 {
+			if _, ok := byID[b.Call]; !ok {
+				continue
+			}
+		}
+		if b.Carrier != 0 {
+			if _, ok := byID[b.Carrier]; !ok {
+				continue
+			}
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // withLiveStart stamps where the head ends: the first user message and every compress

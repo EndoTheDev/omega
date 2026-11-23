@@ -232,13 +232,6 @@ func (c *Compactor) reset(ctx context.Context, tokens int) {
 	c.baseline[session] = tokens
 }
 
-func mins(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func (c *Compactor) summarize(ctx context.Context, middle []core.Message) (string, error) {
 	var b strings.Builder
 	// The summary is the only thing that survives a compact, so the classes below tell the

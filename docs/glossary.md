@@ -30,7 +30,9 @@ older internal name "fold" is deprecated; any reference to folding means compact
 context, the tail it retained verbatim, and the carrier rows that hold its summary. Blocks
 are tiered (`tier` 1 summarizes stored rows; a higher tier summarizes lower blocks through
 `sources`) and carry the lineage (`from`/`to`/`keep` row ids). The provider wire is derived
-from them. There is no age-GC: a block is never retired by its timestamp.
+from them. A block applies only to a row set that carries it: a fork or retry at a row older
+than the compact replays its own rows instead, never a summary of turns it never saw. There
+is no age-GC: a block is never retired by its timestamp.
 
 **context start** - the pre-block shape: the anchor message id where a session's live context
 begins. Sessions written before context blocks keep such a row and read exactly as they

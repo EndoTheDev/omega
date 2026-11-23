@@ -147,6 +147,101 @@ func TestDeriveWireKeepsThePrefix(t *testing.T) {
 	}
 }
 
+// TestDeriveWireForkBeforeTheCompact pins the truncated-path law: a fork or retry hands a
+// prefix of the active path, and a block whose span reaches past it (or whose carrier rows
+// are absent) is never applied - the branch replays its own rows instead of collapsing to
+// the bare head.
+func TestDeriveWireForkBeforeTheCompact(t *testing.T) {
+	rows := userRows(6)
+	rows, call, carrier := carrierRows(rows, "the summary")
+	rows = append(rows, core.StoredMessage{ID: 9, Message: core.NewAssistant("later answer")})
+	blocks := []core.ContextBlock{{ID: "blk-1", Tier: 1, From: 1, To: 6, Call: call, Carrier: carrier}}
+
+	full := DeriveWire(rows, blocks, core.Session{})
+	if len(full) != 4 {
+		t.Fatalf("full wire = %d messages, want 4 (head + carrier pair + tail)", len(full))
+	}
+	forked := DeriveWire(rows[:3], blocks, core.Session{})
+	if len(forked) != 3 {
+		t.Fatalf("fork wire = %d messages, want the branch's 3 rows", len(forked))
+	}
+	for i, want := range []string{"row 1", "row 2", "row 3"} {
+		if got := MessageText(forked[i]); got != want {
+			t.Fatalf("fork wire[%d] = %q, want %q", i, got, want)
+		}
+	}
+	plan := planFromRows(rows[:3], blocks, core.Session{})
+	if len(plan.Blocks) != 0 {
+		t.Fatalf("truncated plan carries %d blocks, want none applied", len(plan.Blocks))
+	}
+}
+
+// TestDeriveWireForkAfterTheCompactKeepsTheCarrier pins the other half: a fork whose prefix
+// reaches the carrier rows still derives the compacted shape, head and carrier included.
+func TestDeriveWireForkAfterTheCompactKeepsTheCarrier(t *testing.T) {
+	rows := userRows(6)
+	rows, call, carrier := carrierRows(rows, "the summary")
+	rows = append(rows,
+		core.StoredMessage{ID: 9, Message: core.NewUser("row 9")},
+		core.StoredMessage{ID: 10, Message: core.NewUser("row 10")},
+	)
+	blocks := []core.ContextBlock{{ID: "blk-1", Tier: 1, From: 1, To: 6, Call: call, Carrier: carrier}}
+
+	forked := DeriveWire(rows[:9], blocks, core.Session{})
+	if len(forked) != 4 {
+		t.Fatalf("fork wire = %d messages, want 4 (head + carrier pair + fork row)", len(forked))
+	}
+	if !IsCarrierResult(forked[2]) || MessageText(forked[2]) != "the summary" {
+		t.Fatalf("fork wire[2] = %q, want the summary carrier", MessageText(forked[2]))
+	}
+	if got := MessageText(forked[3]); got != "row 9" {
+		t.Fatalf("fork wire[3] = %q, want the fork row", got)
+	}
+	// A prefix that ends between a carrier's call and its result applies no block at all:
+	// a half-carrier is never a wire.
+	half := DeriveWire(rows[:call], blocks, core.Session{})
+	if len(half) != int(call) {
+		t.Fatalf("half-carrier wire = %d messages, want the %d whole rows", len(half), call)
+	}
+	for _, m := range half {
+		if IsCarrierResult(m) {
+			t.Fatalf("half-carrier wire carries a summary result: %#v", m)
+		}
+	}
+}
+
+// TestDeriveWireTruncatedKeepsOnlyCoveredBlocks pins the stacked case: a prefix that stops
+// before the second compact keeps the first block applied and the second one out.
+func TestDeriveWireTruncatedKeepsOnlyCoveredBlocks(t *testing.T) {
+	rows := userRows(5)
+	rows, call1, carrier1 := carrierRows(rows, "first summary")
+	for i := 8; i <= 10; i++ {
+		rows = append(rows, core.StoredMessage{ID: int64(i), Message: core.NewUser(fmt.Sprintf("row %d", i))})
+	}
+	rows, call2, carrier2 := carrierRows(rows, "second summary")
+	blocks := []core.ContextBlock{
+		{ID: "blk-1", Tier: 1, From: 2, To: 5, Call: call1, Carrier: carrier1},
+		{ID: "blk-2", Tier: 1, From: 8, To: 10, Call: call2, Carrier: carrier2},
+	}
+
+	// Prefix through row 9: the first compact applies, the second one's carriers are absent.
+	wire := DeriveWire(rows[:9], blocks, core.Session{})
+	if len(wire) != 5 {
+		t.Fatalf("wire = %d messages, want 5 (head + first carrier + rows 8-9)", len(wire))
+	}
+	if MessageText(wire[2]) != "first summary" {
+		t.Fatalf("wire[2] = %q, want the first carrier", MessageText(wire[2]))
+	}
+	if got := MessageText(wire[len(wire)-1]); got != "row 9" {
+		t.Fatalf("wire tail = %q, want row 9", got)
+	}
+	for _, m := range wire {
+		if IsCarrierResult(m) && MessageText(m) == "second summary" {
+			t.Fatal("a block the prefix cannot carry was applied")
+		}
+	}
+}
+
 // sameMessage compares two messages by their encoded shape.
 func sameMessage(a, b core.Message) bool {
 	ra, pa, errA := core.EncodeMessage(a)
