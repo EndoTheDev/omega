@@ -1051,15 +1051,44 @@ error}` (level is DERIVED server-side: error on a failure field or an
 - **Band controls**: the session chip (scope defaults to the OPEN
   session, the chip flips the whole ring into view - a shell with no
   focused session says "all sessions" and disables the toggle), the
-  errors-only chip, and the tail chip that swaps the pane's view. No
-  free-text search in v1 (ruling 4, deferred until the stream proves
-  too loud) and no OTel anything (ruling 5).
+  errors-only chip, the tail chip that swaps the pane's view, and the
+  clear action. No free-text search in v1 (ruling 4, deferred until the
+  stream proves too loud) and no OTel anything (ruling 5).
+- **The source family** (its own strip under the band, stream view
+  only): one toggle per source, multi-select, AND-composed with the
+  severity chip. Sources are DERIVED client-side from a record's own
+  provenance (`rows.ts eventSource`), because the ring has one producer
+  family - the agent loop's spine - so a record carries exactly three
+  clues: its type, its tool, and its session. Precedence: the RUN
+  outranks the record (a `cron:`-labelled session belongs entirely to
+  the scheduler, label read from `/sessions`), then the TOOL's capsule
+  (`kanban.*` is the board), then the provider stream (`stream_end`),
+  and the loop owns the rest. Four sources is the whole vocabulary
+  today: **a serving-layer (`gateway`) source has no producer in the
+  stream** - the HTTP channel records nothing into the ring - so no
+  chip ships for it (a chip that can never match a row is dead UI).
+  Every record lands in exactly one source; an empty enabled set means
+  every source is OFF, not every source on.
+- **Clear is a display watermark**, never a delete:
+  `clearedThrough` holds the highest `seq` read at click time, rows at
+  or below it stop rendering, the ring total in the meta line holds
+  (the records are still read) and the log file is untouched - new
+  records paint as they arrive. The meta line names the watermark
+  ("cleared through N"). The button is disabled in the tail view (the
+  tail is the file's own verbatim lines) and when the ring is empty.
+- **Colors ride the existing ladder, one accent per source**: llm
+  `--accent`, cron `--ok`, kanban `--text`, agent `--text-dim` (the
+  loop is most rows, so it is the quietest). `--unread` and `--err` are
+  semantic-only and never decorate a source. The accent paints the
+  chip's dot/border and the row's type cell; the level rail above it
+  keeps its own meaning (error `--err`, warn `--accent`).
 - **Filters differ by kind, on purpose**: the session scope is a SERVER
   parameter (the ring's `Page()` selects the newest N of that session;
   filtering the newest N of everything would starve a quiet session),
-  while errors-only is a CLIENT filter over the fetched page - one page
-  is `limit=1000` against a 1024-record ring, i.e. the whole live
-  history, so a toggle is instant and costs no round trip.
+  while errors-only and the source chips are CLIENT filters over the
+  fetched page - one page is `limit=1000` against a 1024-record ring,
+  i.e. the whole live history, so a toggle is instant and costs no round
+  trip.
 - **Rows paint newest first** and the DOM is capped at 300 (the ring is
   1024 records; the meta line carries "N of M events" plus the error
   count and the ring's fill). Error rows carry a `--err` rail and level
