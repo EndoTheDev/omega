@@ -246,7 +246,7 @@ away is dropped, never re-queued. Boot recovery injects a synthetic
 interrupted result for every entry the restart carried (eph residue
 from a pre-split build settles and drops - its home died with the
 restart). A turn with pending calls
-is never folded (the compactor's never-fold law). A host without the
+is never folded (the compactor's never-compact law). A host without the
 harness runs every tool loop-back: nil-safe by construction. The
 pending marker the model sees on a still-pending call is unmistakable:
 it names the tool and forbids

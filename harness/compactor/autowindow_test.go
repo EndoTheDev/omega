@@ -25,14 +25,14 @@ func (p *contextWindowProvider) ModelInfo() (llm.ModelInfo, error) {
 func autoTestCompactor(p *contextWindowProvider, threshold float64) *Compactor {
 	return &Compactor{
 		provider:   p,
-		config:     agent.CompactionConfig{Enabled: true, Threshold: threshold, KeepFirst: 1, KeepLast: 1},
+		config:     agent.CompactionConfig{Enabled: true, Threshold: threshold, KeepLast: 1},
 		autoWindow: 100000,
 	}
 }
 
 // Auto probe feeds the budget.
 var autoMsgs = []core.Message{
-	core.NewUser("first padded message to survive keep_first"),
+	core.NewUser("first padded message: the live head"),
 	core.NewUser(strings_repeat("middle filler ", 700)),
 	core.NewUser("middle filler two padded"),
 	core.NewUser("last padded message to survive keep_last"),
@@ -101,7 +101,7 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	}
 	c := &Compactor{
 		provider:   provider,
-		config:     agent.CompactionConfig{Enabled: true, Threshold: 1.0, KeepFirst: 1, KeepLast: 1},
+		config:     agent.CompactionConfig{Enabled: true, Threshold: 1.0, KeepLast: 1},
 		autoWindow: 3000,
 	}
 	msgs := []core.Message{
@@ -114,8 +114,11 @@ func TestCompactUsesProbedWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("expected compacted 3 messages, got %d", len(out))
+	if len(out) != 4 {
+		t.Fatalf("expected compacted 4 messages (head + carrier pair + kept tail), got %d", len(out))
+	}
+	if !agent.IsCarrierResult(out[2]) || agent.MessageText(out[2]) != summary {
+		t.Fatalf("out[2] = %q, want the summary carrier", agent.MessageText(out[2]))
 	}
 }
 

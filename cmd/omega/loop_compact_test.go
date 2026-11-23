@@ -9,6 +9,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -17,13 +18,17 @@ import (
 	"github.com/EndoTheDev/omega/harness/store"
 )
 
-// loopCompactor is the capsule's manual compact face, answering a fixed compact.
+// loopCompactor is the capsule's compact face, answering a fixed summary.
 type loopCompactor struct {
-	out []core.Message
+	answer agent.CompactAnswer
 }
 
-func (f *loopCompactor) CompactNow(context.Context, []core.Message) ([]core.Message, error) {
-	return f.out, nil
+func (f *loopCompactor) PlanCompact(context.Context, agent.CompactRequest) agent.CompactPlan {
+	return agent.CompactPlan{Fire: true, Keep: f.answer.Keep}
+}
+
+func (f *loopCompactor) CompactNow(context.Context, agent.CompactRequest) (agent.CompactAnswer, error) {
+	return f.answer, nil
 }
 
 // newLoopForCommands builds a loop with a real store and the given command surface.
@@ -66,8 +71,8 @@ func TestLoopCommandDispatchBindsTheSession(t *testing.T) {
 }
 
 // TestLoopCompactRunsTheCompaction is the card's law: a run_compact action is executed by the
-// loop, the store's boundary + summary move, the printed line names them, and the loop's
-// OWN in-memory context is rebuilt on the new boundary (it sends that list itself).
+// loop, the store records the block and its carrier, the printed line names them, and the
+// loop's OWN in-memory context is rebuilt from the derived wire (it sends that list itself).
 func TestLoopCompactRunsTheCompaction(t *testing.T) {
 	ctx := context.Background()
 	lo, out := newLoopForCommands(t, []string{"/compact"}, func(context.Context, string, string) (core.CommandResult, error) {
@@ -82,45 +87,39 @@ func TestLoopCompactRunsTheCompaction(t *testing.T) {
 			t.Fatalf("append %q: %v", row, err)
 		}
 	}
-	view, err := st.GetActiveView(ctx, "s-1")
-	if err != nil {
-		t.Fatalf("active view: %v", err)
-	}
-	wantStart := core.MsgID(view.Path[4].ID)
 	lo.sessionID = "s-1"
-	lo.pctx.ApplyOffer("compactor", "compactor", &loopCompactor{out: []core.Message{
-		core.NewSystem(core.ContextCompactPrefix + "the middle of it" + core.ContextCompactSuffix),
-		core.NewUser("five"),
-	}})
+	lo.pctx.ApplyOffer("compactor", "compactor", &loopCompactor{
+		answer: agent.CompactAnswer{Summary: "the middle of it", Keep: 1},
+	})
 
 	if err := lo.commandExtension("/compact", ""); err != nil {
 		t.Fatalf("commandExtension: %v", err)
 	}
-	want := "compacted 4 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"
+	blocks, err := lo.store.(agent.SessionBlockStore).ContextBlocks(ctx, "s-1")
+	if err != nil {
+		t.Fatalf("blocks: %v", err)
+	}
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want the one compact", len(blocks))
+	}
+	want := fmt.Sprintf("compacted 3 messages into a summary carried by compress-%d - the last 1 stays verbatim", blocks[0].Call)
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
-	row, err := st.GetSession(ctx, "s-1")
-	if err != nil {
-		t.Fatalf("session row: %v", err)
-	}
-	if row.ContextStart != wantStart || row.ContextSummary != "the middle of it" {
-		t.Fatalf("boundary = (%q, %q), want (%q, the middle of it)", row.ContextStart, row.ContextSummary, wantStart)
-	}
 	// The loop sends its own history: a compact that did not rebuild it would be a placebo.
-	if len(lo.history) != 2 {
-		t.Fatalf("loop context = %d rows, want the summary plus the kept tail (2)", len(lo.history))
+	if len(lo.history) != 4 {
+		t.Fatalf("loop context = %d messages, want 4 (head + carrier pair + kept tail)", len(lo.history))
 	}
-	if _, ok := lo.history[0].(core.System); !ok {
-		t.Fatalf("loop context head = %#v, want the compact summary", lo.history[0])
+	if !agent.IsCarrierResult(lo.history[2]) || agent.MessageText(lo.history[2]) != "the middle of it" {
+		t.Fatalf("loop context carrier = %q, want the summary", agent.MessageText(lo.history[2]))
 	}
-	// The transcript keeps every row - a compact moves the boundary, it never deletes.
+	// The transcript keeps every row - a compact moves the context, it never deletes.
 	msgs, err := st.GetMessages(ctx, "s-1")
 	if err != nil {
 		t.Fatalf("messages: %v", err)
 	}
-	if len(msgs) != 5 {
-		t.Fatalf("transcript = %d rows, want all 5 kept", len(msgs))
+	if len(msgs) != 7 {
+		t.Fatalf("transcript = %d rows, want all 5 kept plus the carrier pair", len(msgs))
 	}
 }
 

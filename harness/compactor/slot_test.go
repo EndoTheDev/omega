@@ -2,14 +2,13 @@ package compactor
 
 import (
 	"context"
-	"strings"
 	"testing"
 
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/agent"
+	"github.com/EndoTheDev/omega/core"
 )
 
-// slotMessages builds a history whose tiny window forces one summarize call.
+// slotMessages builds a history one summarizer consult replaces.
 func slotMessages() []core.Message {
 	return []core.Message{
 		core.NewUser("first message long enough to exceed the tiny budget"),
@@ -24,7 +23,6 @@ func slotConfig(model string) agent.CompactionConfig {
 		Enabled:       true,
 		Threshold:     0.6,
 		ContextWindow: 10,
-		KeepFirst:     1,
 		KeepLast:      1,
 		ReserveTokens: 1,
 		Model:         model,
@@ -45,24 +43,23 @@ func slotFixtures() *Compactor {
 	return &Compactor{provider: base}
 }
 
-// compactedSummary runs one Compact and returns the summary text the consult produced.
+// compactedSummary runs one consult and returns the summary the slot's provider answered:
+// the slot routing is the subject here, so the manual arm (gate aside) drives it.
 func compactedSummary(t *testing.T, c *Compactor) string {
 	t.Helper()
-	out, err := c.Compact(context.Background(), slotMessages())
+	answer, err := c.CompactNow(context.Background(), agent.CompactRequest{
+		Wire: slotMessages(), LiveStart: 1, Keep: -1,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	sys, ok := out[1].(core.System)
-	if !ok {
-		t.Fatalf("expected system message at index 1, got %T", out[1])
-	}
-	return strings.TrimPrefix(sys.Content, "[compacted: ")
+	return answer.Summary
 }
 
 func TestCompactSlotRoutesInstance(t *testing.T) {
 	c := slotFixtures()
 	c.config = slotConfig("big:big-model")
-	if got := compactedSummary(t, c); got != "big-summary]" {
+	if got := compactedSummary(t, c); got != "big-summary" {
 		t.Errorf("slot %q routed wrong provider: summary = %q", "big:big-model", got)
 	}
 }
@@ -72,7 +69,7 @@ func TestCompactSlotRoutesInstance(t *testing.T) {
 func TestCompactSlotInstanceDefaultModel(t *testing.T) {
 	c := slotFixtures()
 	c.config = slotConfig("big:")
-	if got := compactedSummary(t, c); got != "big-summary]" {
+	if got := compactedSummary(t, c); got != "big-summary" {
 		t.Errorf("instance default model not served: summary = %q", got)
 	}
 }
@@ -83,7 +80,7 @@ func TestCompactSlotInstanceDefaultModel(t *testing.T) {
 func TestCompactSlotUnknownPrefixIsBare(t *testing.T) {
 	c := slotFixtures()
 	c.config = slotConfig("unknown:whatever")
-	if got := compactedSummary(t, c); got != "base-summary]" {
+	if got := compactedSummary(t, c); got != "base-summary" {
 		t.Errorf("unconfigured prefix must stay a bare model: summary = %q", got)
 	}
 }
@@ -92,7 +89,7 @@ func TestCompactSlotUnknownPrefixIsBare(t *testing.T) {
 func TestCompactSlotEmpty(t *testing.T) {
 	c := slotFixtures()
 	c.config = slotConfig("")
-	if got := compactedSummary(t, c); got != "base-summary]" {
+	if got := compactedSummary(t, c); got != "base-summary" {
 		t.Errorf("empty slot: summary = %q", got)
 	}
 }

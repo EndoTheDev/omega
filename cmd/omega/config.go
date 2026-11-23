@@ -403,7 +403,6 @@ func DefaultConfig() Config {
 			Enabled:       true,
 			Threshold:     0.6,
 			ContextWindow: 32768,
-			KeepFirst:     2,
 			KeepLast:      10,
 			ReserveTokens: 16384,
 			MaxToolOutput: 32768,
@@ -745,7 +744,6 @@ func applyEnv(cfg *Config) {
 	}{
 		{"OMEGA_PORT", &cfg.Server.Port, math.MinInt32},
 		{"OMEGA_COMPACTION_CONTEXT_WINDOW", &cfg.Compaction.ContextWindow, 0},
-		{"OMEGA_COMPACTION_KEEP_FIRST", &cfg.Compaction.KeepFirst, 0},
 		{"OMEGA_COMPACTION_KEEP_LAST", &cfg.Compaction.KeepLast, 0},
 		{"OMEGA_COMPACTION_RESERVE_TOKENS", &cfg.Compaction.ReserveTokens, 1},
 		{"OMEGA_COMPACTION_MAX_TOOL_OUTPUT", &cfg.Compaction.MaxToolOutput, 1},

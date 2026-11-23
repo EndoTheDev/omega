@@ -120,15 +120,22 @@ func (s *Store) appendMessageLine(ctx context.Context, sessionID, role string, p
 // writeLine appends one line to its session file and folds it into the index. Callers hold
 // writeMu.
 func (s *Store) writeLine(ctx context.Context, sessionID string, line fileLine) error {
+	return s.writeLines(ctx, sessionID, []fileLine{line})
+}
+
+// writeLines appends a group of lines in ONE write and folds them into the index in one
+// transaction. A group is a compact's carrier pair plus its block line: the file and the
+// index learn them together or not at all. Callers hold writeMu.
+func (s *Store) writeLines(ctx context.Context, sessionID string, lines []fileLine) error {
 	path, err := s.sessionPath(sessionID)
 	if err != nil {
 		return err
 	}
-	before, wrote, err := appendLines(path, line)
+	before, wrote, err := appendLines(path, lines...)
 	if err != nil {
 		return err
 	}
-	if err := s.applyAndWatermark(ctx, path, sessionID, line, wrote); err != nil {
+	if err := s.applyLinesAndWatermark(ctx, path, sessionID, lines, wrote); err != nil {
 		return rollbackAppend(path, before, wrote, err)
 	}
 	return nil
@@ -139,13 +146,21 @@ func (s *Store) writeLine(ctx context.Context, sessionID string, line fileLine) 
 // A foreign append in between leaves the watermark alone; the next catch-up re-reads
 // those bytes, and applyLine is idempotent.
 func (s *Store) applyAndWatermark(ctx context.Context, path, id string, line fileLine, wrote int64) error {
+	return s.applyLinesAndWatermark(ctx, path, id, []fileLine{line}, wrote)
+}
+
+// applyLinesAndWatermark is applyAndWatermark for an appended group: every line is applied
+// in one transaction, and the watermark moves by the group's total bytes.
+func (s *Store) applyLinesAndWatermark(ctx context.Context, path, id string, lines []fileLine, wrote int64) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if err := applyLine(ctx, tx, line); err != nil {
-		return err
+	for _, line := range lines {
+		if err := applyLine(ctx, tx, line); err != nil {
+			return err
+		}
 	}
 	var from int64
 	if err := tx.QueryRowContext(ctx,

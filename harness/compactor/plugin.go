@@ -14,7 +14,7 @@ func (p *Plugin) Name() string { return "compactor" }
 
 // Description implements agent.Describer.
 func (p *Plugin) Description() string {
-	return "context compaction: keeps the transcript head and tail, summarizes the middle when the token budget is exceeded"
+	return "context compaction: summarizes the live span into a compress carrier at the tail when the growth gate fires, keeping the first user message and the configured tail verbatim"
 }
 
 // ConfigKey names the config section this plugin reads from ctx.Configs.

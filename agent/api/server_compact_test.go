@@ -2,13 +2,14 @@ package api
 
 // server_compact_test.go: /compact is a real compact, never a placebo. The capsule
 // declares the intent; this surface owns the session, so it runs the compact and answers
-// what the compact actually did. The session persists - the transcript keeps every row
-// and only the context boundary moves.
+// what the compact actually did. The session persists - the transcript keeps every row and
+// the context is now derived from the block the compact appended.
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,19 +19,23 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
-// compactCompactor is the manual compact face: it answers a fixed compact and records what
-// it was handed.
+// compactCompactor is the compact face: it answers a fixed summary and records what it was
+// handed.
 type compactCompactor struct {
-	out   []core.Message
-	err   error
-	calls int
-	got   []core.Message
+	answer agent.CompactAnswer
+	err    error
+	calls  int
+	got    []core.Message
 }
 
-func (f *compactCompactor) CompactNow(_ context.Context, messages []core.Message) ([]core.Message, error) {
+func (f *compactCompactor) PlanCompact(context.Context, agent.CompactRequest) agent.CompactPlan {
+	return agent.CompactPlan{Fire: true, Keep: f.answer.Keep}
+}
+
+func (f *compactCompactor) CompactNow(_ context.Context, req agent.CompactRequest) (agent.CompactAnswer, error) {
 	f.calls++
-	f.got = messages
-	return f.out, f.err
+	f.got = req.Wire
+	return f.answer, f.err
 }
 
 // mountCompactor offers the compact face and registers /compact's intent handler on the
@@ -86,17 +91,14 @@ func seedSession(t *testing.T, s *Server, st interface {
 	}
 }
 
-// TestCompactMovesTheSession is the card's law: a manual compact moves the boundary to
-// the row the compactor kept verbatim, writes its summary, keeps every transcript row,
-// and answers with the real numbers - never a bare "done".
+// TestCompactMovesTheSession is the card's law: a manual compact appends the carrier pair,
+// records the block, keeps every transcript row, and answers with the real numbers - never a
+// bare "done".
 func TestCompactMovesTheSession(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	seedSession(t, s, st, "s-1", "one", "two", "three")
-	c := &compactCompactor{out: []core.Message{
-		core.NewSystem(core.ContextCompactPrefix + "the middle of it" + core.ContextCompactSuffix),
-		core.NewUser("three"),
-	}}
+	c := &compactCompactor{answer: agent.CompactAnswer{Summary: "the middle of it", Keep: 1}}
 	mountCompactor(t, s, c)
 
 	code, got, body := compactCall(t, s, "s-1")
@@ -107,46 +109,100 @@ func TestCompactMovesTheSession(t *testing.T) {
 		t.Fatalf("compact was handed %d rows in %d calls, want all 3 in one", len(c.got), c.calls)
 	}
 
-	view, err := st.GetActiveView(ctx, "s-1")
+	blocks, err := st.ContextBlocks(ctx, "s-1")
 	if err != nil {
-		t.Fatalf("active view: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	wantStart := core.MsgID(view.Path[2].ID)
-	if want := "compacted 2 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"; got.Text != want {
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want the one compact", len(blocks))
+	}
+	b := blocks[0]
+	if b.Tier != 1 || b.From != 2 || b.To != 3 || b.Keep != 3 || b.Call == 0 || b.Carrier == 0 {
+		t.Fatalf("block = %+v, want tier 1 spanning rows 2-3 with a kept tail at 3", b)
+	}
+	want := fmt.Sprintf("compacted 1 messages into a summary carried by compress-%d - the last 1 stays verbatim", b.Call)
+	if got.Text != want {
 		t.Fatalf("answer = %q, want %q", got.Text, want)
 	}
 	if len(got.Actions) != 0 {
 		t.Fatalf("actions = %+v, want the intent consumed by the host", got.Actions)
 	}
 
-	row, err := st.GetSession(ctx, "s-1")
+	// The context now reads as head + carrier + kept tail; the transcript keeps every row.
+	msgs, err := agent.SessionContext(ctx, st, "s-1")
 	if err != nil {
-		t.Fatalf("session row: %v", err)
+		t.Fatalf("context: %v", err)
 	}
-	if row.ContextStart != wantStart {
-		t.Fatalf("context_start = %q, want the kept row %q", row.ContextStart, wantStart)
+	if len(msgs) != 4 {
+		t.Fatalf("context = %d messages, want 4 (head + carrier pair + kept tail)", len(msgs))
 	}
-	if row.ContextSummary != "the middle of it" {
-		t.Fatalf("context_summary = %q, want the compactor's summary", row.ContextSummary)
+	if !agent.IsCarrierResult(msgs[2]) || agent.MessageText(msgs[2]) != "the middle of it" {
+		t.Fatalf("msgs[2] = %q, want the summary carrier", agent.MessageText(msgs[2]))
 	}
-	// The session PERSISTS: a compact is not /new.
-	msgs, err := st.GetMessages(ctx, "s-1")
+	transcript, err := st.GetMessages(ctx, "s-1")
 	if err != nil {
 		t.Fatalf("messages: %v", err)
 	}
-	if len(msgs) != 3 {
-		t.Fatalf("transcript = %d rows, want all 3 kept", len(msgs))
+	if len(transcript) != 5 {
+		t.Fatalf("transcript = %d rows, want all 3 plus the carrier pair", len(transcript))
 	}
 }
 
-// TestCompactRefusesACompactWithNothingToSay pins the honest no-op: a boundary that drops
-// the middle and keeps nothing in its place is worse than no compact.
+// TestCompactCarrierIsTheOnlyThingAppended pins the two-carrier law at the store: the rows
+// that existed before the compact are untouched, byte for byte, and the carrier rides the
+// tail.
+func TestCompactCarrierIsTheOnlyThingAppended(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	ctx := context.Background()
+	seedSession(t, s, st, "s-tail", "one", "two", "three", "four")
+	before, err := st.GetActiveView(ctx, "s-tail")
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	prefixBefore := agent.StoredMessages(before.Path)
+
+	mountCompactor(t, s, &compactCompactor{answer: agent.CompactAnswer{Summary: "a summary", Keep: 2}})
+	if code, _, body := compactCall(t, s, "s-tail"); code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", code, body)
+	}
+	after, err := st.GetActiveView(ctx, "s-tail")
+	if err != nil {
+		t.Fatalf("view: %v", err)
+	}
+	if len(after.Path) != len(before.Path)+2 {
+		t.Fatalf("rows = %d, want the original %d plus the carrier pair", len(after.Path), len(before.Path))
+	}
+	for i := range prefixBefore {
+		got := after.Path[i].Message
+		wantRole, wantPayload, _ := core.EncodeMessage(prefixBefore[i])
+		gotRole, gotPayload, _ := core.EncodeMessage(got)
+		if wantRole != gotRole || string(wantPayload) != string(gotPayload) {
+			t.Fatalf("row %d changed bytes: %s %s -> %s %s", i, wantRole, wantPayload, gotRole, gotPayload)
+		}
+	}
+	// And the wire the provider sees shares that same prefix.
+	wire, err := agent.SessionContext(ctx, st, "s-tail")
+	if err != nil {
+		t.Fatalf("context: %v", err)
+	}
+	if len(wire) == 0 || !sameEncoded(wire[0], prefixBefore[0]) {
+		t.Fatalf("wire head changed: %#v", wire[0])
+	}
+}
+
+func sameEncoded(a, b core.Message) bool {
+	ra, pa, errA := core.EncodeMessage(a)
+	rb, pb, errB := core.EncodeMessage(b)
+	return errA == nil && errB == nil && ra == rb && string(pa) == string(pb)
+}
+
+// TestCompactRefusesACompactWithNothingToSay pins the honest no-op: a block that drops the
+// middle and keeps nothing in its place is worse than no compact.
 func TestCompactRefusesACompactWithNothingToSay(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
 	seedSession(t, s, st, "s-2", "one", "two")
-	c := &compactCompactor{}
-	mountCompactor(t, s, c)
+	mountCompactor(t, s, &compactCompactor{})
 
 	code, got, body := compactCall(t, s, "s-2")
 	if code != http.StatusOK {
@@ -155,12 +211,12 @@ func TestCompactRefusesACompactWithNothingToSay(t *testing.T) {
 	if want := "nothing compacted: the compactor had nothing to summarize"; !strings.HasPrefix(got.Text, want) {
 		t.Fatalf("answer = %q, want it to open %q", got.Text, want)
 	}
-	row, err := st.GetSession(ctx, "s-2")
+	blocks, err := st.ContextBlocks(ctx, "s-2")
 	if err != nil {
-		t.Fatalf("session row: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	if row.ContextStart != "" || row.ContextSummary != "" {
-		t.Fatalf("a refused compact wrote a boundary (start=%q summary=%q)", row.ContextStart, row.ContextSummary)
+	if len(blocks) != 0 {
+		t.Fatalf("a refused compact recorded %d blocks", len(blocks))
 	}
 }
 
@@ -177,7 +233,7 @@ func TestCompactNeedsASession(t *testing.T) {
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _ := newTestServerWithStore(t)
-			c := &compactCompactor{out: []core.Message{core.NewSystem(core.ContextCompactPrefix + "s" + core.ContextCompactSuffix)}}
+			c := &compactCompactor{answer: agent.CompactAnswer{Summary: "s"}}
 			mountCompactor(t, s, c)
 			code, got, body := compactCall(t, s, tt.sessionID)
 			if code != http.StatusOK {
@@ -194,7 +250,7 @@ func TestCompactNeedsASession(t *testing.T) {
 }
 
 // TestCompactWithoutACompactor pins the unmounted module: the answer says so instead of
-// silently moving the boundary.
+// silently writing a block.
 func TestCompactWithoutACompactor(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -208,17 +264,17 @@ func TestCompactWithoutACompactor(t *testing.T) {
 	if want := "nothing compacted: the compaction module is not mounted"; got.Text != want {
 		t.Fatalf("answer = %q, want %q", got.Text, want)
 	}
-	row, err := st.GetSession(ctx, "s-3")
+	blocks, err := st.ContextBlocks(ctx, "s-3")
 	if err != nil {
-		t.Fatalf("session row: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	if row.ContextStart != "" {
-		t.Fatalf("a compact with no compactor wrote a boundary (%q)", row.ContextStart)
+	if len(blocks) != 0 {
+		t.Fatalf("a compact with no compactor recorded %d blocks", len(blocks))
 	}
 }
 
-// TestCompactSurfacesTheCompactorError pins the failure lane: a dead upstream is a
-// named failure on the wire, and no boundary is written.
+// TestCompactSurfacesTheCompactorError pins the failure lane: a dead upstream is a named
+// failure on the wire, and no block is written.
 func TestCompactSurfacesTheCompactorError(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -232,29 +288,27 @@ func TestCompactSurfacesTheCompactorError(t *testing.T) {
 	if !strings.Contains(body, "command failed: compactor: upstream is down") {
 		t.Fatalf("body = %q, want the upstream's own failure", body)
 	}
-	row, err := st.GetSession(ctx, "s-4")
+	blocks, err := st.ContextBlocks(ctx, "s-4")
 	if err != nil {
-		t.Fatalf("session row: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	if row.ContextStart != "" {
-		t.Fatalf("a failed compact wrote a boundary (%q)", row.ContextStart)
+	if len(blocks) != 0 {
+		t.Fatalf("a failed compact recorded %d blocks", len(blocks))
 	}
 }
 
-// boundarylessStore serves sessions but holds no context boundary: a store without the
-// session-context surface. The capability is MISSING, so the compact answers 501 like the
+// boundarylessStore serves sessions but holds no context blocks: a store without the
+// session-block surface. The capability is MISSING, so the compact answers 501 like the
 // sibling handlers, never a 500 that reads as a failure of the request.
 type boundarylessStore struct{ agent.StoreProvider }
 
-// TestCompactWithoutABoundarySurface pins that answer: the command cannot run on this
-// store at all, so it says so with the same status its sibling handlers use.
-func TestCompactWithoutABoundarySurface(t *testing.T) {
+// TestCompactWithoutABlockSurface pins that answer: the command cannot run on this store at
+// all, so it says so with the same status its sibling handlers use.
+func TestCompactWithoutABlockSurface(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	seedSession(t, s, st, "s-6", "one", "two", "three")
 	s.store = boundarylessStore{StoreProvider: st}
-	mountCompactor(t, s, &compactCompactor{out: []core.Message{
-		core.NewSystem(core.ContextCompactPrefix + "sum" + core.ContextCompactSuffix),
-	}})
+	mountCompactor(t, s, &compactCompactor{answer: agent.CompactAnswer{Summary: "sum"}})
 
 	code, _, body := compactCall(t, s, "s-6")
 	if code != http.StatusNotImplemented {
@@ -270,10 +324,7 @@ func TestCompactWithoutABoundarySurface(t *testing.T) {
 func TestCompactLeavesOtherActionsAlone(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	seedSession(t, s, st, "s-5", "one", "two", "three")
-	offerServices(t, s, map[string]any{"compactor": &compactCompactor{out: []core.Message{
-		core.NewSystem(core.ContextCompactPrefix + "sum" + core.ContextCompactSuffix),
-		core.NewUser("three"),
-	}}})
+	offerServices(t, s, map[string]any{"compactor": &compactCompactor{answer: agent.CompactAnswer{Summary: "sum", Keep: 1}}})
 	s.seams.mu.Lock()
 	s.seams.commands = []core.ExtensionCommand{{Name: "/compact", Description: "summarize conversation history"}}
 	s.seams.commandHandler = func(context.Context, string, string) (core.CommandResult, error) {

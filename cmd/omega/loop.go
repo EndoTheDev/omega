@@ -339,7 +339,7 @@ func (lo *cliLoop) commandSession(args string) error {
 		lo.printf("fresh session - created on the next message\n")
 		return nil
 	}
-	msgs, err := agent.CompactContext(context.Background(), lo.store, args)
+	msgs, err := agent.SessionContext(context.Background(), lo.store, args)
 	if err != nil {
 		return fmt.Errorf("session %s: %w", args, err)
 	}
@@ -427,25 +427,24 @@ func (lo *cliLoop) hostAction(ctx context.Context, a core.CmdAction) error {
 	return nil
 }
 
-// compactor is the mounted manual compact face. The capsule owns the summarizer, the loop
-// owns the session: the two meet at agent.CompactSession, never at a second implementation.
-func (lo *cliLoop) compactor() agent.ManualCompactor {
+// compactor is the mounted compact face. The capsule owns the summarizer, the loop owns
+// the session: the two meet at agent.CompactSession, never at a second implementation.
+func (lo *cliLoop) compactor() agent.ContextCompactor {
 	if lo.pctx == nil {
 		return nil
 	}
-	c, _ := lo.pctx.Services().Resolve("compactor").(agent.ManualCompactor)
+	c, _ := lo.pctx.Services().Resolve("compactor").(agent.ContextCompactor)
 	return c
 }
 
 // loadHistory refreshes the in-memory context from the store, honouring the session's
-// compact boundary and its summary - the CLI sends this list itself, so a compact only
-// takes effect when the boundary is applied here (the HTTP dispatch applies the same one
-// per request).
+// compact blocks - the CLI sends this list itself, so a compact only takes effect when the
+// derivation is applied here (the HTTP dispatch applies the same one per request).
 func (lo *cliLoop) loadHistory() error {
 	if lo.sessionID == "" {
 		return nil
 	}
-	msgs, err := agent.CompactContext(context.Background(), lo.store, lo.sessionID)
+	msgs, err := agent.SessionContext(context.Background(), lo.store, lo.sessionID)
 	if err != nil {
 		return err
 	}

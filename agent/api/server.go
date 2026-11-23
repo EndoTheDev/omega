@@ -6,6 +6,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -1119,8 +1120,10 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 	if err != nil {
 		return nil, &runError{http.StatusInternalServerError, "load history: " + err.Error()}
 	}
-	// The /new compact: a machinery-owned conversation restarts its CONTEXT without losing.
-	view.Path = compactPath(view.Path, sessionRow.ContextStart)
+	blocks, err := s.contextBlocks(ctx, req.SessionID)
+	if err != nil {
+		return nil, &runError{http.StatusInternalServerError, "load context blocks: " + err.Error()}
+	}
 	if req.Retry {
 		end := -1
 		for i := len(view.Path) - 1; i >= 0; i-- {
@@ -1134,7 +1137,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 		}
 		req.branchParent = core.MsgID(view.Path[end].ID)
 		req.branchFloor = branchFloorOf(view.Path)
-		return agent.StoredMessages(view.Path[:end+1]), nil
+		return agent.DeriveWire(view.Path[:end+1], blocks, sessionRow), nil
 	}
 	if req.Fork != "" {
 		forkID, idErr := core.ParseMsgID(req.Fork)
@@ -1158,7 +1161,7 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 			}
 			req.branchParent = req.Fork
 			req.branchFloor = branchFloorOf(view.Path)
-			return agent.StoredMessages(view.Path[:at+1]), nil
+			return agent.DeriveWire(view.Path[:at+1], blocks, sessionRow), nil
 		default:
 			if len(incoming) == 0 {
 				return nil, &runError{http.StatusBadRequest, "fork requires a message to run from the forked point"}
@@ -1167,25 +1170,21 @@ func (s *Server) sessionHistory(ctx context.Context, req *chatRequest, incoming 
 				incoming[i] = core.WithParentID(incoming[i], req.Fork)
 			}
 			req.persistInput = incoming
-			return append(agent.StoredMessages(view.Path[:at+1]), incoming...), nil
+			return append(agent.DeriveWire(view.Path[:at+1], blocks, sessionRow), incoming...), nil
 		}
 	}
 	req.persistInput = incoming
-	return append(compactSummaryPrefix(sessionRow.ContextSummary), append(agent.StoredMessages(view.Path), incoming...)...), nil
+	return append(agent.DeriveWire(view.Path, blocks, sessionRow), incoming...), nil
 }
 
-// compactPath cuts the active path at a compacted conversation's context boundary; the
-// implementation lives in agent.CompactPath because the CLI loop applies the SAME boundary
-// - a compact cannot mean two different things on two hosts.
-func compactPath(path []core.StoredMessage, start string) []core.StoredMessage {
-	return agent.CompactPath(path, start)
-}
-
-// compactSummaryPrefix heads a compacted conversation's context with its summary. No summary
-// (a compact too small to earn one, or a compactor that was not mounted) leaves the
-// context exactly as the boundary left it.
-func compactSummaryPrefix(summary string) []core.Message {
-	return agent.CompactSummaryPrefix(summary)
+// contextBlocks reads the session's compact structure, tolerant of a store that cannot hold
+// one (it then serves the legacy boundary shape).
+func (s *Server) contextBlocks(ctx context.Context, sessionID string) ([]core.ContextBlock, error) {
+	blocks, ok := s.store.(agent.SessionBlockStore)
+	if !ok {
+		return nil, nil
+	}
+	return blocks.ContextBlocks(ctx, sessionID)
 }
 
 // branchFloorOf reports the active path's max store row id.
@@ -1612,28 +1611,11 @@ func (s *Server) handleSessionCreate(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// compactorFace is the compaction face the /new compact holds. A
-// consumer-owned local interface (the compactor capsule never knows its
-// callers); the loop's own contract lives in agent/seams.go, and this
-// file asks the same mounted service for the same compact.
-type compactorFace interface {
-	Compact(ctx context.Context, messages []core.Message) ([]core.Message, error)
-}
-
-func (s *Server) compactor() compactorFace {
-	svc, _ := s.LiveServices().Resolve("compactor").(compactorFace)
-	return svc
-}
-
-// manualCompactorFace is the on-demand compact a human asks for (/compact): the same
-// mounted service, with the token budget out of the way and the new context's rows
-// answered back instead of a summary buried in a message list.
-type manualCompactorFace interface {
-	CompactNow(ctx context.Context, messages []core.Message) ([]core.Message, error)
-}
-
-func (s *Server) manualCompactor() manualCompactorFace {
-	svc, _ := s.LiveServices().Resolve("compactor").(manualCompactorFace)
+// manualCompactor is the on-demand compact a human asks for (/compact): the mounted
+// service, with the growth gate out of the way and the summary answered back instead of a
+// message list.
+func (s *Server) manualCompactor() agent.ContextCompactor {
+	svc, _ := s.LiveServices().Resolve("compactor").(agent.ContextCompactor)
 	return svc
 }
 
@@ -1671,41 +1653,24 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"kind": "fork", "session": id})
 		return
 	}
-	scx, ok := s.store.(agent.SessionContextStore)
-	if !ok {
-		http.Error(w, "store cannot compact a conversation", http.StatusNotImplemented)
-		return
-	}
-	view, err := s.store.GetActiveView(ctx, id)
+	// The compact happens on the ACTIVE PATH and keeps the last row as a foothold: a fresh
+	// context with a foothold, never an empty one. A compact with no summary to carry
+	// writes nothing - dropping the middle with nothing in its place costs more than it
+	// saves.
+	out, err := agent.CompactSessionKeep(ctx, s.store, s.manualCompactor(), id, 1)
 	if err != nil {
-		http.Error(w, "load history: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	// The compact happens on the ACTIVE PATH (the variant branches are not
-	// context), and the boundary keeps the tail message: a fresh context
-	// with a foothold, never an empty one.
-	path := agent.StoredMessages(view.Path)
-	start := ""
-	if n := len(view.Path); n > 0 {
-		start = core.MsgID(view.Path[n-1].ID)
-	}
-	summary := ""
-	if c := s.compactor(); c != nil && len(path) > 0 {
-		if compacted, ferr := c.Compact(ctx, path); ferr == nil && len(compacted) < len(path) {
-			summary = agent.CompactSummary(compacted)
+		status := http.StatusInternalServerError
+		if errors.Is(err, errNoCompactFace) {
+			status = http.StatusNotImplemented
 		}
-		// A compactor that refuses (no provider, a dead upstream) leaves the compact without a
-		// summary. A compact that costs context is the point; it never costs the run.
-	}
-	if err := scx.SetSessionContextStart(ctx, id, start, summary); err != nil {
-		http.Error(w, "compact conversation: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "compact conversation: "+err.Error(), status)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"kind":      "compacted",
 		"session":   id,
-		"compacted": len(path),
-		"summary":   summary != "",
+		"compacted": out.Rows,
+		"summary":   out.Compacted,
 	})
 }
 

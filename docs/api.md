@@ -51,7 +51,7 @@ unchanged.
 | `/sessions/{id}/stop`                     | POST               | hard stop: cancel the run, kill its spawned shells, abandon its pending calls                                                                                                                                                                               |
 | `/sessions/{id}/transcript`               | GET                | render-ready items (restore + live contract)                                                                                                                                                                                                                |
 | `/sessions/{id}/variants`                 | GET, POST, PATCH   | branch points + active-variant select                                                                                                                                                                                                                       |
-| `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` opens a fresh tab for the human's own row; `{"kind":"compacted"}` compacts a machinery-owned one in place (same id; the next run starts at the context start)                                                 |
+| `/sessions/{id}/new`                      | POST               | `/new` on one conversation: `{"kind":"fork"}` opens a fresh tab for the human's own row; `{"kind":"compacted"}` compacts a machinery-owned one in place (same id; the next run derives its context from the compact's carrier)                                                        |
 | `/sessions/{id}/branch`                   | POST               | fork a child session (store-linked)                                                                                                                                                                                                                         |
 | `/sessions/{id}/export`                   | GET                | active path as JSONL attachment                                                                                                                                                                                                                             |
 | `/sessions/{id}/verdicts`                 | GET, POST          | one session's verdict cards / the answer POST                                                                                                                                                                                                               |
@@ -450,7 +450,7 @@ The write path does not live here: every scope write goes through the
 agents REST edit endpoint (`PUT /agents/{name}`), unchanged.
 
 PUT applies a **diff-only** values map keyed by the schema's dotted
-knob paths (`provider.instances`, `compaction.keep_first`, ...) - note
+knob paths (`provider.instances`, `compaction.keep_last`, ...) - note
 these are not all literal yaml paths (the vision/title models are root
 yaml keys exposed as `provider.vision_model` / `provider.title_model`,
 and the four per-subsystem model slots - compaction, summarizer,
@@ -602,10 +602,14 @@ true|false}`; the write lands in config.yaml's `disabled:` fold and a
   `{"kind":"compacted"}` for a Machinery-Owned row (`machine_owned` on
   the session; an agent's canonical chat): the relationship is the
   point, so the conversation compacts instead of forking. The transcript
-  keeps every row; the session row's `context_start` marks where the
-  next run's provider context begins and `context_summary` carries the
-  compactor's summary (empty when the pre-compaction history was too
-  small to earn one). Same id before and after.
+  keeps every row; the compact appends a `compress` tool call plus its
+  result at the tail and records a context block (`from`/`to`/`keep` row
+  ids) the next run derives its provider context from. The answer's
+  `compacted` is the number of messages the compact took out of the live
+  context and `summary` says whether a summary was actually written (a
+  compact with no summary writes nothing - dropping the middle with
+  nothing in its place costs more than it saves). Same id before and
+  after.
 
 - `DELETE /agents/{name}` - delete the HOME (0.17.3 make-over ruling
   2), sessions included: the definition file, the persona files, the

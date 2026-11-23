@@ -40,7 +40,6 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"compaction.enabled":             true,
 		"compaction.threshold":           true,
 		"compaction.context_window":      true,
-		"compaction.keep_first":          true,
 		"compaction.keep_last":           true,
 		"compaction.reserve_tokens":      true,
 		"compaction.max_tool_output":     true,
@@ -191,7 +190,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 		"server.port":               float64(9000),
 		"compaction.enabled":        false,
 		"compaction.threshold":      0.75,
-		"compaction.keep_first":     float64(3),
 		"http_timeout":              float64(120),
 		"logging.file":              "x.log",
 		"server.default_workspace":  t.TempDir(),
@@ -225,9 +223,6 @@ func TestApplySettingValuesTyped(t *testing.T) {
 	}
 	if cfg.Compaction.Threshold != 0.75 {
 		t.Errorf("threshold: %v", cfg.Compaction.Threshold)
-	}
-	if cfg.Compaction.KeepFirst != 3 {
-		t.Errorf("keep_first: %d", cfg.Compaction.KeepFirst)
 	}
 	if cfg.HTTPTimeout != 120 {
 		t.Errorf("http_timeout: %d", cfg.HTTPTimeout)

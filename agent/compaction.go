@@ -17,7 +17,6 @@ type CompactionConfig struct {
 	Enabled       bool    `yaml:"enabled"`
 	Threshold     float64 `yaml:"threshold"`
 	ContextWindow int     `yaml:"context_window"`
-	KeepFirst     int     `yaml:"keep_first"`
 	KeepLast      int     `yaml:"keep_last"`
 	ReserveTokens int     `yaml:"reserve_tokens"`
 	MaxToolOutput int     `yaml:"max_tool_output"`
@@ -55,6 +54,16 @@ func EstimateTokens(history []core.Message) int {
 		total += len(MessageText(m))
 	}
 	return total / charsPerToken
+}
+
+// SummaryTokens estimates what a compact's summary costs on the wire: the doctrine caps it
+// at the summary budget, so the estimate bills the smaller of the text and that cap.
+func SummaryTokens(summary string) int {
+	tokens := len(summary) / charsPerToken
+	if tokens > 2048 {
+		return 2048
+	}
+	return tokens
 }
 
 // MessageText returns the user-visible text of a message, used for token estimation.

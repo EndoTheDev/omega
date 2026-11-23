@@ -376,6 +376,10 @@ func applyLine(ctx context.Context, exec execer, line fileLine) error {
 		return err
 	case kindMeta:
 		return applyChangesToIndex(ctx, exec, line)
+	case kindBlock:
+		// The tier structure lives in the files only; the index serves lists and search,
+		// which never read blocks. Nothing to apply.
+		return nil
 	}
 	return nil
 }

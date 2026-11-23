@@ -15,12 +15,18 @@ type TurnSink interface {
 }
 
 // WithTurnSink returns a child context carrying the run's TurnSink.
-// Callers wrap their own run context, so parallel runs never share one.
+// Callers wrap their own run context, so parallel runs never share one. A store-backed
+// sink also installs the run's compact recorder: a run that compacts in memory must leave
+// the block in the store, or the next run derives the uncompacted history again.
 func WithTurnSink(ctx context.Context, sink TurnSink) context.Context {
 	if sink == nil {
 		return ctx
 	}
-	return context.WithValue(ctx, turnSinkKey{}, sink)
+	ctx = context.WithValue(ctx, turnSinkKey{}, sink)
+	if st, ok := sink.(*storeTurnSink); ok {
+		ctx = WithCompactRecorder(ctx, &storeCompactRecorder{store: st.store, sessionID: st.sessionID})
+	}
+	return ctx
 }
 
 // RunTurnSink returns the run's TurnSink, or nil when the run has no persistence seam.

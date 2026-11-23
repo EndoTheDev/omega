@@ -130,7 +130,6 @@ type SessionContextStore interface {
 	SetSessionModel(ctx context.Context, sessionID, model string) error
 	SetSessionProvider(ctx context.Context, sessionID, provider string) error
 	SetSessionWorkspace(ctx context.Context, sessionID, workspace string) error
-	SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error
 }
 
 // DelegateSessionStore is the optional delegate-lineage surface. Delegate children NEVER

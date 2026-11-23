@@ -304,14 +304,6 @@ func (s *Store) SetSessionLastRun(ctx context.Context, sessionID string, stats *
 	return s.appendMeta(ctx, sessionID, &changes{LastRun: &encoded})
 }
 
-// SetSessionContextStart moves the conversation's provider-facing context boundary.
-func (s *Store) SetSessionContextStart(ctx context.Context, sessionID, start, summary string) error {
-	if o := s.owner(ctx, sessionID); o != nil {
-		return o.SetSessionContextStart(ctx, sessionID, start, summary)
-	}
-	return s.appendMeta(ctx, sessionID, &changes{ContextStart: &start, ContextSummary: &summary})
-}
-
 // SetSessionModel pins the session's model_name.
 func (s *Store) SetSessionModel(ctx context.Context, sessionID, model string) error {
 	if o := s.owner(ctx, sessionID); o != nil {

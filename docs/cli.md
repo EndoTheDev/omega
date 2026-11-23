@@ -131,9 +131,10 @@ the base id - a wake that must land in a retired chat's successor
 names the generation explicitly.
 
 `/new` inside an agent chat does not fork the relationship: the webui
-folds that conversation's context (the transcript stays whole, the next
-run starts at the fold's boundary under the compactor's summary) and
-the session id never changes.
+compacts that conversation's context (the transcript stays whole; the
+summary rides a compress tool call and its result at the tail, and the
+next run derives its context from that block) and the session id never
+changes.
 
 ### `omega export`
 
@@ -471,7 +472,6 @@ integers below their minimum are ignored (the YAML/default value stays).
 | `OMEGA_LOGGING_ENABLED`            | `logging.enabled`                               | `true`                   |
 | `OMEGA_PORT`                       | `server.port`                                   | `8099`                   |
 | `OMEGA_COMPACTION_CONTEXT_WINDOW`  | `compaction.context_window`                     | `32768` (0 = auto-probe) |
-| `OMEGA_COMPACTION_KEEP_FIRST`      | `compaction.keep_first`                         | `2`                      |
 | `OMEGA_COMPACTION_KEEP_LAST`       | `compaction.keep_last`                          | `10`                     |
 | `OMEGA_COMPACTION_RESERVE_TOKENS`  | `compaction.reserve_tokens`                     | `16384`                  |
 | `OMEGA_COMPACTION_MAX_TOOL_OUTPUT` | `compaction.max_tool_output`                    | `32768`                  |

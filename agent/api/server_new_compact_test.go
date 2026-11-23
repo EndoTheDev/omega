@@ -1,18 +1,18 @@
 package api
 
 // server_new_compact_test.go: /new on a conversation the MACHINERY owns. The rule is one
-// line long - "/new in an agent chat compacts, never forks the relationship" - and it
-// has two halves: the wire answers the compact (fork vs compacted), and the
-// provider-facing history starts at the compact's boundary with the summary heading it.
+// line long - "/new in an agent chat compacts, never forks the relationship" - and it has
+// two halves: the wire answers the compact (fork vs compacted), and the provider-facing
+// history reads back as the compact's carrier plus a one-row foothold.
 
 import (
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
+	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
 )
 
@@ -27,9 +27,9 @@ func newCompactCall(t *testing.T, s *Server, id string) (int, map[string]any) {
 	return rec.Code, body
 }
 
-// TestSessionNewForksTheHumansOwn pins the half that must NOT change:
-// the human's own conversation forks on /new, exactly as before - no
-// boundary is written, the shell opens a fresh tab.
+// TestSessionNewForksTheHumansOwn pins the half that must NOT change: the human's own
+// conversation forks on /new, exactly as before - no block is written, the shell opens a
+// fresh tab.
 func TestSessionNewForksTheHumansOwn(t *testing.T) {
 	s, st := newTestServerWithStore(t)
 	ctx := context.Background()
@@ -47,13 +47,12 @@ func TestSessionNewForksTheHumansOwn(t *testing.T) {
 	if body["kind"] != "fork" {
 		t.Fatalf("kind = %v, want fork - the human's own conversation forks", body["kind"])
 	}
-	row, err := st.GetSession(ctx, "mine")
+	blocks, err := st.ContextBlocks(ctx, "mine")
 	if err != nil {
-		t.Fatalf("row: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	if row.ContextStart != "" || row.ContextSummary != "" {
-		t.Fatalf("a fork wrote a compact (start=%q summary=%q) - /new must not touch the human's own context",
-			row.ContextStart, row.ContextSummary)
+	if len(blocks) != 0 {
+		t.Fatalf("a fork recorded %d blocks - /new must not touch the human's own context", len(blocks))
 	}
 }
 
@@ -64,11 +63,17 @@ func TestSessionNewCompactsMachineryOwned(t *testing.T) {
 	if err := st.CreateCanonicalChat(ctx, "scout-canonical", "scout"); err != nil {
 		t.Fatalf("create canonical chat: %v", err)
 	}
-	for _, m := range []core.Message{core.NewUser("patrol the queue"), core.NewAssistant("queue is empty")} {
+	for _, m := range []core.Message{
+		core.NewUser("patrol the queue"),
+		core.NewAssistant("queue is empty"),
+		core.NewUser("patrol again"),
+		core.NewAssistant("still empty"),
+	} {
 		if err := st.AppendMessage(ctx, "scout-canonical", m); err != nil {
 			t.Fatalf("append: %v", err)
 		}
 	}
+	mountCompactor(t, s, &compactCompactor{answer: agent.CompactAnswer{Summary: "the queue was empty all night", Keep: 1}})
 
 	code, body := newCompactCall(t, s, "scout-canonical")
 	if code != http.StatusOK {
@@ -88,30 +93,37 @@ func TestSessionNewCompactsMachineryOwned(t *testing.T) {
 	if !row.MachineOwned {
 		t.Fatal("the canonical chat is not machine-owned - it would show up in the human's session list")
 	}
-	if row.ContextStart == "" {
-		t.Fatal("no context boundary written - the compact did nothing")
-	}
-
-	view, err := st.GetActiveView(ctx, "scout-canonical")
+	blocks, err := st.ContextBlocks(ctx, "scout-canonical")
 	if err != nil {
-		t.Fatalf("active view: %v", err)
+		t.Fatalf("blocks: %v", err)
 	}
-	if len(view.Path) != 2 {
-		t.Fatalf("active path = %d rows, want 2 (the transcript is never pruned)", len(view.Path))
+	if len(blocks) != 1 {
+		t.Fatalf("blocks = %d, want the compact the /new ran", len(blocks))
 	}
-	if want := core.MsgID(view.Path[len(view.Path)-1].ID); row.ContextStart != want {
-		t.Fatalf("context_start = %q, want the tail %q", row.ContextStart, want)
+	if blocks[0].Keep != 4 {
+		t.Fatalf("block keep = %d, want the last row (4) as the foothold", blocks[0].Keep)
 	}
-	compacted := compactPath(view.Path, row.ContextStart)
-	if len(compacted) != 1 {
-		t.Fatalf("compacted path = %d rows, want 1 (the boundary onward)", len(compacted))
+	msgs, err := agent.SessionContext(ctx, st, "scout-canonical")
+	if err != nil {
+		t.Fatalf("context: %v", err)
 	}
-	if _, ok := compacted[0].Message.(core.Assistant); !ok {
-		t.Fatalf("compacted path starts at %T, want the tail assistant row", compacted[0].Message)
+	if len(msgs) != 4 {
+		t.Fatalf("context = %d messages, want 4 (head + carrier pair + foothold)", len(msgs))
+	}
+	if !agent.IsCarrierResult(msgs[2]) || agent.MessageText(msgs[2]) != "the queue was empty all night" {
+		t.Fatalf("msgs[2] = %q, want the summary carrier", agent.MessageText(msgs[2]))
+	}
+	if agent.MessageText(msgs[3]) != "still empty" {
+		t.Fatalf("foothold = %q, want the last row verbatim", agent.MessageText(msgs[3]))
 	}
 
-	if code, body := newCompactCall(t, s, "scout-canonical"); code != http.StatusOK || body["kind"] != "compacted" {
-		t.Fatalf("second compact = %d %v, want 200 compacted", code, body)
+	// The transcript is never pruned: the compact only moves the live context.
+	transcript, err := st.GetMessages(ctx, "scout-canonical")
+	if err != nil {
+		t.Fatalf("transcript: %v", err)
+	}
+	if len(transcript) != 6 {
+		t.Fatalf("transcript = %d rows, want the 4 kept plus the carrier pair", len(transcript))
 	}
 }
 
@@ -120,43 +132,5 @@ func TestSessionNewUnknownIs404(t *testing.T) {
 	s, _ := newTestServerWithStore(t)
 	if code, _ := newCompactCall(t, s, "ghost"); code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404", code)
-	}
-}
-
-// TestCompactSummaryPrefix pins what heads a compacted context.
-func TestCompactSummaryPrefix(t *testing.T) {
-	if got := compactSummaryPrefix(""); got != nil {
-		t.Fatalf("empty summary = %v, want no message", got)
-	}
-	got := compactSummaryPrefix("the queue was empty at 10:00")
-	if len(got) != 1 {
-		t.Fatalf("summary head = %d messages, want 1", len(got))
-	}
-	sys, ok := got[0].(core.System)
-	if !ok {
-		t.Fatalf("summary head is %T, want a system message", got[0])
-	}
-	if !strings.HasPrefix(sys.Content, core.ContextCompactPrefix) ||
-		!strings.HasSuffix(sys.Content, core.ContextCompactSuffix) ||
-		!strings.Contains(sys.Content, "the queue was empty at 10:00") {
-		t.Fatalf("summary head = %q, want it wrapped in the compact markers", sys.Content)
-	}
-}
-
-// TestCompactPathMissingBoundary pins the healing rule. A conversation heals to a full
-// context, never to an empty one.
-func TestCompactPathMissingBoundary(t *testing.T) {
-	view := []core.StoredMessage{
-		{ID: 1, Message: core.NewUser("a")},
-		{ID: 2, Message: core.NewAssistant("b")},
-	}
-	if got := compactPath(view, ""); len(got) != 2 {
-		t.Fatalf("no boundary = %d rows, want the whole path", len(got))
-	}
-	if got := compactPath(view, core.MsgID(99)); len(got) != 2 {
-		t.Fatalf("unknown boundary = %d rows, want the whole path", len(got))
-	}
-	if got := compactPath(view, core.MsgID(2)); len(got) != 1 {
-		t.Fatalf("boundary = %d rows, want the tail", len(got))
 	}
 }
