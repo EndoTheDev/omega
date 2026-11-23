@@ -75,10 +75,10 @@ func CompactSession(ctx context.Context, store StoreProvider, compactor ManualCo
 	kept := len(compacted) - 1
 	start := len(path) - kept
 	if summary == "" {
-		return CompactOutcome{}, errors.New("the compactor answered a fold without a summary")
+		return CompactOutcome{}, errors.New("the compactor answered a compact without a summary")
 	}
 	if start <= 0 || start >= len(path) {
-		return CompactOutcome{}, fmt.Errorf("fold kept %d of %d rows - no boundary to write", kept, len(path))
+		return CompactOutcome{}, fmt.Errorf("compaction kept %d of %d rows - no boundary to write", kept, len(path))
 	}
 	if err := scx.SetSessionContextStart(ctx, sessionID, core.MsgID(view.Path[start].ID), summary); err != nil {
 		return CompactOutcome{}, err
@@ -88,16 +88,11 @@ func CompactSession(ctx context.Context, store StoreProvider, compactor ManualCo
 
 // CompactLine is the one wording of a manual compact's answer: the compact's real numbers,
 // or the real refusal. Hosts print this verbatim - never a hand-rolled variant.
-//
-// The phrasing still says "folded" and "fold": every string a human reads on the /compact
-// path is unchanged, because this rename is internal (code, files, comments, prompts) and
-// the glossary word is a separate, image-verified change. Error text on the same path is
-// unchanged for the same reason.
 func CompactLine(out CompactOutcome) string {
 	if !out.Compacted {
-		return "nothing folded: " + out.Why
+		return "nothing compacted: " + out.Why
 	}
-	return fmt.Sprintf("folded %d messages into a summary - the context now starts at message %s, and the last %d stay verbatim",
+	return fmt.Sprintf("compacted %d messages into a summary - the context now starts at message %s, and the last %d stay verbatim",
 		out.Rows, out.Start, out.Kept)
 }
 

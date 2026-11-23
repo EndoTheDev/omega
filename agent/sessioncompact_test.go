@@ -82,7 +82,7 @@ func TestCompactSessionCompactsTheHead(t *testing.T) {
 	if st.start != out.Start || st.summary != "the middle" {
 		t.Fatalf("boundary = (%q, %q), want (%q, %q)", st.start, st.summary, out.Start, "the middle")
 	}
-	want := "folded 4 messages into a summary - the context now starts at message 5, and the last 1 stay verbatim"
+	want := "compacted 4 messages into a summary - the context now starts at message 5, and the last 1 stay verbatim"
 	if got := CompactLine(out); got != want {
 		t.Fatalf("line = %q, want %q", got, want)
 	}
@@ -98,11 +98,11 @@ func TestCompactSessionRefusals(t *testing.T) {
 		c    ManualCompactor
 		want string
 	}{
-		{"no session", "", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing folded: no session is bound to this chat yet"},
-		{"ephemeral", "eph-live", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing folded: ephemeral sessions keep no history"},
-		{"empty conversation", "s-1", &compactStore{}, &compactFace{}, "nothing folded: this conversation has no messages yet"},
-		{"no compactor", "s-1", &compactStore{path: compactPathRows(3)}, nil, "nothing folded: the compaction module is not mounted"},
-		{"nothing to summarize", "s-1", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing folded: the compactor had nothing to summarize (a short conversation, or compaction is off)"},
+		{"no session", "", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing compacted: no session is bound to this chat yet"},
+		{"ephemeral", "eph-live", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing compacted: ephemeral sessions keep no history"},
+		{"empty conversation", "s-1", &compactStore{}, &compactFace{}, "nothing compacted: this conversation has no messages yet"},
+		{"no compactor", "s-1", &compactStore{path: compactPathRows(3)}, nil, "nothing compacted: the compaction module is not mounted"},
+		{"nothing to summarize", "s-1", &compactStore{path: compactPathRows(3)}, &compactFace{}, "nothing compacted: the compactor had nothing to summarize (a short conversation, or compaction is off)"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {

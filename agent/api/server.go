@@ -1673,7 +1673,7 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 	}
 	scx, ok := s.store.(agent.SessionContextStore)
 	if !ok {
-		http.Error(w, "store cannot fold a conversation", http.StatusNotImplemented)
+		http.Error(w, "store cannot compact a conversation", http.StatusNotImplemented)
 		return
 	}
 	view, err := s.store.GetActiveView(ctx, id)
@@ -1698,7 +1698,7 @@ func (s *Server) handleSessionNew(w http.ResponseWriter, r *http.Request) {
 		// summary. A compact that costs context is the point; it never costs the run.
 	}
 	if err := scx.SetSessionContextStart(ctx, id, start, summary); err != nil {
-		http.Error(w, "fold conversation: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "compact conversation: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
