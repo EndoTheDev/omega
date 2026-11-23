@@ -72,8 +72,8 @@ type Server struct {
 
 	titleModel string
 
-	// newSessionID mints the /sessions id. Nil = agent.NewSessionID; a test swaps it to
-	// force the mint-failure path.
+	// newSessionID mints the /sessions and /chat auto-create ids. Nil = agent.NewSessionID;
+	// a test swaps it to force the mint-failure path.
 	newSessionID func() (string, error)
 
 	defaultWorkspace string
@@ -985,10 +985,10 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if s.store != nil && req.SessionID == "" {
-		id, err := agent.NewSessionID()
+		id, err := s.mintSessionID()
 		if err != nil {
-			// same fallback POST /sessions uses - crypto/rand never fails on supported.
-			id = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+			http.Error(w, "mint session id: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
 		// Born-pin: the draft intent resolves BEFORE the row write.
 		var wsDir string

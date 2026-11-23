@@ -256,7 +256,7 @@ func (r *themeRegistry) Stop() {
 }
 
 // handleThemes serves GET /themes. Broken themes ride along flagged with Error; the
-// picker shows only the good ones and the server never falls.
+// picker shows only the good ones and the server never falls over.
 func (s *Server) handleThemes(w http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodGet {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

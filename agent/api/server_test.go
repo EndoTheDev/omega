@@ -305,6 +305,42 @@ func TestSessionCreateMintFailure(t *testing.T) {
 	}
 }
 
+// TestChatAutoCreateMintFailure: the /chat empty-id lane mints its id at the same trust
+// boundary as POST /sessions - a failed mint refuses the request with a 500 before any row
+// write, never a predictable fallback id.
+func TestChatAutoCreateMintFailure(t *testing.T) {
+	s, st := newTestServerWithStore(t)
+	s.newSessionID = func() (string, error) { return "", fmt.Errorf("entropy source failed") }
+
+	body, _ := json.Marshal(map[string]any{
+		"messages": []map[string]any{{"role": "user", "content": "hi"}},
+	})
+	rec := postChatBody(s, body)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "mint session id") {
+		t.Fatalf("body = %q, want the mint failure named", rec.Body.String())
+	}
+	rows, err := st.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("mint failure wrote %d session rows, want 0", len(rows))
+	}
+
+	// The same seam's happy path still creates the row the minter named and runs the turn.
+	s.newSessionID = func() (string, error) { return "chat-minted", nil }
+	rec = postChatBody(s, body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body: %s)", rec.Code, rec.Body.String())
+	}
+	if _, err := st.GetSession(context.Background(), "chat-minted"); err != nil {
+		t.Fatalf("the auto-created session is not in the store: %v", err)
+	}
+}
+
 // capsProvider is mockProvider with the ListModelEntries upgrade.
 type capsProvider struct {
 	*mockProvider
