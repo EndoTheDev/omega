@@ -247,7 +247,8 @@ func buildProvidesMap(plugins []Plugin, reg *Registry) (map[string]string, error
 	return provides, nil
 }
 
-// topoSort returns plugins in dependency order so that a plugin's required seams are.
+// topoSort returns plugins in dependency order so that a plugin's required seams are
+// always provided by a plugin earlier in the list.
 func topoSort(plugins []Plugin, provides map[string]string) ([]Plugin, error) {
 	mounted := make(map[string]bool)
 	var ordered []Plugin

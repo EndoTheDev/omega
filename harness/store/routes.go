@@ -96,7 +96,8 @@ func (rt *Routes) handleSessionsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	includeArchived := r.URL.Query().Get("archived") == "include"
-	// ponytail: counts are computed at read time from SQL COUNT, so the list stays.
+	// counts are computed at read time by an aggregate over the messages table, so the
+	// list stays accurate with no maintained counters.
 	counts, err := rt.store.SessionCounts(r.Context())
 	if err != nil {
 		rt.httpError(w, http.StatusInternalServerError, "session counts: %v", err)

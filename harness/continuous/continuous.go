@@ -132,9 +132,9 @@ func CurrentCanonicalSession(sessions []core.Session, agentName string) (core.Se
 	return best, found
 }
 
-// EnsureCanonical answers agentName's canonical chat, MINTING it when the home holds.
-// Its one caller is the roster's canonical route (POST /agents/{name}/canonical), so
-// there is exactly one mint law.
+// EnsureCanonical answers agentName's canonical chat, MINTING it when the home holds no
+// live one. Its one caller is the roster's canonical route (POST /agents/{name}/canonical),
+// so there is exactly one mint law.
 func (m *Machine) EnsureCanonical(name string) (core.Session, error) {
 	if _, err := agent.LoadProfile(m.home, name); err != nil {
 		return core.Session{}, err

@@ -187,7 +187,8 @@ func sessionTarget(c context.Context, args string) (sessionID, rest string) {
 	return core.CommandSession(c), ""
 }
 
-// sessionPayload is sessionTarget's sibling for commands whose args are.
+// sessionPayload is sessionTarget's sibling for commands whose args are the command's own
+// PAYLOAD once the surface supplies the session.
 // A caller that binds no session (the terminal loop) keeps the legacy shape, where the
 // first word names the session: "/label <session-id> <text>", "/export <session-id>
 // [path]".
