@@ -22,6 +22,12 @@
 # pure half, and a chip that flips nothing, never moves aria-pressed and never
 # shrinks the page passes every pure test. Only a browser witness catches it.
 #
+# WIDENED (card t_57f123ea): the band gained the clear action and the pane grew
+# the SOURCE family (.obs-sources / .obs-src, one toggle per derived source).
+# Sections 4 and 6 pin the two new halves live: a source toggle really removes
+# its rows from the DOM and AND-composes with the severity chip, and clear is a
+# display watermark (the ring total holds, the log file still tails).
+#
 # The retired shape is pinned as retired, twice: the old classes must resolve
 # to ZERO elements, and the raw tail must stay UNFILTERED - the tail is the
 # process's own words verbatim (rows.ts parseLogsPayload: no reformatting, no
@@ -89,17 +95,21 @@ poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane").length ==
   || die "the Logs tab mounts no view (the observability capsule's obs-pane is missing)"
 
 # --- 1: the band's chips, and the retired shape staying retired -----------
-# Exactly three: session scope, errors-only, raw tail. A fourth chip is the
-# RETURN of the retired three-way severity filter, so the count is asserted,
-# not just the presence of the two under test.
-chipcount=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-chip").length')
-assert_eq "$chipcount" "3" "the Logs band carries exactly three chips: session scope, errors-only, raw tail"
+# Exactly four: session scope, errors-only, raw tail, clear. A fifth band chip is
+# the RETURN of the retired three-way severity filter (or a new control nobody
+# pinned), so the count is asserted, not just the presence of the ones under test.
+chipcount=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .tab-band .obs-chip").length')
+assert_eq "$chipcount" "4" "the Logs band carries exactly four chips: session scope, errors-only, raw tail, clear"
 scopecount=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-scope").length')
 assert_eq "$scopecount" "1" "the session-scope chip still leads the band"
 errlbl=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.getAttribute("aria-label") || ""' | tr -d '"')
 assert_eq "$errlbl" "toggle errors only" "the severity filter survives as the errors-only chip (t_01c53e78)"
 taillbl=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-tail")?.getAttribute("aria-label") || ""' | tr -d '"')
 assert_eq "$taillbl" "toggle raw log tail" "the raw tail is the capsule's SECONDARY view behind one chip, not a peer tab"
+clearlbl=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-clear")?.getAttribute("aria-label") || ""' | tr -d '"')
+assert_eq "$clearlbl" "clear the visible stream" "the clear action names what it empties (the view, never the log file)"
+clearpress=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-clear")?.getAttribute("aria-pressed") || "none"' | tr -d '"')
+assert_eq "$clearpress" "none" "clear is an ACTION - it carries no pressed state"
 # the retired selectors must resolve to nothing: a hit here means the raw-tail
 # pane came back, and every assertion below would be pinning the wrong surface
 retired=$(jsq 'document.querySelectorAll(".logs-line, .logs-sev-chip, .logs-meta, .logs-view").length')
@@ -161,6 +171,68 @@ assert_eq "$FILT" "0" "the meta line drops the 'of' numerator once the filter is
 assert_eq "$SHOWN" "$TOT" "the unfiltered meta reads its own total as the shown count"
 assert_eq "$ROWS" "$(( TOT < 300 ? TOT : 300 ))" "the full stream returns (up to the render cap) with no refetch"
 step "ok: errors-only round-trips (full stream back, $ROWS rows)"
+
+# --- 4b: the SOURCE family - one toggle per source, multi-select, AND ------
+# The source dimension is DERIVED (rows.ts eventSource): the ring has one producer
+# family, so a record's source comes from its own provenance - the cron run's session
+# label, the kanban.* tools, the provider stream, the loop. Only a browser witness
+# proves the chips move the render; the node suite pins the derivation alone.
+srccount=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-sources .obs-src").length')
+assert_eq "$srccount" "4" "one toggle per source the stream carries (llm, agent, cron, kanban)"
+srclabels=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-src")).map((c) => c.getAttribute("aria-label")).join(",")' | tr -d '"')
+assert_eq "$srclabels" "toggle llm records,toggle agent records,toggle cron records,toggle kanban records" \
+  "the chips name the closed source vocabulary"
+srcpress=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-src")).every((c) => c.getAttribute("aria-pressed") === "true") ? 1 : 0')
+assert_eq "$srcpress" "1" "every source starts ON - the tab opens on the unfiltered stream"
+srccolors=$(jsq '(() => {
+  const chips = Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-src"));
+  const vals = chips.map((c) => getComputedStyle(c).getPropertyValue("--src").trim());
+  return new Set(vals).size;
+})()')
+assert_eq "$srccolors" "4" "each source chip resolves its own accent from the existing token ladder"
+sourced=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-row")).every((r) => (r.getAttribute("data-source") || "") !== "") ? 1 : 0')
+assert_eq "$sourced" "1" "every row carries its source"
+
+snap
+TOT_PRE_SRC=$TOT
+ROWS_PRE_SRC=$ROWS
+agentrows=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=agent]").length')
+[ "$agentrows" -ge 1 ] 2>/dev/null || die "the seeded run painted no agent rows ($agentrows) - the classifier attributed every record elsewhere"
+
+# agent OFF: the filtered-out rows must be GONE, not dimmed
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.getAttribute("aria-pressed") === "false"' 5 \
+  || die "the agent source chip never flips aria-pressed=false on click (a dead toggle)"
+hidden=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=agent]").length')
+assert_eq "$hidden" "0" "with the agent source OFF no agent row renders - the filtered rows leave the DOM"
+snap
+if [ "$TOT_PRE_SRC" -lt 300 ] 2>/dev/null; then
+  want=$(( TOT_PRE_SRC - agentrows ))
+  assert_eq "$ROWS" "$want" "the render drops exactly the agent rows ($ROWS of $TOT_PRE_SRC, $agentrows were agent)"
+else
+  assert_eq "$ROWS" "300" "the render stays at its 300-row cap over the filtered page"
+fi
+assert_eq "$TOT" "$TOT_PRE_SRC" "the ring total is unchanged - a source toggle filters the page, it does not fetch"
+
+# AND, not OR: severity still agrees while the source is off
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.getAttribute("aria-pressed") === "true"' 5 \
+  || die "the errors chip never flips on with a source off"
+androws=$(jsq '(() => {
+  const rows = Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-row"));
+  return rows.every((r) => (r.getAttribute("class") || "").split(/[ \t]+/).includes("error")) && rows.every((r) => r.getAttribute("data-source") !== "agent") ? 1 : 0;
+})()')
+assert_eq "$androws" "1" "errors-only AND agent-off leaves only error rows that are not agent records"
+step "ok: the two filter families compose with AND (agent off, errors-only on)"
+
+# back to the unfiltered page, both families off
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.click()' >/dev/null 2>&1
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length === '"$ROWS_PRE_SRC" 5 \
+  || die "the full (up to the cap) page never came back after the chips were toggled home"
+snap
+assert_eq "$FILT" "0" "the meta line drops the numerator once neither family filters"
+step "ok: both families restore the unfiltered stream ($ROWS rows)"
 
 # --- 5: the raw tail is VERBATIM and never severity-filtered --------------
 # The retired feature's boundary, pinned: the tail renders the process's own
@@ -234,6 +306,38 @@ snap
 assert_eq "$PRESS" "false" "final: every chip is back in its default state"
 assert_eq "$FILT" "0" "final: the stream view is unfiltered"
 step "ok: clean state (stream view, full page)"
+
+# --- 6: clear empties the VIEW, never the durable stream -------------------
+# The clear button is a display watermark: the rows already read go out of view, the
+# ring keeps them (the meta total must NOT drop) and the log file is never touched.
+snap
+TOT_PRE_CLEAR=$TOT
+[ "$TOT_PRE_CLEAR" -ge 1 ] 2>/dev/null || die "the pane reads no events before the clear - nothing to prove (got '$TOT_PRE_CLEAR')"
+# a quiet ring: the seeded run has finished, so no new record can race the clear
+wait_settled 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length' 10
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-clear")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length === 0' 5 \
+  || die "the clear button left rows painted (the visible stream is not emptied)"
+snap
+assert_eq "$ROWS" "0" "clear empties the visible stream"
+assert_eq "$TOT" "$TOT_PRE_CLEAR" "the ring is untouched - the cleared records are still read (a watermark, not a delete)"
+clearmac=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-meta")?.textContent || ""' | tr -d '"')
+case "$clearmac" in
+  *"cleared through"*) step "ok: the meta line names the clear watermark ($clearmac)" ;;
+  *) die "the meta line lost the clear marker: $clearmac" ;;
+esac
+# the durable half: the tail still reads the file, so nothing was truncated
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-tail")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length >= 1' 15 \
+  || die "the raw tail lost its lines after a clear - clear touched the log file"
+step "ok: clear is display-level (the log file still tails)"
+# and a view flip does not resurrect the cleared rows either (the watermark is state,
+# not a one-shot DOM sweep)
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-tail")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length === 0' 10 \
+  || die "the stream view did not return after the tail flip"
+cleared_after=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length')
+assert_eq "$cleared_after" "0" "the cleared stream stays cleared across a view flip (the watermark survives)"
 
 # the seed session is this recipe's garbage - delete it so the store does not
 # accumulate one journey row per suite run

@@ -36,7 +36,38 @@
         @click="tailOpen = !tailOpen">
         tail
       </button>
+      <button
+        class="band-tool obs-chip obs-clear"
+        type="button"
+        :disabled="tailOpen || !events.length"
+        :aria-label="clearAria"
+        :title="clearTitle"
+        @click="clearStream">
+        clear
+      </button>
     </TabBand>
+
+    <!-- the SOURCE family: one toggle per source, multi-select, AND-composed with the
+         severity chip. A view filter over the fetched page, like errors-only - the ring
+         has one page in it, so no toggle costs a round trip. -->
+    <div
+      v-if="!tailOpen"
+      class="obs-sources"
+      role="toolbar"
+      aria-label="source filters">
+      <button
+        v-for="s in SOURCES"
+        :key="s"
+        class="obs-src"
+        :class="['src-' + s, { off: !sourceOn(s) }]"
+        type="button"
+        :aria-pressed="sourceOn(s)"
+        :aria-label="'toggle ' + s + ' records'"
+        :title="sourceTitle(s)"
+        @click="toggleSource(s)">
+        <span class="obs-src-dot" aria-hidden="true"></span>{{ s }}
+      </button>
+    </div>
 
     <p
       v-if="readError"
@@ -64,7 +95,8 @@
           v-for="e in shown"
           :key="e.seq"
           class="obs-row"
-          :class="[e.level, { allscope: allScope }]">
+          :class="[e.level, 'src-' + sourceFor(e), { allscope: allScope }]"
+          :data-source="sourceFor(e)">
           <span
             v-if="allScope"
             class="obs-cell obs-session"
@@ -72,7 +104,7 @@
             {{ shortSession(e.session) }}
           </span>
           <span class="obs-cell obs-time" :title="e.time">{{ formatEventTime(e.time) }}</span>
-          <span class="obs-cell obs-type">{{ e.type }}</span>
+          <span class="obs-cell obs-type" :title="'source: ' + sourceFor(e)">{{ e.type }}</span>
           <span class="obs-cell obs-lvl">{{ e.level }}</span>
           <span class="obs-cell obs-tool">{{ e.tool || "" }}</span>
           <span class="obs-cell obs-dur">{{ formatDuration(e.duration_ms) }}</span>
@@ -80,13 +112,7 @@
           <span v-if="e.error" class="obs-cell obs-errline">{{ e.error }}</span>
         </div>
       </template>
-      <p v-else-if="!loaded" class="panel-status">loading</p>
-      <p v-else-if="errorsOnly && events.length" class="panel-status">
-        no errors in the ring
-      </p>
-      <p v-else class="panel-status">
-        no events recorded yet - the ring fills as runs execute
-      </p>
+      <p v-else class="panel-status">{{ emptyLine }}</p>
     </div>
 
     <div v-else ref="bodyEl" class="obs-body obs-tailbody">
@@ -114,16 +140,22 @@
     errorCount,
     EVENTS_PATH,
     eventsQuery,
+    eventSource,
     formatDuration,
     formatEventTime,
     LOGS_PATH,
     logsQuery,
     parseEventsPayload,
     parseLogsPayload,
+    parseSessionLabels,
     REFRESH_MS,
+    SESSIONS_PATH,
     shortSession,
+    SOURCES,
+    sourceCounts,
     visibleEvents,
     type ObservatoryEvent,
+    type Source,
   } from "./rows";
 
   // `session` is the OPEN session (app.vue's focusedSessionId).
@@ -140,6 +172,16 @@
   const scopeAll = ref(false);
   const errorsOnly = ref(false);
   const tailOpen = ref(false);
+
+  // the source family: every source starts ON (the unfiltered stream), a click removes or
+  // returns one - multi-select, AND-composed with the severity chip.
+  const enabled = ref<Set<Source>>(new Set(SOURCES));
+  // the clear button's watermark: display-only, so a refresh keeps arriving and paints
+  // over it while the rows already read stay hidden.
+  const clearedThrough = ref(0);
+  // session id -> store label; the only provenance the stream lacks is a run's origin,
+  // and the scheduler writes it as the session's label.
+  const labels = ref<Map<string, string>>(new Map());
 
   const allScope = computed(() => scopeAll.value || !props.session);
   const scopedSession = computed(() => (allScope.value ? "" : (props.session ?? "")));
@@ -158,7 +200,63 @@
     scopeAll.value = !scopeAll.value;
   }
 
-  const shown = computed(() => visibleEvents(events.value, errorsOnly.value));
+  function sourceOn(s: Source): boolean {
+    return enabled.value.has(s);
+  }
+
+  function toggleSource(s: Source) {
+    const next = new Set(enabled.value);
+    if (next.has(s)) next.delete(s);
+    else next.add(s);
+    enabled.value = next;
+  }
+
+  function sourceFor(e: ObservatoryEvent): Source {
+    return eventSource(e, labels.value);
+  }
+
+  function sourceTitle(s: Source): string {
+    const n = sourceCounts(events.value, labels.value)[s];
+    return `${s} - ${n} record${n === 1 ? "" : "s"} on this page`;
+  }
+
+  const shown = computed(() =>
+    visibleEvents(
+      events.value,
+      {
+        errorsOnly: errorsOnly.value,
+        sources: Array.from(enabled.value),
+        clearedThrough: clearedThrough.value,
+      },
+      undefined,
+      labels.value,
+    ),
+  );
+
+  // the clear button's display watermark: everything read so far goes out of view, the
+  // ring and the log file keep it (a later record still paints).
+  function clearStream() {
+    const top = events.value.reduce((m, e) => (e.seq > m ? e.seq : m), clearedThrough.value);
+    clearedThrough.value = top;
+  }
+
+  const clearAria = "clear the visible stream";
+  const clearTitle = computed(() => {
+    if (tailOpen.value) return "the raw tail is the log file - nothing here clears it";
+    return "clear the view - the ring and the log file keep every record";
+  });
+
+  const emptyLine = computed(() => {
+    if (!events.value.length) {
+      return loaded.value
+        ? "no events recorded yet - the ring fills as runs execute"
+        : "loading";
+    }
+    if (enabled.value.size === 0) return "every source is off - turn a source chip back on";
+    if (errorsOnly.value && !errorCount(events.value)) return "no errors in the ring";
+    if (!shown.value.length) return "the stream is cleared - new records appear as they arrive";
+    return "no row matches the filters";
+  });
 
   const metaLine = computed(() => {
     if (tailOpen.value) {
@@ -171,7 +269,8 @@
       ? `${total} event${total === 1 ? "" : "s"}`
       : `${shown.value.length} of ${total} events`;
     const ring = capacity.value ? `${buffered.value}/${capacity.value} buffered` : "ring empty";
-    return `${count} · ${errs} error${errs === 1 ? "" : "s"} · ${ring}`;
+    const cleared = clearedThrough.value > 0 ? ` · cleared through ${clearedThrough.value}` : "";
+    return `${count} · ${errs} error${errs === 1 ? "" : "s"} · ${ring}${cleared}`;
   });
 
   // one in-flight read at a time: a scope flip while a fetch is airborne must not paint
@@ -197,6 +296,38 @@
       readError.value = e instanceof Error ? e.message : String(e);
     }
     loaded.value = true;
+    void readLabelsForPage();
+  }
+
+  // the session labels: one read on mount, plus one more whenever the page carries a
+  // session nobody has labelled yet. A session the store no longer lists is REMEMBERED as
+  // a miss - re-reading for it every 5s would be a poll of a deleted row.
+  const labelMisses = new Set<string>();
+  let labelTicket = 0;
+
+  async function readLabels(): Promise<void> {
+    const mine = ++labelTicket;
+    try {
+      const res = await fetch(SESSIONS_PATH);
+      if (mine !== labelTicket) return;
+      if (!res.ok) return; // the labels only attribute runs; an unreadable store costs the cron chip its rows
+      const map = parseSessionLabels(await res.json());
+      if (mine !== labelTicket) return;
+      labels.value = map;
+    } catch {
+      // same degradation: the pane keeps painting, every record by its own producer
+      return;
+    }
+    for (const id of events.value) {
+      if (id.session && !labels.value.has(id.session)) labelMisses.add(id.session);
+    }
+  }
+
+  function readLabelsForPage(): Promise<void> {
+    const unknown = events.value.some(
+      (e) => e.session && !labels.value.has(e.session) && !labelMisses.has(e.session),
+    );
+    return unknown ? readLabels() : Promise.resolve();
   }
 
   async function readTail(): Promise<void> {
@@ -404,6 +535,81 @@
   }
   .obs-pane .obs-chip.off {
     opacity: 0.45;
+  }
+  /* the source family: one toggle per source, its own accent from the app's existing
+     ladder (llm the accent, cron ok - a schedule's healthy tick, kanban the plain text,
+     agent the dim base: the loop is most rows, so it is the quietest). --unread and
+     --err are semantic-only and never decorate a source. */
+  .obs-sources {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 12px 0;
+    flex: none;
+  }
+  .obs-src {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 18px;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: var(--r-chip);
+    background: transparent;
+    color: var(--text-dim);
+    font-family: var(--mono);
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .obs-src:hover {
+    background: var(--z2);
+    color: var(--text);
+  }
+  .obs-src[aria-pressed="true"] {
+    color: var(--src, var(--text));
+    border-color: color-mix(in srgb, var(--src, var(--stroke)) 45%, transparent);
+  }
+  .obs-src.off {
+    opacity: 0.45;
+  }
+  .obs-src-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--src, var(--text-dim));
+    flex: none;
+  }
+  .obs-src.off .obs-src-dot {
+    background: var(--text-dim);
+    opacity: 0.5;
+  }
+  .obs-src.src-llm {
+    --src: var(--accent);
+  }
+  .obs-src.src-agent {
+    --src: var(--text-dim);
+  }
+  .obs-src.src-cron {
+    --src: var(--ok);
+  }
+  .obs-src.src-kanban {
+    --src: var(--text);
+  }
+  .obs-row.src-llm .obs-type {
+    color: var(--accent);
+  }
+  .obs-row.src-cron .obs-type {
+    color: var(--ok);
+  }
+  .obs-row.src-kanban .obs-type {
+    color: var(--text);
+  }
+  .obs-row.src-agent .obs-type {
+    color: var(--text-dim);
+  }
+  .obs-pane.narrow .obs-sources {
+    padding: 2px 8px 0;
   }
   .obs-pane.narrow .obs-head {
     display: none;

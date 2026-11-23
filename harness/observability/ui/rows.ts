@@ -2,14 +2,35 @@
 // (harness/observability/routes.go):
 //   GET /observability/events?session=&level=&limit= -> {events, buffered, capacity}
 //   GET /observability/logs?lines= -> {path, lines} (404 when there is no log file)
+// plus the store's session list (GET /sessions) for the one label the source dimension
+// needs: the scheduler names every session it fires `cron:<job>`.
 //
 // The ring is bounded at 1024 and one page caps at PageMax=1000, so an unfiltered page IS
-// the whole live history - hence errors-only filters CLIENT-side while the SESSION scope
-// is a server parameter (filtering the newest N of everything would starve a quiet
-// session). DOM-free so the node suite can pin it (webui/test/observability.test.ts).
+// the whole live history - hence the severity and source filters work CLIENT-side while
+// the SESSION scope is a server parameter (filtering the newest N of everything would
+// starve a quiet session). DOM-free so the node suite can pin it
+// (webui/test/observability.test.ts).
 
 export const EVENTS_PATH = "/observability/events";
 export const LOGS_PATH = "/observability/logs";
+export const SESSIONS_PATH = "/sessions";
+
+/** the scheduler's label prefix on the sessions it fires (harness/cron/runner.go) */
+export const CRON_LABEL_PREFIX = "cron:";
+
+// The source dimension's closed vocabulary. A record's source is DERIVED, never sent:
+// the ring has one producer family (the agent loop's spine, recorder.go), so a record
+// carries exactly three provenance clues - its type, its tool, and its session (whose
+// label can say the scheduler fired the run). Precedence: the RUN outranks the record
+// (a cron-fired run's whole trace belongs to the scheduler), then the TOOL's capsule,
+// then the provider stream, and the loop owns the remainder. A fifth name (a serving-
+// layer `gateway` source) has no producer in the stream today - adding it here without
+// one would be a chip that can never match a row.
+export const SOURCES = ["llm", "agent", "cron", "kanban"] as const;
+export type Source = (typeof SOURCES)[number];
+
+/** session id -> its store label; absent is unknown, not "unlabelled" */
+export type SessionLabels = ReadonlyMap<string, string>;
 
 /** one page: the capsule's PageMax ceiling, i.e. essentially the ring */
 export const EVENTS_LIMIT = 1000;
@@ -107,6 +128,76 @@ export function eventsQuery(session: string, limit: number = EVENTS_LIMIT): stri
   return qs.toString();
 }
 
+/**
+ * parseSessionLabels reads GET /sessions (an array of store rows) down to the one field
+ * the source dimension needs. A malformed body yields an empty map: the labels are an
+ * attribution aid, so a degraded read must cost the cron chip its rows, never the pane.
+ */
+export function parseSessionLabels(body: unknown): Map<string, string> {
+  const rows = Array.isArray(body) ? body : [];
+  const out = new Map<string, string>();
+  for (const raw of rows) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    const id = str(row.id);
+    const label = str(row.label);
+    if (id && label) out.set(id, label);
+  }
+  return out;
+}
+
+/** eventSource names the subsystem that produced one record (see SOURCES for the rules). */
+export function eventSource(e: ObservatoryEvent, labels: SessionLabels = new Map()): Source {
+  const label = e.session ? (labels.get(e.session) ?? "") : "";
+  if (label.startsWith(CRON_LABEL_PREFIX)) return "cron";
+  if (e.tool && e.tool.startsWith("kanban.")) return "kanban";
+  if (e.type === "stream_end") return "llm";
+  return "agent";
+}
+
+/** one reading of the pane's filter family; the dimensions compose with AND */
+export interface StreamFilter {
+  /** severity: keep error-classed rows only */
+  errorsOnly?: boolean;
+  /** source: the enabled set; absent = every source, an empty array = none on */
+  sources?: readonly Source[];
+  /** the clear button's watermark: rows at or below it are display-hidden */
+  clearedThrough?: number;
+}
+
+export function passesFilter(
+  e: ObservatoryEvent,
+  filter: StreamFilter,
+  labels: SessionLabels = new Map(),
+): boolean {
+  if (filter.clearedThrough !== undefined && e.seq <= filter.clearedThrough) return false;
+  if (filter.errorsOnly && !isErrorEvent(e)) return false;
+  if (filter.sources && !filter.sources.includes(eventSource(e, labels))) return false;
+  return true;
+}
+
+/** visibleEvents selects what the tab paints, NEWEST FIRST. */
+export function visibleEvents(
+  events: readonly ObservatoryEvent[],
+  filter: StreamFilter = {},
+  cap: number = RENDER_CAP,
+  labels: SessionLabels = new Map(),
+): ObservatoryEvent[] {
+  const picked = events.filter((e) => passesFilter(e, filter, labels));
+  const bound = cap > 0 ? cap : picked.length;
+  return picked.slice(Math.max(0, picked.length - bound)).reverse();
+}
+
+/** sourceCounts is the per-chip reading over the whole fetched page (filters aside). */
+export function sourceCounts(
+  events: readonly ObservatoryEvent[],
+  labels: SessionLabels = new Map(),
+): Record<Source, number> {
+  const counts = Object.fromEntries(SOURCES.map((s) => [s, 0])) as Record<Source, number>;
+  for (const e of events) counts[eventSource(e, labels)] += 1;
+  return counts;
+}
+
 export function logsQuery(lines: number = TAIL_LINES): string {
   return `lines=${lines}`;
 }
@@ -123,17 +214,6 @@ export function describeReadError(path: string, status: number): string {
 /** the derived level is the one truth: a record with `error` text still reads by its level, never re-derived here. */
 export function isErrorEvent(e: ObservatoryEvent): boolean {
   return e.level === "error";
-}
-
-/** visibleEvents selects what the tab paints, NEWEST FIRST. */
-export function visibleEvents(
-  events: readonly ObservatoryEvent[],
-  errorsOnly: boolean,
-  cap: number = RENDER_CAP,
-): ObservatoryEvent[] {
-  const picked = errorsOnly ? events.filter(isErrorEvent) : [...events];
-  const bound = cap > 0 ? cap : picked.length;
-  return picked.slice(Math.max(0, picked.length - bound)).reverse();
 }
 
 export function errorCount(events: readonly ObservatoryEvent[]): number {
