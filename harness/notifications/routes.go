@@ -136,8 +136,9 @@ func (rt *Routes) handleNotificationsRead(w http.ResponseWriter, r *http.Request
 }
 
 // handleNotificationDelete serves DELETE /notifications/{id}: the row's own clear. A
-// non-numeric or ghost id answers 404 (MarkRead's lane: the record the caller pointed at
-// is not there), and the reply carries the count so the caller can say what it removed.
+// non-numeric id answers 400, a ghost id 404; every store error maps to 404, so a
+// genuine DB failure reads as not-found alongside the miss. The reply carries the count
+// so the caller can say what it removed.
 func (rt *Routes) handleNotificationDelete(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodDelete {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
