@@ -96,7 +96,7 @@ func TestLoopCompactRunsTheCompaction(t *testing.T) {
 	if err := lo.commandExtension("/compact", ""); err != nil {
 		t.Fatalf("commandExtension: %v", err)
 	}
-	want := "folded 4 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"
+	want := "compacted 4 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
@@ -132,7 +132,7 @@ func TestLoopCompactWithoutASessionIsHonest(t *testing.T) {
 	if err := lo.commandExtension("/compact", ""); err != nil {
 		t.Fatalf("commandExtension: %v", err)
 	}
-	if want := "nothing folded: no session is bound to this chat yet"; !strings.Contains(out.String(), want) {
+	if want := "nothing compacted: no session is bound to this chat yet"; !strings.Contains(out.String(), want) {
 		t.Fatalf("output = %q, want %q", out.String(), want)
 	}
 }

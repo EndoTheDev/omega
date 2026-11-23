@@ -112,7 +112,7 @@ func TestCompactMovesTheSession(t *testing.T) {
 		t.Fatalf("active view: %v", err)
 	}
 	wantStart := core.MsgID(view.Path[2].ID)
-	if want := "folded 2 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"; got.Text != want {
+	if want := "compacted 2 messages into a summary - the context now starts at message " + wantStart + ", and the last 1 stay verbatim"; got.Text != want {
 		t.Fatalf("answer = %q, want %q", got.Text, want)
 	}
 	if len(got.Actions) != 0 {
@@ -152,7 +152,7 @@ func TestCompactRefusesACompactWithNothingToSay(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", code, body)
 	}
-	if want := "nothing folded: the compactor had nothing to summarize"; !strings.HasPrefix(got.Text, want) {
+	if want := "nothing compacted: the compactor had nothing to summarize"; !strings.HasPrefix(got.Text, want) {
 		t.Fatalf("answer = %q, want it to open %q", got.Text, want)
 	}
 	row, err := st.GetSession(ctx, "s-2")
@@ -171,8 +171,8 @@ func TestCompactNeedsASession(t *testing.T) {
 		sessionID string
 		want      string
 	}{
-		{"no session bound", "", "nothing folded: no session is bound to this chat yet"},
-		{"ephemeral keeps no history", "eph-live", "nothing folded: ephemeral sessions keep no history"},
+		{"no session bound", "", "nothing compacted: no session is bound to this chat yet"},
+		{"ephemeral keeps no history", "eph-live", "nothing compacted: ephemeral sessions keep no history"},
 	}
 	for _, tt := range cases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -205,7 +205,7 @@ func TestCompactWithoutACompactor(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (%s)", code, body)
 	}
-	if want := "nothing folded: the compaction module is not mounted"; got.Text != want {
+	if want := "nothing compacted: the compaction module is not mounted"; got.Text != want {
 		t.Fatalf("answer = %q, want %q", got.Text, want)
 	}
 	row, err := st.GetSession(ctx, "s-3")

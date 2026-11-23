@@ -417,7 +417,7 @@ func (lo *cliLoop) hostAction(ctx context.Context, a core.CmdAction) error {
 			// The loop sends its own history, so the boundary it just wrote only reaches
 			// the next run when the in-memory context is rebuilt from the store.
 			if err := lo.loadHistory(); err != nil {
-				return fmt.Errorf("folded, but reloading the context failed: %w", err)
+				return fmt.Errorf("compacted, but reloading the context failed: %w", err)
 			}
 		}
 		return nil

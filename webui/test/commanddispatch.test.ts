@@ -175,7 +175,7 @@ describe("palette dispatch: the tab's session rides the wire", () => {
     const wire = stubFetch(() =>
       json({
         kind: "command",
-        text: "folded 24 messages into a summary - the context now starts at message 137, and the last 10 stay verbatim",
+        text: "compacted 24 messages into a summary - the context now starts at message 137, and the last 10 stay verbatim",
       }),
     );
     try {
@@ -187,7 +187,7 @@ describe("palette dispatch: the tab's session rides the wire", () => {
         args: "",
         session_id: "s-1",
       });
-      assert.match(host.states.get("c1")!.statusLine, /folded 24 messages .* message 137/);
+      assert.match(host.states.get("c1")!.statusLine, /compacted 24 messages .* message 137/);
     } finally {
       wire.restore();
     }
