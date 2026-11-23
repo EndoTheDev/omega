@@ -210,7 +210,6 @@ var exclusiveSeams = map[string]bool{
 	"logger":        true,
 	"memory":        true,
 	"prompt":        true,
-	"nudger":        true,
 	"approvals":     true,
 	"trust":         true,
 	"cron":          true,

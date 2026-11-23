@@ -4,10 +4,10 @@
 // append and payload boundary is a journaled registration the dismount replays backward.
 //
 // Exclusive seams are Offers under a CLOSED need-key namespace: provider, store, loop,
-// logger, compactor, prompt, nudger, approvals (the loop's needs resolve at bind,
+// logger, compactor, prompt, approvals (the loop's needs resolve at bind,
 // agent/seams.go bindNeed), plus the capsule-to-capsule keys skills, memory, trust, cron,
-// notifications and verdicts, reached through consumer-owned interfaces. Proposing need
-// key #9 is a design event, argued in a card.
+// notifications and verdicts, reached through consumer-owned interfaces. Proposing a need
+// key outside that list is a design event, argued in a card.
 //
 // Additive surfaces: RegisterTool / RegisterRuntimeTools, RegisterPromptSectioner,
 // RegisterPanelProvider (a stateful core.PanelProvider - panels computed per snapshot,

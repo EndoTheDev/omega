@@ -359,9 +359,13 @@ func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 		"description": "Which store: 'memory' (agent notes) or 'user' (user profile).",
 	}
 	store := "Persistent memory that survives across sessions and is injected into the system prompt every session."
+	// The routing law sits here because this is where the decision is made: what a run
+	// learned about HOW to do a task belongs to the skill that guides it, so it loads only
+	// when that task comes up; memory costs every session's context.
+	const routing = "Procedures, pitfalls, and corrections learned during a task belong in a skill (skills.write / skills.update), not here; memory is the narrow exception for facts that apply to every session, whatever the task."
 	return map[string]core.Tool{
 		"memory.add": {
-			Description: "Append a new entry to persistent memory. " + store + " Targets: 'memory' (agent notes) and 'user' (user profile).",
+			Description: "Append a new entry to persistent memory. " + store + " " + routing + " Targets: 'memory' (agent notes) and 'user' (user profile).",
 			Parameters: object(map[string]any{
 				"target":  target,
 				"content": prop("string", "The entry text."),
@@ -369,7 +373,7 @@ func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 			Run: p.verbRunner("add"),
 		},
 		"memory.replace": {
-			Description: "Find the entry matching old_text (unique substring) and replace it with content. " + store,
+			Description: "Find the entry matching old_text (unique substring) and replace it with content. " + store + " " + routing,
 			Parameters: object(map[string]any{
 				"target":   target,
 				"content":  prop("string", "The replacement entry text."),
@@ -378,7 +382,7 @@ func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 			Run: p.verbRunner("replace"),
 		},
 		"memory.remove": {
-			Description: "Find the entry matching old_text (unique substring) and delete it. " + store,
+			Description: "Find the entry matching old_text (unique substring) and delete it. " + store + " " + routing,
 			Parameters: object(map[string]any{
 				"target":   target,
 				"old_text": prop("string", "Unique substring identifying the entry to remove."),
@@ -386,7 +390,7 @@ func (p *memoryToolProvider) buildMemoryTools() map[string]core.Tool {
 			Run: p.verbRunner("remove"),
 		},
 		"memory.batch": {
-			Description: "Atomic multi-change: array of {action, target, content?, old_text?} operations against persistent memory. Char limit checked on final result only; any failure rolls the whole batch back.",
+			Description: "Atomic multi-change: array of {action, target, content?, old_text?} operations against persistent memory. Char limit checked on final result only; any failure rolls the whole batch back. " + routing,
 			Parameters: object(map[string]any{
 				"operations": map[string]any{
 					"type":        "array",

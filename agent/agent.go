@@ -31,7 +31,6 @@ type Agent struct {
 	promptAppend   []string
 	promptContext  string
 	promptBuilder  PromptBuilder
-	nudge          TurnNudger // learning-loop reminder seam
 	extensionInfos []core.ExtensionInfo
 	captioner      core.Captioner
 	userInput      chan string
@@ -289,12 +288,6 @@ func (a *Agent) SetPromptBuilder(pb PromptBuilder) {
 	a.promptBuilder = pb
 }
 
-// SetTurnNudger installs the learning-loop reminder seam. Nil = no nudging, the loop
-// runs unchanged.
-func (a *Agent) SetTurnNudger(n TurnNudger) {
-	a.nudge = n
-}
-
 // ExtensionInfos returns the metadata about loaded extensions.
 func (a *Agent) ExtensionInfos() []core.ExtensionInfo {
 	a.tpMu.RLock()
@@ -391,7 +384,6 @@ func NewFromContext(ctx *Context, opts AgentOptions) *Agent {
 	ag.SetCompactionProvider(bindNeed[CompactionProvider](ctx, "compactor"))
 	// The smart-approval seam: nil rides as nil.
 	ag.SetApprovals(bindNeed[ApprovalProvider](ctx, "approvals"))
-	ag.SetTurnNudger(bindNeed[TurnNudger](ctx, "nudger"))
 	if ctx.Captioner != nil {
 		ag.SetCaptioner(ctx.Captioner)
 	}
@@ -540,7 +532,6 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 			Events:             inner,
 			UserInput:          a.userInput,
 			Approvals:          approvals,
-			Nudge:              a.nudge,
 			Logger:             a.logger,
 			YieldLedger:        yieldLedger,
 			YieldWake:          yieldWake,

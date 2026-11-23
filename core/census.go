@@ -46,7 +46,6 @@ func Census(ctx *Context) CensusSnapshot {
 		"logger",
 		"compactor",
 		"prompt",
-		"nudger",
 		"approvals",
 		"skills",
 		"memory",

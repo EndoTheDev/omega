@@ -42,7 +42,6 @@ type LoopOptions struct {
 	// Non-nil, the loop consults it before every tool run and turns a non-nil error into the
 	// tool result (the command never executes).
 	Approvals ApprovalProvider
-	Nudge     TurnNudger
 	Logger    LoggerProvider
 
 	// The yield harness. EITHER nil = the whole harness is off: every tool blocks to
@@ -61,14 +60,6 @@ type LoopOptions struct {
 // off.
 type CompactionProvider interface {
 	Compact(ctx context.Context, messages []core.Message) ([]core.Message, error)
-}
-
-// TurnNudger is the learning-loop seam. Nil seam = no nudging; the loop pays nothing.
-type TurnNudger interface {
-	// ObserveToolRun runs on the execution goroutine, so implementations must be safe for
-	// concurrent calls.
-	ObserveToolRun(name string, args map[string]any, runErr error)
-	NudgeLine() string
 }
 
 type StoreProvider interface {

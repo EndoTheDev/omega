@@ -354,9 +354,6 @@ def strip_host():
     f.replace_line("\t\t\tSummarizeAfterHours: store.DefaultHygiene().SummarizeAfterHours,",
                    "\t\t\tSummarizeAfterHours: 24, // the store capsule's DefaultSummarizeAfterHours",
                    "config: the summarize default")
-    f.replace_line("\t\t\tNudgeInterval: skills.DefaultNudgeInterval,",
-                   "\t\t\tNudgeInterval: 15, // the skills capsule's DefaultNudgeInterval",
-                   "config: the nudge default")
     f.replace_func("func (c Config) ConfigSection(", [
         "// modeValid is the host's approvals.mode vocabulary - the strip's",
         "// inlining of approval.ValidMode (the approval capsule rides out).",

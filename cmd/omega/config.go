@@ -202,7 +202,6 @@ type WebConfig struct {
 type SkillsConfig struct {
 	Dir string `yaml:"dir"`
 	SharedDir string `yaml:"shared_dir"`
-	NudgeInterval int `yaml:"nudge_interval"`
 }
 
 type MemoryConfig struct {
@@ -410,8 +409,7 @@ func DefaultConfig() Config {
 			MaxToolOutput: 32768,
 		},
 		Skills: SkillsConfig{
-			Dir:           "skills",
-			NudgeInterval: skills.DefaultNudgeInterval,
+			Dir: "skills",
 		},
 		Memory: MemoryConfig{
 			Enabled:              true,
@@ -937,7 +935,7 @@ func sessionsSection(c Config) store.HygieneConfig {
 }
 
 func skillsSection(c Config) skills.Config {
-	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), NudgeInterval: c.Skills.NudgeInterval, CuratorModel: c.SkillsModel,
+	return skills.Config{Dir: c.Skills.Dir, SharedDir: c.Skills.SharedDir, Disabled: slices.Clone(c.Disabled.SkillNames), CuratorModel: c.SkillsModel,
 		Allow: slices.Clone(c.agentSkillsAllow), AllowSet: c.agentSkillsAllowSet}
 }
 

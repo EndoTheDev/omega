@@ -202,6 +202,20 @@ func (sp *SkillsProvider) PromptSections(opts core.PromptBuildOptions) []core.Pr
 		sb.WriteString(verbs[len(verbs)-1])
 	}
 	sb.WriteString(".\n")
+	// The learning loop is prompt law at the decision points, not a tool-count clock: the
+	// agent scans this registry before acting, patches the skill a run exposed as thin, and
+	// offers a new one after iterative work. Each line names the verb it needs, so a folded
+	// verb never leaves advice the run cannot follow.
+	if opts.ToolEnabled("skills.read") {
+		sb.WriteString("Before acting, consult this registry: load any skill whose description matches the task.\n")
+	}
+	if opts.ToolEnabled("skills.update") {
+		sb.WriteString("If a skill you used was missing steps, had wrong commands, or needed a pitfall you discovered mid-run, update it before you finish the turn.\n")
+	}
+	if opts.ToolEnabled("skills.write") {
+		sb.WriteString("After a difficult or iterative turn, offer to save a new skill.\n")
+	}
+	sb.WriteString("\n")
 	for _, s := range skills {
 		fmt.Fprintf(&sb, "- %s: %s\n", s.Name, s.Description)
 	}
@@ -372,7 +386,7 @@ func (sp *SkillsProvider) runUpdate(ctx context.Context, args map[string]any) (s
 	if err != nil {
 		return "", err
 	}
-	// The persisted lesson resets the nudge counter (ObserveToolRun) and ages the record.
+	// The persisted lesson ages the record.
 	TouchUsage(filepath.Dir(filepath.Dir(skillFile)), name, "write", "")
 	return "updated skill " + name + " (" + skillFile + "): replaced one occurrence", nil
 }
