@@ -5,20 +5,22 @@
 # find first. This recipe drives the menus this step adds through the REAL input pipeline -
 # a right-button press on the real row, then a real click on the menu's own row:
 #
-#   skills        a row menus Open / Disable / Delete. Disable writes GET /disabled/skills,
-#                 the menu then reads Enable, and Delete arms the tab editor's ONE confirm
-#                 (POST /skills/delete) which removes the seed.
+#   skills        a row menus Open / Export / Disable / Archive / Delete. Disable writes
+#                 GET /disabled/skills, the menu then reads Enable, and Delete arms the
+#                 tab editor's ONE confirm (POST /skills/delete) which removes the seed.
 #   tools         a row menus Disable (PUT /disabled/tools) and the menu reads Enable again
 #                 once the row is off.
 #   mcp           a seeded server row menus Open / Edit / Disable / Delete. Edit opens the
 #                 entry form and saves through POST /mcp/save - the args and the masked
 #                 env token survive the edit (the lossless proof). Delete unfolds the row
 #                 detail's one confirm and POST /mcp/delete empties the entry.
-#   files         a file row menus New / Open / Copy / Copy path / Add file to chat. Open
-#                 mints the viewer tab, New opens the tab's own create form, and Copy's own
-#                 answer (copied, or refused where the page cannot reach a clipboard) lands
-#                 on the tab's status line - a refusal never reads as "copied".
-#   notifications a record row menus Clear all (DELETE /notifications) and the feed empties.
+#   files         a file row menus New / Rename / Open / Copy / Copy path / Add file to
+#                 chat / Delete. Open mints the viewer tab, New opens the tab's own
+#                 create form, and Copy's own answer (copied, or refused where the page
+#                 cannot reach a clipboard) lands on the tab's status line - a refusal
+#                 never reads as "copied".
+#   notifications a record row menus Clear (DELETE /notifications/{id}) beside Clear all
+#                 (DELETE /notifications); Clear all empties the whole feed.
 #
 # Escape closes any of them; the pure item lists are pinned in webui/test/capsulemenus.test.ts.
 #
@@ -182,7 +184,7 @@ wait_js "(() => [...document.querySelectorAll('.skills-list .registry-row')].som
 skill_row="(() => {const row=[...document.querySelectorAll('.skills-list .registry-row')].find((r)=>r.innerText.includes('$SKILL')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 right_click_js "$skill_row"
 menu_wait "Open"
-assert_eq "$(menu_rows)" "Open|Disable|Delete" "a skills row menus Open, Disable and Delete"
+assert_eq "$(menu_rows)" "Open|Export|Disable|Archive|Delete" "a skills row menus Open, Export, Disable, Archive and Delete"
 step "ok: the skills row's right-click opens the shared menu"
 esc_closes
 step "ok: Escape closes it"
@@ -203,7 +205,7 @@ wait_js "(() => [...document.querySelectorAll('.skills-list .registry-row')].som
   || die "the disabled skill's row did not render its off state"
 right_click_js "$skill_row"
 menu_wait "Enable"
-assert_eq "$(menu_rows)" "Open|Enable|Delete" "a disabled skill row menus Enable - the verb follows the state"
+assert_eq "$(menu_rows)" "Open|Export|Enable|Archive|Delete" "a disabled skill row menus Enable - the verb follows the state"
 click_row "Enable"
 i=0
 while [ "$i" -lt 40 ]; do
@@ -339,8 +341,8 @@ wait_js "(() => {const t=document.querySelector('.files-tree'); return !!t && (t
 file_row="(() => {const row=[...document.querySelectorAll('.files-tree .tree-row')].find((r)=>((r.querySelector('.name')||{}).textContent||'').includes('$PROBE')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 right_click_js "$file_row"
 menu_wait "New"
-assert_eq "$(menu_rows)" "New|Open|Copy|Copy path|Add file to chat" \
-  "a file row menus the five tree verbs, the chat lane included"
+assert_eq "$(menu_rows)" "New|Rename|Open|Copy|Copy path|Add file to chat|Delete" \
+  "a file row menus the tree verbs, Rename and Delete included, the chat lane too"
 step "ok: the file row's right-click opens the shared menu"
 esc_closes
 
@@ -390,7 +392,7 @@ wait_js '(() => document.querySelectorAll(".notif-list .notif-row").length > 0)(
   || die "the notification feed rendered no record row"
 right_click_js '(() => {const row=document.querySelector(".notif-list .notif-row"); if(!row) return ""; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+" "+Math.round(r.y+r.height/2);})()'
 menu_wait "Clear all"
-assert_eq "$(menu_rows)" "Clear all" "a notification row menus Clear all, one row, no per-entry clear"
+assert_eq "$(menu_rows)" "Clear|Clear all" "a notification row menus its own Clear beside Clear all"
 step "ok: the notification row's right-click opens the shared menu"
 click_row "Clear all"
 i=0

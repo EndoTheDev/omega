@@ -75,15 +75,36 @@ snapshot() {
 }
 snap() { IFS='|' read -r TOT SHOWN ERRS FILT ROWS ERROWS PRESS <<< "$(snapshot)"; }
 
+# wait_run_over <session>: the session has no live run. A run's provider retry
+# ladder keeps the flag true across every attempt, so this is the ONE reading that
+# says "the ring can no longer grow" (the transcript envelope always carries it -
+# recipe 76's wait_idle shape). A pane settle that is shorter than the retry gap
+# cannot tell a paused ladder from a finished run.
+wait_run_over() {
+  local i=0
+  while [ "$i" -lt 240 ]; do
+    case "$(curl -s "${JOURNEY_BASE_URL}/sessions/$1/transcript")" in
+      *'"running":false'*) return 0 ;;
+    esac
+    sleep 0.5
+    i=$((i + 1))
+  done
+  die "session $1 never left running (120s) - the ring cannot go quiet, so the clear cannot be graded"
+}
+
 # --- 0: seed the ring with a real run -------------------------------------
-# Fire-and-forget: the SSE session frame is the first frame, so a 3s capture
-# gets the id for cleanup while the detached run keeps feeding the ring.
-seed_out=$(curl -s -N -X POST "${JOURNEY_BASE_URL}/chat" \
+# Fire-and-forget into a session THIS recipe names. The run is detached (a
+# disconnect never cancels) and its provider retry ladder keeps it live for
+# seconds - so section 6 must READ "is it over" off the session, and a session
+# id we minted is the handle that question needs (a lane whose provider refuses
+# retries the failed stream: the records do not all land at once).
+SEED_SID=$(new_journey_session logs103 | tail -1)
+[ -n "$SEED_SID" ] || die "could not mint the seed session (POST /sessions answered no id)"
+curl -s -N -X POST "${JOURNEY_BASE_URL}/chat" \
   -H 'Content-Type: application/json' \
-  -d '{"messages":[{"role":"user","content":"journey 103 ring seed"}]}' \
-  --max-time 3 2>/dev/null || true)
-SEED_SID=$(printf '%s' "$seed_out" | sed -n 's/^data: {"id":"\([A-Za-z0-9]*\)"}.*/\1/p' | head -1)
-step "seeded a detached chat run (session ${SEED_SID:-unknown}) - the ring records it as it executes"
+  -d "{\"session_id\":\"$SEED_SID\",\"messages\":[{\"role\":\"user\",\"content\":\"journey 103 ring seed\"}]}" \
+  --max-time 3 >/dev/null 2>&1 || true
+step "seeded a detached chat run in session $SEED_SID - the ring records it as it executes"
 
 open_app
 ab set viewport 1280 800 >/dev/null 2>&1
@@ -320,11 +341,20 @@ step "ok: clean state (stream view, full page)"
 # --- 6: clear empties the VIEW, never the durable stream -------------------
 # The clear button is a display watermark: the rows already read go out of view, the
 # ring keeps them (the meta total must NOT drop) and the log file is never touched.
+#
+# The ring must be QUIET first, and quietness is read off the RUN, not guessed from a
+# settle window: a record that lands after the clear is NEWER than the watermark and
+# paints by design ("new records appear as they arrive"), so the flip's "stays cleared"
+# claim only holds once the seed run has left `running`. A settle on the ROW COUNT is
+# not enough - a lane whose provider refuses retries the stream, and the gap between
+# two attempts held the count still for ~4s (measured on a no-provider lane: 16 records
+# over ~6-9s, the final pair landing after the gap) - a window shorter than that gap
+# reads the ladder's pause as "finished".
+wait_run_over "$SEED_SID"
+wait_settled 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length' 15
 snap
 TOT_PRE_CLEAR=$TOT
 [ "$TOT_PRE_CLEAR" -ge 1 ] 2>/dev/null || die "the pane reads no events before the clear - nothing to prove (got '$TOT_PRE_CLEAR')"
-# a quiet ring: the seeded run has finished, so no new record can race the clear
-wait_settled 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length' 10
 js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-clear")?.click()' >/dev/null 2>&1
 poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length === 0' 5 \
   || die "the clear button left rows painted (the visible stream is not emptied)"
@@ -347,7 +377,13 @@ js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-tail"
 poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length === 0' 10 \
   || die "the stream view did not return after the tail flip"
 cleared_after=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length')
-assert_eq "$cleared_after" "0" "the cleared stream stays cleared across a view flip (the watermark survives)"
+if [ "${cleared_after//\"/}" != "0" ]; then
+  # split the two candidates in one read: a row at or below the watermark is a LOST
+  # watermark (the flip dropped the state); a newer record is one that landed after
+  # the clear (the watermark did its job, the ring was not quiet).
+  die "the cleared stream repainted across a view flip (${cleared_after//\"/} rows, was $TOT_PRE_CLEAR before the clear) - meta: $(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-meta")?.textContent || ""' | tr -d '\"')"
+fi
+step "ok: the cleared stream stays cleared across a view flip (the watermark survives)"
 
 # the seed session is this recipe's garbage - delete it so the store does not
 # accumulate one journey row per suite run
