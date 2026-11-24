@@ -30,7 +30,12 @@ import (
 //     observer carries no session (the id rides the run context), so
 //     this capsule subscribes through core.SessionEventObserver, the
 //     additive session-attributed shape the agent's forward goroutine
-// feeds.
+//     feeds.
+// ORIGIN: likewise a run property, not an event property. The observer
+//     hands over core.RunOriginFromContext, so every record of an
+//     HTTP-channel run carries origin "gateway" and the Logs tab can
+//     give the serving surface its own source chip. A host that
+//     declares no origin writes none.
 //
 // Token-level stream chunks (ThinkingChunk, ResponseChunk) are dropped
 // on purpose: one record per delta would drown every structural row the
@@ -94,7 +99,7 @@ func (r *Recorder) Start() { r.active.Store(true) }
 // Stop disarms recording (the lifecycle handle's Stop, and the capsule's Dismount).
 func (r *Recorder) Stop() { r.active.Store(false) }
 
-func (r *Recorder) Observe(session string, ev core.Event) {
+func (r *Recorder) Observe(session, origin string, ev core.Event) {
 	if !r.active.Load() {
 		return
 	}
@@ -105,11 +110,11 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		if e.ModelName != "" {
 			summary += " (model " + e.ModelName + ")"
 		}
-		r.add(session, Event{Type: "agent_start", Level: LevelInfo, Summary: summary})
+		r.add(session, origin, Event{Type: "agent_start", Level: LevelInfo, Summary: summary})
 
 	case core.TurnStart:
 		r.rememberTurn(session, e.Turn, now)
-		r.add(session, Event{
+		r.add(session, origin, Event{
 			Type:    "turn_start",
 			Level:   LevelInfo,
 			Turn:    e.Turn,
@@ -121,7 +126,7 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		if e.PendingCalls > 0 {
 			summary += fmt.Sprintf(", %d pending", e.PendingCalls)
 		}
-		r.add(session, Event{
+		r.add(session, origin, Event{
 			Type:       "turn_end",
 			Level:      LevelInfo,
 			Turn:       e.Turn,
@@ -130,7 +135,7 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 		})
 
 	case core.StreamEvent:
-		r.observeStream(session, e, now)
+		r.observeStream(session, origin, e, now)
 
 	case core.ToolResultEvent:
 		call := r.takeCall(session, e.Message.ToolCallID)
@@ -152,7 +157,7 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 			record.Summary = tool + " failed"
 			record.Error = shorten(e.Message.Content, errorRunes)
 		}
-		r.add(session, record)
+		r.add(session, origin, record)
 
 	case core.AgentEnd:
 		level := LevelInfo
@@ -167,18 +172,18 @@ func (r *Recorder) Observe(session string, ev core.Event) {
 			record.Error = shorten(e.Error, errorRunes)
 			record.Summary = "run failed: " + shorten(e.Error, summaryRunes)
 		}
-		r.add(session, record)
+		r.add(session, origin, record)
 
 	case core.AssistantMessageEvent:
 		return
 	}
 }
 
-func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Time) {
+func (r *Recorder) observeStream(session, origin string, e core.StreamEvent, now time.Time) {
 	switch s := e.Event.(type) {
 	case core.ToolCallEvent:
 		r.rememberCall(session, s.ToolCall.ID, s.ToolCall.Name, now)
-		r.add(session, Event{
+		r.add(session, origin, Event{
 			Type:    "tool_call",
 			Level:   LevelInfo,
 			Tool:    s.ToolCall.Name,
@@ -207,12 +212,13 @@ func (r *Recorder) observeStream(session string, e core.StreamEvent, now time.Ti
 			}
 			record.Summary += " - " + strings.Join(parts, ", ") + " tokens"
 		}
-		r.add(session, record)
+		r.add(session, origin, record)
 	}
 }
 
-func (r *Recorder) add(session string, e Event) {
+func (r *Recorder) add(session, origin string, e Event) {
 	e.Session = session
+	e.Origin = origin
 	r.ring.Append(e)
 }
 

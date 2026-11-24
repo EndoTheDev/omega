@@ -531,6 +531,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 		forwarded := make(chan core.Event)
 		events = forwarded
 		sessionID := SessionIDFromContext(ctx)
+		origin := core.RunOriginFromContext(ctx)
 		go func() {
 			defer close(forwarded)
 			for e := range inner {
@@ -538,7 +539,7 @@ func (a *Agent) RunWithProvider(ctx context.Context, provider Provider, messages
 					o(e)
 				}
 				for _, o := range sessObs {
-					o(sessionID, e)
+					o(sessionID, origin, e)
 				}
 				forwarded <- e
 			}

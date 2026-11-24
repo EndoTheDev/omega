@@ -774,16 +774,20 @@ future concern, deliberately out of v1).
 - `GET /observability/events` - the structured run-event stream, read
   from a bounded in-process ring (1024 records, oldest dropped). Each
   row: `seq` (monotonic, the client's ordering key), `time`
-  (RFC3339Nano UTC), `session`, `type` (`agent_start`, `turn_start`,
-  `turn_end`, `tool_call`, `tool_result`, `stream_end`, `agent_end`),
-  `level` (`info` / `warn` / `error`), `tool`, `turn`, `duration_ms`,
-  `summary`, `error`. Filters: `?session=<id>` (absent = every
-  session), `?level=error` (errors only) or `?level=warn` (warnings and
-  errors; `all` / `info` = unfiltered - an unknown value is a 400, not
-  a silently empty page), `?limit=N` (default 200, cap 1000; the page
-  is the newest N matches, returned oldest-first). The body also
-  carries `returned`, `buffered` and `capacity`, so a client can tell
-  "nothing yet" from "the ring rolled over while you were away".
+  (RFC3339Nano UTC), `session`, `origin` (the run's surface -
+  `gateway` for an HTTP-channel run, `cron`, `delegate`, `interactive`;
+  absent when the host declared none), `type` (`agent_start`,
+  `turn_start`, `turn_end`, `tool_call`, `tool_result`, `stream_end`,
+  `agent_end`), `level` (`info` / `warn` / `error`), `tool`, `turn`,
+  `duration_ms`, `summary`, `error`. Filters: `?session=<id>` (absent =
+  every session), `?level=error` (errors only) or `?level=warn`
+  (warnings and errors; `all` / `info` = unfiltered - an unknown value
+  is a 400, not a silently empty page), `?limit=N` (default 200, cap
+  1000; the page is the newest N matches, returned oldest-first). The
+  body also carries `returned`, `buffered` and `capacity`, so a client
+  can tell "nothing yet" from "the ring rolled over while you were
+  away". The origin is a RUN property: every record of a run carries
+  the surface that started it.
   Sessionless runs (title generation runs detached from the
   conversation, a one-shot CLI run) carry no session and appear only in
   the unfiltered view - the session filter never has to guess.

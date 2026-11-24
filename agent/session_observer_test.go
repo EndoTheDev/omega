@@ -9,6 +9,43 @@ import (
 	"github.com/EndoTheDev/omega/core"
 )
 
+// TestSessionEventObserversSeeTheRunOrigin pins the origin half of the rail: a run stamped
+// with WithRunOrigin hands that surface to every observer call, an unstamped run hands "".
+func TestSessionEventObserversSeeTheRunOrigin(t *testing.T) {
+	origins := func(run context.Context) []string {
+		var mu sync.Mutex
+		var seen []string
+		ctx := &core.Context{}
+		ctx.AddSessionEventObserver(func(_, origin string, _ core.Event) {
+			mu.Lock()
+			defer mu.Unlock()
+			seen = append(seen, origin)
+		})
+		provider := NewFakeProvider("fake", core.StreamEnd{Type: "stream_end", FinishReason: "stop"})
+		ag := newTestAgent(provider, nil, 0)
+		ag.SetSessionEventObserverSource(ctx.SessionEventObservers)
+		collect(t, ag.Run(run, []core.Message{core.NewUser("hi")}, nil))
+		mu.Lock()
+		defer mu.Unlock()
+		return seen
+	}
+
+	stamped := origins(core.WithRunOrigin(context.Background(), "gateway"))
+	if len(stamped) == 0 {
+		t.Fatal("the observer saw no events")
+	}
+	for i, o := range stamped {
+		if o != "gateway" {
+			t.Fatalf("event %d origin = %q, want gateway", i, o)
+		}
+	}
+	for _, o := range origins(context.Background()) {
+		if o != "" {
+			t.Fatalf("an unstamped run carried origin %q, want none", o)
+		}
+	}
+}
+
 // TestSessionEventObserversSeeTheRunSession pins the session-attributed spine.
 func TestSessionEventObserversSeeTheRunSession(t *testing.T) {
 	var mu sync.Mutex
@@ -20,7 +57,7 @@ func TestSessionEventObserversSeeTheRunSession(t *testing.T) {
 		defer mu.Unlock()
 		plainEvents = append(plainEvents, ev)
 	}
-	session := func(session string, ev core.Event) {
+	session := func(session, origin string, ev core.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		sessions = append(sessions, session)
@@ -65,7 +102,7 @@ func TestSessionEventObserversSeeTheRunSession(t *testing.T) {
 func TestSessionObserverCarriesTheSinkDefault(t *testing.T) {
 	var mu sync.Mutex
 	var sessions []string
-	obs := func(session string, ev core.Event) {
+	obs := func(session, origin string, ev core.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		sessions = append(sessions, session)
@@ -101,7 +138,7 @@ func TestSessionEventObserverRegistrationIsSnapshotted(t *testing.T) {
 	ag.SetSessionEventObserverSource(ctx.SessionEventObservers)
 
 	events := ag.Run(context.Background(), []core.Message{core.NewUser("hi")}, nil)
-	ctx.AddSessionEventObserver(func(string, core.Event) {
+	ctx.AddSessionEventObserver(func(string, string, core.Event) {
 		mu.Lock()
 		defer mu.Unlock()
 		seen++

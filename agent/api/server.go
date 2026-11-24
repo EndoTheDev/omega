@@ -1345,7 +1345,7 @@ func (s *Server) streamAgentEvents(ctx context.Context, w http.ResponseWriter, f
 	// tools run in THIS session's context.
 	ctx = agent.WithSessionID(ctx, req.SessionID)
 	ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
-	ctx = core.WithRunOrigin(ctx, "interactive")
+	ctx = core.WithRunOrigin(ctx, "gateway")
 	// Turn copy persistence belongs to the loop. Channels render from the store, never
 	// append turn content.
 	ctx = agent.WithTurnSink(ctx, s.turnSinkFor(req))

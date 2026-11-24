@@ -19,7 +19,7 @@ const (
 type AuditRow struct {
 	TS             string   `json:"ts"`
 	Mode           string   `json:"mode"`
-	Origin         string   `json:"origin"` // interactive | cron | delegate
+	Origin         string   `json:"origin"` // interactive | gateway | cron | delegate
 	Session        string   `json:"session,omitempty"`
 	Tool           string   `json:"tool"`
 	Command        string   `json:"command"` // the canonical parsed form

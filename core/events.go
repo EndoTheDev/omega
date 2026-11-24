@@ -82,12 +82,14 @@ func (SteerDeliveredEvent) isEvent() {}
 // stat, never network).
 type EventObserver func(Event)
 
-// SessionEventObserver is an EventObserver that also receives the session id, which rides
-// the RUN CONTEXT (agent.SessionIDFromContext) rather than the event: the events are the
-// loop's transport and a session is the host's label. The forward goroutine in
-// Agent.RunWithProvider holds that context, so it is the one place that can hand the id to
-// a spine consumer. Same contract: cheap, blocking, one goroutine of the live run.
-type SessionEventObserver func(sessionID string, ev Event)
+// SessionEventObserver is an EventObserver that also receives the run's session id and
+// origin, both of which ride the RUN CONTEXT (agent.SessionIDFromContext,
+// core.RunOriginFromContext) rather than the event: the events are the loop's transport
+// and the session and surface are the host's labels. The forward goroutine in
+// Agent.RunWithProvider holds that context, so it is the one place that can hand them to
+// a spine consumer. Origin is "" when the host declared none. Same contract: cheap,
+// blocking, one goroutine of the live run.
+type SessionEventObserver func(sessionID, origin string, ev Event)
 
 // TickEvent is a module-emitted spine payload.
 type TickEvent struct {

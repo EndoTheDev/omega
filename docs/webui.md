@@ -1042,9 +1042,11 @@ dot, reset link, draft star, live note).
   survives. The STRUCTURED event
   stream is the primary view - `GET /observability/events?session=&level=&limit=`
   answers `{events, returned, buffered, capacity}` with rows of
-  `{seq, time, session, type, level, tool, turn, duration_ms, summary,
-error}` (level is DERIVED server-side: error on a failure field or an
-  IsError result, warn on an unclean stop, info otherwise). The raw log
+  `{seq, time, session, origin, type, level, tool, turn, duration_ms,
+summary, error}` (level is DERIVED server-side: error on a failure field
+  or an IsError result, warn on an unclean stop, info otherwise; origin
+  is the run's declared surface, and it is what gives the gateway chip
+  its rows). The raw log
   tail is the SECONDARY view inside the same tab (ruling 1: not a peer
   tab) - `GET /observability/logs?lines=` answers
   `{path, lines}` verbatim.
@@ -1058,17 +1060,19 @@ error}` (level is DERIVED server-side: error on a failure field or an
   only): one toggle per source, multi-select, AND-composed with the
   severity chip. Sources are DERIVED client-side from a record's own
   provenance (`rows.ts eventSource`), because the ring has one producer
-  family - the agent loop's spine - so a record carries exactly three
-  clues: its type, its tool, and its session. Precedence: the RUN
-  outranks the record (a `cron:`-labelled session belongs entirely to
-  the scheduler, label read from `/sessions`), then the TOOL's capsule
-  (`kanban.*` is the board), then the provider stream (`stream_end`),
-  and the loop owns the rest. Four sources is the whole vocabulary
-  today: **a serving-layer (`gateway`) source has no producer in the
-  stream** - the HTTP channel records nothing into the ring - so no
-  chip ships for it (a chip that can never match a row is dead UI).
-  Every record lands in exactly one source; an empty enabled set means
-  every source is OFF, not every source on.
+  family - the agent loop's spine - so a record carries exactly four
+  clues: its type, its tool, its session and its origin. Precedence:
+  the RUN outranks the record (a `cron:`-labelled session belongs
+  entirely to the scheduler, label read from `/sessions`; an
+  HTTP-channel run, whose every record carries origin `gateway`, belongs
+  entirely to the serving layer), then the TOOL's capsule (`kanban.*` is
+  the board), then the provider stream (`stream_end`), and the loop owns
+  the rest. Five sources are the whole vocabulary: the `gateway`
+  producer is the serving layer itself - `agent/api` stamps each run it
+  starts with `core.WithRunOrigin(ctx, "gateway")`, `SessionEventObserver`
+  hands `(session, origin)` to the recorder, and the ring row carries
+  `origin`. Every record lands in exactly one source; an empty enabled
+  set means every source is OFF, not every source on.
 - **Clear is a display watermark**, never a delete:
   `clearedThrough` holds the highest `seq` read at click time, rows at
   or below it stop rendering, the ring total in the meta line holds
@@ -1078,7 +1082,11 @@ error}` (level is DERIVED server-side: error on a failure field or an
   tail is the file's own verbatim lines) and when the ring is empty.
 - **Colors ride the existing ladder, one accent per source**: llm
   `--accent`, cron `--ok`, kanban `--text`, agent `--text-dim` (the
-  loop is most rows, so it is the quietest). `--unread` and `--err` are
+  loop is most rows, so it is the quietest), gateway a derivation of two
+  ladder tokens (`color-mix(in srgb, var(--accent) 55%, var(--text-dim))`)
+  - the palette carries no fifth hue and the accent's dimmed variant is
+  the serving layer's: it sits beside the stream it carries, and a theme
+  override recolors it for free. `--unread` and `--err` are
   semantic-only and never decorate a source. The accent paints the
   chip's dot/border and the row's type cell; the level rail above it
   keeps its own meaning (error `--err`, warn `--accent`).

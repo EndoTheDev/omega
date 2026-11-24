@@ -55,6 +55,27 @@ func TestRingDropsOldestWhenFull(t *testing.T) {
 	}
 }
 
+// TestOriginRidesEveryRecord pins the run's surface as a RECORD property: the observer
+// hands over one origin and the whole run's trace carries it, which is what gives the
+// Logs tab a gateway source. A host that declares no origin writes none.
+func TestOriginRidesEveryRecord(t *testing.T) {
+	rec, ring, _ := newTestRecorder(16)
+	rec.Observe("s1", "gateway", core.AgentStart{Type: "agent_start"})
+	rec.Observe("s1", "gateway", core.TurnStart{Type: "turn_start", Turn: 1})
+	rec.Observe("s1", "", core.TurnEnd{Type: "turn_end", Turn: 1})
+
+	rows := ring.Page("s1", "", 10)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
+	}
+	want := []string{"gateway", "gateway", ""}
+	for i, w := range want {
+		if rows[i].Origin != w {
+			t.Fatalf("row %d (%s) origin = %q, want %q", i, rows[i].Type, rows[i].Origin, w)
+		}
+	}
+}
+
 // TestPageOrdersOldestFirstWhileKeepingNewest pins the page contract.
 func TestPageOrdersOldestFirstWhileKeepingNewest(t *testing.T) {
 	ring := NewRing(16)
@@ -77,10 +98,10 @@ func TestPageOrdersOldestFirstWhileKeepingNewest(t *testing.T) {
 // scoped read sees exactly its own session - the filter the tab's default scope rides.
 func TestSessionScoping(t *testing.T) {
 	rec, ring, _ := newTestRecorder(32)
-	rec.Observe("sess-a", core.AgentStart{Type: "agent_start", ModelName: "m"})
-	rec.Observe("sess-b", core.AgentStart{Type: "agent_start", ModelName: "m"})
-	rec.Observe("sess-a", core.TurnStart{Type: "turn_start", Turn: 1})
-	rec.Observe("sess-b", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 2})
+	rec.Observe("sess-a", "", core.AgentStart{Type: "agent_start", ModelName: "m"})
+	rec.Observe("sess-b", "", core.AgentStart{Type: "agent_start", ModelName: "m"})
+	rec.Observe("sess-a", "", core.TurnStart{Type: "turn_start", Turn: 1})
+	rec.Observe("sess-b", "", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 2})
 
 	a := ring.Page("sess-a", "", 10)
 	if len(a) != 2 {
@@ -103,14 +124,14 @@ func TestSessionScoping(t *testing.T) {
 // TestLevelFilter pins the errors-only view and the warn floor.
 func TestLevelFilter(t *testing.T) {
 	rec, ring, _ := newTestRecorder(32)
-	rec.Observe("s1", core.AgentStart{Type: "agent_start"})
-	rec.Observe("s1", core.StreamEvent{Event: core.ToolCallEvent{
+	rec.Observe("s1", "", core.AgentStart{Type: "agent_start"})
+	rec.Observe("s1", "", core.StreamEvent{Event: core.ToolCallEvent{
 		ToolCall: core.ToolCall{ID: "c1", Name: "shell.run"},
 	}})
-	rec.Observe("s1", core.ToolResultEvent{Message: core.ToolResult{
+	rec.Observe("s1", "", core.ToolResultEvent{Message: core.ToolResult{
 		ToolCallID: "c1", Content: "boom: exit status 1", IsError: true,
 	}})
-	rec.Observe("s1", core.AgentEnd{Type: "agent_end", FinishReason: "cancelled", Turns: 3})
+	rec.Observe("s1", "", core.AgentEnd{Type: "agent_end", FinishReason: "cancelled", Turns: 3})
 
 	errs := ring.Page("", LevelError, 10)
 	if len(errs) != 1 {
@@ -131,14 +152,14 @@ func TestLevelFilter(t *testing.T) {
 func TestDerivedDurations(t *testing.T) {
 	rec, ring, clock := newTestRecorder(32)
 
-	rec.Observe("s1", core.TurnStart{Type: "turn_start", Turn: 1})
-	rec.Observe("s1", core.StreamEvent{Event: core.ToolCallEvent{
+	rec.Observe("s1", "", core.TurnStart{Type: "turn_start", Turn: 1})
+	rec.Observe("s1", "", core.StreamEvent{Event: core.ToolCallEvent{
 		ToolCall: core.ToolCall{ID: "call-1", Name: "files.read"},
 	}})
 	clock.add(1500 * time.Millisecond)
-	rec.Observe("s1", core.ToolResultEvent{Message: core.ToolResult{ToolCallID: "call-1", Content: "ok"}})
+	rec.Observe("s1", "", core.ToolResultEvent{Message: core.ToolResult{ToolCallID: "call-1", Content: "ok"}})
 	clock.add(500 * time.Millisecond)
-	rec.Observe("s1", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1})
+	rec.Observe("s1", "", core.TurnEnd{Type: "turn_end", Turn: 1, ToolCalls: 1})
 
 	rows := ring.Page("s1", "", 10)
 	if len(rows) != 4 {
@@ -156,7 +177,7 @@ func TestDerivedDurations(t *testing.T) {
 // never saw is still an event.
 func TestUnpairedResultStillReports(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
-	rec.Observe("s1", core.ToolResultEvent{Message: core.ToolResult{ToolCallID: "never-seen", Content: "ok"}})
+	rec.Observe("s1", "", core.ToolResultEvent{Message: core.ToolResult{ToolCallID: "never-seen", Content: "ok"}})
 	rows := ring.Page("s1", "", 10)
 	if len(rows) != 1 {
 		t.Fatalf("rows = %d, want 1", len(rows))
@@ -169,12 +190,12 @@ func TestUnpairedResultStillReports(t *testing.T) {
 // TestStreamChunksAreDropped keeps the ring structural: a burst of token deltas must.
 func TestStreamChunksAreDropped(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
-	rec.Observe("s1", core.AgentStart{Type: "agent_start"})
+	rec.Observe("s1", "", core.AgentStart{Type: "agent_start"})
 	for i := 0; i < 100; i++ {
-		rec.Observe("s1", core.StreamEvent{Event: core.ResponseChunk{Content: "tok"}})
-		rec.Observe("s1", core.StreamEvent{Event: core.ThinkingChunk{Content: "thk"}})
+		rec.Observe("s1", "", core.StreamEvent{Event: core.ResponseChunk{Content: "tok"}})
+		rec.Observe("s1", "", core.StreamEvent{Event: core.ThinkingChunk{Content: "thk"}})
 	}
-	rec.Observe("s1", core.AssistantMessageEvent{Message: core.Assistant{Content: "done"}})
+	rec.Observe("s1", "", core.AssistantMessageEvent{Message: core.Assistant{Content: "done"}})
 	if got := ring.Len(); got != 1 {
 		t.Fatalf("ring holds %d rows, want only the agent_start (chunks and the assistant copy are dropped)", got)
 	}
@@ -185,11 +206,11 @@ func TestStreamChunksAreDropped(t *testing.T) {
 func TestStreamEndErrorsAndTokenCounts(t *testing.T) {
 	rec, ring, _ := newTestRecorder(8)
 	prompt, eval := 120, 34
-	rec.Observe("s1", core.StreamEvent{Event: core.StreamEnd{
+	rec.Observe("s1", "", core.StreamEvent{Event: core.StreamEnd{
 		FinishReason: "stop", PromptEvalCount: &prompt, EvalCount: &eval,
 	}})
-	rec.Observe("s1", core.StreamEvent{Event: core.StreamEnd{FinishReason: "length"}})
-	rec.Observe("s1", core.StreamEvent{Event: core.StreamEnd{FinishReason: "error", Error: "provider 500"}})
+	rec.Observe("s1", "", core.StreamEvent{Event: core.StreamEnd{FinishReason: "length"}})
+	rec.Observe("s1", "", core.StreamEvent{Event: core.StreamEnd{FinishReason: "error", Error: "provider 500"}})
 
 	rows := ring.Page("s1", "", 10)
 	if rows[0].Level != LevelInfo || !strings.Contains(rows[0].Summary, "120 prompt") {
@@ -217,7 +238,7 @@ func TestAgentEndLevels(t *testing.T) {
 	}
 	for _, tc := range cases {
 		rec, ring, _ := newTestRecorder(4)
-		rec.Observe("s1", tc.end)
+		rec.Observe("s1", "", tc.end)
 		row := ring.Page("s1", "", 1)[0]
 		if row.Level != tc.level {
 			t.Fatalf("finish %q (error %q): level = %q, want %q", tc.end.FinishReason, tc.end.Error, row.Level, tc.level)
@@ -233,12 +254,12 @@ func TestAgentEndLevels(t *testing.T) {
 func TestStopSilencesRecording(t *testing.T) {
 	rec, ring, _ := newTestRecorder(4)
 	rec.Stop()
-	rec.Observe("s1", core.AgentStart{Type: "agent_start"})
+	rec.Observe("s1", "", core.AgentStart{Type: "agent_start"})
 	if got := ring.Len(); got != 0 {
 		t.Fatalf("stopped recorder wrote %d rows, want 0", got)
 	}
 	rec.Start()
-	rec.Observe("s1", core.AgentStart{Type: "agent_start"})
+	rec.Observe("s1", "", core.AgentStart{Type: "agent_start"})
 	if got := ring.Len(); got != 1 {
 		t.Fatalf("re-armed recorder wrote %d rows, want 1", got)
 	}
@@ -269,10 +290,14 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 	if err := ctx.RunGroup().StartAll(context.Background(), core.StartDeps{}, ""); err != nil {
 		t.Fatalf("start handles: %v", err)
 	}
-	// The Context's own snapshot feeds THIS capsule's ring.
-	subs[0]("sess-mount", core.AgentStart{Type: "agent_start", ModelName: "m"})
-	if got := p.ring.Page("sess-mount", "", 10); len(got) != 1 {
-		t.Fatalf("ring rows after one observed event = %d, want 1", len(got))
+	// The Context's own snapshot feeds THIS capsule's ring, origin included.
+	subs[0]("sess-mount", "gateway", core.AgentStart{Type: "agent_start", ModelName: "m"})
+	rows := p.ring.Page("sess-mount", "", 10)
+	if len(rows) != 1 {
+		t.Fatalf("ring rows after one observed event = %d, want 1", len(rows))
+	}
+	if rows[0].Origin != "gateway" {
+		t.Fatalf("row origin = %q, want the run's gateway surface", rows[0].Origin)
 	}
 
 	if err := agent.DismountAll(reg, ctx); err != nil {
@@ -285,7 +310,7 @@ func TestPluginMountsRoutesAndObserver(t *testing.T) {
 		t.Fatalf("lifecycle handles survived the dismount: %d", got)
 	}
 	rec := p.rec
-	rec.Observe("sess-mount", core.AgentStart{Type: "agent_start"})
+	rec.Observe("sess-mount", "gateway", core.AgentStart{Type: "agent_start"})
 	if got := p.ring.Len(); got != 1 {
 		t.Fatalf("dismounted recorder still wrote (%d rows, want 1) - the Stop did not silence it", got)
 	}

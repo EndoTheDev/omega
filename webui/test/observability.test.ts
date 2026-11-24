@@ -27,6 +27,7 @@ import {
   eventSource,
   formatDuration,
   formatEventTime,
+  GATEWAY_ORIGIN,
   LOGS_PATH,
   logsQuery,
   normalizeEvent,
@@ -178,9 +179,11 @@ test("normalizeEvent drops non-objects and keeps the optional fields only when s
     duration_ms: 0,
     summary: "s",
     error: "",
+    origin: "",
   })!;
   assert.equal(e.tool, undefined, "an empty tool is not a tool");
   assert.equal(e.error, undefined, "an empty error is not an error");
+  assert.equal(e.origin, undefined, "an empty origin is no origin");
   assert.equal(e.turn, 0, "a zero turn is still the loop's turn");
   assert.equal(e.duration_ms, 0, "a zero duration is the pair's own answer");
 });
@@ -249,8 +252,8 @@ test("visibleEvents bounds the DOM at the render cap, newest kept", () => {
 
 // the source family -------------------------------------------------
 
-test("the source vocabulary is the four the ring carries", () => {
-  assert.deepEqual([...SOURCES], ["llm", "agent", "cron", "kanban"]);
+test("the source vocabulary is the five the ring carries", () => {
+  assert.deepEqual([...SOURCES], ["llm", "agent", "cron", "kanban", "gateway"]);
 });
 
 test("eventSource reads the record's own provenance", () => {
@@ -270,6 +273,34 @@ test("eventSource reads the record's own provenance", () => {
   assert.equal(eventSource(rec({ type: "agent_start", session: undefined })), "agent");
 });
 
+test("eventSource gives the serving layer its own source off the run origin", () => {
+  const rec = (over: Partial<ObservatoryEvent>): ObservatoryEvent => ({
+    seq: 1,
+    time: "2026-11-11T00:00:00Z",
+    type: "turn_start",
+    level: "info",
+    summary: "s",
+    ...over,
+  });
+  assert.equal(eventSource(rec({ type: "agent_start", origin: GATEWAY_ORIGIN })), "gateway");
+  assert.equal(
+    eventSource(rec({ type: "stream_end", origin: GATEWAY_ORIGIN })),
+    "gateway",
+    "the RUN outranks the stream's own record - a gateway run's whole trace is the serving layer's",
+  );
+  assert.equal(
+    eventSource(rec({ type: "tool_call", tool: "kanban.list", origin: GATEWAY_ORIGIN })),
+    "gateway",
+    "and the tool's capsule too",
+  );
+  assert.equal(
+    eventSource(rec({ type: "agent_start", origin: "interactive" })),
+    "agent",
+    "a terminal run is not the serving layer - only the gateway origin names it",
+  );
+  assert.equal(eventSource(rec({ type: "agent_start", origin: "" })), "agent", "an empty origin is no origin");
+});
+
 test("eventSource lets the CRON run outrank the record's own producer", () => {
   const labels = new Map([["sess-cron-1", `${CRON_LABEL_PREFIX}nightly`]]);
   const streamEnd: ObservatoryEvent = {
@@ -286,6 +317,11 @@ test("eventSource lets the CRON run outrank the record's own producer", () => {
   assert.equal(eventSource(kanbanCall, labels), "cron", "the run outranks the tool too");
   const otherLabel = new Map([["sess-cron-1", "chat about cron jobs"]]);
   assert.equal(eventSource(kanbanCall, otherLabel), "kanban", "only the scheduler's own prefix counts");
+  assert.equal(
+    eventSource({ ...streamEnd, origin: GATEWAY_ORIGIN }, labels),
+    "cron",
+    "the cron label still leads: a scheduled run fired through any surface is the scheduler's",
+  );
 });
 
 test("parseSessionLabels reads the store list down to id -> label", () => {
@@ -309,6 +345,7 @@ test("sourceCounts counts every record once, filters aside", () => {
   assert.equal(counts.agent, 5, "the loop's own rows");
   assert.equal(counts.cron, 0);
   assert.equal(counts.kanban, 0);
+  assert.equal(counts.gateway, 0, "no origin in the fixture: a CLI-shaped run reads by its own producer");
   const total = SOURCES.reduce((n, s) => n + counts[s], 0);
   assert.equal(total, events.length, "every record lands in exactly one source");
 });
@@ -461,6 +498,11 @@ test("the source strip is one toggle per source, multi-select", () => {
   for (const token of ["--accent", "--ok", "--text-dim", "--text"]) {
     assert.ok(sfc.includes(`--src: var(${token})`), `a source accent rides ${token}`);
   }
+  assert.ok(
+    sfc.includes(".obs-src.src-gateway") &&
+      sfc.includes("--src: color-mix(in srgb, var(--accent) 55%, var(--text-dim))"),
+    "the gateway accent is a ladder derivation - the palette has no fifth hue and --unread/--err are semantic",
+  );
   assert.ok(!sfc.includes("--src: var(--unread)"), "unread is semantic-only (DESIGN.md)");
   assert.ok(!sfc.includes("--src: var(--err)"), "err is failure-only");
 });
