@@ -34,6 +34,14 @@ panejs() {
   jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) retry-single')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'
 }
 
+# panejs_expr <expr over p>: the same pane-scoped expression, for a poll.
+# poll_js_value runs bare jsq (panejs is a runner, not an expression), so the
+# scope wrapper rides the string and returns the bare value - panejs
+# stringifies for its callers, a poll compares the value itself.
+panejs_expr() {
+  printf '%s' "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) retry-single')));if(!p)return 'NO_PANE';return ($1);})()"
+}
+
 # scoped_wait <expr> <timeout_s>: poll the focused pane; timeout dies
 scoped_wait() {
   local expr="$1" t="$2" i=0 out
@@ -53,15 +61,10 @@ open_journey_row "(journey) retry-single $TAG"
 # would land wherever an earlier journey's draft tab sits in the DOM.
 # Polled: focusing the row mounts the chat pane and the tab title picks
 # the session label up from the list refresh.
-focus=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  focus=$(panejs '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')
-  if [ "$focus" = "1" ]; then
-    panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
-    break
-  fi
-  sleep 1
-done
+focus=$(poll_js_value "$(panejs_expr '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')" -eq 1)
+if [ "$focus" = "1" ]; then
+  panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
+fi
 assert_eq "$focus" "1" "focused pane's composer reachable"
 
 ab keyboard type "Reply with exactly one word: READY"
@@ -111,23 +114,15 @@ assert_eq "$answers" "1" "exactly one assistant bubble after retry (in-place, ne
 # child, under the content - not a top-edge chip.
 row=$(panejs '(r=>r?+(r===r.parentElement.lastElementChild?1:0):0)(p.querySelector(".msg.assistant .msg-actions"))')
 assert_eq "$row" "1" "the action row is the response's last child (bottom placement)"
-sw=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  sw=$(panejs '((p.querySelector(".variant-switcher .v-pos")||{textContent:""}).textContent||"").replace(/\s+/g,"")')
-  [ "$sw" = "2/2" ] && break
-  sleep 1
-done
+# the switcher's label is a string: the poll compares the eval's JSON form
+# and panejs's own quote strip leaves the bare value the assert grades.
+sw=$(poll_js_value "$(panejs_expr '((p.querySelector(".variant-switcher .v-pos")||{textContent:""}).textContent||"").replace(/\s+/g,"")')" = '"2/2"' | sed -e 's/^"//' -e 's/"$//')
 assert_eq "$sw" "2/2" "retry re-ran the turn as a sibling variant (switcher « 2/2 »)"
 
 # the previous response is not lost: flipping to it renders the sibling
 # (the select endpoint refetch swaps the active path's tail)
 panejs 'p.querySelector(".variant-switcher .v-arrow").click(), 1' >/dev/null 2>&1
-flipped=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  flipped=$(panejs '((p.querySelector(".variant-switcher .v-pos")||{textContent:""}).textContent||"").replace(/\s+/g,"")')
-  [ "$flipped" = "1/2" ] && break
-  sleep 1
-done
+flipped=$(poll_js_value "$(panejs_expr '((p.querySelector(".variant-switcher .v-pos")||{textContent:""}).textContent||"").replace(/\s+/g,"")')" = '"1/2"' | sed -e 's/^"//' -e 's/"$//')
 assert_eq "$flipped" "1/2" "sibling response stays reachable (switch back renders « 1/2 »)"
 
 assert_no_console_errors

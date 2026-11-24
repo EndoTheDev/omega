@@ -17,14 +17,6 @@
 # are not mass-rewritten beside a rule landing.
 #
 # Format: <recipe file> <count of unbudgeted-poll sites>
-104-async-pending-chips.journey.sh 1
-115-session-copy-id.sh 3
-20-chat-send-response.sh 2
-21-composer-chips.sh 1
-23-composer-slash-token.sh 1
-23-tool-group.sh 1
-30-retry-single-user.sh 3
 77-session-branch.sh 9
-79-insights-open.sh 1
 89-menubar-shape.sh 1
 96-browser.journey.sh 6

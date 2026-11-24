@@ -25,15 +25,17 @@ step "ok: opened throwaway session $SID"
 panejs() {
   jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) send-render')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'
 }
-focus=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  focus=$(panejs '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')
-  if [ "$focus" = "1" ]; then
-    panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
-    break
-  fi
-  sleep 1
-done
+# panejs_expr <expr over p>: the same pane-scoped expression, for a poll.
+# poll_js_value runs bare jsq (panejs is a runner, not an expression), so the
+# scope wrapper rides the string and returns the bare value - panejs
+# stringifies for its callers, a poll compares the number itself.
+panejs_expr() {
+  printf '%s' "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) send-render')));if(!p)return 'NO_PANE';return ($1);})()"
+}
+focus=$(poll_js_value "$(panejs_expr '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')" -eq 1)
+if [ "$focus" = "1" ]; then
+  panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
+fi
 assert_eq "$focus" "1" "focused pane's composer editor reachable"
 ab keyboard type "Reply with exactly one line and nothing else: ## JOURNEYHEAD sendside"
 ab press Enter
@@ -41,13 +43,7 @@ ab press Enter
 step "typed"
 
 # the user bubble: a correct echo of what the customer typed
-hits=0
-for i in 1 2 3 4 5; do
-  hits=$(jsq '(()=>{let n=0; document.querySelectorAll(".msg.user").forEach(u => {if ((u.innerText || "").includes("JOURNEYHEAD")) n++;}); return n;})()' 2>&1)
-  case "${hits:-0}" in ''|*[!0-9]*) hits=0 ;; esac
-  [ "$hits" -ge 1 ] 2>/dev/null && break
-  sleep 1
-done
+hits=$(poll_js_value '(()=>{let n=0; document.querySelectorAll(".msg.user").forEach(u => {if ((u.innerText || "").includes("JOURNEYHEAD")) n++;}); return n;})()' -ge 1)
 [ "${hits:-0}" -ge 1 ] 2>/dev/null || die "user bubble did not render after send (hits=$hits)"
 step "ok: user bubble renders"
 

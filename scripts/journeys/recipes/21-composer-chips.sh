@@ -33,7 +33,13 @@ label_journey_session "$SID" "(journey) composer-chips $TAG"
 panejs() {
   jsq "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) composer-chips')));if(!p)return 'NO_PANE';return ''+($1);})()" 2>&1 | tail -1 | sed -e 's/^"//' -e 's/"$//' -e 's/\\"/"/g'
 }
-
+# panejs_expr <expr over p>: the same pane-scoped expression, for a poll.
+# poll_js_value runs bare jsq (panejs is a runner, not an expression), so the
+# scope wrapper rides the string and returns the bare value - panejs
+# stringifies for its callers, a poll compares the number itself.
+panejs_expr() {
+  printf '%s' "(()=>{const panes=[...document.querySelectorAll('.dock-pane')];const p=panes.find(x=>[...x.querySelectorAll('.dock-tab')].some(d=>d.getAttribute('aria-selected')==='true' && (d.querySelector('.dock-tab-title')||{textContent:''}).textContent.includes('(journey) composer-chips')));if(!p)return 'NO_PANE';return ($1);})()"
+}
 # scoped_wait <expr> <timeout_s>: poll the focused pane; timeout dies.
 # Accepts both "1" and "true" (lib.sh's wait_js speaks "true", recipe
 # 30's panejs speaks "1" - the expressions here return bare booleans)
@@ -52,15 +58,10 @@ open_app
 open_journey_row "(journey) composer-chips $TAG"
 
 # focus THIS pane's editor (the contenteditable composer input)
-focus=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  focus=$(panejs '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')
-  if [ "$focus" = "1" ]; then
-    panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
-    break
-  fi
-  sleep 1
-done
+focus=$(poll_js_value "$(panejs_expr '(p.querySelector(".composer .composer-input")||{}).focus ? 1 : 0')" -eq 1)
+if [ "$focus" = "1" ]; then
+  panejs 'p.querySelector(".composer .composer-input").focus(), 1' >/dev/null 2>&1
+fi
 assert_eq "$focus" "1" "focused pane's composer editor reachable"
 
 # --- 1. the chip: a standalone @path replaces its text ----------------------

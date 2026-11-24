@@ -110,12 +110,7 @@ step "ok: period header follows the 7-days switch"
 # nightly's no-provider lane has none (t_da6f294f). The session list lives
 # in a PINNED shell, so seed text inside a NON-pinned pane means the chat
 # tab itself opened.
-seedrow=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  seedrow=$(jsq '(()=>{const rows=Array.from(document.querySelectorAll(".session-list li"));const r=rows.find(x=>/insights/i.test(x.innerText||""));if(!r) return 0;if(r.classList.contains("bucket-row")) return 0;r.click();return 1})()' 2>&1)
-  [ "$seedrow" = "1" ] && break
-  sleep 1
-done
+seedrow=$(poll_js_value '(()=>{const rows=Array.from(document.querySelectorAll(".session-list li"));const r=rows.find(x=>/insights/i.test(x.innerText||""));if(!r) return 0;if(r.classList.contains("bucket-row")) return 0;r.click();return 1})()' -eq 1)
 assert_eq "$seedrow" "1" "seeded jrn session row clicked (opens in the pane)"
 seedopen=0; guard=0
 while [ "$guard" -lt 20 ]; do
