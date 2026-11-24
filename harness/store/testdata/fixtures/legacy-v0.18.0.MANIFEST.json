@@ -1,0 +1,226 @@
+{
+  "tool": "store-fixture-extract.py",
+  "schema_version": 1,
+  "source": {
+    "file": "omega.db.2026-11-24.bak",
+    "sha256": "100a8ecef19b2220cacfee970d1283a3bd5e0ec64a96b3b18c3008fe4b34ed09",
+    "bytes": 12713984,
+    "tables": [
+      "image_captions",
+      "messages",
+      "messages_fts",
+      "messages_fts_config",
+      "messages_fts_data",
+      "messages_fts_docsize",
+      "messages_fts_idx",
+      "pending_calls",
+      "sessions",
+      "sessions_fts",
+      "sessions_fts_config",
+      "sessions_fts_content",
+      "sessions_fts_data",
+      "sessions_fts_docsize",
+      "sessions_fts_idx",
+      "sqlite_sequence"
+    ],
+    "row_counts": {
+      "image_captions": 0,
+      "messages": 2553,
+      "messages_fts": 2553,
+      "messages_fts_config": 1,
+      "messages_fts_data": 862,
+      "messages_fts_docsize": 2553,
+      "messages_fts_idx": 811,
+      "pending_calls": 0,
+      "sessions": 116,
+      "sessions_fts": 116,
+      "sessions_fts_config": 1,
+      "sessions_fts_content": 116,
+      "sessions_fts_data": 4,
+      "sessions_fts_docsize": 116,
+      "sessions_fts_idx": 2,
+      "sqlite_sequence": 1
+    }
+  },
+  "fixture": {
+    "file": "legacy-v0.18.0.sqlite",
+    "sha256": "5506a9b7cac4a6db8cb89ad8b36a729d227894326dfb6358bd62815d527b7673",
+    "bytes": 1716224,
+    "tables": [
+      "sessions",
+      "messages",
+      "image_captions",
+      "pending_calls"
+    ],
+    "dropped_tables": [
+      "messages_fts",
+      "messages_fts_config",
+      "messages_fts_data",
+      "messages_fts_docsize",
+      "messages_fts_idx",
+      "sessions_fts",
+      "sessions_fts_config",
+      "sessions_fts_content",
+      "sessions_fts_data",
+      "sessions_fts_docsize",
+      "sessions_fts_idx",
+      "sqlite_sequence"
+    ],
+    "row_counts": {
+      "sessions": 12,
+      "messages": 325,
+      "image_captions": 0,
+      "pending_calls": 0
+    }
+  },
+  "selection": {
+    "by": "structural class, not recency",
+    "cap_sessions": 12,
+    "cap_bytes": 2097152,
+    "source_sessions": 116,
+    "emitted_sessions": 12,
+    "dropped_sessions": 104,
+    "dropped_for_byte_cap": 0,
+    "classes": {
+      "equal_stamp": 8,
+      "multi_message": 3,
+      "zero_message": 7
+    }
+  },
+  "regression_session": {
+    "source_id": "72863811adb93cd5ca47642c9b8393f6",
+    "hashed_id": "316cc95584a829d5872ebab9209a5b3a",
+    "created_at": "2026-10-12T19:45:35.496622592Z",
+    "updated_at": "2026-10-12T19:45:35.496622592Z",
+    "equal": true,
+    "messages": 5,
+    "class": "updated_at_equals_created_at",
+    "emitted": true
+  },
+  "sessions": [
+    {
+      "id": "316cc95584a829d5872ebab9209a5b3a",
+      "why": "mandatory: v0.18.0 boot-kill",
+      "classes": [
+        "updated_at_equals_created_at",
+        "multi_message"
+      ],
+      "created_at": "2026-10-12T19:45:35.496622592Z",
+      "updated_at": "2026-10-12T19:45:35.496622592Z",
+      "messages": 5
+    },
+    {
+      "id": "f5354161303c97056e26ea5fe585baa8",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-10-17T00:28:17.276545265Z",
+      "updated_at": "2026-10-17T00:28:17.276545265Z",
+      "messages": 0
+    },
+    {
+      "id": "5bef2e09ae6e73da1bfa4d9e28c7021e",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-10-25T11:23:13.145247762Z",
+      "updated_at": "2026-10-25T11:23:13.145247762Z",
+      "messages": 0
+    },
+    {
+      "id": "35ef7c407e0551dbb796df2b3fb5e7b6",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-11-03T02:03:05.552171851Z",
+      "updated_at": "2026-11-03T02:03:05.552171851Z",
+      "messages": 0
+    },
+    {
+      "id": "253dc31dfbbba2f999cd788bbdb29f6e",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-11-03T06:48:49.086510424Z",
+      "updated_at": "2026-11-03T06:48:49.086510424Z",
+      "messages": 0
+    },
+    {
+      "id": "c5e494593e351dfc4c021994d6a10698",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-11-03T13:39:08.028256273Z",
+      "updated_at": "2026-11-03T13:39:08.028256273Z",
+      "messages": 0
+    },
+    {
+      "id": "9d681190f9b811b61b65726195f7e02e",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-11-09T13:52:37.841772695Z",
+      "updated_at": "2026-11-09T13:52:37.841772695Z",
+      "messages": 0
+    },
+    {
+      "id": "67e47e53650aa11954c3a2dbab59d446",
+      "why": "equal_stamp",
+      "classes": [
+        "updated_at_equals_created_at",
+        "zero_message"
+      ],
+      "created_at": "2026-11-09T13:53:48.696975661Z",
+      "updated_at": "2026-11-09T13:53:48.696975661Z",
+      "messages": 0
+    },
+    {
+      "id": "5ae772242e1da840eda5b632ce61e298",
+      "why": "multi_message",
+      "classes": [
+        "multi_message"
+      ],
+      "created_at": "2026-10-21T00:02:20.489109233Z",
+      "updated_at": "2026-10-31T17:29:14.636426487Z",
+      "messages": 310
+    },
+    {
+      "id": "78ed1f4b55679b4117023acef05da037",
+      "why": "recent",
+      "classes": [],
+      "created_at": "2026-11-24T16:51:45.103392206Z",
+      "updated_at": "2026-11-24T16:51:45.900500033Z",
+      "messages": 2
+    },
+    {
+      "id": "c492430c1828a6cb27b600a835ef00ca",
+      "why": "recent",
+      "classes": [
+        "multi_message"
+      ],
+      "created_at": "2026-11-23T06:56:30.415153402Z",
+      "updated_at": "2026-11-23T06:57:47.18656271Z",
+      "messages": 6
+    },
+    {
+      "id": "8cc6e70eb04034eec5d53cd1ae71b76d",
+      "why": "recent",
+      "classes": [],
+      "created_at": "2026-11-23T06:38:15.198419536Z",
+      "updated_at": "2026-11-23T06:38:16.381889828Z",
+      "messages": 2
+    }
+  ]
+}
