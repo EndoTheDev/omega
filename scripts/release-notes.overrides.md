@@ -25,6 +25,14 @@ Rules for the text:
 - Plain hyphens only: no em-dashes, no en-dashes (the script normalizes them
   anyway, and the style law is the repo's).
 - Do not restate the stats line - the script prints it from the commit log.
+- User-facing omega changes only (Endo 2026-11-23): factory, pipeline and internal-hygiene lines stay out of the hook and the bullets; the mechanical changelog block stays complete.
+
+## v0.18.1
+
+hook: A fix for the update path - omega now starts cleanly on data carried over from older versions.
+
+- updating from an older version no longer fails to start: omega boots and keeps every existing session
+- long-lived sessions keep their original last-changed times through the update, instead of picking up wrong ones
 
 ## v0.17.3
 
