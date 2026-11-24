@@ -198,6 +198,66 @@ func TestLegacyStoreMigratesWithReadBackAndArchivesOnce(t *testing.T) {
 	}
 }
 
+// TestLegacyMigrationKeepsARowWhoseUpdatedAtPredatesItsLastMessage: an old writer did not
+// refresh sessions.updated_at when it appended messages, so a real row can carry a stamp
+// from creation while its messages run hours later. The migrated file must fold back to
+// the ROW's stamp - the read-back gate compares it byte for byte, and a file that
+// upgrades it to the last message's time kills the boot.
+func TestLegacyMigrationKeepsARowWhoseUpdatedAtPredatesItsLastMessage(t *testing.T) {
+	const (
+		id      = "72863811adb93cd5ca47642c9b8393f6"
+		stamp   = "2026-10-12T19:45:35.496622592Z"
+		lastMsg = "2026-10-12T23:07:44.038102813Z"
+	)
+	dsn := filepath.Join(t.TempDir(), "prod.db")
+	writeLegacyStore(t, dsn)
+	seed, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatalf("reopen legacy db: %v", err)
+	}
+	for _, stmt := range []struct {
+		q    string
+		args []any
+	}{
+		{`INSERT INTO sessions (id, created_at, updated_at) VALUES (?, ?, ?)`, []any{id, stamp, stamp}},
+		{`INSERT INTO messages (session_id, role, payload, created_at) VALUES (?, ?, ?, ?)`,
+			[]any{id, "user", `{"content":"after the row was written"}`, lastMsg}},
+	} {
+		if _, err := seed.Exec(stmt.q, stmt.args...); err != nil {
+			t.Fatalf("seed prod-shaped session: %v", err)
+		}
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close seed handle: %v", err)
+	}
+
+	ctx := context.Background()
+	s, err := Open(dsn)
+	if err != nil {
+		t.Fatalf("the migration refused a store whose row stamp predates its messages: %v", err)
+	}
+	defer s.Close()
+
+	got, err := s.GetSession(ctx, id)
+	if err != nil {
+		t.Fatalf("get migrated session: %v", err)
+	}
+	if got.UpdatedAt != stamp {
+		t.Fatalf("index updated_at = %q, want the row's stamp %q", got.UpdatedAt, stamp)
+	}
+	f, err := foldFile(filepath.Join(s.sessionsDir, id+".jsonl"))
+	if err != nil {
+		t.Fatalf("fold migrated file: %v", err)
+	}
+	if f.session.UpdatedAt != stamp {
+		t.Fatalf("file folds to updated_at %q, want the row's stamp %q", f.session.UpdatedAt, stamp)
+	}
+	// The message keeps its own timestamp: the row's stamp is not allowed to rewrite it.
+	if len(f.messages) != 1 || f.messages[0].CreatedAt != lastMsg {
+		t.Fatalf("migrated messages = %+v, want one line created at %s", f.messages, lastMsg)
+	}
+}
+
 // TestLegacyMigrationRefusesToHalfMigrate: a verification failure leaves the old store
 // untouched and no session file behind.
 func TestLegacyMigrationRefusesToHalfMigrate(t *testing.T) {
