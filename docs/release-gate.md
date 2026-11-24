@@ -122,6 +122,12 @@ the pins that each past red must never trip again.
   work while the dev tip's verdict is red or in flight. The full suite is
   the nightly's (it builds the lane from the tree it tests).
 - **Nightly**: the full suite includes the set.
+- **Tag time, the store-migration eval**: `.github/workflows/fixtures.yml`
+  boots the release binary over a sanitized real-shape legacy store
+  (`harness/store/testdata/fixtures/`) and requires health plus a green
+  migration. It IS the v0.18.0 boot-kill eval, and its red-proof is the
+  d382f256 run: health never answers and the log names the read-back
+  divergence.
 - **Pin tests** (compile-time shapes a browser cannot witness) run in
   `go test ./...` and in the train gate list. The set's current pins:
   the shared-fold toggle race (`TestToggleConcurrentSharedFoldLock`),

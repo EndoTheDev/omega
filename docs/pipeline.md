@@ -477,6 +477,54 @@ dev tip (pinned - scheduled runs otherwise default to master):
 5. Green re-run on a day that already has its nightly skips loudly
    (one nightly per day).
 
+## The prod deploy leg (copy-boot)
+
+`scripts/prod-deploy.sh <tag>` ships one released version to pibtw and proves
+it came up. Eight steps, printed as they run:
+
+0. **pre-flight** - read the live `/health` version. Already the target:
+   `already live: <ver>`, exit 0, nothing is touched.
+1. **fetch** - the release tarball plus `checksums.txt` from the GitHub
+   release, sha256-verified, extracted into staging on the Pi. The old unit
+   keeps serving through this step; nothing has stopped yet.
+2. **stop** - `systemctl --user stop omega`. Every step through `start` runs
+   with the unit down.
+3. **copy-boot** - the gate. Copy the home (minus `logs/` and `backups/`) into
+   a temp dir under `/tmp`, record the sha256 of every file under
+   `data/sessions/`, then boot the STAGED binary against that copy with
+   `OMEGA_HOME=<copy> OMEGA_PORT=<copy-boot port>` and require `/health` ok at
+   the target version within 60s. After health: every session file that was
+   already there must hash identically (a boot that rewrites a real session
+   file is the failure this step exists to catch, and health cannot see it);
+   and when the copy carries a pre-JSONL store, the migration must be green and
+   the known-broken record must keep `updated_at == created_at`. Then the copy
+   server is killed, the temp home removed, and the deploy continues.
+4. **place** - previous binary -> `omega.bak`, install -m 0755 into place,
+   assert `omega --version` reports the target tag.
+5. **start** - `systemctl --user start omega`.
+6. **health** - `/health` until status ok AND version == target, bounded at 30s.
+7. **soak stamp** - print the stamp and append one line to `deploy.log`.
+
+Any red in step 3 restarts the OLD binary and exits nonzero: nothing is placed,
+no soak stamp lands, prod keeps serving the old version, and the release stays
+published. The copy-boot port defaults to 18099 and may never be the prod port.
+
+The leg is a script step and NOT a systemd `ExecStartPre` (the call this design
+settled): a pre-step runs before the new binary is placed, so a red copy-boot
+would leave the unit pointing at a binary that cannot boot while the old
+version stops serving. In-script, the old process is started again and the flip
+never happens.
+
+The regression it encodes: v0.18.0 crash-looped prod on boot. The migration
+derived a session's `updated_at` from its newest line instead of copying the
+row's own value, the migration's read-back gate caught the divergence, and
+`omega.service` (`Restart=always`) restarted forever. CI was blind by
+construction - the migration only runs for a store that HAS a `sessions` table
+and LACKS the `session_files` watermark, and every CI store is fresh. The
+tag-time gate in `.github/workflows/fixtures.yml` now boots a release binary
+over a sanitized copy of a real store on every `v*` tag, so the shape is
+exercised where it used to be invisible.
+
 ## The drift gate (`scripts/drift-gate.sh`, wired hard in ci.yml)
 
 CI on every dev push fails RED when dev is over 10 commits or over 7
@@ -532,6 +580,10 @@ stable channel from ever seeing a nightly.
 | `scripts/drift-gate.sh`         | hard-fail drift check, dev vs master (10 commits / 7 days)                  |
 | `scripts/release-suggest.sh`    | suggested bump + evidence commits, never tags                               |
 | `.github/workflows/nightly.yml` | nightly prerelease tag on green dev tip + the soak ff                       |
+| `.github/workflows/fixtures.yml` | the tag-time store-migration eval: boot a release binary over the real-shape fixture |
+| `scripts/fixture-boot.sh`       | boot a binary over a copied legacy-store fixture; health + green migration  |
+| `scripts/store-fixture-extract.py` | sanitize a real legacy store into a committable fixture + its manifest    |
+| `scripts/prod-deploy.sh`        | the push word's deploy leg: eight steps, copy-boot before the flip          |
 
 Journeys (run 3b) wire their suite in as `scripts/journeys/run.sh`;
 train-pass already calls that path when it exists.
