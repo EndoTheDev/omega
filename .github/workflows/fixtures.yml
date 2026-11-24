@@ -1,0 +1,117 @@
+name: Fixtures
+
+# The store-migration gate: boot a release binary against a real-shape legacy store.
+#
+# v0.18.0 crash-looped prod on boot. The legacy migration derived each session's
+# updated_at instead of copying the row's own value, its own read-back gate caught the
+# divergence, and the unit restarted forever. CI was blind BY CONSTRUCTION: the
+# migration only runs for a store that HAS a sessions table and LACKS the session_files
+# watermark, and every CI store was fresh - so no green run had ever executed it.
+#
+# The fix is the fixture in harness/store/testdata/fixtures/: a sanitized copy of a real
+# prod store (scripts/store-fixture-extract.py), committed with its MANIFEST.json. This
+# workflow boots the release binary over a COPY of that fixture and requires health, a
+# green migration, and the known-broken record intact.
+#
+# Runs on every v* tag (nightly tags included, so the channel is gated nightly) and on
+# demand. The red-proof for this gate is the d382f256 run recorded in the card that
+# added it: the same script against a v0.18.0 binary exits nonzero, health never
+# answers, and the log names the read-back divergence.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-boot:
+    name: Boot the release binary over the legacy-store fixture
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26'
+
+      - name: Resolve the version this build will report
+        id: ver
+        # /health must report exactly what the binary was stamped with. A tag run uses
+        # the tag; a dispatch run has no tag, so it takes the nightly's own shape and
+        # never collides with a real release.
+        run: |
+          if [ "${GITHUB_REF#refs/tags/}" != "$GITHUB_REF" ]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="v0.0.0-nightly.$(date -u +%Y%m%d)"
+          fi
+          echo "VERSION=$VERSION" >>"$GITHUB_OUTPUT"
+          echo "version: $VERSION"
+
+      - name: Build the binary at this ref
+        run: |
+          mkdir -p "$RUNNER_TEMP/omega-fixture"
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+            go build -trimpath \
+            -ldflags "-X main.omegaVersion=${{ steps.ver.outputs.VERSION }}" \
+            -o "$RUNNER_TEMP/omega-fixture/omega" ./cmd/omega
+          "$RUNNER_TEMP/omega-fixture/omega" --version
+
+      - name: Boot every committed fixture
+        # One fixture today (legacy-v0.18.0), and the loop keeps the next one free: each
+        # .sqlite pairs with its <base>.MANIFEST.json. No fixture at all is RED, not
+        # green - a gate with nothing to boot proves nothing, and that is the exact
+        # blindness this job exists to end.
+        run: |
+          set -u
+          shopt -s nullglob
+          fixtures=(harness/store/testdata/fixtures/*.sqlite)
+          if [ ${#fixtures[@]} -eq 0 ]; then
+            echo "::error::no store fixture committed under harness/store/testdata/fixtures - the migration gate has nothing to boot"
+            exit 1
+          fi
+          rc=0
+          for fixture in "${fixtures[@]}"; do
+            base="${fixture%.sqlite}"
+            manifest="$base.MANIFEST.json"
+            if [ ! -f "$manifest" ]; then
+              echo "::error::$fixture has no $manifest - a fixture without its receipt is not reviewable"
+              rc=1
+              continue
+            fi
+            echo "=== $fixture"
+            cat "$manifest"
+            {
+              echo "## Fixture: $(basename "$fixture")"
+              echo ""
+              echo '```json'
+              cat "$manifest"
+              echo '```'
+            } >>"$GITHUB_STEP_SUMMARY"
+            FIXTURE_BOOT_PORT=18099 FIXTURE_BOOT_TIMEOUT=60 \
+              bash scripts/fixture-boot.sh \
+              --fixture "$fixture" \
+              --manifest "$manifest" \
+              --bin "$RUNNER_TEMP/omega-fixture/omega" \
+              --version "${{ steps.ver.outputs.VERSION }}" || rc=1
+          done
+          exit "$rc"
+
+      - name: Red means NO migration gate for this ref
+        if: failure()
+        run: |
+          {
+            echo "## :rotating_light: Fixture boot RED - the store migration does not survive real data"
+            echo ""
+            echo "The failed step above names the fixture and prints the boot log tail."
+            echo "A red here reproduces a prod crash-loop on a sanitized copy of a real store;"
+            echo "do not tag a stable release over it."
+          } >>"$GITHUB_STEP_SUMMARY"
+          echo "::error::legacy-store fixture boot failed (see the boot log tail above)"

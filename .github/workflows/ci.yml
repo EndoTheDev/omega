@@ -27,7 +27,7 @@ jobs:
       - run: go test ./...
       - name: Binary-purity canary (scripts/nm-purity.sh - the kanban module must never survive its own removal build)
         run: scripts/nm-purity.sh
-      - name: Shell scratch-repo suite (drift gate + release suggest + release notes + purity negatives + checksum emission + the git fence + dependency drift)
+      - name: Shell scratch-repo suite (drift gate + release suggest + release notes + purity negatives + checksum emission + the git fence + dependency drift + the store-fixture extractor + the prod deploy leg)
         run: |
           bash scripts/drift-gate_test.sh
           bash scripts/release-suggest_test.sh
@@ -36,6 +36,8 @@ jobs:
           bash scripts/nm-purity_test.sh
           bash scripts/fence-test.sh
           bash scripts/dep-drift_test.sh
+          bash scripts/store-fixture-extract_test.sh
+          bash scripts/prod_deploy_test.sh
       - name: Recipe determinism (scripts/recipe-lint.sh over scripts/journeys/recipes - no fixed sleeps, no fixed windows in front of a read)
         run: bash scripts/recipe-lint_test.sh
       - name: Row-menu pin (scripts/menu-pin.sh - every recipe's menu assertion still names what its builder renders, in order)

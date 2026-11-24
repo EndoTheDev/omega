@@ -1,4 +1,7 @@
 .env
+# store fixtures under harness/store/testdata/fixtures/ are .sqlite on purpose:
+# a .db name would be swallowed by the rule below and the migration gate would
+# commit nothing while looking green
 *.db
 *.db-shm
 *.db-wal
