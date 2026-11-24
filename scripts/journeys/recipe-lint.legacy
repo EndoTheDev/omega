@@ -17,5 +17,7 @@
 # are not mass-rewritten beside a rule landing.
 #
 # Format: <recipe file> <count of unbudgeted-poll sites>
-89-menubar-shape.sh 1
-96-browser.journey.sh 6
+#
+# EMPTY: every recipe has been converted, so no line follows. The file and its
+# header stay because the count is what the lint reads - an entry here is again
+# a review finding, never an allowance a worker grants itself.
