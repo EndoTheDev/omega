@@ -1225,6 +1225,14 @@ A human stop ends that chain: the session's stop latch cancels the
 outstanding calls and drops their results, so a cancelled home goes
 quiet instead of waking on the next settlement.
 
+A call that settles BEFORE the run reaches its last boundary is not
+outstanding when the run ends: the result joins the live turn at that
+boundary (the one delivery law above) and the run ends with the
+provider's own `finish_reason` (`stop`). Both ends deliver the call
+exactly once; which one a send reports depends on settle timing, so
+`stop` after a dispatch is not a lost call - the result is already in
+the conversation.
+
 ## Provider quirks that leak onto the wire
 
 - **finish_reason is the provider's string**, passed through: Ollama

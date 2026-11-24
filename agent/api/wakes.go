@@ -180,6 +180,12 @@ func (s *Server) wakeHome(sessionID string, res core.YieldResult) {
 	// session-held either way, so a run that ends first hands it to the next turn.
 	if s.runs.active(sessionID) {
 		s.queuedWakeResult(sessionID, res)
+		// The run can free its slot between the check and the push: its finish hook drains a
+		// queue this row is not in yet, and nothing would ever drain it again. Inactive on the
+		// re-read means no drain is coming, so this call owns the launch.
+		if !s.runs.active(sessionID) {
+			s.drainWakes(sessionID)
+		}
 		return
 	}
 	s.wakes.enqueue(sessionID, res)

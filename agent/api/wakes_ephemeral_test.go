@@ -9,6 +9,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -43,6 +44,13 @@ func (s *ephSpyStore) Register(pc agent.PendingCall) error {
 // as a second run bound to the eph session, the result lands in the registry's history
 // AFTER the assistant that carries the call (flush-before-result), and the DURABLE
 // store never receives the pending call - the eph lane is memory-backed.
+//
+// The probe is GATED: it settles only once the send's stream has closed, so the
+// natural-end boundary always sees the call outstanding. That boundary has two legal
+// ends - an outstanding call yields and its result re-enters as a wake run, a result
+// that already settled joins the live turn and the run ends "stop" (one delivery law;
+// agent/loop's TestWakeResultAtRunEndJoinsTheRun). Which one wins is a settle-timing
+// race, so an ungated probe makes a "yielded is the only end" pin a coin flip.
 func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -59,10 +67,17 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 		},
 		finalStep("done"),
 	})
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce, releaseOnce sync.Once
+	releaseNow := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(releaseNow)
 	tools := map[string]core.Tool{"probe": {
 		Description: "probe (yield-class)",
 		Yield:       true,
 		Run: func(_ context.Context, args map[string]any) (string, error) {
+			startedOnce.Do(func() { close(started) })
+			<-release
 			msg, _ := args["msg"].(string)
 			return "async:" + msg, nil
 		},
@@ -91,6 +106,14 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 		t.Fatal("no agent_end frame in the send's stream")
 	}
 
+	select {
+	case <-started:
+	case <-time.After(testWaitTimeout):
+		t.Fatal("the yield-class call was never dispatched")
+	}
+	// The stream is over: the call can settle now and only the wake path is left.
+	releaseNow()
+
 	deadline := time.Now().Add(testWaitTimeout)
 	seen := false
 	for time.Now().Before(deadline) && !seen {
@@ -100,6 +123,15 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	if !seen {
 		t.Fatalf("the wake run never landed the probe result in the eph registry (id %s)", id)
 	}
+	answered := func(want string) bool {
+		for _, m := range s.eph.history(id) {
+			if a, ok := m.(core.Assistant); ok && strings.Contains(a.Content, want) {
+				return true
+			}
+		}
+		return false
+	}
+	waitFor(t, "the wake run landed its answer", func() bool { return answered("done") })
 	callIdx, resultIdx := -1, -1
 	for i, m := range s.eph.history(id) {
 		if as, ok := m.(core.Assistant); ok {
@@ -115,6 +147,12 @@ func TestEphemeralYieldSliceEndToEnd(t *testing.T) {
 	}
 	if callIdx == -1 || resultIdx == -1 || callIdx > resultIdx {
 		t.Errorf("order broken: assistant(call) index %d, yield_result index %d", callIdx, resultIdx)
+	}
+
+	// The result re-entered as a SECOND run: a wake launch, not the run that dispatched
+	// the call. (An absorbed settle would show the same history but zero wake launches.)
+	if n := s.wakeLaunchCount(id); n != 1 {
+		t.Errorf("wake launches = %d, want 1 (the settled result re-entered as a wake run)", n)
 	}
 
 	// The routing law: no pending call for the eph home ever reached the durable table.

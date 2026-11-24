@@ -307,6 +307,76 @@ func TestAnsweredCallTakesNoSecondAnswer(t *testing.T) {
 	}
 }
 
+// TestWakeResultAtRunEndJoinsTheRun: a result settling as the LAST response finishes takes
+// the natural-end boundary too. The run continues with it instead of ending "yielded" and
+// relaunching - both halves are the one delivery law, and which one a run takes depends on
+// whether the result landed before its boundary. A pin that accepts only "yielded" is a
+// settle-timing race, so the eph slice gates its probe to hold the yielded half still.
+func TestWakeResultAtRunEndJoinsTheRun(t *testing.T) {
+	provider := agent.NewFakeProviderScripts("test",
+		[]core.ProviderStreamEvent{
+			core.ToolCallEvent{Type: "tool_call", ToolCall: core.ToolCall{ID: "c1", Name: "echo", Arguments: map[string]any{"msg": "hi"}}},
+			core.StreamEnd{Type: "stream_end", FinishReason: "tool_call"},
+		},
+		[]core.ProviderStreamEvent{
+			core.ResponseChunk{Type: "response_chunk", Content: "used it"},
+			core.StreamEnd{Type: "stream_end", FinishReason: "stop"},
+		},
+	)
+	ledger := agent.NewMemYieldLedger()
+	rec := &wakeRecorder{}
+	batches := 0
+	// The natural-end boundary delivers the settled result. The host settles the ledger
+	// BEFORE queueing it (dispatchYieldCall's order), so the dry ledger is what the next
+	// turn's placeholder pass sees. The error is discarded on purpose: the row is synthetic
+	// here (the real dispatcher owns settling) and a miss cannot change what the model sees.
+	feed := func() []agent.SteerDelivery {
+		batches++
+		if batches != 2 {
+			return nil
+		}
+		_ = ledger.Settle("s1", "c1")
+		return []agent.SteerDelivery{{ID: "w1", Message: core.NewYieldResult("async:hi", "c1", false, false)}}
+	}
+	opts := yieldOpts(provider, map[string]core.Tool{"echo": yieldEcho()}, ledger, rec.add)
+	opts.Steer = feed
+	opts.Messages = []core.Message{core.NewUser("go")}
+
+	_, end := runLoop(t, agent.WithSessionID(context.Background(), "s1"), opts)
+
+	if end.finish != "stop" {
+		t.Errorf("finish = %q, want stop (the run absorbed its own settle)", end.finish)
+	}
+	if end.turns != 2 {
+		t.Errorf("turns = %d, want 2 (the boundary opened another turn instead of ending)", end.turns)
+	}
+	if n := provider.Calls(); n != 2 {
+		t.Errorf("provider calls = %d, want 2 (one run, not a relaunch)", n)
+	}
+	answers := 0
+	for _, m := range provider.LastMessages {
+		switch v := m.(type) {
+		case core.YieldResult:
+			if v.ToolCallID != "c1" {
+				continue
+			}
+			answers++
+			if v.Content != "async:hi" {
+				t.Errorf("delivered result = %q, want the settled content", v.Content)
+			}
+		case core.ToolResult:
+			if v.ToolCallID != "c1" {
+				continue
+			}
+			answers++
+			t.Errorf("placeholder survived beside the result: %+v", v)
+		}
+	}
+	if answers != 1 {
+		t.Fatalf("answers for c1 = %d, want 1 (the absorbed result is the only answer)", answers)
+	}
+}
+
 // sinkHas reports whether the sink persisted a message carrying the text.
 func sinkHas(s *memSink, text string) bool {
 	s.mu.Lock()
