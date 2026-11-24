@@ -119,7 +119,14 @@ non-positive value refuses in every mode.
 FD_GH names the gh binary the tip-CI verdict reads through (default `gh`;
 the test suite's seam). The pass prints one `tip CI:` line every run and
 holds the spawn while the dev tip's `Journeys regression` job is red or in
-flight (the merge-before-dispatch law) - docs/pipeline.md.
+flight (the merge-before-dispatch law) - docs/pipeline.md. Three verdict
+states, never two: `absent` is GitHub ANSWERING with no run, so the guard
+stands down; a read that never reached GitHub is `unknown` and proceeds
+with a `tip CI: WARN` line, because a failed read is not a green tip. The
+hold itself carries one door: a ready card whose declared `FILES:` surface
+is entirely under scripts/journeys/recipes/ may still spawn (recipe bytes
+touch no runtime, so that card class is the one a red recipe can only be
+fixed from inside the hold). Every other candidate stays held.
 
 Hermes home + board follow the hermes CLI's own resolution:
 HERMES_KANBAN_DB (pins the DB file) > HERMES_KANBAN_BOARD /
@@ -1201,11 +1208,19 @@ fi
 # gh, no auth, no dev ref) proceeds LOUDLY - a missing tool must never freeze
 # the factory. FD_GH is the suite's seam: the gh binary the check reads
 # through.
+#
+# THREE STATES, NEVER TWO. `absent` means GitHub ANSWERED - no run for that sha
+# - so the guard may stand down. A read that never reached GitHub (curl exit
+# nonzero, the bounded timeout firing, a body gh cannot parse) is `unknown`: it
+# proceeds, but with a WARN line of its own. The two used to collapse into
+# `absent`, so a TLS timeout printed `tip CI: absent` over a red tip and
+# silently turned the guard off - a failed read is not a green tip.
 FD_GH="${FD_GH:-gh}"
 TIP_SHA=""
 TIP_VERDICT="unknown"
 TIP_WHY=""
 TIP_HOLD=0
+TIP_WARN=0
 
 # Reads through FD_GH; bounded by coreutils timeout where the host has it, so a
 # hung GitHub call can never stall the tick (the read is advisory, the hold is
@@ -1219,7 +1234,7 @@ gh_call() {
 }
 
 tip_ci_verdict() {
-  local sha runid jobs jname jstatus jconcl
+  local sha runid jobs jname jstatus jconcl rc
   # Sets TIP_VERDICT / TIP_SHA / TIP_WHY directly: a command substitution would
   # run this in a subshell and throw all three away.
   sha="$(git rev-parse -q --verify dev 2>/dev/null || true)"
@@ -1235,17 +1250,32 @@ tip_ci_verdict() {
     TIP_VERDICT="unknown"
     return 0
   fi
+  # rc AND output are read separately: `|| true` alone made a failed read
+  # indistinguishable from an empty answer, and an empty answer is `absent` -
+  # the guard switching itself off on a timeout.
+  rc=0
   runid="$(gh_call run list --workflow ci.yml --commit "$sha" --event push --limit 10 \
-    --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null || true)"
+    --json databaseId --jq '.[0].databaseId // empty' 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    TIP_WHY="$FD_GH run list failed (rc=$rc): the read never reached GitHub"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
   if [ -z "$runid" ]; then
     TIP_WHY="no CI run recorded for this commit"
     TIP_VERDICT="absent"
     return 0
   fi
+  rc=0
   jobs="$(gh_call run view "$runid" --json jobs \
-    --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null || true)"
+    --jq '.jobs[] | [.name, .status, (.conclusion // "")] | @tsv' 2>/dev/null)" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    TIP_WHY="$FD_GH run view $runid failed (rc=$rc): the read never reached GitHub"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
   if [ -z "$jobs" ]; then
-    TIP_WHY="run $runid unreadable"
+    TIP_WHY="run $runid answered no job rows - cannot tell green from red"
     TIP_VERDICT="unknown"
     return 0
   fi
@@ -1273,10 +1303,98 @@ tip_ci_verdict() {
 tip_ci_verdict
 case "$TIP_VERDICT" in
   red|inflight) TIP_HOLD=1 ;;
+  unknown) TIP_WARN=1 ;;
 esac
 echo "tip CI: $TIP_VERDICT - dev ${TIP_SHA:0:12} ${TIP_WHY}"
 if [ "$TIP_HOLD" = 1 ]; then
   echo "tip CI: HOLD - no spawn while the dev tip's regression verdict is unproven (the merge-before-dispatch law: a red tip is fix-forward + the un-land discipline, carded per the red-gate flake law)"
+fi
+if [ "$TIP_WARN" = 1 ]; then
+  echo "tip CI: WARN - the tip's CI verdict could NOT be read: this pass proceeds WITHOUT the CI gate, which is not the same as a green tip - verify dev by hand"
+fi
+
+# ---- fix-forward door: the hold exempts recipe-only bytes --------------------
+# The hold used to close on the one card class that fixes a red recipe: nothing
+# could spawn while the tip was red, so a red recipe held its own fix card at
+# the door and only an operator landing could clear it. The door is NARROW by
+# design - a card qualifies ONLY when it declares a `FILES:` line and EVERY
+# token on it sits under scripts/journeys/recipes/. Recipe bytes touch no
+# runtime, which is why they can be fixed from inside the hold; a red gate
+# caused by product bytes keeps the hold, and a card with no declared surface
+# is unprovable, never exempt.
+# The door covers the TIP hold and nothing else: a card the candidate loop has
+# ALREADY held carries an independent capacity hold (same-file, go-beside-go,
+# unprovable surface) that owns it for this pass, and a head card the pair
+# verdict DECLINED is claim-locked by the same pass's decline park. Releasing
+# either here announced a spawn the inner could never claim - door OPEN beside
+# `Spawned: 0`, byte-identical every pass: a livelock wearing the door's badge.
+parked_has() {  # id -> 0 when the candidate loop already held it this pass
+  local p
+  for p in "${PARKED[@]:-}"; do
+    [ -n "$p" ] && [ "$p" = "$1" ] && return 0
+  done
+  return 1
+}
+# The pair verdict's lock, read before its park runs: HEAD beyond VERDICT_CAP is
+# declined, and the PAIR-DECLINE park in the spawn path locks exactly that slice.
+# Both HEAD and VERDICT_CAP are in scope here, so the door can see the decision
+# even though the park itself sits below.
+declined_has() {  # id -> 0 when the pair verdict declines it this pass
+  local vd
+  for ((vd = VERDICT_CAP; vd < ${#HEAD[@]}; vd++)); do
+    [ "${HEAD[vd]}" = "$1" ] && return 0
+  done
+  return 1
+}
+FIXFWD=(); FIXFWD_HOLD=0; TIP_DOOR=0; FIXN=0; FIXHELD=""; FIXLOCK=""; FIXCAP=""; FIXDECL=""
+if [ "$TIP_HOLD" = 1 ]; then
+  for c in "${CAND[@]:-}"; do
+    [ -n "$c" ] || continue
+    fftok=""
+    # Declared surface AND worktree evidence (surface_of_card): a resumed card
+    # whose worktree already carries runtime writes is not recipe-only, whatever
+    # its FILES: line promises.
+    if ! files_line_absent "$c"; then fftok=$(surface_of_card "$c"); fi
+    if [ -n "$fftok" ] && ! grep -qvE '^scripts/journeys/recipes/' <<<"$fftok"; then
+      if parked_has "$c"; then FIXLOCK="$FIXLOCK $c"
+      elif declined_has "$c"; then FIXDECL="$FIXDECL $c"
+      else FIXFWD+=("$c"); fi
+    else
+      FIXHELD="$FIXHELD $c"
+    fi
+  done
+  [ "${#FIXFWD[@]}" -gt 0 ] && FIXFWD_HOLD=1
+  if [ "$FIXFWD_HOLD" = 1 ]; then
+    # The pair verdict still bounds the door: a forbidden head pair caps a pass
+    # at ONE card, and the seat math that produced VERDICT_CAP (no free
+    # implementation seat => 0) bounds it too. Neither law is relaxed here.
+    FIXN=${#FIXFWD[@]}
+    [ "$FIXN" -gt "$VERDICT_CAP" ] && FIXN=$VERDICT_CAP
+    if [ "$FIXN" -gt 0 ]; then
+      # Slice to the sanctioned prefix BEFORE anything reads FIXFWD: the door
+      # echo and the spawn path's unlock test must name the same set, or a card
+      # the echo never named can be the one the inner claims (the cap is often
+      # narrower than the recipe-only count).
+      if [ "$FIXN" -lt "${#FIXFWD[@]}" ]; then
+        FIXCAP=" ${FIXFWD[*]:$FIXN}"
+        FIXFWD=("${FIXFWD[@]:0:$FIXN}")
+      fi
+      TIP_DOOR=1
+      echo "tip CI: fix-forward door OPEN - spawn set under the hold: ${FIXFWD[*]}${FIXHELD:+ - held:${FIXHELD}}${FIXDECL:+ - declined:${FIXDECL}}${FIXCAP:+ - over cap:${FIXCAP}}${FIXLOCK:+ - locked:${FIXLOCK}} (every FILES: token under scripts/journeys/recipes/; nothing else spawns)"
+    else
+      echo "tip CI: fix-forward door BLOCKED - ${FIXFWD[*]}${FIXLOCK:+ $FIXLOCK}${FIXDECL:+ $FIXDECL} declares a recipe-only FILES: surface but no slot sanctions it this pass (verdict cap $VERDICT_CAP)"
+    fi
+  else
+    if [ -n "$FIXLOCK" ] && [ -n "$FIXDECL" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass:$FIXLOCK - declined by the pair verdict:$FIXDECL (the door exempts the tip hold alone, and a claim-locked card cannot spawn)"
+    elif [ -n "$FIXLOCK" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass:$FIXLOCK (the door exempts the tip hold alone, and a claim-locked card cannot spawn)"
+    elif [ -n "$FIXDECL" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) declined by the pair verdict this pass:$FIXDECL (the decline park claim-locks them before the inner dispatch, so the door exempts the tip hold alone and cannot release them)"
+    else
+      echo "tip CI: fix-forward door CLOSED - no ready card declares a recipe-only FILES: surface, so the hold stands for every candidate"
+    fi
+  fi
 fi
 
 [ "$DRY" = 1 ] && { echo "cap=$CAP"; echo "(dry-run: no dispatch)"; exit 0; }
@@ -1354,8 +1472,28 @@ CLAIMABLE=$(dbq "SELECT (SELECT COUNT(*) FROM tasks WHERE status='ready') + (SEL
 # 2 implementation cards running, a third run may still be the review lane's
 # one seat (2 + 1 = 3). Past TOTAL_SEATS nothing can spawn, whatever the
 # claimable count says.
-if [ "$TIP_HOLD" = 0 ] && [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
+if { [ "$TIP_HOLD" = 0 ] || [ "$TIP_DOOR" = 1 ]; } && [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMABLE" -gt 0 ]; then
   DOUT=$(mktemp)
+  # THE DOOR'S NARROWNESS, enforced in the spawn path: the hold exempts
+  # recipe-only cards, nothing else. Every other candidate and every unclaimed
+  # review row joins the sentinel park for this pass (the EXIT trap releases
+  # them), so the inner dispatcher cannot claim work the hold still covers. The
+  # review lane behaves exactly as it does on any held pass - nothing spawns
+  # from it - which is why its rows are parked here too.
+  if [ "$TIP_DOOR" = 1 ]; then
+    for c in "${CAND[@]:-}"; do
+      [ -n "$c" ] || continue
+      ff_in=0
+      for f in "${FIXFWD[@]}"; do [ "$f" = "$c" ] && { ff_in=1; break; }; done
+      [ "$ff_in" = 1 ] || PARKED+=("$c")
+    done
+    for rv in "${REV[@]:-}"; do [ -n "$rv" ] && PARKED+=("$rv"); done
+    park "${PARKED[@]:-}"
+    VERDICT_CAP=$FIXN
+    REV_SLOTS=0
+    SLOTS=$FIXN
+    echo "tip CI: fix-forward dispatch - $FIXN recipe-only card(s) released past the hold, every other lane held"
+  fi
   # BUDGET-derived, and CLAMPED below by the head verdict: an explicit --max N
   # is a TRUE concurrency cap (running + spawns), a bare pass fills the factory
   # seats - either way the ask here is running + sanctioned spawns, and the
@@ -1366,7 +1504,7 @@ if [ "$TIP_HOLD" = 0 ] && [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMAB
   # got --max 4 on a reclaim-empty pool and spawned 4.
   WANTED=$(( ${#RUNNING[@]} + SLOTS + REV_SLOTS ))
   SPAWN_CAP=$VERDICT_CAP
-  if [ "${#HEAD[@]}" -gt 0 ] && [ "${#HEAD[@]}" -lt "$SPAWN_CAP" ]; then
+  if [ "$TIP_DOOR" = 0 ] && [ "${#HEAD[@]}" -gt 0 ] && [ "${#HEAD[@]}" -lt "$SPAWN_CAP" ]; then
     SPAWN_CAP=${#HEAD[@]}
   fi
   # CLAMP (card t_8a1a46e1): the head verdict is computed on THIS path too - it
@@ -1397,7 +1535,8 @@ if [ "$TIP_HOLD" = 0 ] && [ "${#RUNNING[@]}" -lt "$TOTAL_SEATS" ] && [ "$CLAIMAB
   # narrowed to the seats, loudly - the 2+1 invariant is not a caller option,
   # and this is the line that names the clamp when a caller asks for a third
   # implementation run (`--max 3` on a 2-seat factory).
-  if [ "$MAXARG" -gt 0 ] && [ "$MAXARG" -gt "$DISPATCH_MAX" ] && [ "$DISPATCH_MAX" -eq "$WANTED" ]; then
+  if [ "$MAXARG" -gt 0 ] && [ "$MAXARG" -gt "$DISPATCH_MAX" ] && [ "$DISPATCH_MAX" -eq "$WANTED" ] \
+     && [ "$TIP_DOOR" = 0 ]; then
     echo "clamp: --max $MAXARG -> $DISPATCH_MAX (factory seats: $IMPL_SEATS implementation + $REVIEW_SEATS review = $TOTAL_SEATS max)"
   fi
   SLOTS=$(( SPAWN_CAP + REV_SLOTS ))   # the handoff echoes what this pass really asked for

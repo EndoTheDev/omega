@@ -416,6 +416,23 @@ proceeds; an unreadable verdict (no `gh`, no auth, no git) also proceeds,
 loudly - a missing tool must not freeze the factory. `FD_GH` names the gh
 binary the check reads through (the suite's seam).
 
+Three verdict states, never two. `absent` means GitHub answered and there is
+no run; a read that never reached GitHub (curl exit nonzero, the bounded
+timeout firing, a body `gh` cannot parse) is `unknown` - it proceeds with its
+own `tip CI: WARN` line, because a failed read is not a green tip. The hold
+itself carries one door: a ready card whose declared `FILES:` surface is
+entirely under `scripts/journeys/recipes/` may still spawn while the tip is
+red. Recipe bytes touch no runtime, so that card class is the only one that
+can be fixed from inside the hold; every other candidate, and the review lane,
+stays held. The door covers the TIP hold and nothing else: a recipe-only card
+the same pass already held for an independent reason (a same-file,
+go-beside-go or unprovable-surface capacity hold, or a head card the pair
+verdict declined - that card is parked by the same pass, before the inner
+dispatch) stays held, and the door line names it as locked or declined rather
+than announcing a release it cannot perform. The door also names exactly the
+cards it releases - a card past the verdict cap is parked and printed as over
+cap, never left unlocked behind an announcement that omits it.
+
 # Round 4: nightly channel, drift gate, soak automation
 
 The loop that makes stable releases cheap. Patch releases are nearly
