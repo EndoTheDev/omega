@@ -78,6 +78,33 @@ omega serve --config ~/.omega/config/config.yaml
 The HTTP channel serves the embedded webui at `/` plus the JSON/SSE API
 ([api.md](api.md)) on `server.port` (default 8099).
 
+### `omega desktop`
+
+One process: the same plugin set `omega serve` mounts, the same embedded SPA
+served on `127.0.0.1:<desktop.port>`, and one Wails v3 window pointed at that
+origin. The webui is byte-identical to what `serve` serves - there is no
+second asset pipeline and no second binary. `//go:build windows` is the
+0.19.0 surface; other platforms exit 1 with the platform notice.
+
+```bash
+omega desktop                  # window on 127.0.0.1:8097 (desktop.port)
+omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
+```
+
+- `desktop.port` (default 8097) is the window's origin and is STABLE across
+  launches: theme and dock layout live in origin-keyed localStorage, so a
+  moving port would silently reset the UI. A held port is a dialog naming the
+  port plus exit 1 - never a fallback port.
+- A second launch focuses the running window (one Wails instance lock) and
+  never binds a second core.
+- No `config.yaml`: the launch spawns `omega setup` in a new console and
+  exits 0; the next launch opens the window.
+- `--headless-health` is the release-gate surface: it boots the desktop
+  runtime, prints the `/health` body and exits 0 (exit 1 if the boot is not
+  healthy within 15 s). It carries no window, so it runs on every platform.
+- The desktop and a simultaneous `omega serve` on the same home are not
+  prevented - two writers, out of scope for 0.19.0.
+
 ### `omega run`
 
 One prompt, final response to stdout. Takes `--append-system-prompt`
