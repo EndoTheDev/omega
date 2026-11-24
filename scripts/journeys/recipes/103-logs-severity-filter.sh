@@ -28,6 +28,12 @@
 # its rows from the DOM and AND-composes with the severity chip, and clear is a
 # display watermark (the ring total holds, the log file still tails).
 #
+# COMPLETED (card t_971020a3): the fifth source is real. The HTTP channel stamps
+# its runs with origin "gateway" (agent/api), the session observer hands the
+# origin to the recorder, and every record of THIS recipe's /chat seed carries
+# it - so section 4b's toggle now proves a producer end to end instead of
+# leaning on the agent chip, and the strip carries five accents.
+#
 # The retired shape is pinned as retired, twice: the old classes must resolve
 # to ZERO elements, and the raw tail must stay UNFILTERED - the tail is the
 # process's own words verbatim (rows.ts parseLogsPayload: no reformatting, no
@@ -175,12 +181,14 @@ step "ok: errors-only round-trips (full stream back, $ROWS rows)"
 # --- 4b: the SOURCE family - one toggle per source, multi-select, AND ------
 # The source dimension is DERIVED (rows.ts eventSource): the ring has one producer
 # family, so a record's source comes from its own provenance - the cron run's session
-# label, the kanban.* tools, the provider stream, the loop. Only a browser witness
-# proves the chips move the render; the node suite pins the derivation alone.
+# label, the run origin a serving-layer run carries (every record of THIS recipe's
+# /chat seed is stamped `gateway`), the kanban.* tools, the provider stream, the loop.
+# Only a browser witness proves the chips move the render; the node suite pins the
+# derivation alone.
 srccount=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-sources .obs-src").length')
-assert_eq "$srccount" "4" "one toggle per source the stream carries (llm, agent, cron, kanban)"
+assert_eq "$srccount" "5" "one toggle per source the stream carries (llm, agent, cron, kanban, gateway)"
 srclabels=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-src")).map((c) => c.getAttribute("aria-label")).join(",")' | tr -d '"')
-assert_eq "$srclabels" "toggle llm records,toggle agent records,toggle cron records,toggle kanban records" \
+assert_eq "$srclabels" "toggle llm records,toggle agent records,toggle cron records,toggle kanban records,toggle gateway records" \
   "the chips name the closed source vocabulary"
 srcpress=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-pane .obs-src")).every((c) => c.getAttribute("aria-pressed") === "true") ? 1 : 0')
 assert_eq "$srcpress" "1" "every source starts ON - the tab opens on the unfiltered stream"
@@ -189,26 +197,28 @@ srccolors=$(jsq '(() => {
   const vals = chips.map((c) => getComputedStyle(c).getPropertyValue("--src").trim());
   return new Set(vals).size;
 })()')
-assert_eq "$srccolors" "4" "each source chip resolves its own accent from the existing token ladder"
+assert_eq "$srccolors" "5" "each source chip resolves its own accent from the existing token ladder (the gateway's is a ladder derivation, not a fifth hue)"
 sourced=$(jsq 'Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-row")).every((r) => (r.getAttribute("data-source") || "") !== "") ? 1 : 0')
 assert_eq "$sourced" "1" "every row carries its source"
 
 snap
 TOT_PRE_SRC=$TOT
 ROWS_PRE_SRC=$ROWS
-agentrows=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=agent]").length')
-[ "$agentrows" -ge 1 ] 2>/dev/null || die "the seeded run painted no agent rows ($agentrows) - the classifier attributed every record elsewhere"
+gaterows=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=gateway]").length')
+[ "$gaterows" -ge 1 ] 2>/dev/null || die "the seeded /chat run painted no gateway rows ($gaterows) - the serving layer's origin never reached the ring"
 
-# agent OFF: the filtered-out rows must be GONE, not dimmed
-js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.click()' >/dev/null 2>&1
-poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.getAttribute("aria-pressed") === "false"' 5 \
-  || die "the agent source chip never flips aria-pressed=false on click (a dead toggle)"
-hidden=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=agent]").length')
-assert_eq "$hidden" "0" "with the agent source OFF no agent row renders - the filtered rows leave the DOM"
+# gateway OFF: the filtered-out rows must be GONE, not dimmed. This is the live proof
+# that the fifth source is real: one producer (the HTTP channel's run origin) paints
+# rows end to end, and its chip removes exactly those.
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-gateway")?.click()' >/dev/null 2>&1
+poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-gateway")?.getAttribute("aria-pressed") === "false"' 5 \
+  || die "the gateway source chip never flips aria-pressed=false on click (a dead toggle)"
+hidden=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row[data-source=gateway]").length')
+assert_eq "$hidden" "0" "with the gateway source OFF no gateway row renders - the filtered rows leave the DOM"
 snap
 if [ "$TOT_PRE_SRC" -lt 300 ] 2>/dev/null; then
-  want=$(( TOT_PRE_SRC - agentrows ))
-  assert_eq "$ROWS" "$want" "the render drops exactly the agent rows ($ROWS of $TOT_PRE_SRC, $agentrows were agent)"
+  want=$(( TOT_PRE_SRC - gaterows ))
+  assert_eq "$ROWS" "$want" "the render drops exactly the gateway rows ($ROWS of $TOT_PRE_SRC, $gaterows were gateway)"
 else
   assert_eq "$ROWS" "300" "the render stays at its 300-row cap over the filtered page"
 fi
@@ -220,14 +230,14 @@ poll_js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-
   || die "the errors chip never flips on with a source off"
 androws=$(jsq '(() => {
   const rows = Array.from(document.querySelectorAll(".dock-pane.edge-bottom .obs-row"));
-  return rows.every((r) => (r.getAttribute("class") || "").split(/[ \t]+/).includes("error")) && rows.every((r) => r.getAttribute("data-source") !== "agent") ? 1 : 0;
+  return rows.every((r) => (r.getAttribute("class") || "").split(/[ \t]+/).includes("error")) && rows.every((r) => r.getAttribute("data-source") !== "gateway") ? 1 : 0;
 })()')
-assert_eq "$androws" "1" "errors-only AND agent-off leaves only error rows that are not agent records"
-step "ok: the two filter families compose with AND (agent off, errors-only on)"
+assert_eq "$androws" "1" "errors-only AND gateway-off leaves only error rows that are not gateway records"
+step "ok: the two filter families compose with AND (gateway off, errors-only on)"
 
 # back to the unfiltered page, both families off
 js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-errors")?.click()' >/dev/null 2>&1
-js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-agent")?.click()' >/dev/null 2>&1
+js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-src.src-gateway")?.click()' >/dev/null 2>&1
 poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length === '"$ROWS_PRE_SRC" 5 \
   || die "the full (up to the cap) page never came back after the chips were toggled home"
 snap

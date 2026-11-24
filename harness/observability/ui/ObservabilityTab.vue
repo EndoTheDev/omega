@@ -538,8 +538,11 @@
   }
   /* the source family: one toggle per source, its own accent from the app's existing
      ladder (llm the accent, cron ok - a schedule's healthy tick, kanban the plain text,
-     agent the dim base: the loop is most rows, so it is the quietest). --unread and
-     --err are semantic-only and never decorate a source. */
+     agent the dim base: the loop is most rows, so it is the quietest, gateway a dimmed
+     accent - the serving layer sits beside the stream it carries). --unread and --err
+     are semantic-only and never decorate a source: the ladder has no fifth hue, so the
+     gateway accent is DERIVED from two of its tokens, which also means a theme override
+     recolors it for free. */
   .obs-sources {
     display: flex;
     flex-wrap: wrap;
@@ -596,6 +599,10 @@
   .obs-src.src-kanban {
     --src: var(--text);
   }
+  .obs-src.src-gateway,
+  .obs-row.src-gateway {
+    --src: color-mix(in srgb, var(--accent) 55%, var(--text-dim));
+  }
   .obs-row.src-llm .obs-type {
     color: var(--accent);
   }
@@ -607,6 +614,9 @@
   }
   .obs-row.src-agent .obs-type {
     color: var(--text-dim);
+  }
+  .obs-row.src-gateway .obs-type {
+    color: var(--src);
   }
   .obs-pane.narrow .obs-sources {
     padding: 2px 8px 0;

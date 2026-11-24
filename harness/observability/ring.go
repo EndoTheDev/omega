@@ -28,6 +28,10 @@ type Event struct {
 	Seq uint64 `json:"seq"`
 	Time string `json:"time"`
 	Session string `json:"session,omitempty"`
+	// Origin is the run's declared surface (core.WithRunOrigin): "gateway" for an
+	// HTTP-channel run, "cron", "delegate", "interactive". Empty when the host
+	// declared none.
+	Origin string `json:"origin,omitempty"`
 	Type string `json:"type"`
 	Level string `json:"level"`
 	Tool string `json:"tool,omitempty"`

@@ -234,6 +234,10 @@ func (v QuestionAnswer) Kind() string {
 	}
 }
 
+// WithRunOrigin stamps the surface that started the run. The vocabulary is closed at the
+// writers: "interactive" (a terminal conversation), "gateway" (the HTTP channel), "cron"
+// (the scheduler) and "delegate" (a subagent). Read by the approval gate, the verdict
+// tool and the observability ring.
 func WithRunOrigin(ctx context.Context, origin string) context.Context {
 	if origin == "" {
 		return ctx

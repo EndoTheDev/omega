@@ -347,7 +347,7 @@ func (s *Server) launchRun(runCtx context.Context, run *activeRun, prov agent.Pr
 		// (the service lane: C:\Windows\System32) and the prompt context the trust resolver
 		// built was silently dropped.
 		ctx = core.WithRunWorkspace(ctx, req.workspace, req.workspacePromptContext)
-		ctx = core.WithRunOrigin(ctx, "interactive")
+		ctx = core.WithRunOrigin(ctx, "gateway")
 		ctx = core.WithRunOutputTap(ctx, s.chipTap(req.SessionID))
 		sink := s.turnSinkFor(req)
 		ctx = agent.WithTurnSink(ctx, sink)

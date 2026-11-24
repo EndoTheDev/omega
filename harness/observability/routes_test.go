@@ -28,7 +28,7 @@ func newTestRoutes(ctx *core.Context, events []Event) (*Routes, *Ring) {
 
 func TestEventsRouteServesSessionScopedPage(t *testing.T) {
 	rt, _ := newTestRoutes(nil, []Event{
-		{Session: "s1", Type: "agent_start", Level: LevelInfo, Summary: "run started"},
+		{Session: "s1", Origin: "gateway", Type: "agent_start", Level: LevelInfo, Summary: "run started"},
 		{Session: "s2", Type: "agent_start", Level: LevelInfo, Summary: "run started"},
 		{Session: "s1", Type: "tool_result", Level: LevelError, Tool: "shell.run", Summary: "shell.run failed", Error: "exit 1"},
 	})
@@ -60,6 +60,9 @@ func TestEventsRouteServesSessionScopedPage(t *testing.T) {
 		if e.Session != "s1" {
 			t.Fatalf("session leak: %+v", e)
 		}
+	}
+	if scoped.Events[0].Origin != "gateway" {
+		t.Fatalf("origin did not survive the wire: %+v", scoped.Events[0])
 	}
 
 	errs := decode(t, "/observability/events?level=error&session=s1")

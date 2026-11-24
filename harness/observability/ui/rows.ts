@@ -18,15 +18,17 @@ export const SESSIONS_PATH = "/sessions";
 /** the scheduler's label prefix on the sessions it fires (harness/cron/runner.go) */
 export const CRON_LABEL_PREFIX = "cron:";
 
-// The source dimension's closed vocabulary. A record's source is DERIVED, never sent:
-// the ring has one producer family (the agent loop's spine, recorder.go), so a record
-// carries exactly three provenance clues - its type, its tool, and its session (whose
-// label can say the scheduler fired the run). Precedence: the RUN outranks the record
-// (a cron-fired run's whole trace belongs to the scheduler), then the TOOL's capsule,
-// then the provider stream, and the loop owns the remainder. A fifth name (a serving-
-// layer `gateway` source) has no producer in the stream today - adding it here without
-// one would be a chip that can never match a row.
-export const SOURCES = ["llm", "agent", "cron", "kanban"] as const;
+/** the HTTP channel's run origin (agent/api stamps it with core.WithRunOrigin) */
+export const GATEWAY_ORIGIN = "gateway";
+
+// The source dimension's closed vocabulary. A record's source is DERIVED, never sent: the
+// ring has ONE producer family (the agent loop's spine, recorder.go), so a record carries
+// four provenance clues - its type, its tool, its session (whose label can say the
+// scheduler fired the run) and its origin (the run's declared surface, which the
+// observer hands the recorder). Precedence: the RUN outranks the record (a cron-fired
+// run's whole trace belongs to the scheduler, an HTTP-channel run's to the gateway), then
+// the TOOL's capsule, then the provider stream, and the loop owns the remainder.
+export const SOURCES = ["llm", "agent", "cron", "kanban", "gateway"] as const;
 export type Source = (typeof SOURCES)[number];
 
 /** session id -> its store label; absent is unknown, not "unlabelled" */
@@ -46,6 +48,7 @@ export interface ObservatoryEvent {
   seq: number;
   time: string;
   session?: string;
+  origin?: string;
   type: string;
   level: string;
   tool?: string;
@@ -85,6 +88,8 @@ export function normalizeEvent(raw: unknown): ObservatoryEvent | null {
   };
   const session = str(e.session);
   if (session) out.session = session;
+  const origin = str(e.origin);
+  if (origin) out.origin = origin;
   const tool = str(e.tool);
   if (tool) out.tool = tool;
   const turn = num(e.turn);
@@ -150,6 +155,7 @@ export function parseSessionLabels(body: unknown): Map<string, string> {
 export function eventSource(e: ObservatoryEvent, labels: SessionLabels = new Map()): Source {
   const label = e.session ? (labels.get(e.session) ?? "") : "";
   if (label.startsWith(CRON_LABEL_PREFIX)) return "cron";
+  if (e.origin === GATEWAY_ORIGIN) return "gateway";
   if (e.tool && e.tool.startsWith("kanban.")) return "kanban";
   if (e.type === "stream_end") return "llm";
   return "agent";
