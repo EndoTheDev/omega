@@ -149,6 +149,54 @@ check "--apply on a fixture prints no APPLY line" not_contains "APPLY " "$OUT"
 check "--apply on a fixture still prints the verdicts" contains "KILL 101 " "$OUT"
 check "--apply on a fixture says why it is a no-op" contains "no-op under --table" "$ERR"
 
+# --- --cwd-holder: the attribution leg, probe-only ------------------------
+# A husk holder names the path in no command line, so the probe reads each
+# process's PEB current directory. Its whole answer is `HOLDER <pid> <name>
+# <cwd>`; it never prints a verdict and never reaches a kill.
+cat >"$WORK/table-holder.txt" <<'TABLE'
+# the holder: its cwd IS the asked dir, spelled with backslashes, a trailing
+# separator and a different case - all three must fold
+201|agent-browser-win32-x64.exe|"C:/tools/agent-browser.exe" --session s1|D:\FAKE\REPO\.worktrees\t_held\|-
+# a dev server in another dead card's worktree: not a holder, and never a
+# KILL line - this mode judges nothing
+202|node.exe|node C:/fake/repo/.worktrees/t_other/webui/node_modules/.bin/nuxt dev|C:/fake/repo/.worktrees/t_other/webui/|done
+TABLE
+bash "$KILLER" --cwd-holder "D:/fake/repo/.worktrees/t_held" --table "$WORK/table-holder.txt" --repo "$REPO" >"$OUT" 2>"$ERR"
+check "--cwd-holder exits 0" [ "$?" -eq 0 ]
+check "--cwd-holder names exactly the holder row" \
+  bash -c "[ \"\$(grep -c '^HOLDER ' '$OUT')\" = 1 ]"
+check "--cwd-holder folds case and both separators" contains "HOLDER 201 agent-browser-win32-x64.exe" "$OUT"
+check "--cwd-holder prints no verdict" not_contains "KILL 202 " "$OUT"
+check "--cwd-holder prints no keep/unknown either" \
+  bash -c "! grep -qE '^(KILL|KEEP|UNKNOWN) ' '$OUT'"
+check "--cwd-holder prints no KILL-STEP summary" not_contains "KILL-STEP" "$OUT"
+check "--cwd-holder reports the probe count on stderr" contains "2 processes probed, 0 unreadable" "$ERR"
+
+# A process whose cwd sits UNDER the asked dir holds it too: the husk's parent
+# chain is the same handle.
+cat >"$WORK/table-under.txt" <<'TABLE'
+204|node.exe|node C:/fake/repo/webui/node_modules/vite/bin/vite.js|C:/fake/repo/.worktrees/t_under/webui/|done
+TABLE
+bash "$KILLER" --cwd-holder "C:/fake/repo/.worktrees/t_under" --table "$WORK/table-under.txt" --repo "$REPO" >"$OUT" 2>"$ERR"
+check "--cwd-holder matches a dir under the asked one" contains "HOLDER 204 node.exe" "$OUT"
+
+# No holder prints nothing at all: the caller then says holder-unproven.
+cat >"$WORK/table-noholder.txt" <<'TABLE'
+205|node.exe|node C:/elsewhere/vite.js|C:/elsewhere/|done
+TABLE
+bash "$KILLER" --cwd-holder "C:/fake/repo/.worktrees/t_absent" --table "$WORK/table-noholder.txt" --repo "$REPO" >"$OUT" 2>"$ERR"
+check "no holder exits 0" [ "$?" -eq 0 ]
+check "no holder prints nothing on stdout" bash -c "[ ! -s '$OUT' ]"
+check "no holder still reports the probe count" contains "1 processes probed" "$ERR"
+
+# --apply is inert in this mode: the pid is a receipt, not a kill order.
+bash "$KILLER" --apply --cwd-holder "D:/fake/repo/.worktrees/t_held" --table "$WORK/table-holder.txt" --repo "$REPO" >"$OUT" 2>"$ERR"
+check "--apply under --cwd-holder exits 0" [ "$?" -eq 0 ]
+check "--apply under --cwd-holder kills nothing" not_contains "APPLY " "$OUT"
+check "--apply under --cwd-holder says it is inert" contains "no effect under --cwd-holder" "$ERR"
+check "--cwd-holder with no directory exits 2" \
+  bash -c "! bash '$KILLER' --cwd-holder >/dev/null 2>&1"
+
 # --- argument handling ----------------------------------------------------
 bash "$KILLER" --nonsense >/dev/null 2>&1
 check "unknown argument exits 2" [ "$?" -eq 2 ]

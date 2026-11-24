@@ -29,9 +29,19 @@ set -uo pipefail
 # Usage:
 #
 #   scripts/dev-server-kill.sh [--apply] [--table <file>] [--repo <dir>]
+#   scripts/dev-server-kill.sh --cwd-holder <dir> [--table <file>]
 #
 #   --apply          perform `taskkill /F /PID` on KILL verdicts. Without it
 #                    the run is a pure dry-run (always exit 0).
+#   --cwd-holder <dir>
+#                    PROBE-ONLY: name every process whose current directory
+#                    is <dir> or sits under it, as `HOLDER <pid> <name> <cwd>`,
+#                    one line each, nothing when there is none. Exits 0 and
+#                    never kills; --apply is inert. stderr carries
+#                    `<n> processes probed, <u> unreadable`. This is the
+#                    attribution leg for a worktree husk an empty dir refuses
+#                    to release: the holder names the path in no command line,
+#                    so the PEB current directory is the only witness.
 #   --table <file>   judge a FIXTURE process table instead of the live host
 #                    (test surface; no real process is touched and --apply is
 #                    a no-op). One row per line:
@@ -68,9 +78,14 @@ usage() {
 dev-server-kill.sh - identity-verified dev-server killer (merge-pass kill-step).
 
   scripts/dev-server-kill.sh [--apply] [--table <file>] [--repo <dir>]
+  scripts/dev-server-kill.sh --cwd-holder <dir> [--table <file>]
 
   --apply          perform `taskkill /F /PID` on KILL verdicts. Without it the
                    run is a pure dry-run (always exit 0).
+  --cwd-holder <dir>
+                   probe-only: print `HOLDER <pid> <name> <cwd>` for every
+                   process whose current directory is <dir> or sits under it,
+                   and nothing when there is none. Exits 0, never kills.
   --table <file>   judge a FIXTURE process table instead of the live host (the
                    test surface; no real process is touched and --apply is a
                    no-op). One row per line: pid|name|cmdline|cwd|card-status
@@ -86,11 +101,20 @@ USAGE
 
 table=""
 repo_arg=""
+holder_dir=""
 apply=0
 while [ $# -gt 0 ]; do
   case "$1" in
   --apply)
     apply=1
+    ;;
+  --cwd-holder)
+    [ $# -ge 2 ] || {
+      echo "dev-server-kill: --cwd-holder needs a directory" >&2
+      exit 2
+    }
+    holder_dir="$2"
+    shift
     ;;
   --table)
     [ $# -ge 2 ] || {
@@ -173,10 +197,10 @@ cleanup() { rm -rf -- "$run_dir" 2>/dev/null || true; }
 trap cleanup EXIT
 
 netstat_file=""
-if [ -z "$table" ]; then
+if [ -z "$table" ] && [ -z "$holder_dir" ]; then
   MSYS_NO_PATHCONV=1 netstat -ano >"$run_dir/netstat.txt" 2>/dev/null || :
   netstat_file="$run_dir/netstat.txt"
-else
+elif [ -n "$table" ]; then
   [ -f "$table" ] || {
     echo "dev-server-kill: fixture table not found: $table" >&2
     exit 2
@@ -213,6 +237,20 @@ WORKTREE = re.compile(r"(?i)(?:^|/)\.worktrees/([^/\\\s\"']+)")
 
 def norm(path):
   return (path or "").replace("\\", "/")
+
+
+def cwd_matches(cwd, asked):
+  """<cwd> is <asked> or sits under it; case and separator blind.
+
+  The PEB spells the current directory with backslashes and a trailing
+  separator; the caller may hand either form. A bare string compare would
+  report "no holder" over a live holder, which is the defect this exists for.
+  """
+  here = norm(cwd).rstrip("/").lower()
+  want = norm(asked).rstrip("/").lower()
+  if not here or not want:
+    return False
+  return here == want or here.startswith(want + "/")
 
 
 def tokens(cmdline):
@@ -336,7 +374,14 @@ def read_board():
 
 # --------------------------------------------------------------- live process
 
-def live_rows():
+def win32():
+  """(snapshot, identity, cwd_of) over kernel32/ntdll.
+
+  wmic is dead on this host build and powershell is cron-blocked, so the
+  process table is a toolhelp snapshot and each process is read through its
+  own PEB (NtQueryInformationProcess -> RTL_USER_PROCESS_PARAMETERS). The
+  current directory is the one field a leaked holder cannot hide.
+  """
   import ctypes
   import ctypes.wintypes as wintypes
 
@@ -407,22 +452,28 @@ def live_rows():
       return None
     return data.decode("utf-16-le", "replace")
 
+  def params_addr(handle):
+    """RTL_USER_PROCESS_PARAMETERS address in the target, or (0, why-not)."""
+    pbi = PROCESS_BASIC_INFORMATION()
+    ret = ctypes.c_ulong(0)
+    status = ntdll.NtQueryInformationProcess(
+      handle, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(ret)
+    )
+    if status != 0:
+      return 0, "NtQueryInformationProcess %#x" % (status & 0xFFFFFFFF)
+    raw = read_mem(handle, pbi.PebBaseAddress + 0x20, 8)
+    if not raw:
+      return 0, "PEB->ProcessParameters unreadable"
+    return int.from_bytes(raw, "little"), ""
+
   def identity(pid):
     handle = k32.OpenProcess(PROC_QUERY_INFORMATION | PROC_VM_READ, False, pid)
     if not handle:
       return None, None, "OpenProcess err %d" % ctypes.get_last_error()
     try:
-      pbi = PROCESS_BASIC_INFORMATION()
-      ret = ctypes.c_ulong(0)
-      status = ntdll.NtQueryInformationProcess(
-        handle, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(ret)
-      )
-      if status != 0:
-        return None, None, "NtQueryInformationProcess %#x" % (status & 0xFFFFFFFF)
-      params_raw = read_mem(handle, pbi.PebBaseAddress + 0x20, 8)
-      if not params_raw:
-        return None, None, "PEB->ProcessParameters unreadable"
-      params = int.from_bytes(params_raw, "little")
+      params, why = params_addr(handle)
+      if why:
+        return None, None, why
       # RTL_USER_PROCESS_PARAMETERS (x64): CurrentDirectory.DosPath at 0x38
       # (CURDIR carries a trailing HANDLE, so DllPath 0x50, ImagePathName 0x60,
       # CommandLine 0x70).
@@ -434,6 +485,27 @@ def live_rows():
     finally:
       k32.CloseHandle(handle)
 
+  def cwd_of(pid):
+    handle = k32.OpenProcess(PROC_QUERY_INFORMATION | PROC_VM_READ, False, pid)
+    if not handle:
+      return None, "OpenProcess err %d" % ctypes.get_last_error()
+    try:
+      params, why = params_addr(handle)
+      if why:
+        return None, why
+      cwd = read_ustr(handle, params + 0x38)
+      if cwd is None:
+        return None, "current directory unreadable"
+      return cwd, ""
+    finally:
+      k32.CloseHandle(handle)
+
+  return snapshot, identity, cwd_of
+
+
+def live_rows():
+  """Dev-server verdict candidates: node and omega images only."""
+  snapshot, identity, _ = win32()
   ports = read_netstat()
   rows = []
   for pid, ppid, name in snapshot():
@@ -454,6 +526,37 @@ def live_rows():
       }
     )
   return rows
+
+
+def live_cwd_rows():
+  """(rows, unreadable) for EVERY process with a readable current directory.
+
+  No name filter: a husk holder is whatever image kept the directory, and the
+  leaked browser daemon that holds one is neither node nor omega. A denied
+  handle is counted, never guessed - that count is what separates "no holder"
+  from "could not look", and a probe that could not look must not read as one
+  that looked and found nothing.
+  """
+  snapshot, _, cwd_of = win32()
+  rows, unreadable = [], 0
+  for pid, ppid, name in snapshot():
+    cwd, err = cwd_of(pid)
+    if err or not cwd:
+      unreadable += 1
+      continue
+    rows.append(
+      {
+        "pid": pid,
+        "ppid": ppid,
+        "name": name,
+        "cmdline": "",
+        "cwd": cwd,
+        "status": None,
+        "ports": [],
+        "error": "",
+      }
+    )
+  return rows, unreadable
 
 
 def read_netstat():
@@ -606,10 +709,41 @@ def main(argv):
   parser.add_argument("--table", default="")
   parser.add_argument("--netstat", default="")
   parser.add_argument("--self", default="")
+  parser.add_argument("--cwd-holder", default="")
   ns = parser.parse_args(argv)
   ARGS.repo = ns.repo
   ARGS.table = ns.table
   ARGS.netstat = ns.netstat
+
+  skip = set()
+  for value in (ns.self, os.getppid(), os.getpid()):
+    try:
+      skip.add(int(value))
+    except (TypeError, ValueError):
+      pass
+
+  # ---- the attribution leg: name what holds a directory, judge nothing ----
+  if ns.cwd_holder:
+    unreadable = 0
+    if ns.table:
+      rows, _ = fixture_rows(ns.table)
+    else:
+      if not sys.platform.startswith("win"):
+        sys.stderr.write(
+          "dev-server-kill: the current-directory probe is a Windows PEB read "
+          "(host is %s); use --table on this platform\n" % sys.platform
+        )
+        return 1
+      rows, unreadable = live_cwd_rows()
+    rows = [row for row in rows if row["pid"] not in skip]
+    for row in sorted(rows, key=lambda r: r["pid"]):
+      if cwd_matches(row["cwd"], ns.cwd_holder):
+        print("HOLDER %d %s %s" % (row["pid"], row["name"], norm(row["cwd"])))
+    sys.stderr.write(
+      "dev-server-kill: cwd-holder: %d processes probed, %d unreadable\n"
+      % (len(rows), unreadable)
+    )
+    return 0
 
   status_by_id, live_webui = {}, []
   if ns.table:
@@ -628,13 +762,6 @@ def main(argv):
       return 0
     status_by_id, live_webui = read_board()
     rows = live_rows()
-
-  skip = set()
-  for value in (ns.self, os.getppid(), os.getpid()):
-    try:
-      skip.add(int(value))
-    except (TypeError, ValueError):
-      pass
 
   rows = [row for row in rows if row["pid"] not in skip]
   by_pid = {row["pid"]: row for row in rows}
@@ -690,8 +817,11 @@ probe_args=(
 )
 if [ -n "$table" ]; then
   probe_args+=(--table "$(winpath "$table")")
-else
+elif [ -n "$netstat_file" ]; then
   probe_args+=(--netstat "$(winpath "$netstat_file")")
+fi
+if [ -n "$holder_dir" ]; then
+  probe_args+=(--cwd-holder "$(winpath "$holder_dir")")
 fi
 
 verdicts="$run_dir/verdicts.txt"
@@ -703,6 +833,16 @@ fi
 if [ "$probe_status" -ne 0 ]; then
   echo "dev-server-kill: probe failed (exit $probe_status)" >&2
   exit 2
+fi
+
+# The attribution leg answers and stops: it never prints a verdict and never
+# reaches the kill code, so a holder pid is a receipt for a human pass.
+if [ -n "$holder_dir" ]; then
+  if [ "$apply" -eq 1 ]; then
+    echo "dev-server-kill: --apply has no effect under --cwd-holder (the probe never kills)" >&2
+  fi
+  cat "$verdicts"
+  exit 0
 fi
 
 kill_n=0
