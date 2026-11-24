@@ -12,7 +12,10 @@ set -uo pipefail
 #   - a bounded for-loop that polls a JS read on an iteration count IS
 #     unbudgeted-poll, and the same wait routed through a poll primitive is
 #     clean; the debt ledger's count is a ratchet (a listed recipe may not gain
-#     a site, an entry that outlives its site is ledger-rot)
+#     a site, an entry that outlives its site is ledger-rot). The ledger is
+#     empty once every recipe converts: growth is then proven by the unlisted
+#     fixture (case 19), and rot has no entry to outlive, so it reports itself
+#     unprovable instead of passing silently or being deleted
 #   - a here-doc body full of `for`/`done`/`sleep` is opaque (a python block is
 #     not bash - a parser that reads it drifts and silently stops judging)
 #   - a `for ... in a b done; do` header does not close the loop it opens (the
@@ -43,6 +46,9 @@ pass=0
 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); echo "FAIL: $1" >&2; }
+# skip: a case the current corpus state cannot exercise. Loud, and never a
+# silent pass - the run's counts stay honest about what was actually proven.
+skip() { echo "SKIP: $1" >&2; }
 
 # --- the pin: no line here may pipe a writer into an early-exit grep --------
 # `printf '%s' "$OUT" | grep -q` under pipefail hands back the WRITER's
@@ -323,7 +329,20 @@ PY
     bad "the ledger names no site count - the rot case cannot run"
   fi
 else
-  bad "recipe-lint.legacy names no recipe - the ratchet cases prove nothing (an empty ledger means every recipe is converted)"
+  # The ledger is EMPTY: every recipe converted, so no allowance is left to
+  # grow into and no entry is left to outlive its sites. Growth is still proven
+  # against exactly this state - with no entry, an unlisted recipe's first site
+  # is over an allowance of zero (case 19). Rot needs a positive count to
+  # outlive, so it reports itself unprovable here; the case and the mechanism
+  # stay, live again the moment an entry returns. What this state CAN assert is
+  # the retirement's own shape: the file is still there, header and all,
+  # because that format line is what the lint reads.
+  skip "the ledger is empty - the rot case is unprovable until an entry returns (growth stays proven by case 19)"
+  if [ -s "$LEDGER" ] && grep -q '^# Format: <recipe file> <count of unbudgeted-poll sites>$' "$LEDGER"; then
+    ok
+  else
+    bad "the empty ledger lost its file or its header - the lint reads that format line"
+  fi
 fi
 
 printf 'recipe-lint_test: %s passed, %s failed\n' "$pass" "$fail"

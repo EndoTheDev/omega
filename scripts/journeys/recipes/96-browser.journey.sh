@@ -174,19 +174,15 @@ assert_eq "$pal" "1" "the command palette opened (ctrl+k)"
 palf=$(jsq '(()=>{const p=document.querySelector(".command-palette");const i=document.querySelector("input[aria-label=\"Command palette search\"]");return (p&&i)?1:0})()')
 assert_eq "$palf" "1" "the palette field is mounted (aria-label, both breakpoints)"
 ab fill "$PAL_FIELD" 'browser' >/dev/null 2>&1
+# the eval answers the field's text JSON-quoted: the poll compares that form,
+# the assert grades the bare text (the 30-retry switcher-label precedent)
+fv=$(poll_js_value '(()=>{const i=document.querySelector("input[aria-label=\"Command palette search\"]");return i?(i.value||""):""})()' = '"browser"' | tr -d '"')
 filled=0
-for i in $(seq 1 20); do
-  fv=$(jsq '(()=>{const i=document.querySelector("input[aria-label=\"Command palette search\"]");return i?(i.value||""):""})()' | tr -d '"')
-  case "$fv" in *browser*) filled=1; break ;; esac
-  sleep 0.3
-done
+case "$fv" in *browser*) filled=1 ;; esac
 assert_eq "$filled" "1" "the palette field took the query (fill landed)"
-bopen=0
-for i in $(seq 1 20); do
-  b=$(jsq '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Open Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()')
-  [ "$b" = "1" ] && bopen=1 && break
-  sleep 0.5
-done
+# the predicate CLICKS: polled as an event (the poll stops on its first 1 and
+# never re-fires the click), on journey_budget's floor instead of 20 iterations
+bopen=$(poll_js_value '(()=>{const r=[...document.querySelectorAll(".command-palette-list li")].find(x=>/^Open Browser$/i.test((x.querySelector(".command-title")||{}).textContent?.trim()||""));if(!r) return 0;r.click();return 1})()' -eq 1)
 assert_eq "$bopen" "1" "Browser opened from the command palette"
 # the pane mounts: url bar input + frame shell
 wait_js '!!document.querySelector(".browser-tab .browser-url")' 10 \
@@ -195,24 +191,16 @@ step "ok: BrowserTab mounted with the URL bar"
 
 # c: the resume - the tab restores the friendly address on mount and the
 # frame LOADS (no fallback): the persisted URL is the mount's address
-resumed=0
-for i in $(seq 1 30); do
-  r=$(jsq "(()=>{const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (s&&s.src.includes('127.0.0.1:$P_FRIENDLY')&&s.style.display!=='none'&&!f)?1:0})()" 2>&1 | tail -1)
-  [ "$r" = "1" ] && resumed=1 && break
-  sleep 1
-done
-[ "$resumed" = "1" ] || die "the resume never mounted the friendly frame (last: $r)"
+resumed=$(poll_js_value "(()=>{const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (s&&s.src.includes('127.0.0.1:$P_FRIENDLY')&&s.style.display!=='none'&&!f)?1:0})()" -eq 1)
+[ "$resumed" = "1" ] || die "the resume never mounted the friendly frame (last: $resumed)"
 step "ok: the persisted resume mounted and loaded (fallback out)"
 
 # --- d: the refused origin flips the fallback in, persists NOTHING -------
 ab fill 'input[aria-label="browser url"]' "$DENYURL" >/dev/null 2>&1
 ab press Enter >/dev/null 2>&1
-refused=0
-for i in $(seq 1 40); do # the fallback window is FALLBACK_AFTER_MS=4000
-  r=$(jsq '(()=>{const f=document.querySelector(".browser-refused");return (f&&f.style.display!=="none")?1:0})()' 2>&1 | tail -1)
-  [ "$r" = "1" ] && refused=1 && break
-  sleep 0.5
-done
+# the fallback window is FALLBACK_AFTER_MS=4000; the poll takes
+# journey_budget's floor (it returns the moment the panel flips in)
+refused=$(poll_js_value '(()=>{const f=document.querySelector(".browser-refused");return (f&&f.style.display!=="none")?1:0})()' -eq 1)
 [ "$refused" = "1" ] || die "the X-Frame-Options origin never flipped the fallback panel in"
 # the honesty ceiling text renders (the copy/open affordances with it)
 ft=$(jsq '(()=>{const f=document.querySelector(".browser-refused");return f?(f.textContent||"").includes("shown inline")?1:0:0})()')
@@ -227,22 +215,12 @@ step "ok: the refusal surfaced and the refused URL persisted NOTHING"
 # step)] - back returns to the FRIENDLY entry, forward re-enters DENY.
 back=$(jsq '(()=>{const b=document.querySelector("button[aria-label=\"browser back\"]");if(!b||b.disabled) return 0;b.click();return 1})()')
 assert_eq "$back" "1" "back clicked"
-backhome=0
-for i in $(seq 1 30); do
-  r=$(jsq "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_FRIENDLY')&&s&&s.style.display!=='none'&&!f)?1:0})()" 2>&1 | tail -1)
-  [ "$r" = "1" ] && backhome=1 && break
-  sleep 0.5
-done
-[ "$backhome" = "1" ] || die "back never returned to the friendly stack entry (last: $r)"
+backhome=$(poll_js_value "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const s=document.querySelector('.browser-frame');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_FRIENDLY')&&s&&s.style.display!=='none'&&!f)?1:0})()" -eq 1)
+[ "$backhome" = "1" ] || die "back never returned to the friendly stack entry (last: $backhome)"
 fwd=$(jsq '(()=>{const b=document.querySelector("button[aria-label=\"browser forward\"]");if(!b||b.disabled) return 0;b.click();return 1})()')
 assert_eq "$fwd" "1" "forward clicked"
-fwddenied=0
-for i in $(seq 1 40); do
-  r=$(jsq "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_DENY')&&f)?1:0})()" 2>&1 | tail -1)
-  [ "$r" = "1" ] && fwddenied=1 && break
-  sleep 0.5
-done
-[ "$fwddenied" = "1" ] || die "forward never re-entered the deny entry (last: $r)"
+fwddenied=$(poll_js_value "(()=>{const i=document.querySelector('.browser-tab input[aria-label=\"browser url\"]');const f=document.querySelector('.browser-refused');return (i&&i.value.includes('127.0.0.1:$P_DENY')&&f)?1:0})()" -eq 1)
+[ "$fwddenied" = "1" ] || die "forward never re-entered the deny entry (last: $fwddenied)"
 step "ok: back/forward walk the pane's own stack (re-probe included)"
 
 # --- f: console silence ----------------------------------------------------

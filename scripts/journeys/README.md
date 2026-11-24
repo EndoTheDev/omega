@@ -106,11 +106,15 @@ iteration count, so a wait built from one (`for i in 1..10; do
 out=$(jsq ...); sleep 1; done`) is a timeout in disguise - green solo,
 red on a loaded host. A JS read inside a loop routes through `poll_js` /
 `wait_js` / `poll_js_value`, whose budget is `journey_budget`'s floor.
-Recipes that already carried the shape when the rule landed are listed in
-`journeys/recipe-lint.legacy` WITH their site count: the count is a
-ratchet (a listed recipe may not gain a site), and an entry that outlives
-its sites is `ledger-rot`. Converting one drops or lowers its line in the
-same change.
+The debt ledger `journeys/recipe-lint.legacy` is EMPTY: every recipe that
+carried the shape when the rule landed has been converted. The file stays
+(header, no entries) because its count is what the lint reads - a listed
+recipe may not gain a site, and an entry that outlives its sites is
+`ledger-rot` - so a new line there is a review finding, not a way to land
+a bounded loop; convert the wait instead. With no entry left the test's
+rot case has nothing to outlive and reports itself unprovable, while the
+growth case is proven against exactly this state (any site in an unlisted
+recipe reds at its first one).
 
 ### The agent-browser version these recipes are written against
 

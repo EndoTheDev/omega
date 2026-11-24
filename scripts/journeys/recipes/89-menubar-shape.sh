@@ -61,12 +61,16 @@ step "ok: no version text in the menubar"
 
 # --- 2. the placeholder clock TICKS ----------------------------------------
 # The only honest witness of "never frozen": the label changes across a
-# REAL minute boundary. Bounded to 70s (a full minute plus slack); the
-# probe above already proved the label equals the live minute, so a tick
-# here cannot be a timezone/format coincidence.
+# REAL minute boundary. That makes the 70s a DURATION, not an event wait:
+# a poll's budget floor is 30s at full clock, so no poll primitive can see
+# a minute boundary, and shrinking the window would stop proving a tick
+# while widening it would prove less per second. The bound stays, and the
+# lint is told why (the rule is a ratchet against timeouts in disguise, and
+# this window is the thing being measured).
 clock_before=$(jsq '(()=>{const e=document.querySelector(".nav-palette-input");return e?e.textContent.trim():""})()' | tr -d '"')
 [ -n "$clock_before" ] || die "the affordance carries no clock text"
 ticked=0
+# recipe-lint: allow unbudgeted-poll - duration witness: a real minute boundary needs a window past 60s, which journey_budget's 30s floor cannot express
 for _ in $(seq 1 70); do
   sleep 1
   now_label=$(jsq '(()=>{const e=document.querySelector(".nav-palette-input");return e?e.textContent.trim():""})()' | tr -d '"')
