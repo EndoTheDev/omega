@@ -1324,8 +1324,9 @@ fi
 # is unprovable, never exempt.
 # The door covers the TIP hold and nothing else: a card the candidate loop has
 # ALREADY held carries an independent capacity hold (same-file, go-beside-go,
-# unprovable surface) that owns it for this pass. Releasing such a card here
-# announced a spawn the inner could never claim - door OPEN beside
+# unprovable surface) that owns it for this pass, and a head card the pair
+# verdict DECLINED is claim-locked by the same pass's decline park. Releasing
+# either here announced a spawn the inner could never claim - door OPEN beside
 # `Spawned: 0`, byte-identical every pass: a livelock wearing the door's badge.
 parked_has() {  # id -> 0 when the candidate loop already held it this pass
   local p
@@ -1334,7 +1335,18 @@ parked_has() {  # id -> 0 when the candidate loop already held it this pass
   done
   return 1
 }
-FIXFWD=(); FIXFWD_HOLD=0; TIP_DOOR=0; FIXN=0; FIXHELD=""; FIXLOCK=""; FIXCAP=""
+# The pair verdict's lock, read before its park runs: HEAD beyond VERDICT_CAP is
+# declined, and the PAIR-DECLINE park in the spawn path locks exactly that slice.
+# Both HEAD and VERDICT_CAP are in scope here, so the door can see the decision
+# even though the park itself sits below.
+declined_has() {  # id -> 0 when the pair verdict declines it this pass
+  local vd
+  for ((vd = VERDICT_CAP; vd < ${#HEAD[@]}; vd++)); do
+    [ "${HEAD[vd]}" = "$1" ] && return 0
+  done
+  return 1
+}
+FIXFWD=(); FIXFWD_HOLD=0; TIP_DOOR=0; FIXN=0; FIXHELD=""; FIXLOCK=""; FIXCAP=""; FIXDECL=""
 if [ "$TIP_HOLD" = 1 ]; then
   for c in "${CAND[@]:-}"; do
     [ -n "$c" ] || continue
@@ -1344,7 +1356,9 @@ if [ "$TIP_HOLD" = 1 ]; then
     # its FILES: line promises.
     if ! files_line_absent "$c"; then fftok=$(surface_of_card "$c"); fi
     if [ -n "$fftok" ] && ! grep -qvE '^scripts/journeys/recipes/' <<<"$fftok"; then
-      if parked_has "$c"; then FIXLOCK="$FIXLOCK $c"; else FIXFWD+=("$c"); fi
+      if parked_has "$c"; then FIXLOCK="$FIXLOCK $c"
+      elif declined_has "$c"; then FIXDECL="$FIXDECL $c"
+      else FIXFWD+=("$c"); fi
     else
       FIXHELD="$FIXHELD $c"
     fi
@@ -1366,13 +1380,17 @@ if [ "$TIP_HOLD" = 1 ]; then
         FIXFWD=("${FIXFWD[@]:0:$FIXN}")
       fi
       TIP_DOOR=1
-      echo "tip CI: fix-forward door OPEN - spawn set under the hold: ${FIXFWD[*]}${FIXHELD:+ - held:${FIXHELD}}${FIXCAP:+ - over cap:${FIXCAP}}${FIXLOCK:+ - locked:${FIXLOCK}} (every FILES: token under scripts/journeys/recipes/; nothing else spawns)"
+      echo "tip CI: fix-forward door OPEN - spawn set under the hold: ${FIXFWD[*]}${FIXHELD:+ - held:${FIXHELD}}${FIXDECL:+ - declined:${FIXDECL}}${FIXCAP:+ - over cap:${FIXCAP}}${FIXLOCK:+ - locked:${FIXLOCK}} (every FILES: token under scripts/journeys/recipes/; nothing else spawns)"
     else
-      echo "tip CI: fix-forward door BLOCKED - ${FIXFWD[*]}${FIXLOCK:+ $FIXLOCK} declares a recipe-only FILES: surface but no slot sanctions it this pass (verdict cap $VERDICT_CAP)"
+      echo "tip CI: fix-forward door BLOCKED - ${FIXFWD[*]}${FIXLOCK:+ $FIXLOCK}${FIXDECL:+ $FIXDECL} declares a recipe-only FILES: surface but no slot sanctions it this pass (verdict cap $VERDICT_CAP)"
     fi
   else
-    if [ -n "$FIXLOCK" ]; then
+    if [ -n "$FIXLOCK" ] && [ -n "$FIXDECL" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass:$FIXLOCK - declined by the pair verdict:$FIXDECL (the door exempts the tip hold alone, and a claim-locked card cannot spawn)"
+    elif [ -n "$FIXLOCK" ]; then
       echo "tip CI: fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass:$FIXLOCK (the door exempts the tip hold alone, and a claim-locked card cannot spawn)"
+    elif [ -n "$FIXDECL" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) declined by the pair verdict this pass:$FIXDECL (the decline park claim-locks them before the inner dispatch, so the door exempts the tip hold alone and cannot release them)"
     else
       echo "tip CI: fix-forward door CLOSED - no ready card declares a recipe-only FILES: surface, so the hold stands for every candidate"
     fi

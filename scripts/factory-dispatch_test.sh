@@ -2244,6 +2244,49 @@ out=$(SPAWNRUN tip-door-cap-live "$FIX3SEED" --max 1)
 grep -qF 'Spawned: 1 (t_r1)' <<<"$out" \
 	&& ok || bad "T31e: the capped door must spawn exactly the card it announced (out: $out)"
 
+# T31f: the door covers the TIP hold alone, PAIR-DECLINE leg. The pair verdict
+# can forbid a pair on cards the candidate loop passed (an absent-FILES docs card
+# beside a recipe card fires neither the go-beside-go leg nor the same-file leg),
+# and the decline park runs AFTER the door block decides. The door used to
+# announce the declined recipe card as "released past the hold" while that park
+# claim-locked it - door OPEN + Spawned: 0, byte-identical every pass. Pinned:
+# the declined card is excluded from FIXFWD, named as declined, nothing spawns,
+# both cards stay ready, the next pass repeats identically - and a CONTROL shows
+# the exclusion is narrow, not a blanket refusal: a second recipe-only candidate
+# takes the one sanctioned slot.
+DECLSEED="INSERT INTO tasks VALUES('t_doc','ready','docs prose','Update the docs/pipeline.md prose only. No FILES line.',NULL,NULL,9,'2026-11-22T12:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_rec3','ready','recipe fix','FILES: scripts/journeys/recipes/103.sh',NULL,NULL,5,'2026-11-22T12:01',NULL,NULL);"
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RED"; GH_STUB_FAIL=""
+export GH_STUB_LIST GH_STUB_JOBS GH_STUB_FAIL
+out=$(SPAWNRUN tip-door-declined "$DECLSEED" --dry-run)
+grep -qF 'pair: forbidden' <<<"$out" \
+	&& ok || bad "T31f: fixture no longer reproduces the pair-decline - the leg tests nothing (out: $out)"
+grep -qF 'fix-forward door OPEN' <<<"$out" \
+	&& bad "T31f: a pair-declined recipe card was announced as released past the hold (out: $out)" || ok
+grep -qF 'fix-forward door CLOSED - recipe-only card(s) declined by the pair verdict this pass: t_rec3' <<<"$out" \
+	&& ok || bad "T31f: the door must read CLOSED and name the pair-declined recipe card (out: $out)"
+grep -qF 'released past the hold' <<<"$out" \
+	&& bad "T31f: the dry-run claimed a release the decline park forbids (out: $out)" || ok
+out=$(SPAWNRUN tip-door-declined-live "$DECLSEED" --max 2)
+grep -qF 'Spawned' <<<"$out" \
+	&& bad "T31f: a card spawned under a door that released nothing (out: $out)" || ok
+grep -qF 'released past the hold' <<<"$out" \
+	&& bad "T31f: the live pass claimed a release it did not perform (out: $out)" || ok
+[ "$(sql "$(spdb tip-door-declined-live)" "SELECT count(*) FROM tasks WHERE status='ready';")" = "2" ] \
+	&& ok || bad "T31f: the declined board did not stay fully ready (statuses: $(sql "$(spdb tip-door-declined-live)" "SELECT id||'='||status||' ' FROM tasks;" | tr -d '\n'))"
+out2=$(SPAWNRUN tip-door-declined-live2 "$DECLSEED" --max 2)
+[ "$(grep -E 'pair:|fix-forward|no dispatch' <<<"$out")" = "$(grep -E 'pair:|fix-forward|no dispatch' <<<"$out2")" ] \
+	&& ok || bad "T31f: the next pass did not repeat identically - the door is back to a livelock (pass1: $(grep -E 'fix-forward|no dispatch' <<<"$out" | tr '\n' ';') pass2: $(grep -E 'fix-forward|no dispatch' <<<"$out2" | tr '\n' ';'))"
+DECL2SEED="INSERT INTO tasks VALUES('t_doc','ready','docs prose','Update the docs/pipeline.md prose only. No FILES line.',NULL,NULL,9,'2026-11-22T12:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_rec3','ready','recipe fix','FILES: scripts/journeys/recipes/103.sh',NULL,NULL,5,'2026-11-22T12:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_rec4','ready','recipe fix two','FILES: scripts/journeys/recipes/104.sh',NULL,NULL,4,'2026-11-22T12:02',NULL,NULL);"
+out=$(SPAWNRUN tip-door-declined-next "$DECL2SEED" --dry-run)
+grep -qF 'fix-forward door OPEN - spawn set under the hold: t_rec4 - held: t_doc - declined: t_rec3' <<<"$out" \
+	&& ok || bad "T31f: a lower recipe-only candidate must take the one sanctioned slot and the declined card must be named as declined (out: $out)"
+out=$(SPAWNRUN tip-door-declined-next-live "$DECL2SEED" --max 2)
+grep -qF 'Spawned: 1 (t_rec4)' <<<"$out" \
+	&& ok || bad "T31f: the pass spawned something other than the one card it announced (out: $out)"
+
 GUARD="$GUARD_SAVED"
 export FD_GH="$FD_GH_PIN"
 unset GH_STUB_LIST GH_STUB_JOBS GH_STUB_LOG GH_STUB_FAIL
