@@ -20,6 +20,10 @@
 #     leaves) is swept, and the card's own verdict still prints;
 #   - a registered worktree is never a husk, and a non-empty unregistered dir
 #     is named for a human instead of deleted;
+#   - a husk that refuses rmdir NAMES the process holding it (pid + image from
+#     the CWD probe), says holder-unproven with the probed count when the probe
+#     finds none, says probe-unavailable when it cannot answer, and never runs
+#     the probe at all on a clean prune;
 #   - a consumed card's refs/train marker dies on ORIGIN (and the local ref
 #     stays: the seq chain and train-bisect read it), a neighbouring card's
 #     marker is never swept, and a live card's marker is untouched;
@@ -278,6 +282,85 @@ has "$out" "NOTE t_orphan unregistered-dir-kept" && ok \
     || bad "T12a: an unregistered dir holding files was not named (out: $out)"
 hasnt "$out" "PRUNED-HUSK t_orphan" && ok || bad "T12b: a dir holding files was deleted as a husk (out: $out)"
 [ -f .worktrees/t_orphan/notes.txt ] && ok || bad "T12c: the unclaimed file was destroyed"
+
+# -- T22: a HELD husk NAMES its holder (the CWD attribution leg) ----------
+# An empty dir that refuses rmdir is held by a live process. That OS lock is
+# not manufacturable on every host the suite runs on (a POSIX rmdir succeeds
+# under a live cwd), so a PATH shim stands in for the refusal and HUSK_PROBE
+# for the host process table. Everything else is the real prune: same sweep,
+# same rmdir call, same NOTE.
+SHIM="$FIX/shim"
+STUB="$FIX/husk-probe.sh"
+STUB_LOG="$FIX/husk-probe.log"
+REAL_RMDIR="$(command -v rmdir)"
+mkdir -p "$SHIM" || bad "T22a: could not create the refusal shim dir"
+cat >"$SHIM/rmdir" <<SHIM
+#!/usr/bin/env bash
+for a in "\$@"; do
+    case "\$a" in
+        *.worktrees/t_held) printf 'rmdir: %s: Device or resource busy\\n' "\$a" >&2; exit 1 ;;
+    esac
+done
+exec $REAL_RMDIR "\$@"
+SHIM
+chmod +x "$SHIM/rmdir"
+cat >"$STUB" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >>"$STUB_LOG"
+case "${STUB_MODE:-holder}" in
+    holder) printf 'HOLDER 4242 agent-browser-win32-x64.exe D:/x/.worktrees/t_held\n' ;;
+    none) printf 'dev-server-kill: cwd-holder: 7 processes probed, 2 unreadable\n' >&2 ;;
+    fail) exit 1 ;;
+esac
+STUB
+chmod +x "$STUB"
+
+# held_run <mode> <ids...>: the prune with the refusal shim and the stub probe.
+held_run() {
+    local mode=$1
+    shift
+    ( cd "$REPO" && PATH="$SHIM:$PATH" HUSK_PROBE="$STUB" STUB_MODE="$mode" STUB_LOG="$STUB_LOG" \
+        bash "$SCRIPT" "$@" 2>&1 )
+}
+
+mkdir -p .worktrees/t_held
+
+# (a) the probe names a holder: pid, image and cwd ride the NOTE
+out=$(held_run holder t_held); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T22b: a held husk exited $rc (out: $out)"
+has "$out" "NOTE t_held husk-empty-held" && ok || bad "T22c: the refusal note went missing (out: $out)"
+has "$out" "held-by 4242 agent-browser-win32-x64.exe" && ok \
+    || bad "T22d: the holder pid was not named (out: $out)"
+has "$out" "(cwd D:/x/.worktrees/t_held; kill it, then re-run this prune)" && ok \
+    || bad "T22e: the holder note carries no cwd or no route (out: $out)"
+hasnt "$out" "probe-unavailable" && ok || bad "T22f: a probe answer read as unavailable (out: $out)"
+[ -s "$STUB_LOG" ] && ok || bad "T22f2: the probe was never called on a refusal"
+[ -d .worktrees/t_held ] && ok || bad "T22g: a held husk was removed anyway"
+
+# (b) no holder: the note says holder-unproven and carries the probed count
+: >"$STUB_LOG"
+out=$(held_run none t_held); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T22h: an unproven refusal exited $rc (out: $out)"
+has "$out" "holder-unproven (7 processes probed)" && ok \
+    || bad "T22i: the probed count was not carried (out: $out)"
+hasnt "$out" "held-by" && ok || bad "T22j: an unproven run named a holder (out: $out)"
+
+# (c) the probe fails: probe-unavailable, exit 0, the dir survives
+out=$(held_run fail t_held); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T22k: a failing probe exited $rc (out: $out)"
+has "$out" "probe-unavailable" && ok || bad "T22l: a failing probe was not named (out: $out)"
+hasnt "$out" "held-by" && ok || bad "T22m: a failing probe produced a holder (out: $out)"
+[ -d .worktrees/t_held ] && ok || bad "T22n: a dir a failing probe could not explain was removed"
+
+# (d) a clean husk never calls the probe: attribution is a refusal path only
+"$REAL_RMDIR" .worktrees/t_held && ok || bad "T22o: could not clear the held fixture"
+mkdir -p .worktrees/t_clean
+: >"$STUB_LOG"
+out=$(held_run holder t_clean); rc=$?
+[ "$rc" -eq 0 ] && ok || bad "T22p: a clean husk exited $rc (out: $out)"
+has "$out" "PRUNED-HUSK t_clean" && ok || bad "T22q: a clean husk was not swept (out: $out)"
+[ ! -s "$STUB_LOG" ] && ok || bad "T22r: the probe ran on a clean prune ($(cat "$STUB_LOG"))"
+[ ! -d .worktrees/t_clean ] && ok || bad "T22s: the clean husk dir survived"
 
 # -- T14: a consumed card's marker dies on ORIGIN, the local ref stays -----
 # A marker ref keeps the landing's ancestry reachable from the remote long

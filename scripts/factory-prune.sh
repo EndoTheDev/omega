@@ -24,7 +24,9 @@
 # survives the handle), and `git worktree list` cannot name it - so
 # wtpath_of cannot see it and the card would read "nothing-to-prune"
 # forever. sweep_husks clears that shape before the per-card loop and says
-# PRUNED-HUSK <id>. A registered worktree is never a husk (both sides go
+# PRUNED-HUSK <id>; a refusal names the holder pid through the PEB
+# current-directory probe (a plain command-line scan finds nothing).
+# A registered worktree is never a husk (both sides go
 # through the same scripts/lib-wt.sh fold), and a NON-empty unregistered
 # dir is never deleted here - NOTE <id> unregistered-dir-kept names it for
 # a human, since it may be unclaimed work or a `dir` workspace.
@@ -127,6 +129,63 @@ merged_into_ref() {
     git merge-base --is-ancestor "$1" "$MERGE_REF" 2>/dev/null
 }
 
+# A refusal is the only evidence a live process holds the dir: an EMPTY dir
+# has nothing else to keep it. The holder leaves no command-line trace, so
+# attribution reads each process's PEB current directory through the probe
+# that already ships for the merge pass. The pid it names is a receipt for an
+# interactive pass - this sweep never kills, and a probe that cannot answer
+# says so instead of inventing a holder.
+HUSK_PROBE="${HUSK_PROBE:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dev-server-kill.sh}"
+
+# The probe is a native process: it compares the PEB's own D:\-form path, so
+# an MSYS /d/... path handed over untouched matches nothing.
+probe_path() {
+    if command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}
+
+# husk_held_note <id> <dir>: the refusal NOTE - a holder pid when the probe
+# names one, holder-unproven when it looked and found none, probe-unavailable
+# when it could not answer. A refusal is never silent and never a guess.
+husk_held_note() {
+    local id=$1 d=$2 base out err rc line pid name rest n named
+    base="NOTE $id husk-empty-held $d (no worktree registration; a live process still holds the dir)"
+    err="$(mktemp)"
+    out=""
+    rc=0
+    if [ -f "$HUSK_PROBE" ]; then
+        out="$(bash "$HUSK_PROBE" --cwd-holder "$(probe_path "$d")" 2>"$err")"
+        rc=$?
+    else
+        rc=127
+    fi
+    named=0
+    if [ "$rc" -eq 0 ]; then
+        while IFS= read -r line; do
+            case "$line" in
+                HOLDER\ *) read -r _ pid name rest <<<"$line" ;;
+                *) continue ;;
+            esac
+            [ -n "$pid" ] || continue
+            echo "NOTE $id husk-empty-held $d held-by $pid $name (cwd $rest; kill it, then re-run this prune)"
+            named=1
+        done <<<"$out"
+    fi
+    if [ "$named" -eq 0 ]; then
+        if [ "$rc" -ne 0 ] || [ -n "$out" ]; then
+            echo "$base probe-unavailable"
+        else
+            n="$(sed -n 's/.*: \([0-9][0-9]*\) processes probed.*/\1/p' "$err")"
+            echo "$base holder-unproven (${n:-0} processes probed)"
+        fi
+    fi
+    rm -f "$err"
+    return 0
+}
+
 # sweep_husks: remove the empty, unregistered leftover dirs under
 # .worktrees/ - the husk a held-cwd removal leaves - and NAME every
 # unregistered dir it does not remove, so a prune run never reports a clean
@@ -146,7 +205,7 @@ sweep_husks() {
             if rmdir "$d" 2>/dev/null; then
                 echo "PRUNED-HUSK $id (empty dir, no worktree registration)"
             else
-                echo "NOTE $id husk-empty-held $d (no worktree registration; a live process still holds the dir)"
+                husk_held_note "$id" "$d"
             fi
         else
             echo "NOTE $id unregistered-dir-kept $d (no worktree registration and not empty - left for a human)"
