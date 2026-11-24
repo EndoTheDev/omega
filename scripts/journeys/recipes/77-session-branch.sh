@@ -71,83 +71,49 @@ open_row "(journey) branch-root "
 
 # reload-pulled row meta: a fresh open re-fetches /sessions, so the row's
 # counts render without racing the background poll
-has_meta=0
-for i in 1 2 3 4 5 6 7 8; do
-  has_meta=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root")); if (!r) return 0; return (r.innerText || "").match(/msg/) ? 1 : 0;})()' 2>&1)
-  [ "$has_meta" = "1" ] && break
-  sleep 1
-done
+has_meta=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root")); if (!r) return 0; return (r.innerText || "").match(/msg/) ? 1 : 0;})()' -eq 1)
 assert_eq "$has_meta" "1" "row meta (counts) renders"
 
 # --- branch: click the fork action on the journey row ---------------
 # polled: the row re-renders with the list refresh; the click is the
 # hover cluster's first button (aria-label Branch session), and .stop
 # keeps it from opening the row.
-branched=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  branched=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root")); if (!r) return 0; const b = r.querySelector("button[aria-label=\"Branch session\"]"); if (!b) return 0; b.click(); return 1;})()' 2>&1)
-  [ "$branched" = "1" ] && break
-  sleep 1
-done
+branched=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root")); if (!r) return 0; const b = r.querySelector("button[aria-label=\"Branch session\"]"); if (!b) return 0; b.click(); return 1;})()' -eq 1)
 assert_eq "$branched" "1" "branch action clicked"
 
 # the app POSTs /branch, refreshes the list and opens the child: poll
 # for a badge-bearing row (the CHILD - only parent_id rows carry it).
-child_found=0
-for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-  child_found=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => x.querySelector(".session-branch")); if (!r) return 0; return r.classList.contains("active") ? 1 : 2;})()' 2>&1)
-  [ "$child_found" = "1" ] && break
-  sleep 1
-done
+child_found=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => x.querySelector(".session-branch")); if (!r) return 0; return r.classList.contains("active") ? 1 : 2;})()' -eq 1)
 assert_eq "$child_found" "1" "child row renders with the branch badge and is the active tab"
 
 # the PARENT row still renders badge-less (part 3: the mark is the
 # child's lineage, not the parent's)
-parent_badge=0
-for i in 1 2 3 ; do
-  parent_badge=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root") && (x.innerText || "").match(/msg/)); if (!r) return 0; return r.querySelector(".session-branch") ? 1 : 0;})()' 2>&1)
-  [ "$parent_badge" = "1" ] && break
-  sleep 1
-done
-assert_eq "$parent_badge" "0" "parent row renders without the badge"
+# an ABSENCE, so the window the loop slept through is WATCHED instead: every
+# 0.5s sample is graded and the first one that sees a badge reds with the
+# row text as evidence (lib.sh's three shapes - watch_absent owns durations).
+watch_absent \
+  '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-root") && (x.innerText || "").match(/msg/)); if (!r) return false; return !!r.querySelector(".session-branch");})()' \
+  3 \
+  "the parent row rendering the branch badge (the mark is the child's lineage, not the parent's)" \
+  '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); return rows.map(x => (x.innerText || "").trim().replace(/\s+/g, " ")).join(" / ");})()'
 
 # the child's transcript inherits the parent's history as a prefix -
 # the verbatim USER turn is always persisted, so it survives regardless
 # of how the model phrased its answer
-inh=0
-for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14; do
-  inh=$(jsq '(()=>{const r = document.querySelector(".session-branch"); if (!r) return 0; const t = document.body.innerText || ""; return t.includes("branch seed") ? 1 : 0;})()' 2>&1)
-  [ "$inh" = "1" ] && break
-  sleep 2
-done
+inh=$(poll_js_value '(()=>{const r = document.querySelector(".session-branch"); if (!r) return 0; const t = document.body.innerText || ""; return t.includes("branch seed") ? 1 : 0;})()' -eq 1)
 assert_eq "$inh" "1" "child transcript inherits the parent's history (seed user turn visible)"
 
 # --- rename: inline edit on the child row ---------------------------
 NEWLABEL="(journey) branch-child $TAG"
-renamed=0
-for i in 1 2 3 4 5 6 7 8 9 10; do
-  renamed=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => x.querySelector(".session-branch")); if (!r) return 0; const p = r.querySelector("button[aria-label=\"Rename session\"]"); if (!p) return 0; p.click(); const inp = r.querySelector(".session-rename"); if (!inp) return 0; return 1;})()' 2>&1)
-  [ "$renamed" = "1" ] && break
-  sleep 1
-done
+renamed=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => x.querySelector(".session-branch")); if (!r) return 0; const p = r.querySelector("button[aria-label=\"Rename session\"]"); if (!p) return 0; p.click(); const inp = r.querySelector(".session-rename"); if (!inp) return 0; return 1;})()' -eq 1)
 assert_eq "$renamed" "1" "rename action opened the inline editor"
 
 # type + Enter (the input has focus on render); committed -> PUT -> row
 # shows the new label
-typed=0
-for i in 1 2 3 4 5; do
-  typed=$(jsq "(()=>{const inp = document.querySelector(\".session-rename\"); if (!inp) return 0; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, \"value\").set; set.call(inp, \"$NEWLABEL\"); inp.dispatchEvent(new Event(\"input\", {bubbles: true})); inp.dispatchEvent(new KeyboardEvent(\"keyup\", {key: \"Enter\", bubbles: true})); return 1;})()" 2>&1)
-  [ "$typed" = "1" ] && break
-  sleep 1
-done
+typed=$(poll_js_value "(()=>{const inp = document.querySelector(\".session-rename\"); if (!inp) return 0; const set = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, \"value\").set; set.call(inp, \"$NEWLABEL\"); inp.dispatchEvent(new Event(\"input\", {bubbles: true})); inp.dispatchEvent(new KeyboardEvent(\"keyup\", {key: \"Enter\", bubbles: true})); return 1;})()" -eq 1)
 assert_eq "$typed" "1" "rename draft typed + Enter committed"
 
-label_set=0
-for i in 1 2 3 4 5 6 7 8; do
-  label_set=$(jsq "(()=>{const rows = Array.from(document.querySelectorAll(\".session-list li\")); const r = rows.find(x => (x.innerText || \"\").includes(\"branch-child\")); return r ? 1 : 0;})()" 2>&1)
-  [ "$label_set" = "1" ] && break
-  sleep 1
-done
+label_set=$(poll_js_value "(()=>{const rows = Array.from(document.querySelectorAll(\".session-list li\")); const r = rows.find(x => (x.innerText || \"\").includes(\"branch-child\")); return r ? 1 : 0;})()" -eq 1)
 assert_eq "$label_set" "1" "renamed label renders on the row"
 
 # --- export: the /export-parity JSONL --------------------------------
@@ -179,12 +145,7 @@ step "ok: export served as attachment download"
 
 # --- reload: the label + the badges survive --------------------------
 fresh_open
-persist=0
-for i in 1 2 3 4 5 6 7 8; do
-  persist=$(jsq '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-child")); if (!r) return 0; return r.querySelector(".session-branch") ? 1 : 0;})()' 2>&1)
-  [ "$persist" = "1" ] && break
-  sleep 1
-done
+persist=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("branch-child")); if (!r) return 0; return r.querySelector(".session-branch") ? 1 : 0;})()' -eq 1)
 assert_eq "$persist" "1" "label + branch badge survive a reload"
 
 assert_no_console_errors
