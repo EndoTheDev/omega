@@ -98,7 +98,8 @@ Usage:
   omega setup           write the first config (provider, model, api key)
   omega run <prompt>    run one prompt to stdout
   omega serve           start the HTTP server (SSE streaming; serves the webui)
-  omega desktop         open the desktop window (one process: the core + the webui)
+  omega desktop         open the desktop window over the home's agent (starts one if
+                        none answers; a windowless double-click lands here)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
@@ -206,7 +207,13 @@ func run(args []string) error {
 		// Alias for `omega update --rollback` — same one-generation swap back.
 		return cmdRollback()
 	case "chat", "":
-		// The chat subcommand is a legacy alias for the CLI loop.
+		// The chat subcommand is a legacy alias for the CLI loop. A bare SHELL launch
+		// (double-click or shortcut, parent Explorer) is the desktop: the window
+		// guarantees an instance instead of opening a terminal nobody can see. Every
+		// argument launch stays the CLI loop, so no script or service can land in a GUI.
+		if sub == "" && len(args) == 0 && desktopForBareLaunch() {
+			return cmdDesktop(nil)
+		}
 		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	default:
 		if info, serr := os.Stat(sub); serr == nil && info.IsDir() {

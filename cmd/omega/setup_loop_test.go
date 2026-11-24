@@ -232,6 +232,10 @@ func TestNoConfigRefusesForCLI(t *testing.T) {
 
 	// bare omega: the wizard is the gate - with a dead host under a stubbed transport it
 	// refuses with the no-model abort (and never probes a live provider from a test).
+	// A console-attached launch is forced here: the pty-hosted test binary has no Windows
+	// console, which is the desktop's branch (TestDesktopBareLaunchWithoutConsole).
+	desktopForBareLaunch = func() bool { return false }
+	t.Cleanup(func() { desktopForBareLaunch = bareLaunchWantsDesktop })
 	withStubProvider(t, stubLister{err: &fakeNetError{}})
 	err := run([]string{})
 	if err == nil {

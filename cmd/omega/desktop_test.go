@@ -1,8 +1,8 @@
 package main
 
-// desktop_test.go: the desktop boot contract - one runtime serving the embedded SPA on
-// the stable loopback port, a loud failure when the port is taken, the setup gate, and
-// the headless health probe the release gate calls.
+// desktop_test.go: the desktop boot contract - the runtime the window points at, the
+// loud port failure, the setup gate, the headless health probe the release gate calls,
+// and ensure-an-instance (connect to a live agent, never boot a second one).
 
 import (
 	"errors"
@@ -10,6 +10,9 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -34,9 +37,28 @@ func desktopTestConfig(t *testing.T, port int) string {
 	return writeTempConfig(t, fmt.Sprintf(`provider:
   model_name: mock-model
   type: mock
-desktop:
+server:
   port: %d
 `, port))
+}
+
+// fakeInstance is the detached-serve handle a test injects.
+type fakeInstance struct {
+	err  error
+	done chan struct{}
+}
+
+func (f *fakeInstance) Wait() (*os.ProcessState, error) {
+	<-f.done
+	return nil, f.err
+}
+
+// useSpawn swaps the spawn seam for one test.
+func useSpawn(t *testing.T, fn func(string) (instanceProcess, error)) {
+	t.Helper()
+	old := spawnInstanceServe
+	t.Cleanup(func() { spawnInstanceServe = old })
+	spawnInstanceServe = fn
 }
 
 func TestDesktopRuntimeServesSPA(t *testing.T) {
@@ -49,13 +71,17 @@ func TestDesktopRuntimeServesSPA(t *testing.T) {
 	if err != nil {
 		t.Fatalf("desktopConfig: %v", err)
 	}
-	if cfg.Server.Port != port || len(cfg.Server.Bind) != 1 || cfg.Server.Bind[0] != desktopBindHost {
-		t.Fatalf("desktop bind = %v:%d, want %s:%d", cfg.Server.Bind, cfg.Server.Port, desktopBindHost, port)
+	origin, gotPort := instanceOrigin(cfg)
+	if gotPort != port {
+		t.Fatalf("instanceOrigin port = %d, want %d", gotPort, port)
 	}
 
 	rt, err := startRuntime(cfg, cfgPath, nil, trustFlags{})
 	if err != nil {
 		t.Fatalf("startRuntime: %v", err)
+	}
+	if rt.URL != origin {
+		t.Fatalf("runtime URL = %q, want the instance origin %q", rt.URL, origin)
 	}
 	client := &http.Client{Timeout: 5 * time.Second}
 
@@ -82,7 +108,7 @@ func TestDesktopRuntimeServesSPA(t *testing.T) {
 
 	rt.shutdown()
 
-	if _, err := net.Listen("tcp", net.JoinHostPort(desktopBindHost, strconv.Itoa(port))); err != nil {
+	if _, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port))); err != nil {
 		t.Fatalf("port %d is still bound after shutdown: %v", port, err)
 	}
 }
@@ -135,8 +161,103 @@ func TestDesktopHeadlessHealth(t *testing.T) {
 	if !strings.Contains(out, `"status":"ok"`) {
 		t.Fatalf("headless output carries no healthy body: %q", out)
 	}
-	if conn, err := net.DialTimeout("tcp", net.JoinHostPort(desktopBindHost, strconv.Itoa(port)), 250*time.Millisecond); err == nil {
+	if conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 250*time.Millisecond); err == nil {
 		conn.Close()
 		t.Fatalf("headless run left the listener up on %d", port)
+	}
+}
+
+// TestDesktopEnsureInstanceConnectsToLiveInstance is the ruling-15 core: a live agent is
+// connected to, never duplicated.
+func TestDesktopEnsureInstanceConnectsToLiveInstance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	port := freeDesktopPort(t)
+	cfgPath := desktopTestConfig(t, port)
+	cfg, _, err := desktopConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("desktopConfig: %v", err)
+	}
+	rt, err := startRuntime(cfg, cfgPath, nil, trustFlags{})
+	if err != nil {
+		t.Fatalf("startRuntime: %v", err)
+	}
+	defer rt.shutdown()
+
+	useSpawn(t, func(string) (instanceProcess, error) {
+		t.Fatal("ensureInstance spawned although an instance was already live")
+		return nil, nil
+	})
+
+	origin, err := ensureInstance(cfg, cfgPath)
+	if err != nil {
+		t.Fatalf("ensureInstance: %v", err)
+	}
+	if origin != rt.URL {
+		t.Fatalf("ensureInstance origin = %q, want the live instance %q", origin, rt.URL)
+	}
+}
+
+// TestDesktopEnsureInstanceDiagnosesHeldPort: a port that answers but is not ours is
+// named, and the wait never degrades into a silent spinner.
+func TestDesktopEnsureInstanceDiagnosesHeldPort(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not omega", http.StatusServiceUnavailable)
+	}))
+	defer foreign.Close()
+	u, err := url.Parse(foreign.URL)
+	if err != nil {
+		t.Fatalf("parse test server url: %v", err)
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil {
+		t.Fatalf("test server port: %v", err)
+	}
+
+	cfgPath := desktopTestConfig(t, port)
+	cfg, _, err := desktopConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("desktopConfig: %v", err)
+	}
+
+	done := make(chan struct{})
+	close(done)
+	useSpawn(t, func(string) (instanceProcess, error) {
+		return &fakeInstance{err: errors.New("listen tcp: bind: address already in use"), done: done}, nil
+	})
+
+	if _, err = ensureInstance(cfg, cfgPath); err == nil {
+		t.Fatal("ensureInstance accepted a port that answers but is not an omega instance")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, strconv.Itoa(port)) {
+		t.Fatalf("error %q does not name port %d", msg, port)
+	}
+	if !strings.Contains(msg, "held by another process") {
+		t.Fatalf("error %q does not diagnose the foreign listener", msg)
+	}
+}
+
+// TestDesktopBareLaunchWithoutConsole: a windowless bare `omega` is the desktop, and a
+// configless home hands it the setup gate instead of a dead end.
+func TestDesktopBareLaunchWithoutConsole(t *testing.T) {
+	t.Setenv("OMEGA_HOME", t.TempDir())
+
+	oldLaunch, oldWizard := desktopForBareLaunch, spawnSetupWizard
+	t.Cleanup(func() { desktopForBareLaunch, spawnSetupWizard = oldLaunch, oldWizard })
+	desktopForBareLaunch = func() bool { return true }
+	wizards := 0
+	spawnSetupWizard = func() error {
+		wizards++
+		return nil
+	}
+
+	if err := run(nil); err != nil {
+		t.Fatalf("bare windowless launch: %v", err)
+	}
+	if wizards != 1 {
+		t.Fatalf("setup wizard spawns = %d, want 1", wizards)
 	}
 }

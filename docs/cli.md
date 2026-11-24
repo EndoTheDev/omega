@@ -80,30 +80,31 @@ The HTTP channel serves the embedded webui at `/` plus the JSON/SSE API
 
 ### `omega desktop`
 
-One process: the same plugin set `omega serve` mounts, the same embedded SPA
-served on `127.0.0.1:<desktop.port>`, and one Wails v3 window pointed at that
-origin. The webui is byte-identical to what `serve` serves - there is no
-second asset pipeline and no second binary. `//go:build windows` is the
-0.19.0 surface; other platforms exit 1 with the platform notice.
+A Wails v3 window over the home's agent. The desktop is a CLIENT: it guarantees one
+instance exists and connects to it - it never runs a second core on the home.
+Windows-first in 0.19.0; other platforms exit 1 with the platform notice.
 
 ```bash
-omega desktop                  # window on 127.0.0.1:8097 (desktop.port)
+omega desktop                     # connect, starting the agent when none answers
 omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
 ```
 
-- `desktop.port` (default 8097) is the window's origin and is STABLE across
-  launches: theme and dock layout live in origin-keyed localStorage, so a
-  moving port would silently reset the UI. A held port is a dialog naming the
-  port plus exit 1 - never a fallback port.
-- A second launch focuses the running window (one Wails instance lock) and
-  never binds a second core.
-- No `config.yaml`: the launch spawns `omega setup` in a new console and
-  exits 0; the next launch opens the window.
-- `--headless-health` is the release-gate surface: it boots the desktop
-  runtime, prints the `/health` body and exits 0 (exit 1 if the boot is not
+- Boot: probe `/health` on `server.port`. A live instance means the window loads its
+  own origin - nothing restarts. Nothing answering means `omega serve` is spawned
+  detached from the same binary (no PATH lookup, no second executable), and the
+  window waits a bounded 15 s for `/health`. A port another process holds is named
+  in a dialog and the launch exits 1: no silent "not ready" loop, no fallback port.
+- Quitting the shell never kills the agent. The instance is detached; the next
+  launch connects to the one already running. (Tray and autostart follow in 0.19.x.)
+- A second launch focuses the running window (one instance lock) and starts nothing.
+- A bare `omega` started by the shell (a double-click or a shortcut, parent Explorer)
+  routes here instead of the CLI loop; a terminal, script or service launch keeps the
+  CLI loop, and every argument launch is untouched - no script or service can land in
+  a GUI.
+- No `config.yaml`: the launch spawns `omega setup` in a new console and exits 0.
+- `--headless-health` is the release-gate surface: it boots the runtime in-process,
+  prints the `/health` body, shuts down, and exits 0 (exit 1 when the boot is not
   healthy within 15 s). It carries no window, so it runs on every platform.
-- The desktop and a simultaneous `omega serve` on the same home are not
-  prevented - two writers, out of scope for 0.19.0.
 
 ### `omega run`
 

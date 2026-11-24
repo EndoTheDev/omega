@@ -34,7 +34,6 @@ type Config struct {
 	Provider ProviderConfig `yaml:"provider"`
 	Providers    map[string]legacyProviderConfig `yaml:"providers,omitempty"`
 	Server       ServerConfig                    `yaml:"server"`
-	Desktop      DesktopConfig                   `yaml:"desktop"`
 	Store        StoreConfig                     `yaml:"store"`
 	Compaction   agent.CompactionConfig          `yaml:"compaction"`
 	SystemPrompt string                          `yaml:"system_prompt"`
@@ -350,14 +349,6 @@ type StoreConfig struct {
 	DBPath string `yaml:"db_path"`
 }
 
-// DesktopConfig is the desktop shell's own listen port. It is deliberately separate
-// from server.port: the window is a client of a fixed origin, and the webui's
-// localStorage state (theme, dock layout) is keyed by that origin - a moving port
-// silently resets the UI, so the port never falls back to a free neighbour.
-type DesktopConfig struct {
-	Port int `yaml:"port"`
-}
-
 type SessionsConfig struct {
 	// RetentionDays prunes sessions older than this. 0 = never prune.
 	RetentionDays int `yaml:"retention_days"`
@@ -397,9 +388,6 @@ func DefaultConfig() Config {
 		Server: ServerConfig{
 			Port:       8099,
 			RunTimeout: 1800,
-		},
-		Desktop: DesktopConfig{
-			Port: 8097,
 		},
 		Store: StoreConfig{
 			DBPath: "omega.db",
@@ -784,9 +772,6 @@ func (c Config) Validate() error {
 	}
 	if c.Server.Port <= 0 {
 		return fmt.Errorf("config: server.port must be > 0, got %d", c.Server.Port)
-	}
-	if c.Desktop.Port <= 0 {
-		return fmt.Errorf("config: desktop.port must be > 0, got %d", c.Desktop.Port)
 	}
 	// The provider INSTANCES: every provider is a row, the primary is the row named. The
 	// names must survive every consumer that records one (session pins, model slots), and
