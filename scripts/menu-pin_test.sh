@@ -54,6 +54,7 @@ fixture() {
   for src in "$REPO"/harness/*/ui/*Menu.ts \
              "$REPO"/webui/app/components/shell/statusStats.ts \
              "$REPO"/scripts/journeys/recipes/117-right-click-surfaces.sh \
+             "$REPO"/scripts/journeys/recipes/118-long-tail-context-menu.sh \
              "$REPO"/scripts/journeys/recipes/119-wire-only-menus.sh \
              "$REPO"/scripts/journeys/recipes/120-capsule-row-menus.sh; do
     [ -f "$src" ] || { echo "fixture: missing $src" >&2; exit 1; }
@@ -177,7 +178,26 @@ elif ! grep -q 'extend the pin' <<<"$out"; then
   bad "the computed-label message does not ask for the pin to be extended: $out"
 else ok; fi
 
-# 9. usage errors are loud
+# 9. a moved terminal label reds: the terminal's menu is a harness builder too, and
+#    118 drives it over the live xterm, so its labels are that recipe's sequence
+D="$T/terminal-moved"
+fixture "$D"
+sed -i 's/label: "Paste"/label: "Paste as text"/' "$D/harness/terminal/ui/terminalMenu.ts"
+grep -q 'label: "Paste as text"' "$D/harness/terminal/ui/terminalMenu.ts" \
+  || bad "the terminal-label mutation never landed"
+out=$(run_pin --root "$D"); rc=$?
+if [ "$rc" -ne 1 ]; then bad "a moved terminal label exited $rc (want 1) | $out"
+elif ! grep -q 'harness/terminal/ui/terminalMenu.ts' <<<"$out"; then
+  bad "the terminal red does not name the builder: $out"
+elif ! grep -q 'terminal row' <<<"$out"; then
+  bad "the terminal red does not name the surface: $out"
+elif ! grep -q 'Copy|Paste as text|Clear' <<<"$out"; then
+  bad "the terminal red does not print the builder's new sequence: $out"
+elif ! grep -q 'Copy|Paste|Clear' <<<"$out"; then
+  bad "the terminal red does not print the recipe's stale sequence: $out"
+else ok; fi
+
+# 10. usage errors are loud
 bash "$PIN" --nonsense >/dev/null 2>&1; rc=$?
 [ "$rc" -eq 2 ] && ok || bad "unknown option exited $rc, want 2"
 bash "$PIN" --root "$T/does-not-exist" >/dev/null 2>&1; rc=$?

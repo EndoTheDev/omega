@@ -161,6 +161,16 @@ SURFACES = [
         ],
     },
     {
+        "surface": "terminal row (a selection carried)",
+        "builder": "harness/terminal/ui/terminalMenu.ts",
+        "function": "terminalMenuItems",
+        "shape": {"deps": {"hasSelection": True}},
+        "witnesses": [
+            ("scripts/journeys/recipes/118-long-tail-context-menu.sh", "seq",
+             "the terminal menus Copy, Paste, Clear"),
+        ],
+    },
+    {
         "surface": "statusbar stat list (nothing hidden)",
         "builder": "webui/app/components/shell/statusStats.ts",
         "function": "statMenuItems",
