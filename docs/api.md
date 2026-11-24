@@ -108,6 +108,7 @@ unchanged.
 | `/settings`                               | GET, PUT           | config knobs schema / diff-only save (`GET ?key=<dotted path>` = one knob, 404 on a miss; `GET ?scopes=1` = the per-agent scopes with the knob groups empty)                                                                                                  |
 | `/settings/raw`                           | GET, PUT           | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply                                                                                                                                            |
 | `/settings/reset`                         | POST               | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept)                                                                                                                                                               |
+| `/instances`                              | GET, PUT           | the connection switcher's saved-instance list (`config.yaml desktop.instances`): `{"instances":[{name,url}]}`, PUT replaces it whole and answers the normalized list; 400 on a bad row, 501 without the host's list face                                                                                                       |
 | `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
 | `/`                                       | GET                | embedded SPA catch-all (history-mode fallback)                                                                                                                                                                                                              |
 
@@ -542,6 +543,34 @@ schema, one validator and one writer:
 
 A host with no settings seam answers **501** on all three, like
 `/settings`.
+
+### GET/PUT /instances (the connection switcher's list)
+
+The saved connection list the webui's menubar switcher renders. It works
+in a plain browser against any `serve`, so it lives in the shell ring,
+not in the desktop shell. The rows' durable home is `config.yaml` under
+`desktop.instances` (the store's index is DERIVED - a `/reindex` would
+throw a table there away), and the host writes them through the same
+`Settings` implementation (`omegaSettings.Instances` /
+`SaveInstances`), so there is one atomic writer, one validation pass and
+one hot-apply.
+
+- `GET /instances` - `{"instances":[{"name":"laptop","url":"http://127.0.0.1:8099"}]}`,
+  never a bare array and never `null`. Rows come back normalized
+  (name trimmed, scheme lowercased, no trailing slash).
+- `PUT /instances` - body `{"instances":[...]}`, REPLACES the whole
+  list, answers the normalized list. The rules are `core.NormalizeInstances`,
+  the same function `Config.Validate` runs on a hand edit: name trimmed,
+  non-empty, at most 64 characters; URL parsed with scheme `http` or
+  `https` and a non-empty host, no spaces; a duplicate URL is refused
+  (one row per endpoint); at most 32 rows. Any violation answers
+  **400** with the row named and the file untouched.
+- A host whose settings seam does not carry the list answers **501** on
+  both methods - the same nil-safe floor `/settings` keeps.
+
+The client never fetches a remote origin (CORS): switching writes the
+`omega.instances` localStorage cache's `lastUsed` and navigates, which
+reloads the window exactly as a browser does when the origin changes.
 
 ### The registry-browser toggles and the agent editor
 
