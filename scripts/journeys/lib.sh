@@ -371,6 +371,33 @@ poll_js() {
   return 1
 }
 
+# poll_js_value <expr> <cmp> <want> [timeout_s]: poll a js VALUE (a count, an
+# ordinal verdict), not a boolean: same budget floor and cadence as poll_js,
+# but it always prints the LAST value it measured and never dies, so the
+# caller asserts on it and the die line names what the poll actually saw.
+# The predicate is never re-run once the budget is spent - a predicate that
+# WRITES (the pin affordance's click) would fire a second time and undo the
+# very state the poll was waiting for.
+poll_js_value() {
+  local expr="$1" cmp="${2:--eq}" want="${3:-1}" t i=0 out=""
+  t="$(journey_budget "${4:-15}")"
+  while [ "$i" -lt $((t * 2)) ]; do
+    out=$(jsq "$expr" 2>&1)
+    case "$cmp" in
+      -eq) [ "$out" -eq "$want" ] 2>/dev/null && break ;;
+      -ne) [ "$out" -ne "$want" ] 2>/dev/null && break ;;
+      -ge) [ "$out" -ge "$want" ] 2>/dev/null && break ;;
+      -gt) [ "$out" -gt "$want" ] 2>/dev/null && break ;;
+      -le) [ "$out" -le "$want" ] 2>/dev/null && break ;;
+      -lt) [ "$out" -lt "$want" ] 2>/dev/null && break ;;
+      *) [ "$out" = "$want" ] && break ;;
+    esac
+    sleep 0.5
+    i=$((i + 1))
+  done
+  printf '%s\n' "$out"
+}
+
 # --- the determinism contract (card t_fdd12843) -----------------------------
 # A recipe asserts on STATE, never on elapsed time. Four gate reds in three
 # nights were one root class: a press read mid-unfold (t_44f55a54), an h+4

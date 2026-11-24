@@ -9,6 +9,10 @@ set -uo pipefail
 #   - a fixed sleep IS flagged (the rule that catches the next regression)
 #   - a poll interval inside a bounded loop is NOT flagged (or the rule would
 #     forbid the very shape it asks for and every recipe would need a marker)
+#   - a bounded for-loop that polls a JS read on an iteration count IS
+#     unbudgeted-poll, and the same wait routed through a poll primitive is
+#     clean; the debt ledger's count is a ratchet (a listed recipe may not gain
+#     a site, an entry that outlives its site is ledger-rot)
 #   - a here-doc body full of `for`/`done`/`sleep` is opaque (a python block is
 #     not bash - a parser that reads it drifts and silently stops judging)
 #   - a `for ... in a b done; do` header does not close the loop it opens (the
@@ -258,6 +262,70 @@ if [ -d "$CORPUS" ]; then
 else
   bad "no recipe corpus at $CORPUS"
 fi
+
+# --- the poll-bound ratchet (rule 4) ----------------------------------------
+# A bounded for-loop is an iteration count, so a wait built from one is a
+# timeout in disguise: 50-sessions-reload's reload-bucket read was
+# `for i in 1..10; do out=$(jsq ...); sleep 1; done` - a hard 10s bound that
+# greens solo and reds on a loaded host. The pre-fix shape must red, a poll
+# routed through a primitive must stay clean, and the debt ledger must catch
+# both a new site in a listed recipe and a listing that outlived its sites.
+
+# 19. the pre-fix shape: a hand-rolled bounded loop reading JS
+cat > "$T/unbudgeted.sh" <<'EOF'
+#!/bin/bash
+. "${JROOT:?}/lib.sh"
+open_app
+pinned=0
+for i in 1 2 3 4 5 6 7 8 9 10; do
+  pinned=$(jsq '(()=>1)()' 2>&1)
+  [ "$pinned" = "1" ] && break
+  sleep 1
+done
+assert_eq "$pinned" "1" "pin survives reload"
+EOF
+expect_finding "a bounded for-loop polling a JS read is unbudgeted-poll" "$T/unbudgeted.sh" unbudgeted-poll 5
+
+# 20. the budgeted shape: the same waits routed through the primitives
+cat > "$T/budgeted.sh" <<'EOF'
+#!/bin/bash
+. "${JROOT:?}/lib.sh"
+open_app
+pinned=$(poll_js_value '(()=>1)()' -eq 1)
+assert_eq "$pinned" "1" "pin survives reload"
+for i in 1 2 3; do
+  wait_js 'true' 5 && break
+done
+EOF
+expect_clean "a poll routed through poll_js_value / wait_js is clean" "$T/budgeted.sh"
+
+# 21-22. the ledger: a listed recipe may not GAIN a site, and an entry that
+# outlives its sites is rot (an allowance must not survive its own conversion)
+LEDGER="$(cd "$(dirname "$0")" && pwd)/journeys/recipe-lint.legacy"
+read -r LEDGERED LEDGER_N <<<"$(awk '$1 !~ /^#/ && NF >= 2 {print $1, $2}' "$LEDGER" 2>/dev/null | sort -k2 -nr | head -1)"
+if [ -n "${LEDGERED:-}" ] && [ -n "${LEDGER_N:-}" ]; then
+  mkdir -p "$T/ledgered" "$T/rotted"
+  python3 - "$T/ledgered/$LEDGERED" "$T/rotted/$LEDGERED" "$LEDGER_N" <<'PY'
+import sys
+
+grown, rotted, n = sys.argv[1], sys.argv[2], int(sys.argv[3])
+one = "for i in 1 2 3; do v=$(jsq '1' 2>&1); [ \"$v\" = \"1\" ] && break; sleep 1; done\n"
+head = '#!/bin/bash\n. "${JROOT:?}/lib.sh"\nopen_app\n'
+with open(grown, "w", encoding="utf-8", newline="") as fh:
+    fh.write(head + one * (n + 1))
+with open(rotted, "w", encoding="utf-8", newline="") as fh:
+    fh.write(head + one * (n - 1))
+PY
+  expect_finding "a listed recipe that gains a site reds" "$T/ledgered/$LEDGERED" unbudgeted-poll $((LEDGER_N + 4))
+  if [ "$LEDGER_N" -gt 0 ]; then
+    expect_finding "an entry that outlives its sites is ledger-rot" "$T/rotted/$LEDGERED" ledger-rot 1
+  else
+    bad "the ledger names no site count - the rot case cannot run"
+  fi
+else
+  bad "recipe-lint.legacy names no recipe - the ratchet cases prove nothing (an empty ledger means every recipe is converted)"
+fi
+
 printf 'recipe-lint_test: %s passed, %s failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
 exit 0

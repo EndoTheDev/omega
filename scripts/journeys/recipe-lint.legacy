@@ -1,0 +1,30 @@
+# recipe-lint.legacy - the unbudgeted-poll debt ledger (rule 4).
+#
+# These recipes already carried a hand-rolled JS poll bound when the rule
+# landed: a `for i in <n iterations>; do out=$(jsq ...); sleep N; done` whose
+# bound is an iteration count, not a budget - the shape that reds on a loaded
+# host and greens solo. The rule is a RATCHET, not a grandfather clause:
+#
+#   - a recipe NOT listed here may not carry the shape (a new file reds);
+#   - a listed recipe may not GAIN one (the count below is checked, not the
+#     lines, so an edit above a site cannot hide a new one);
+#   - a conversion that removes a site reds as `ledger-rot`, so an entry
+#     cannot rot into a silent allowance - the line drops in the same change
+#     that converts the last site.
+#
+# The ledger grants nothing at run time: each listed recipe still waits on its
+# hand-rolled bound. Converting one owes its own CI proof, which is why they
+# are not mass-rewritten beside a rule landing.
+#
+# Format: <recipe file> <count of unbudgeted-poll sites>
+104-async-pending-chips.journey.sh 1
+115-session-copy-id.sh 3
+20-chat-send-response.sh 2
+21-composer-chips.sh 1
+23-composer-slash-token.sh 1
+23-tool-group.sh 1
+30-retry-single-user.sh 3
+77-session-branch.sh 9
+79-insights-open.sh 1
+89-menubar-shape.sh 1
+96-browser.journey.sh 6
