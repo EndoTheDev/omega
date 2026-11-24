@@ -1,0 +1,78 @@
+# ADR 0010: the desktop shell is a client of a detached agent
+
+Status: accepted (card 1 of the 0.19.0 desktop chain; supersedes the in-process shape this ADR first recorded)
+
+## Context
+
+`omega desktop` has to show the existing webui in a native window. The webui is not
+a static document: it talks to `/chat` (SSE), `/ws` (the push socket), the module
+REST routes and the session API, all served by the same HTTP channel `omega serve`
+starts. The SPA is embedded in the binary and served by that channel.
+
+Three shapes were on the table:
+
+1. The window runs the core in its own process on a loopback port and points at it.
+2. The window spawns `omega serve` as a child process it owns.
+3. The agent is the background process, and the desktop is a client that guarantees
+   one exists.
+
+## Decision
+
+Option 3. The agent stays what it already is: a long-lived `omega serve` on the home,
+serving the SPA and the API on `server.port`. `omega desktop` probes `/health` on
+that port. A live instance is connected to as-is; when nothing answers the shell
+spawns `omega serve` DETACHED from the same binary and waits a bounded 15 s for
+`/health`. The window then loads the instance's own origin.
+
+Consequences of the shape:
+
+- The desktop process never opens the home's stores. There is no second writer and
+  no second core, so the old "desktop beside serve is two writers" limitation is
+  gone by construction.
+- Quitting the shell never kills the agent. The instance has no parent-death tie, so
+  the next launch connects to the one already running, and autostart becomes
+  ensure-an-instance at login.
+- The window's origin is the instance's origin. No separate desktop port exists, so
+  the webui's origin-keyed localStorage (theme, dock layout) follows the instance.
+- A failure is diagnosed, never a spinner: a port another process holds is named in
+  a dialog and the launch exits 1. A silent "not ready" loop is the ollama-class bug
+  this design exists to avoid.
+
+`application.New` owns the single-instance lock, so a second launch notifies the
+first window and exits without starting anything.
+
+## Why not a core inside the window
+
+- Two processes on one home means two writers of the same store and the same config:
+  the parent cannot see the child's failures, and quitting the window either kills
+  the agent or leaves an orphan on the port.
+- The agent must outlive the window: a session running a cron fire or a wake must not
+  die because a UI was closed.
+
+## Why not a child the window owns
+
+- Same lifetime problem with more machinery: a parent-owned child still dies with the
+  shell, and a shell crash leaves it without its supervisor.
+- The spawn that remains is DETACHED, from the same executable: no PATH resolution,
+  no second binary, no GUI-subsystem tricks.
+
+## Why not the Wails asset server
+
+- `/ws` and SSE need a real HTTP origin with the same routes and the same Host/Origin
+  guard `omega serve` uses. Serving the SPA from Wails' asset handler and bridging
+  the rest through Wails bindings means a second, divergent transport for every route
+  the webui already calls.
+- The webui must stay byte-identical to what `serve` serves: same embedded files,
+  same channel. Any asset path through Wails is a second pipeline to keep in sync.
+- The same origin works in a browser, so the window is a client like any other and
+  the gate can exercise the core without a webview (`--headless-health`).
+
+## Consequences
+
+- The desktop needs the agent's port free when it must start one; a held port is a
+  loud failure (named in a dialog) rather than a fallback port.
+- The rest of the chain (connection switcher, tray, autostart) is built on the client
+  model: a tray follows the local instance's SSE notification stream rather than an
+  in-process subscription.
+- The Windows surface is the Wails webview; mac/linux follow in 0.19.x. The headless
+  health probe is portable, so gate smoke does not need a desktop.

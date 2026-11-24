@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -97,6 +98,8 @@ Usage:
   omega setup           write the first config (provider, model, api key)
   omega run <prompt>    run one prompt to stdout
   omega serve           start the HTTP server (SSE streaming; serves the webui)
+  omega desktop         open the desktop window over the home's agent (starts one if
+                        none answers; a windowless double-click lands here)
   omega export <id|label>  export a session as JSONL
   omega insights [--days N]  show session usage analytics (default: 30 days)
   omega agents         list agents; ` + "`omega agents create <name>`" + ` scaffolds one
@@ -178,6 +181,8 @@ func run(args []string) error {
 			return err
 		}
 		return cmdServe(parseConfigFlag(rest), appendPrompts, trust)
+	case "desktop":
+		return cmdDesktop(rest)
 	case "run":
 		if err := requireConfig(configPath); err != nil {
 			return err
@@ -202,7 +207,13 @@ func run(args []string) error {
 		// Alias for `omega update --rollback` — same one-generation swap back.
 		return cmdRollback()
 	case "chat", "":
-		// The chat subcommand is a legacy alias for the CLI loop.
+		// The chat subcommand is a legacy alias for the CLI loop. A bare SHELL launch
+		// (double-click or shortcut, parent Explorer) is the desktop: the window
+		// guarantees an instance instead of opening a terminal nobody can see. Every
+		// argument launch stays the CLI loop, so no script or service can land in a GUI.
+		if sub == "" && len(args) == 0 && desktopForBareLaunch() {
+			return cmdDesktop(nil)
+		}
 		return cmdLoop(parseConfigFlag(rest), appendPrompts, trust)
 	default:
 		if info, serr := os.Stat(sub); serr == nil && info.IsDir() {
@@ -230,7 +241,7 @@ func run(args []string) error {
 // cmd/omega, where the one config.yaml writer (writeDisabled) already sits.
 func isRootSubcommand(sub string) bool {
 	switch sub {
-	case "setup", "serve", "run", "health", "export", "insights",
+	case "setup", "serve", "desktop", "run", "health", "export", "insights",
 		"agents", "settings", "update", "rollback", "chat":
 		return true
 	}
@@ -694,31 +705,41 @@ func serveBanner(version string, channels int, binds []string, configPath, dataD
 		version, channels, strings.Join(binds, ", "), configPath, dataDir, model)
 }
 
-// cmdServe loads config, wires the agent, and starts all mounted channels.
-func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
-	cfgPath := resolveConfigPath(configPath)
-	cfg, err := LoadConfig(cfgPath)
-	if err != nil {
-		return err
-	}
-	if err := resolveHomePaths(&cfg); err != nil {
-		return err
-	}
+// serveRuntime is one booted serve: the live plugin mount, the started channels and
+// module fence, and the handle that tears every one of them down.
+type serveRuntime struct {
+	URL      string
+	ctx      context.Context
+	stop     context.CancelFunc
+	errs     chan error
+	pctx     *agent.Context
+	reg      *agent.Registry
+	channels []core.Channel
+	logger   agent.LoggerProvider
+	store    agent.StoreProvider
+	once     sync.Once
+}
+
+// startRuntime boots everything a serve does after config load, and returns once
+// /health answers ok. The caller owns the runtime and must shutdown it.
+func startRuntime(cfg Config, configPath string, appendPrompts []string, trust trustFlags) (*serveRuntime, error) {
+	return startRuntimeWithin(cfg, configPath, appendPrompts, trust, 5*time.Second)
+}
+
+// startRuntimeWithin is startRuntime with an explicit health deadline: a probe run
+// unattended may allow a slower first boot than a person waiting on a terminal.
+func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, trust trustFlags, healthTimeout time.Duration) (*serveRuntime, error) {
 	llm.SetHTTPTimeout(cfg.HTTPTimeout)
 	ag, store, logger, pctx, reg, setAgents, setFilesWorkspace, setChannelWorkspace, setTerminalWorkspace, setAgentConfig, err := newAgent(cfg, configPath, appendPrompts, trust)
 	if err != nil {
-		return err
-	}
-	defer store.Close()
-	if logger != nil {
-		defer logger.Close()
+		return nil, err
 	}
 
 	ctx, stop := signalContext()
-	defer stop()
-
+	rt := &serveRuntime{ctx: ctx, stop: stop, pctx: pctx, reg: reg, logger: logger, store: store}
 	if len(pctx.Channels) == 0 {
-		return fmt.Errorf("no channels configured — mount a channel extension (e.g. http_channel)")
+		rt.shutdown()
+		return nil, fmt.Errorf("no channels configured — mount a channel extension (e.g. http_channel)")
 	}
 	configFile := resolveConfigPath(configPath)
 	if configFile == "" {
@@ -772,7 +793,7 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 	// explicit --config path, or an exe-dir home without OMEGA_HOME), so the host pushes
 	// its resolution before the fence starts the runner.
 	pushRunTimeout(pctx, cfg)
-	errCh := make(chan error, len(pctx.Channels))
+	rt.errs = make(chan error, len(pctx.Channels))
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
 			Ctx:        pctx,
@@ -783,9 +804,10 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 			Version:    omegaVersion,
 		}
 		go func(c core.Channel) {
-			errCh <- c.Start(ctx, deps)
+			rt.errs <- c.Start(ctx, deps)
 		}(ch)
 	}
+	rt.channels = pctx.Channels
 
 	// The fence: module background work starts here, after the mount commit.
 	if err := pctx.RunGroup().StartAll(ctx, core.StartDeps{
@@ -794,33 +816,123 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		Store: store,
 		Run:   ctx,
 	}, ""); err != nil {
-		return fmt.Errorf("start module lifecycle: %w", err)
+		rt.shutdown()
+		return nil, fmt.Errorf("start module lifecycle: %w", err)
 	}
 
-	banner := serveBanner(omegaVersion, len(pctx.Channels), serveBinds(cfg),
-		cfgPath, canonPath(datadir.Dir(omegaHome())), ag.ModelName())
+	binds := serveBinds(cfg)
+	rt.URL = "http://" + binds[0]
+	banner := serveBanner(omegaVersion, len(pctx.Channels), binds,
+		configFile, canonPath(datadir.Dir(omegaHome())), ag.ModelName())
 	fmt.Println(banner)
 	if logger != nil {
 		logger.Printf("%s", banner)
 	}
+	return waitHealthy(rt, binds[0], healthTimeout)
+}
+
+// waitHealthy polls /health until the body reports status ok, or a channel fails, or
+// the deadline passes. A boot that never answers is torn down before the error returns.
+func waitHealthy(rt *serveRuntime, addr string, timeout time.Duration) (*serveRuntime, error) {
+	client := &http.Client{Timeout: time.Second}
+	deadline := time.Now().Add(timeout)
+	lastErr := errors.New("no answer")
+	for {
+		select {
+		case cerr := <-rt.errs:
+			rt.shutdown()
+			if cerr == nil {
+				cerr = errors.New("channel exited without an error")
+			}
+			return nil, fmt.Errorf("serve %s: %w", addr, cerr)
+		default:
+		}
+		body, err := healthBody(client, rt.URL)
+		if err == nil && strings.Contains(body, `"status":"ok"`) {
+			return rt, nil
+		}
+		if err != nil {
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			rt.shutdown()
+			return nil, fmt.Errorf("serve %s: /health not ok within %s: %w", addr, timeout, lastErr)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
+// healthBody reads one /health body.
+func healthBody(client *http.Client, url string) (string, error) {
+	resp, err := client.Get(url + "/health")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return string(body), fmt.Errorf("/health answered %s", resp.Status)
+	}
+	return string(body), nil
+}
+
+// shutdown tears the runtime down: channel Stop, cron Stop, the module dismount (the
+// capsules close what they opened - the kanban and notifications stores, the continuous
+// ledger), logger Close, store Close. Idempotent - a failed boot and the caller's defer
+// may both reach it.
+func (rt *serveRuntime) shutdown() {
+	rt.once.Do(func() {
+		rt.stop()
+		for _, ch := range rt.channels {
+			if err := ch.Stop(); err != nil {
+				fmt.Fprintf(os.Stderr, "omega: channel stop error: %v\n", err)
+			}
+		}
+		if rt.pctx != nil {
+			if cron, ok := rt.pctx.Services().Resolve("cron").(interface{ Stop() error }); ok {
+				if err := cron.Stop(); err != nil {
+					fmt.Fprintf(os.Stderr, "omega: cron stop error: %v\n", err)
+				}
+			}
+			if rt.reg != nil {
+				if err := agent.DismountAll(rt.reg, rt.pctx); err != nil {
+					fmt.Fprintf(os.Stderr, "omega: dismount error: %v\n", err)
+				}
+			}
+		}
+		if rt.logger != nil {
+			rt.logger.Close()
+		}
+		if rt.store != nil {
+			rt.store.Close()
+		}
+	})
+}
+
+// cmdServe loads config, wires the agent, and starts all mounted channels.
+func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error {
+	cfgPath := resolveConfigPath(configPath)
+	cfg, err := LoadConfig(cfgPath)
+	if err != nil {
+		return err
+	}
+	if err := resolveHomePaths(&cfg); err != nil {
+		return err
+	}
+	rt, err := startRuntime(cfg, configPath, appendPrompts, trust)
+	if err != nil {
+		return err
+	}
+	defer rt.shutdown()
 
 	select {
-	case <-ctx.Done():
-	case err := <-errCh:
-		if err != nil && ctx.Err() == nil {
-			stop()
+	case <-rt.ctx.Done():
+	case err := <-rt.errs:
+		if err != nil && rt.ctx.Err() == nil {
 			return fmt.Errorf("channel error: %w", err)
-		}
-	}
-
-	for _, ch := range pctx.Channels {
-		if err := ch.Stop(); err != nil {
-			fmt.Fprintf(os.Stderr, "omega: channel stop error: %v\n", err)
-		}
-	}
-	if cron, ok := pctx.Services().Resolve("cron").(interface{ Stop() error }); ok {
-		if err := cron.Stop(); err != nil {
-			fmt.Fprintf(os.Stderr, "omega: cron stop error: %v\n", err)
 		}
 	}
 	return nil
