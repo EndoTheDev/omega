@@ -7,6 +7,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	// the chat floor parity read (the /insights command's own numbers)
 	"io"
@@ -239,6 +240,26 @@ func TestBranchEndpointCreatesChild(t *testing.T) {
 	}
 	if counts[child.ID].MessageCount != 0 {
 		t.Fatalf("child message_count = %d, want 0 (summary row excluded)", counts[child.ID].MessageCount)
+	}
+}
+
+// TestBranchEndpointMintFailure: the branch id is minted at a store-writing trust
+// boundary, so a mint error answers 500 and creates no child row.
+func TestBranchEndpointMintFailure(t *testing.T) {
+	rt, st, mux, _ := newRoutesFixture(t)
+	createFixtureSession(t, st, "par", "parent")
+	rt.newSessionID = func() (string, error) { return "", errors.New("entropy source failed") }
+
+	rec := serve(t, mux, http.MethodPost, "/sessions/par/branch", "")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("branch status = %d, want 500: %s", rec.Code, rec.Body.String())
+	}
+	rows, err := st.ListSessions(context.Background())
+	if err != nil {
+		t.Fatalf("list sessions: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != "par" {
+		t.Fatalf("sessions after failed mint = %+v, want only the parent", rows)
 	}
 }
 

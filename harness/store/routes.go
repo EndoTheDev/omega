@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/EndoTheDev/omega/agent"
 	"github.com/EndoTheDev/omega/core"
@@ -20,6 +19,10 @@ import (
 type Routes struct {
 	store *Store
 	ctx   *core.Context
+
+	// newSessionID mints the branch-session child ids. Nil = agent.NewSessionID;
+	// a test swaps it to force the mint-failure path.
+	newSessionID func() (string, error)
 }
 
 func newRoutes(ctx *core.Context, s *Store) *Routes {
@@ -36,6 +39,15 @@ func (rt *Routes) httpError(w http.ResponseWriter, code int, format string, args
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": fmt.Sprintf(format, args...)})
+}
+
+// mintSessionID is the branch-child id source: agent.NewSessionID unless a test
+// pinned one.
+func (rt *Routes) mintSessionID() (string, error) {
+	if rt.newSessionID != nil {
+		return rt.newSessionID()
+	}
+	return agent.NewSessionID()
 }
 
 func (rt *Routes) registrationRows() []struct {
@@ -217,9 +229,10 @@ func (rt *Routes) handleSessionBranch(w http.ResponseWriter, r *http.Request) {
 		rt.httpError(w, http.StatusNotFound, "session not found: %v", err)
 		return
 	}
-	childID, err := agent.NewSessionID()
+	childID, err := rt.mintSessionID()
 	if err != nil {
-		childID = fmt.Sprintf("sess-%d", time.Now().UnixNano())
+		rt.httpError(w, http.StatusInternalServerError, "mint session id: %v", err)
+		return
 	}
 	if err := rt.store.CreateSession(r.Context(), childID, id, ""); err != nil {
 		rt.httpError(w, http.StatusInternalServerError, "branch session: %v", err)

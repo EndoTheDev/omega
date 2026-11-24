@@ -43,15 +43,15 @@ type ephRegistry struct {
 const ephemeralPrefix = agent.EphemeralIDPrefix
 
 // isEphemeralID reports whether an id belongs to the ephemeral namespace.
-// Store ids are base session ids from agent.NewSessionID or the sess- fallback; they
-// can never carry the prefix.
+// Store ids are base session ids from agent.NewSessionID; the prefix lane is
+// mintEphemeralID's own, so a store id can never carry it.
 func isEphemeralID(id string) bool {
 	return agent.IsEphemeralID(id)
 }
 
-// mintEphemeralID builds a fresh namespace id. crypto/rand never fails
-// on supported platforms; the timestamp fallback keeps the run alive if
-// it ever does (same shape as the store id fallbacks).
+// mintEphemeralID builds a fresh namespace id. crypto/rand never fails on
+// supported platforms; the timestamp fallback is this lane's own - an eph- id
+// never lands in the store, so a predictable one costs nothing durable.
 func mintEphemeralID() string {
 	id, err := agent.NewSessionID()
 	if err != nil {
