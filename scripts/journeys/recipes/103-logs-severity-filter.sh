@@ -355,6 +355,11 @@ wait_settled 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").lengt
 snap
 TOT_PRE_CLEAR=$TOT
 [ "$TOT_PRE_CLEAR" -ge 1 ] 2>/dev/null || die "the pane reads no events before the clear - nothing to prove (got '$TOT_PRE_CLEAR')"
+# the flip grade below is by IDENTITY, not count: tag the pre-clear rows now -
+# a tagged row repainting after the flip is a LOST watermark; an untagged row is
+# a post-clear arrival (the ring was not quiet - legal, it paints by design).
+PRE_SEP=$(printf '\001')
+PRE_IDS=$(jsq '[...document.querySelectorAll(".dock-pane.edge-bottom .obs-row")].map(r => r.textContent).join(String.fromCharCode(1))' | tr -d '"')
 js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-clear")?.click()' >/dev/null 2>&1
 poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length === 0' 5 \
   || die "the clear button left rows painted (the visible stream is not emptied)"
@@ -366,6 +371,8 @@ case "$clearmac" in
   *"cleared through"*) step "ok: the meta line names the clear watermark ($clearmac)" ;;
   *) die "the meta line lost the clear marker: $clearmac" ;;
 esac
+CLEARED_WM=$(printf '%s' "$clearmac" | grep -oE 'cleared through [0-9]+' | grep -oE '[0-9]+$')
+[ -n "$CLEARED_WM" ] || die "the clear meta names no watermark number: $clearmac"
 # the durable half: the tail still reads the file, so nothing was truncated
 js 'document.querySelector(".dock-pane.edge-bottom .obs-pane .obs-chip.obs-tail")?.click()' >/dev/null 2>&1
 poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").length >= 1' 15 \
@@ -378,10 +385,24 @@ poll_js 'document.querySelectorAll(".dock-pane.edge-bottom .obs-tail-line").leng
   || die "the stream view did not return after the tail flip"
 cleared_after=$(jsq 'document.querySelectorAll(".dock-pane.edge-bottom .obs-row").length')
 if [ "${cleared_after//\"/}" != "0" ]; then
-  # split the two candidates in one read: a row at or below the watermark is a LOST
-  # watermark (the flip dropped the state); a newer record is one that landed after
-  # the clear (the watermark did its job, the ring was not quiet).
-  die "the cleared stream repainted across a view flip (${cleared_after//\"/} rows, was $TOT_PRE_CLEAR before the clear) - meta: $(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-meta")?.textContent || ""' | tr -d '\"')"
+  # grade the repaint, per the two candidates this die names: rows are legal
+  # ONLY as post-clear arrivals - a PRE-CLEAR identity repainting is a lost
+  # watermark, and the meta must still name the SAME cleared-through number.
+  flipmac=$(jsq 'document.querySelector(".dock-pane.edge-bottom .obs-meta")?.textContent || ""' | tr -d '\"')
+  FLIP_WM=$(printf '%s' "$flipmac" | grep -oE 'cleared through [0-9]+' | grep -oE '[0-9]+$')
+  [ -n "$FLIP_WM" ] || die "the flip meta lost the clear watermark - pre: '$clearmac' flip: '$flipmac'"
+  assert_eq "$FLIP_WM" "$CLEARED_WM" "the cleared-through watermark survived the view flip"
+  NOW_IDS=$(jsq '[...document.querySelectorAll(".dock-pane.edge-bottom .obs-row")].map(r => r.textContent).join(String.fromCharCode(1))' | tr -d '\"')
+  repaints=0
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    case "${PRE_SEP}${PRE_IDS}${PRE_SEP}" in
+      *"${PRE_SEP}${row}${PRE_SEP}"*) repaints=$((repaints + 1)) ;;
+    esac
+  done < <(printf '%s' "$NOW_IDS" | tr '\001' '\n')
+  [ "$repaints" -eq 0 ] \
+    || die "the cleared stream repainted across a view flip (${repaints} pre-clear rows back, was $TOT_PRE_CLEAR before the clear) - meta: $flipmac"
+  step "ok: only post-clear arrivals repainted (${cleared_after//\"/} new rows, $TOT_PRE_CLEAR pre-clear, watermark ${CLEARED_WM} intact)"
 fi
 step "ok: the cleared stream stays cleared across a view flip (the watermark survives)"
 
