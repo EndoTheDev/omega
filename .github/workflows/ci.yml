@@ -38,6 +38,8 @@ jobs:
           bash scripts/dep-drift_test.sh
       - name: Recipe determinism (scripts/recipe-lint.sh over scripts/journeys/recipes - no fixed sleeps, no fixed windows in front of a read)
         run: bash scripts/recipe-lint_test.sh
+      - name: Row-menu pin (scripts/menu-pin.sh - every recipe's menu assertion still names what its builder renders, in order)
+        run: bash scripts/menu-pin_test.sh
       # sweep_chromes_win_test.sh (needs powershell.exe) and orphan_test.sh
       # (needs the bundled chromium) exit 0 as SKIP on this host, and a suite
       # that skips asserts nothing - they belong to the Windows/Pi lanes.
