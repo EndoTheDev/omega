@@ -48,12 +48,7 @@ ROW_JS='
   return r;
 })()'
 
-row_ready=0
-for i in $(seq 1 20); do
-  row_ready=$(jsq "$(expr "${ROW_JS%$'\n'}")?1:0" 2>&1 | tail -1)
-  [ "$row_ready" = "1" ] && break
-  sleep 1
-done
+row_ready=$(poll_js_value "$(expr "${ROW_JS%$'\n'}")?1:0" -eq 1)
 assert_eq "$row_ready" "1" "journey row rendered in the sessions sidebar"
 
 # --- pre-hover: the affordance is HIDDEN (the hover-reveal contract) --------
@@ -88,9 +83,7 @@ rowy=${pt##* }
 assert_ne "$rowx" "" "row centre resolved"
 ab mouse move "$rowx" "$rowy" >/dev/null 2>&1
 
-revealed=0
-for i in $(seq 1 20); do
-  revealed=$(jsq "$(expr '
+revealed=$(poll_js_value "$(expr '
 (()=>{
   const L="__LABEL__";
   const rows=[...document.querySelectorAll(".session-list li")];
@@ -99,10 +92,7 @@ for i in $(seq 1 20); do
   const c=r.querySelector(".row-actions");
   const cs=getComputedStyle(c);
   return (cs.opacity==="1"&&cs.pointerEvents==="auto")?1:0;
-})()')" 2>&1 | tail -1)
-  [ "$revealed" = "1" ] && break
-  sleep 0.25
-done
+})()')" -eq 1)
 assert_eq "$revealed" "1" "hovering the row reveals the copy affordance"
 
 # --- instrument the ONE copy path's primitive, then click ------------------
@@ -141,15 +131,10 @@ ab mouse down >/dev/null 2>&1
 ab mouse up >/dev/null 2>&1
 
 # --- the live toast confirms, naming the id --------------------------------
-toast=0
-for i in $(seq 1 20); do
-  toast=$(jsq "$(expr '(()=>{
+toast=$(poll_js_value "$(expr '(()=>{
     const want="copied session id __SID__";
     return [...document.querySelectorAll(".notif-toast")].some(t=>(t.innerText||"").includes(want))?1:0;
-  })()')" 2>&1 | tail -1)
-  [ "$toast" = "1" ] && break
-  sleep 0.25
-done
+  })()')" -eq 1)
 assert_eq "$toast" "1" "the toast stack confirms the copy and names the id"
 
 # --- the payload receipt: the app's own clipboard call carried the id ------
