@@ -21,6 +21,7 @@ var censusPin = map[string]string{
 	"server_context.go":     "chat - the model-switch probe (GET /sessions/{id}/context): the live context estimate of the session's active path and the context window of the model a pick would switch to",
 	"server_ephemeral.go":   "chat - ephemeral sessions: the no-persist chat mode of /chat (in-memory, eph- ids, gone at restart)",
 	"server_images.go":      "chat - image serving + /attach-image (chat renders images)",
+	"server_instances.go":   "settings - the connection switcher's list (GET/PUT /instances): saved instances live in config.yaml, the route is the browser-safe door",
 	"server_settings.go":    "settings - the third shell-ring face (GET/PUT /settings)",
 	"server_transcript.go":  "chat - the transcript serving (live + store-backed restore)",
 	"sockets.go":            "chat - the push channel's fan-out (the /ws hub, the typed topic set and the broadcast hooks at the run/wake/canvas seams; card t_7624bab1) - the chat floor's live transport, retired polling",
