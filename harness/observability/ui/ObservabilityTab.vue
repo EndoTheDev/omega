@@ -179,8 +179,8 @@
   // the clear button's watermark: display-only, so a refresh keeps arriving and paints
   // over it while the rows already read stay hidden.
   const clearedThrough = ref(0);
-  // session id -> store label; the only provenance the stream lacks is a run's origin,
-  // and the scheduler writes it as the session's label.
+  // session id -> store label; the label is the one provenance the record cannot carry -
+  // a run's origin rides the row, the scheduler writes its name here.
   const labels = ref<Map<string, string>>(new Map());
 
   const allScope = computed(() => scopeAll.value || !props.session);
