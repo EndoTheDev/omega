@@ -41,6 +41,15 @@
 #     the scrollport states overflow-x: hidden like every other list, and the
 #     reasoning row carries no box face while it streams. Runs in the webui
 #     node suite.
+#   - TestLegacyMigrationKeepsARowWhoseUpdatedAtPredatesItsLastMessage
+#     (harness/store/legacy_migrate_test.go, t_bb675539): the v0.18.0
+#     boot-kill on the prod store - a legacy row whose updated_at predates
+#     its last message (prod session 72863811..., row 19:45:35.496622592Z,
+#     last message 23:07:44.038102813Z) folded to the message's time, and
+#     the migration's own read-back gate refused the boot, crash-looping
+#     the service. The file must fold to the ROW's stamp byte-exact while
+#     the message keeps its own created_at. Runs in go test ./... and the
+#     train gate list.
 60-settings-themes t_31aa2542 - the Settings chip/knob poll contract: the cold-runner wait_js race (theme picker "got [0] want [1]") - poll, never a zero-wait query
 61-session-title-fallback  t_8abdbb15 - session titles never lean on a model: the label renders with zero title runs; the unlabeled tab keeps the stable generic fallback (the nightly's no-provider reds, f82f4ee)
 75-divider-resize  t_38c0e960 - dock-stuck divider shapes: the v0.9.0 drag rework crossed the cumulative/per-event delta contract - the divider looked dead (~10px per full drag)

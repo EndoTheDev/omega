@@ -9,7 +9,9 @@ package store
 //   session - the header, written once at creation (parent/delegate lineage, agent
 //             binding, list visibility, created_at);
 //   message - one stored message: the role discriminator, the encoded payload as the
-//             message codec wrote it, its per-session id and its timestamp;
+//             message codec wrote it, its per-session id and its timestamp; an explicit
+//             updated_at declares the session stamp the line leaves behind, and without
+//             one the line's own time is that stamp;
 //   meta    - a metadata change (label, pin, archive, title state, summary, token
 //             deltas...), naming only the fields it changed.
 //
@@ -379,7 +381,7 @@ func foldReader(r io.Reader) (folded, error) {
 				Payload:   append([]byte(nil), line.Payload...),
 				CreatedAt: line.At,
 			})
-			updated, updatedStr = laterTime(updated, updatedStr, line.At)
+			updated, updatedStr = laterTime(updated, updatedStr, lineStamp(line))
 		case kindMeta:
 			if line.Changes == nil {
 				break
@@ -405,6 +407,16 @@ func foldReader(r io.Reader) (folded, error) {
 		out.session.UpdatedAt = updatedStr
 	}
 	return out, nil
+}
+
+// lineStamp is the session updated_at one line leaves behind. A line that declares it
+// wins (a migrated row's stamp can predate its messages); a message line that declares
+// nothing is its own activity stamp, which is what a live append means.
+func lineStamp(line fileLine) string {
+	if line.UpdatedAt != "" {
+		return line.UpdatedAt
+	}
+	return line.At
 }
 
 // laterTime keeps the max of two RFC 3339 stamps. RFC3339Nano drops trailing zeros, so

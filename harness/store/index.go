@@ -370,9 +370,10 @@ func applyLine(ctx context.Context, exec execer, line fileLine) error {
 			line.Session, line.ID, line.Role, string(line.Payload), line.At); err != nil {
 			return err
 		}
-		// An append IS activity; the line's stamp is the message's own created_at.
+		// An append IS activity, stamped exactly as the fold stamps it: the line's declared
+		// updated_at when it carries one, otherwise the message's own time.
 		_, err := exec.ExecContext(ctx,
-			`UPDATE sessions SET updated_at = ? WHERE id = ?`, line.At, line.Session)
+			`UPDATE sessions SET updated_at = ? WHERE id = ?`, lineStamp(line), line.Session)
 		return err
 	case kindMeta:
 		return applyChangesToIndex(ctx, exec, line)

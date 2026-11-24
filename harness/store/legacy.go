@@ -326,6 +326,10 @@ func legacyWriteSession(db *sql.DB, sessionsDir, id string) (string, error) {
 			Role:    m.Role,
 			Payload: json.RawMessage(m.Payload),
 			At:      m.CreatedAt,
+			// A message line without a declaration stamps the session with its own time.
+			// The row's stamp is the truth here and can predate the last message, so it is
+			// declared on every line: this file must fold back to the source row.
+			UpdatedAt: row.session.UpdatedAt,
 		})
 	}
 	// The rest of the row rides one meta line: it is the same fold a live store produces
