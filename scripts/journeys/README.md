@@ -101,6 +101,17 @@ blanket allow is a suppression by another name. A marker with no reason
 (`bare-justification`) and a marker whose sleep has gone (`stale-allow`)
 are both findings.
 
+The fourth rule is the poll-bound ratchet: a bounded for-loop is an
+iteration count, so a wait built from one (`for i in 1..10; do
+out=$(jsq ...); sleep 1; done`) is a timeout in disguise - green solo,
+red on a loaded host. A JS read inside a loop routes through `poll_js` /
+`wait_js` / `poll_js_value`, whose budget is `journey_budget`'s floor.
+Recipes that already carried the shape when the rule landed are listed in
+`journeys/recipe-lint.legacy` WITH their site count: the count is a
+ratchet (a listed recipe may not gain a site), and an entry that outlives
+its sites is `ledger-rot`. Converting one drops or lowers its line in the
+same change.
+
 ### The agent-browser version these recipes are written against
 
 **0.42.0.** The CLI is pinned in two places that move together: the

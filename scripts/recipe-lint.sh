@@ -20,6 +20,12 @@
 #      it never touches a browser, so one journey's panes, viewport and
 #      localStorage can never become the next journey's baseline (the
 #      77-before-70 poisoning, t_81d0901b).
+#   4. no hand-rolled poll bound. A bounded for-loop is an iteration count, so
+#      a wait built from one is a timeout in disguise: 50-sessions-reload's
+#      reload-bucket read was `for i in 1..10; do out=$(jsq ...); sleep 1; done`
+#      - a hard 10s bound, green solo and red on four loaded CI runs. A JS read
+#      inside a loop routes through poll_js / wait_js / poll_js_value, which
+#      take their budget from journey_budget's floor.
 #
 # A finding is one line: <file>:<line>: <rule>: <message>
 #
@@ -35,6 +41,7 @@
 # marker whose sleep has gone (stale-allow) - the two ways an allow rots.
 #
 #   allow fixed-sleep - <reason>   same line as the sleep, or the line above
+#   allow unbudgeted-poll - <reason>  the for header, or the line above it
 #   allow no-browser  - <reason>   file scope: this recipe never opens a page
 #
 # Usage:
@@ -119,6 +126,19 @@ function unquote(s,   out, i, c, q) {
 
 function emit(n, rule, msg) { printf "%s:%d: %s: %s\n", FILENAME, n, rule, msg }
 
+BEGIN {
+  # the debt ledger: <recipe basename> <allowed site count>. A ledgered recipe
+  # keeps its pre-existing sites; anything past the count is a new one.
+  while ((getline l < LEGACY) > 0) {
+    sub(/#.*/, "", l)
+    l = trim(l)
+    if (l == "") continue
+    split(l, p, /[ \t]+/)
+    legacy[p[1]] = p[2] + 0
+  }
+  close(LEGACY)
+}
+
 { raw[FNR] = $0 }
 
 END {
@@ -146,6 +166,7 @@ END {
 
   # --- pass 2: markers, loop depth, sleeps -------------------------------
   depth = 0
+  lsp = 0
   nobrowser = ""
   opened = ""
   for (n = 1; n <= FNR; n++) {
@@ -171,6 +192,13 @@ END {
         marker_at[tgt] = n
         nmark++
         mark_tgt[nmark] = tgt
+      } else if (rule == "unbudgeted-poll") {
+        # line-scoped: the for header on this line, or the one below it
+        tgt = (c ~ /(^|[ \t;&|(])for[ \t(]/) ? n : n + 1
+        marker_rule[tgt] = rule
+        marker_at[tgt] = n
+        nmark++
+        mark_tgt[nmark] = tgt
       }
     }
 
@@ -186,9 +214,12 @@ END {
       header = substr(c, 1, RSTART - 1)
       rest = substr(c, RSTART, length(c))
     }
-    tmp = header; nopen = 0
+    tmp = header; nopen = 0; nfor = 0; nwhile = 0
     while (match(tmp, /(^|[ \t;&|(])(while|until|for|select)[ \t(]/)) {
+      kw = substr(tmp, RSTART, RLENGTH)
+      sub(/^[ \t;&|(]+/, "", kw)
       nopen++
+      if (kw ~ /^for/) nfor++; else nwhile++
       tmp = substr(tmp, RSTART + RLENGTH)
     }
     tmp = rest; nclose = 0
@@ -196,6 +227,36 @@ END {
       nclose++
       tmp = substr(tmp, RSTART + RLENGTH)
     }
+
+    # the poll-bound stack: a bounded for-loop is a literal iteration count, so
+    # a wait built from one is a timeout in disguise. The pre-fix shape was
+    # `for i in 1..10; do out=$(jsq ...); sleep 1; done` - a hard 10s bound that
+    # is green solo and red when the host is loaded. Every loop that reads JS
+    # needs a poll primitive to own its budget instead.
+    for (j = 0; j < nfor; j++) {
+      lsp++; ltype[lsp] = "for"; lline[lsp] = n; ljs[lsp] = 0; lbud[lsp] = 0
+    }
+    for (j = 0; j < nwhile; j++) {
+      lsp++; ltype[lsp] = "while"; lline[lsp] = n; ljs[lsp] = 0; lbud[lsp] = 0
+    }
+    if (lsp > 0) {
+      # a JS read at command position, or a jsq/js/panejs inside $( )
+      if (c ~ /(^|[ \t;&|(]|\$\()(jsq|js|panejs)[ \t(]/ || c ~ /(^|[ \t;&|(])ab[ \t]+eval[ \t]/)
+        for (j = 1; j <= lsp; j++) ljs[j] = 1
+      if (c ~ /(^|[ \t;&|(]|\$\()(poll_js|poll_js_value|wait_js|wait_settled|wait_layout|wait_booted|watch_absent|journey_budget|poll_http|poll_grep)[ \t(]/)
+        for (j = 1; j <= lsp; j++) lbud[j] = 1
+    }
+    for (j = 0; j < nclose; j++) {
+      if (lsp > 0) {
+        if (ltype[lsp] == "for" && ljs[lsp] && !lbud[lsp]) {
+          hdr = lline[lsp]
+          if ((hdr in marker_rule) && marker_rule[hdr] == "unbudgeted-poll") used[hdr] = 1
+          else uline[++ucount] = hdr
+        }
+        lsp--
+      }
+    }
+
     depth += nopen
     if (depth - nclose < 0)
       emit(n, "unbalanced", "a `done` closes no open loop - the parser cannot read this file, so its sleeps were never judged")
@@ -226,19 +287,29 @@ END {
   if (opened == "" && nobrowser == "")
     emit(1, "no-cleanup", "no open_app / journey_clean_room call and no `recipe-lint: allow no-browser - <reason>` - a journey that cleans nothing leaves its state to the next one")
 
-  # a marker whose sleep has gone: the justification outlived its line
+  # the poll-bound ratchet: everything past the ledger's count is new
+  base = FILENAME
+  sub(/.*[\/\\]/, "", base)
+  allowed = (base in legacy) ? legacy[base] : 0
+  for (k = allowed + 1; k <= ucount; k++)
+    emit(uline[k], "unbudgeted-poll", "a bounded for-loop polls a JS read on an iteration count - route the wait through poll_js / wait_js / poll_js_value, whose budget is journey_budget's floor")
+  if (ucount < allowed)
+    emit(1, "ledger-rot", "recipe-lint.legacy allows " allowed " unbudgeted-poll site(s) for " base " and the file carries " (ucount + 0) " - a conversion landed, so drop or lower the entry in the same change")
+
+  # a marker whose finding has gone: the justification outlived its line
   for (i = 1; i <= nmark; i++) {
     tgt = mark_tgt[i]
     if (!(tgt in used) && tgt <= FNR)
-      emit(tgt, "stale-allow", "`recipe-lint: allow " marker_rule[tgt] "` justifies a line that carries no fixed sleep (marker at line " marker_at[tgt] ")")
+      emit(tgt, "stale-allow", "`recipe-lint: allow " marker_rule[tgt] "` justifies a line that no longer carries its finding (marker at line " marker_at[tgt] ")")
   }
 }
 AWK
 )
 
 findings=0
+LEGACY="$LINT_DIR/journeys/recipe-lint.legacy"
 for f in "${FILES[@]}"; do
-  out="$(awk "$AWK_PROG" "$f")"
+  out="$(awk -v LEGACY="$LEGACY" "$AWK_PROG" "$f")"
   if [ -n "$out" ]; then
     printf '%s\n' "$out"
     findings=$((findings + $(printf '%s\n' "$out" | grep -c .)))
