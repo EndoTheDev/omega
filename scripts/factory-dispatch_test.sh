@@ -2024,9 +2024,14 @@ GHTIP="$TIPBASE_N/gh"
 cat >"$TIPBASE/gh" <<'GHSTUB'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"${GH_STUB_LOG:-/dev/null}"
+# GH_STUB_FAIL names the call that must FAIL the way a TLS timeout does: the
+# binary exits nonzero with no output at all - the three-state classifier has
+# to tell that apart from GitHub answering "no runs".
 case "${1:-} ${2:-}" in
-  'run list') printf '%s\n' "${GH_STUB_LIST:-}" ;;
-  'run view') printf '%s\n' "${GH_STUB_JOBS:-}" ;;
+  'run list') [ "${GH_STUB_FAIL:-}" = list ] && exit 1
+              printf '%s\n' "${GH_STUB_LIST:-}" ;;
+  'run view') [ "${GH_STUB_FAIL:-}" = view ] && exit 1
+              printf '%s\n' "${GH_STUB_JOBS:-}" ;;
   *) exit 1 ;;
 esac
 GHSTUB
@@ -2093,9 +2098,112 @@ grep -qF 'tip CI: unknown' <<<"$out" \
 	&& ok || bad "T29e: a missing gh must read unknown, out loud (out: $out)"
 grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
 	&& ok || bad "T29e: a missing gh must not block the factory (out: $out)"
+# T30: the verdict has THREE states, not two. `absent` is
+# GitHub ANSWERING with no run, so the guard may stand down. A read that never
+# reached GitHub - curl exit nonzero, the bounded timeout firing, a body gh
+# cannot parse - is `unknown`: it proceeds with a WARN line of its own. The two
+# used to collapse into `absent`, and a live TLS-timeout pass printed
+# `tip CI: absent` over a RED tip and silently turned the guard off.
+export FD_GH="$GHTIP"
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RED"; GH_STUB_FAIL=list
+export GH_STUB_LIST GH_STUB_JOBS GH_STUB_FAIL
+out=$(SPAWNRUN tip-readfail "$TIPSEED" --max 1)
+grep -qF 'tip CI: unknown - dev' <<<"$out" \
+	&& ok || bad "T30a: a failed run-list read must classify unknown (out: $out)"
+grep -qF 'tip CI: absent' <<<"$out" \
+	&& bad "T30a: a failed read printed absent - the guard switched itself off (out: $out)" || ok
+grep -qF 'tip CI: WARN' <<<"$out" \
+	&& ok || bad "T30a: an unknown verdict must warn LOUDLY (out: $out)"
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T30a: unknown proceeds - a failed read must not freeze the factory (out: $out)"
+out=$(SPAWNRUN tip-readfail-dry "$TIPSEED" --dry-run)
+{ grep -qF 'tip CI: unknown - dev' <<<"$out" && grep -qF 'tip CI: WARN' <<<"$out"; } \
+	&& ok || bad "T30a: the DRY-RUN must carry the unknown state and its warning too (out: $out)"
+
+# T30b: the JOBS read failing is unknown too, and names the read that failed -
+# an empty jobs answer used to be the only unknown shape, so a hard failure and
+# a job-less run read the same.
+GH_STUB_FAIL=view; export GH_STUB_FAIL
+out=$(SPAWNRUN tip-viewfail "$TIPSEED" --max 1)
+grep -qF 'run view 12345 failed' <<<"$out" \
+	&& ok || bad "T30b: a failed run-view must name the read that failed (out: $out)"
+grep -qF 'tip CI: WARN' <<<"$out" \
+	&& ok || bad "T30b: a failed jobs read must warn LOUDLY (out: $out)"
+grep -qF 'tip CI: absent' <<<"$out" \
+	&& bad "T30b: a failed jobs read printed absent (out: $out)" || ok
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T30b: unknown proceeds (out: $out)"
+
+# T30c: CONTROL - a CLEAN read that genuinely finds no run stays absent and
+# must NOT warn: the warning is for "we could not ask GitHub", never for
+# "GitHub said no run".
+GH_STUB_LIST=""; GH_STUB_FAIL=""; export GH_STUB_LIST GH_STUB_FAIL
+out=$(SPAWNRUN tip-absent2 "$TIPSEED" --max 1)
+grep -qF 'tip CI: absent' <<<"$out" \
+	&& ok || bad "T30c: a clean empty read must stay absent (out: $out)"
+grep -qF 'tip CI: WARN' <<<"$out" \
+	&& bad "T30c: absent printed the unknown-state warning (out: $out)" || ok
+
+# T31: the hold's FIX-FORWARD DOOR. A red tip used to hold
+# the very card that fixes the red recipe (proven live 2026-11-24: recipe 103
+# red held t_bbd3d3d0 at the spawn door until an operator landing cleared the
+# tip by hand). The door is NARROW: only a card whose DECLARED `FILES:`
+# surface is entirely under scripts/journeys/recipes/ spawns under the hold;
+# runtime bytes, mixed surfaces and undeclared surfaces all keep the hold.
+RECSEED="INSERT INTO tasks VALUES('t_rec','ready','recipe fix','FILES: scripts/journeys/recipes/103_clear_grade.sh',NULL,NULL,9,'2026-11-22T12:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_rt','ready','runtime card','FILES: modules/kanban/store.go',NULL,NULL,5,'2026-11-22T12:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_rev','review','review card','FILES: docs/x.md',NULL,NULL,5,'2026-11-22T12:02',NULL,NULL);"
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RED"; GH_STUB_FAIL=""
+export GH_STUB_LIST GH_STUB_JOBS GH_STUB_FAIL
+out=$(SPAWNRUN tip-door "$RECSEED" --dry-run)
+doorline=$(grep -F 'fix-forward door OPEN' <<<"$out")
+grep -qF 'tip CI: HOLD' <<<"$out" \
+	&& ok || bad "T31a: a red tip must still say HOLD (out: $out)"
+grep -qF 'spawn set under the hold: t_rec' <<<"$doorline" \
+	&& ok || bad "T31a: the recipe-only card must be in the dry-run's spawn set (out: $out)"
+grep -qE 'spawn set under the hold: [^ ]*t_rt' <<<"$doorline" \
+	&& bad "T31a: the runtime card entered the spawn set (door line: $doorline)" || ok
+grep -qF 'held: t_rt' <<<"$doorline" \
+	&& ok || bad "T31a: the door line must name the card it keeps held (door line: $doorline)"
+
+# T31b: the LIVE door pass spawns EXACTLY the recipe-only card, hands the
+# inner a budget that funds that one card, and leaves the runtime card and the
+# review row where they were.
+out=$(SPAWNRUN tip-door-live "$RECSEED" --max 2)
+grep -qF 'Spawned: 1 (t_rec)' <<<"$out" \
+	&& ok || bad "T31b: a red tip must spawn exactly the recipe-only card (out: $out)"
+grep -qF 'tip CI: fix-forward dispatch' <<<"$out" \
+	&& ok || bad "T31b: the door pass must say it dispatched under the hold (out: $out)"
+grep -qxF 'kanban dispatch --max 1' "$(splog tip-door-live)" \
+	&& ok || bad "T31b: the door pass must budget one card, not --max 2 (got: $(tr '\n' ';' <"$(splog tip-door-live)"))"
+[ "$(sql "$(spdb tip-door-live)" "SELECT count(*) FROM tasks WHERE status='running';")" = "1" ] \
+	&& ok || bad "T31b: more than one card spawned under the hold (out: $out)"
+[ "$(sql "$(spdb tip-door-live)" "SELECT status FROM tasks WHERE id='t_rt';")" = "ready" ] \
+	&& ok || bad "T31b: the runtime card did not stay held (status: $(sql "$(spdb tip-door-live)" "SELECT status FROM tasks WHERE id='t_rt';"))"
+[ "$(sql "$(spdb tip-door-live)" "SELECT status FROM tasks WHERE id='t_rev';")" = "review" ] \
+	&& ok || bad "T31b: the review row spawned under the door - the review lane was not held (status: $(sql "$(spdb tip-door-live)" "SELECT status FROM tasks WHERE id='t_rev';"))"
+
+# T31c: CONTROLS - the door refuses every broader class. A runtime-only card,
+# a MIXED surface (recipe + runtime bytes) and an undeclared surface whose
+# prose names a recipe all keep the hold.
+out=$(SPAWNRUN tip-door-rt "INSERT INTO tasks VALUES('t_rt','ready','runtime card','FILES: modules/kanban/store.go',NULL,NULL,5,'2026-11-22T12:00',NULL,NULL);" --dry-run)
+grep -qF 'fix-forward door CLOSED' <<<"$out" \
+	&& ok || bad "T31c: a runtime-only board must read door CLOSED (out: $out)"
+out=$(SPAWNRUN tip-door-mix "INSERT INTO tasks VALUES('t_mix','ready','mix','FILES: scripts/journeys/recipes/103.sh modules/foo/bar.go',NULL,NULL,5,'2026-11-22T12:00',NULL,NULL);" --dry-run)
+grep -qF 'fix-forward door CLOSED' <<<"$out" \
+	&& ok || bad "T31c: a MIXED surface (recipe + runtime bytes) must keep the hold (out: $out)"
+out=$(SPAWNRUN tip-door-nofiles "INSERT INTO tasks VALUES('t_nf','ready','nofiles','the fix lands in scripts/journeys/recipes/103_x.sh',NULL,NULL,5,'2026-11-22T12:00',NULL,NULL);" --dry-run)
+grep -qF 'fix-forward door CLOSED' <<<"$out" \
+	&& ok || bad "T31c: an undeclared surface is unprovable - the prose must never open the door (out: $out)"
+out=$(SPAWNRUN tip-door-rt-live "INSERT INTO tasks VALUES('t_rt','ready','runtime card','FILES: modules/kanban/store.go',NULL,NULL,5,'2026-11-22T12:00',NULL,NULL);" --max 1)
+grep -qF 'Spawned' <<<"$out" \
+	&& bad "T31c: a runtime-only card spawned on a red tip (out: $out)" || ok
+grep -qF 'no dispatch (tip CI red' <<<"$out" \
+	&& ok || bad "T31c: the closed door must read as the plain hold (out: $out)"
+
 GUARD="$GUARD_SAVED"
 export FD_GH="$FD_GH_PIN"
-unset GH_STUB_LIST GH_STUB_JOBS GH_STUB_LOG
+unset GH_STUB_LIST GH_STUB_JOBS GH_STUB_LOG GH_STUB_FAIL
 rm -rf "$TIPBASE" "${TIPROOT}"
 
 echo
