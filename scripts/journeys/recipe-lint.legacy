@@ -17,6 +17,5 @@
 # are not mass-rewritten beside a rule landing.
 #
 # Format: <recipe file> <count of unbudgeted-poll sites>
-77-session-branch.sh 9
 89-menubar-shape.sh 1
 96-browser.journey.sh 6
