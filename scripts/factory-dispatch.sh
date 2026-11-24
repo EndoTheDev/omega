@@ -1322,7 +1322,19 @@ fi
 # runtime, which is why they can be fixed from inside the hold; a red gate
 # caused by product bytes keeps the hold, and a card with no declared surface
 # is unprovable, never exempt.
-FIXFWD=(); FIXFWD_HOLD=0; TIP_DOOR=0; FIXN=0; FIXHELD=""
+# The door covers the TIP hold and nothing else: a card the candidate loop has
+# ALREADY held carries an independent capacity hold (same-file, go-beside-go,
+# unprovable surface) that owns it for this pass. Releasing such a card here
+# announced a spawn the inner could never claim - door OPEN beside
+# `Spawned: 0`, byte-identical every pass: a livelock wearing the door's badge.
+parked_has() {  # id -> 0 when the candidate loop already held it this pass
+  local p
+  for p in "${PARKED[@]:-}"; do
+    [ -n "$p" ] && [ "$p" = "$1" ] && return 0
+  done
+  return 1
+}
+FIXFWD=(); FIXFWD_HOLD=0; TIP_DOOR=0; FIXN=0; FIXHELD=""; FIXLOCK=""; FIXCAP=""
 if [ "$TIP_HOLD" = 1 ]; then
   for c in "${CAND[@]:-}"; do
     [ -n "$c" ] || continue
@@ -1332,7 +1344,7 @@ if [ "$TIP_HOLD" = 1 ]; then
     # its FILES: line promises.
     if ! files_line_absent "$c"; then fftok=$(surface_of_card "$c"); fi
     if [ -n "$fftok" ] && ! grep -qvE '^scripts/journeys/recipes/' <<<"$fftok"; then
-      FIXFWD+=("$c")
+      if parked_has "$c"; then FIXLOCK="$FIXLOCK $c"; else FIXFWD+=("$c"); fi
     else
       FIXHELD="$FIXHELD $c"
     fi
@@ -1344,14 +1356,26 @@ if [ "$TIP_HOLD" = 1 ]; then
     # implementation seat => 0) bounds it too. Neither law is relaxed here.
     FIXN=${#FIXFWD[@]}
     [ "$FIXN" -gt "$VERDICT_CAP" ] && FIXN=$VERDICT_CAP
-    [ "$FIXN" -gt 0 ] && TIP_DOOR=1
-    if [ "$TIP_DOOR" = 1 ]; then
-      echo "tip CI: fix-forward door OPEN - spawn set under the hold: ${FIXFWD[*]:0:$FIXN}${FIXHELD:+ - held:${FIXHELD}} (every FILES: token under scripts/journeys/recipes/; nothing else spawns)"
+    if [ "$FIXN" -gt 0 ]; then
+      # Slice to the sanctioned prefix BEFORE anything reads FIXFWD: the door
+      # echo and the spawn path's unlock test must name the same set, or a card
+      # the echo never named can be the one the inner claims (the cap is often
+      # narrower than the recipe-only count).
+      if [ "$FIXN" -lt "${#FIXFWD[@]}" ]; then
+        FIXCAP=" ${FIXFWD[*]:$FIXN}"
+        FIXFWD=("${FIXFWD[@]:0:$FIXN}")
+      fi
+      TIP_DOOR=1
+      echo "tip CI: fix-forward door OPEN - spawn set under the hold: ${FIXFWD[*]}${FIXHELD:+ - held:${FIXHELD}}${FIXCAP:+ - over cap:${FIXCAP}}${FIXLOCK:+ - locked:${FIXLOCK}} (every FILES: token under scripts/journeys/recipes/; nothing else spawns)"
     else
-      echo "tip CI: fix-forward door BLOCKED - ${FIXFWD[*]} declares a recipe-only FILES: surface but no slot sanctions it this pass (verdict cap $VERDICT_CAP)"
+      echo "tip CI: fix-forward door BLOCKED - ${FIXFWD[*]}${FIXLOCK:+ $FIXLOCK} declares a recipe-only FILES: surface but no slot sanctions it this pass (verdict cap $VERDICT_CAP)"
     fi
   else
-    echo "tip CI: fix-forward door CLOSED - no ready card declares a recipe-only FILES: surface, so the hold stands for every candidate"
+    if [ -n "$FIXLOCK" ]; then
+      echo "tip CI: fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass:$FIXLOCK (the door exempts the tip hold alone, and a claim-locked card cannot spawn)"
+    else
+      echo "tip CI: fix-forward door CLOSED - no ready card declares a recipe-only FILES: surface, so the hold stands for every candidate"
+    fi
   fi
 fi
 

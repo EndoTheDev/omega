@@ -2201,6 +2201,49 @@ grep -qF 'Spawned' <<<"$out" \
 grep -qF 'no dispatch (tip CI red' <<<"$out" \
 	&& ok || bad "T31c: the closed door must read as the plain hold (out: $out)"
 
+# T31d: the door covers the TIP hold ALONE. Two go cards sharing one recipe file
+# on a red tip: the higher-priority one takes the head slot and the second is
+# held by the same-pass go-beside-go law - an INDEPENDENT capacity hold. The
+# door used to name that claim-locked card as "released past the hold" while the
+# inner could claim nothing (door OPEN + Spawned: 0, byte-identical every pass -
+# a livelock wearing the door's badge, and the exact deadlock class this card
+# exists to kill). It must read door CLOSED, name the locked card, and spawn
+# nothing.
+LOCKSEED="INSERT INTO tasks VALUES('t_mix','ready','mix','FILES: scripts/journeys/recipes/103.sh modules/foo/bar.go',NULL,NULL,9,'2026-11-22T12:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_rec2','ready','recipe fix too','FILES: scripts/journeys/recipes/103.sh',NULL,NULL,5,'2026-11-22T12:01',NULL,NULL);"
+GH_STUB_LIST=12345; GH_STUB_JOBS="$JOB_RED"; GH_STUB_FAIL=""
+export GH_STUB_LIST GH_STUB_JOBS GH_STUB_FAIL
+out=$(SPAWNRUN tip-door-locked "$LOCKSEED" --dry-run)
+grep -qF 'hold: t_rec2' <<<"$out" \
+	&& ok || bad "T31d: fixture no longer reproduces the independent hold - the leg tests nothing (out: $out)"
+grep -qF 'fix-forward door OPEN' <<<"$out" \
+	&& bad "T31d: a claim-locked recipe card was announced as released past the hold (out: $out)" || ok
+grep -qF 'fix-forward door CLOSED - recipe-only card(s) held by an independent lock this pass: t_rec2' <<<"$out" \
+	&& ok || bad "T31d: the door must read CLOSED and name the independently held recipe card (out: $out)"
+out=$(SPAWNRUN tip-door-locked-live "$LOCKSEED" --max 2)
+grep -qF 'Spawned' <<<"$out" \
+	&& bad "T31d: a card spawned under a door that released nothing (out: $out)" || ok
+grep -qF 'released past the hold' <<<"$out" \
+	&& bad "T31d: the pass claimed a release it did not perform (out: $out)" || ok
+[ "$(sql "$(spdb tip-door-locked-live)" "SELECT count(*) FROM tasks WHERE status='ready';")" = "2" ] \
+	&& ok || bad "T31d: the held board did not stay fully ready (statuses: $(sql "$(spdb tip-door-locked-live)" "SELECT id||'='||status||' ' FROM tasks;" | tr -d '\n'))"
+
+# T31e: the door's ANNOUNCEMENT must name exactly what it releases. Three
+# recipe-only cards, a verdict cap of ONE: the door's spawn set is the first
+# card only, the other two are named over-cap, and the inner may not claim them.
+# The echo once sliced to FIXN while the spawn path unlocked the whole set, so a
+# different recipe card could spawn than the one announced.
+FIX3SEED="INSERT INTO tasks VALUES('t_r1','ready','recipe one','FILES: scripts/journeys/recipes/101.sh',NULL,NULL,9,'2026-11-22T12:00',NULL,NULL);
+INSERT INTO tasks VALUES('t_r2','ready','recipe two','FILES: scripts/journeys/recipes/102.sh',NULL,NULL,8,'2026-11-22T12:01',NULL,NULL);
+INSERT INTO tasks VALUES('t_r3','ready','recipe three','FILES: scripts/journeys/recipes/103.sh',NULL,NULL,7,'2026-11-22T12:02',NULL,NULL);"
+out=$(SPAWNRUN tip-door-cap "$FIX3SEED" --max 1 --dry-run)
+doorline=$(grep -F 'fix-forward door OPEN' <<<"$out")
+grep -qF 'spawn set under the hold: t_r1 - over cap: t_r2 t_r3' <<<"$doorline" \
+	&& ok || bad "T31e: a capped door must name the one spawn and the cards it left over cap (door line: $doorline)"
+out=$(SPAWNRUN tip-door-cap-live "$FIX3SEED" --max 1)
+grep -qF 'Spawned: 1 (t_r1)' <<<"$out" \
+	&& ok || bad "T31e: the capped door must spawn exactly the card it announced (out: $out)"
+
 GUARD="$GUARD_SAVED"
 export FD_GH="$FD_GH_PIN"
 unset GH_STUB_LIST GH_STUB_JOBS GH_STUB_LOG GH_STUB_FAIL

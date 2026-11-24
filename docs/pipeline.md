@@ -424,7 +424,12 @@ itself carries one door: a ready card whose declared `FILES:` surface is
 entirely under `scripts/journeys/recipes/` may still spawn while the tip is
 red. Recipe bytes touch no runtime, so that card class is the only one that
 can be fixed from inside the hold; every other candidate, and the review lane,
-stays held.
+stays held. The door covers the TIP hold and nothing else: a recipe-only card
+the same pass already held for an independent reason (a same-file or
+go-beside-go capacity hold) stays held, and the door line names it as locked
+rather than announcing a release it cannot perform. The door also names
+exactly the cards it releases - a card past the verdict cap is parked and
+printed as over cap, never left unlocked behind an announcement that omits it.
 
 # Round 4: nightly channel, drift gate, soak automation
 
