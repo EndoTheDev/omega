@@ -184,7 +184,7 @@ wait_js "(() => [...document.querySelectorAll('.session-list li')].some((r)=>(r.
 right_click_js "(() => {const row=[...document.querySelectorAll('.session-list li')].find(r=>(r.innerText||'').includes('$LABEL')); if(!row) return ''; const r=row.getBoundingClientRect(); return Math.round(r.x+r.width/2)+' '+Math.round(r.y+r.height/2);})()"
 wait_js '(() => !!document.querySelector(".context-menu.measured"))()' 10 ||
   die "the session row's right-click opened no menu"
-assert_eq "$(menu_rows)" "New session|Branch|Export|Copy id" "the session row menus Copy id after Export"
+assert_eq "$(menu_rows)" "New session|Rename|Branch|Export|Copy id|Archive|Delete" "the session row menus Copy id after Export, with Rename, Archive and Delete around it"
 
 # the ONE copy path is instrumented (the app's own call is the receipt - a clipboard READ
 # is permission-gated on this lane, recipe 115's law)
