@@ -11,10 +11,21 @@ Sanitize by shape, never by deletion:
 
   ids            -> sha256 truncated to 32 hex (a session id's own shape)
   created_at, updated_at, at, dispatched_at, last_read_at -> byte-preserved
+  message role   -> byte-preserved: it is the JSONL discriminator, a closed
+                    vocabulary (core/message_types.go EncodeMessage). A role
+                    outside that vocabulary stops the run - a scrubbed role is
+                    a session no decoder could read, and a fixture that cannot
+                    be decoded would test nothing about the store.
   message payloads, last_run, arguments -> parsed as JSON; every string leaf
                   becomes a same-length filler, unknown keys k_<hash8>
   every other text column -> same-length filler (empty stays empty)
   integers -> untouched
+
+Audited and deliberately NOT enum-preserved: agent, model, provider, workspace,
+label, summary, context_start/context_summary, tool_name. They are free text -
+profile names, model ids, provider ids, paths and prose - each one a value the
+operator configured, never a closed set. They are scrubbed like any other
+content, and --self-check is what proves it.
 
 Tables kept: sessions, messages (required - isLegacyStore keys on a sessions
 table), plus image_captions and pending_calls when present (legacyReadCarry).
@@ -56,8 +67,17 @@ HASHED_ID_RE = re.compile(r"^[0-9a-f]{32}$")
 HASHED_KEY_RE = re.compile(r"^k_[0-9a-f]{8}$")
 FILLER_RE = re.compile(r"^x+$")
 
-# Structural enums, kept as-is: they are vocabulary, not content.
-ROLES = frozenset({"user", "assistant", "system", "tool", "developer", "function", "tool_result"})
+# Structural enums, kept as-is: they are vocabulary, not content. The set is the
+# role discriminator core.EncodeMessage/DecodeMessage read and write
+# (core/message_types.go) - every role string that function has ever emitted, not
+# the provider-shaped aliases. store-fixture-extract_test.sh pins this set against
+# that switch, so a new message type fails the suite instead of shipping a fixture
+# whose roles the migration would copy and no decoder could read.
+ROLES = frozenset({
+    "system", "user", "assistant", "tool", "yield_result",
+    "model_change", "thinking_level_change", "variant_select",
+    "verdict_card", "verdict",
+})
 
 # Timestamp columns keep exactly what the row held.
 TIMESTAMP_COLUMNS = frozenset({"created_at", "updated_at", "at", "dispatched_at", "last_read_at"})
@@ -185,8 +205,13 @@ def sanitize_column_value(column: str, value):
         return value
     if column in JSON_COLUMNS:
         return scrub_json_text(value)
-    if column in ENUM_COLUMNS and value in ENUM_COLUMNS[column]:
-        return value
+    if column in ENUM_COLUMNS:
+        if value in ENUM_COLUMNS[column]:
+            return value
+        # Never launder a discriminator into a filler: emit() refuses an unknown
+        # role before any row is written, so this is the backstop, not the door.
+        raise ValueError("%s carries %r, outside the vocabulary %s"
+                         % (column, value, sorted(ENUM_COLUMNS[column])))
     if column in ID_COLUMNS:
         return hash_id(value)
     return sanitize_text(value)
@@ -206,6 +231,17 @@ def session_classes(rows, message_counts) -> dict:
             tags.append("multi_message")
         classes[row["id"]] = tags
     return classes
+
+
+def unknown_roles(messages_by_session, emitted) -> dict:
+    """Roles in the selection that the code's discriminator never writes."""
+    counts = {}
+    for sid in emitted:
+        for msg in messages_by_session.get(sid, []):
+            role = msg.get("role")
+            if isinstance(role, str) and role and role not in ROLES:
+                counts[role] = counts.get(role, 0) + 1
+    return counts
 
 
 def select_sessions(rows, messages_by_session, classes):
@@ -299,7 +335,22 @@ def emit(source: Path, out_dir: Path, name: str) -> int:
         bytes_est += cost
     emitted_set = set(emitted)
 
+    # A role is the JSONL discriminator: the migration copies it byte-for-byte and
+    # folds the file back, so a role the decoder does not know is not content to
+    # scrub - it is a vocabulary drift this fixture would bake in silently. Refuse
+    # before a single row is written, and name the values so the fix is one line.
+    bad_roles = unknown_roles(messages_by_session, emitted)
+    if bad_roles:
+        print("store-fixture-extract: message role(s) outside the core.EncodeMessage "
+              "vocabulary in this file (extend ROLES from core/message_types.go):",
+              file=sys.stderr)
+        for role, n in sorted(bad_roles.items()):
+            print("  %r (%d message(s))" % (role, n), file=sys.stderr)
+        return 2
+
     dest = sqlite3.connect(str(fixture))
+    failure = None
+    dest_counts = {}
     try:
         # Schema first: the kept tables' own DDL, then their indexes. Triggers go -
         # they belong to the derived index (fts writes) and this file is read-only
@@ -348,8 +399,14 @@ def emit(source: Path, out_dir: Path, name: str) -> int:
                        [sanitize_column_value(c, row[c]) for c in cols])
         dest.commit()
         dest_counts = {t: count_rows(dest, t) for t in kept}
+    except ValueError as err:
+        failure = err
     finally:
         dest.close()
+    if failure is not None:
+        fixture.unlink(missing_ok=True)
+        print("store-fixture-extract: %s" % failure, file=sys.stderr)
+        return 2
 
     source_sha = hashlib.sha256(source.read_bytes()).hexdigest()
     fixture_sha = hashlib.sha256(fixture.read_bytes()).hexdigest()
@@ -516,8 +573,10 @@ def self_check(path_str: str) -> int:
                     continue
                 if col in ENUM_COLUMNS:
                     if value not in ENUM_COLUMNS[col]:
-                        problems.append("%s: enum value outside %s: %r"
-                                        % (where, sorted(ENUM_COLUMNS[col]), value[:40]))
+                        problems.append(
+                            "%s: %r is not a %s discriminator (expected one of %s) - "
+                            "an enum column is vocabulary, never a filler"
+                            % (where, value[:40], col, ", ".join(sorted(ENUM_COLUMNS[col]))))
                     continue
                 if col in ID_COLUMNS:
                     if not HASHED_ID_RE.match(value):

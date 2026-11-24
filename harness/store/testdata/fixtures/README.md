@@ -38,6 +38,11 @@ machine proof that no source value left the tree; the manifest carries the
 source sha256, the row counts, the per-session class table, and the
 known-broken session's hashed id with its byte-preserved stamps.
 
+Message `role` is byte-preserved: it is the JSONL discriminator, a closed
+vocabulary taken from `core.EncodeMessage` (`core/message_types.go`). A role
+outside that set stops the extraction and names the value - a scrubbed role is a
+session no decoder could read. The test suite pins the set against that switch.
+
 `scripts/store-fixture-extract_test.sh` holds the sanitizer to its own gate
 (markers in every content column, zero may survive; the scrubber disabled must
 leak AND must turn `--self-check` red).

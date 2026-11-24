@@ -23,6 +23,14 @@ set -uo pipefail
 #   B10 TEETH: with the scrubber disabled the markers DO leak and --self-check
 #       goes red naming the columns. A negative assertion nobody has seen pass
 #       the other way is not a test.
+#   B11 the message role (the JSONL discriminator) is byte-identical to the source
+#       and never a filler
+#   B12 the fixture carries the whole core.EncodeMessage role vocabulary, nothing
+#       outside it
+#   B13 the sanitizer's ROLES set equals the switch in core/message_types.go - a
+#       new message type fails this suite instead of drifting silently
+#   B14 TEETH: a role the code never writes stops the extraction, names the value,
+#       and leaves no partial fixture behind (never laundered into a filler)
 #
 # The synthetic store builder lives in this file (python3 stdlib only) so the
 # suite needs no committed binary fixture.
@@ -147,6 +155,22 @@ sess(MANDATORY, mark + "-label-mandatory",
          ("user", '{"role":"user","content":""}', "2026-10-12T23:07:43Z"),
          ("assistant", '{"role":"assistant","content":"%s-content-5"}' % mark,
           "2026-10-12T23:07:44Z"),
+         # the whole discriminator vocabulary core.EncodeMessage writes: a role is
+         # bytes the migration copies and the decoder keys on, never content
+         ("system", '{"role":"system","content":"%s-system"}' % mark,
+          "2026-10-12T19:45:35Z"),
+         ("model_change", '{"role":"model_change","from":"%s-model-from","to":"%s-model-to"}'
+          % (mark, mark), "2026-10-12T23:07:45Z"),
+         ("thinking_level_change", '{"role":"thinking_level_change","level":"high"}',
+          "2026-10-12T23:07:46Z"),
+         ("variant_select", '{"role":"variant_select","branch":"%s-branch","child":"%s-child",'
+          '"option_index":0}' % (mark, mark), "2026-10-12T23:07:47Z"),
+         ("yield_result", '{"role":"yield_result","content":"%s-yield"}' % mark,
+          "2026-10-12T23:07:48Z"),
+         ("verdict_card", '{"role":"verdict_card","id":"%s-card","prompt":"%s-card-prompt"}'
+          % (mark, mark), "2026-10-12T23:07:49Z"),
+         ("verdict", '{"role":"verdict","id":"%s-verdict","answer":"%s-answer"}'
+          % (mark, mark), "2026-10-12T23:07:50Z"),
      ])
 sess("aaaa1111bbbb2222cccc3333dddd4444", mark + "-label-multi",
      "2026-10-14T08:00:00Z", "2026-10-14T09:30:00Z",
@@ -324,6 +348,31 @@ for name in ("equal_stamp", "multi_message", "zero_message"):
     if not classes.get(name):
         problems.append("B9 no %s session in the selection" % name)
 
+# B11 the role discriminator is byte-preserved, never a filler
+src_roles = {r["id"]: r["role"] for r in src.execute("SELECT id, session_id, role FROM messages")}
+fix_roles = {}
+for m in fix.execute("SELECT id, role FROM messages"):
+    fix_roles[m["id"]] = m["role"]
+    if m["id"] not in src_roles:
+        problems.append("B11 message id %s has no source row" % m["id"])
+        continue
+    if m["role"] != src_roles[m["id"]]:
+        problems.append("B11 role drift on message %s: %r vs %r"
+                        % (m["id"], m["role"], src_roles[m["id"]]))
+    if re.match(r"^x+$", m["role"] or ""):
+        problems.append("B11 message %s role is a filler: %r" % (m["id"], m["role"]))
+
+# B12 the fixture exercises the whole discriminator vocabulary, nothing outside it
+want_roles = {"system", "user", "assistant", "tool", "yield_result", "model_change",
+              "thinking_level_change", "variant_select", "verdict_card", "verdict"}
+got_roles = set(fix_roles.values())
+if want_roles - got_roles:
+    problems.append("B12 fixture does not carry role(s): %s"
+                    % ", ".join(sorted(want_roles - got_roles)))
+if got_roles - want_roles:
+    problems.append("B12 fixture carries role(s) outside the vocabulary: %s"
+                    % ", ".join(sorted(got_roles - want_roles)))
+
 for p in problems:
     print(p)
 sys.exit(1 if problems else 0)
@@ -331,7 +380,7 @@ PYSHAPE
 
 SHAPES=$($PY "$FX_N/shapes.py" "$SRC_N" "$OUT_N/legacy-v0.18.0.sqlite" "$OUT_N/legacy-v0.18.0.MANIFEST.json" "sessions,messages,image_captions,pending_calls" 2>&1)
 SHAPES_RC=$?
-chk "B4-B9: shape assertions failed - got [$SHAPES]" test "$SHAPES_RC" -eq 0
+chk "B4-B12: shape assertions failed - got [$SHAPES]" test "$SHAPES_RC" -eq 0
 
 # --- B10: teeth - disable the scrubber and watch the gate go red -----------
 # The copy is patched before main() runs, so the override is what every call site
@@ -363,6 +412,60 @@ chk "B10: --self-check did not name the leaking column - got [$BAD_CHECK]" \
 	has "$BAD_CHECK" "not a filler"
 chk "B10: --self-check did not name the leaking session label" \
 	has "$BAD_CHECK" "-label-mandatory"
+
+# --- B13: the vocabulary is pinned to the code that writes it --------------
+# A role the sanitizer does not know is a fixture the decoder cannot read; the
+# pin makes a new message type fail HERE, not at the tag-time boot.
+REPO="$(cd "$(dirname "$SUT")/.." && pwd)"
+REPO_N=$(nat "$REPO")
+cat >"$FX/vocab.py" <<'PYVOCAB'
+import importlib.util
+import pathlib
+import re
+import sys
+
+sut, message_types = sys.argv[1], sys.argv[2]
+# Importing the sanitizer must not litter the tree with __pycache__.
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("sut", sut)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+text = pathlib.Path(message_types).read_text(encoding="utf-8")
+body = text.split("func EncodeMessage(", 1)[1].split("func DecodeMessage(", 1)[0]
+code = set(re.findall(r'role = "([a-z_]+)"', body))
+roles = set(mod.ROLES)
+if code != roles:
+    print("B13: sanitizer ROLES %s, core.EncodeMessage writes %s"
+          % (sorted(roles), sorted(code)))
+    sys.exit(1)
+PYVOCAB
+VOCAB=$($PY "$FX_N/vocab.py" "$SUT_N" "$REPO_N/core/message_types.go" 2>&1)
+VOCAB_RC=$?
+chk "B13: the ROLES set drifted from core.EncodeMessage - got [$VOCAB]" test "$VOCAB_RC" -eq 0
+
+# --- B14: an unknown role stops the run, it is never laundered -------------
+cat >"$FX/badrole.py" <<'PYBAD'
+import sqlite3
+import sys
+
+db = sqlite3.connect(sys.argv[1])
+db.execute("UPDATE messages SET role='chat_template' WHERE id = (SELECT MIN(id) FROM messages)")
+db.commit()
+db.close()
+PYBAD
+cp "$SRC" "$FX/unknown-role.db"
+$PY "$FX_N/badrole.py" "$FX_N/unknown-role.db"
+BADROLE_OUT=$("$PY" "$SUT_N" --source "$FX_N/unknown-role.db" --out "$FX_N/out-role" \
+	--name legacy-v0.18.0 2>&1)
+BADROLE_RC=$?
+chk "B14: an unknown role did not stop the extractor - got [$BADROLE_OUT]" \
+	test "$BADROLE_RC" -ne 0
+chk "B14: the refusal did not name the role - got [$BADROLE_OUT]" \
+	has "$BADROLE_OUT" "chat_template"
+chk "B14: a partial fixture survived the refusal" \
+	test ! -f "$FX/out-role/legacy-v0.18.0.sqlite"
+chk "B14: a manifest survived the refusal" \
+	test ! -f "$FX/out-role/legacy-v0.18.0.MANIFEST.json"
 
 echo "store-fixture-extract_test.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
