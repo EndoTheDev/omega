@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -1041,91 +1040,5 @@ func TestHotApplyPushesProviderLanes(t *testing.T) {
 	hotApply(cfg, cfg.Server.DefaultWorkspace, pctx, nil, nil, nil, nil)
 	if captioner.model != "" || channel.model != "" {
 		t.Errorf("cleared knobs did not reach the lanes: %q %q", captioner.model, channel.model)
-	}
-}
-
-// TestDesktopInstancesConfigValidation pins the hand-edit door: the config validator and
-// the /instances route pass the same rows through core.NormalizeInstances.
-func TestDesktopInstancesConfigValidation(t *testing.T) {
-	valid := "provider:\n  model_name: test-model\ndesktop:\n  instances:\n    - name: laptop\n      url: http://127.0.0.1:8099\n"
-	if _, err := LoadConfig(writeTestConfig(t, valid)); err != nil {
-		t.Fatalf("a valid list must load: %v", err)
-	}
-
-	tooMany := "provider:\n  model_name: test-model\ndesktop:\n  instances:\n"
-	for i := 0; i <= core.MaxSavedInstances; i++ {
-		tooMany += fmt.Sprintf("    - name: n%d\n      url: http://h%d.test\n", i, i)
-	}
-	longName := "provider:\n  model_name: test-model\ndesktop:\n  instances:\n    - name: " + strings.Repeat("n", core.MaxInstanceNameRunes+1) + "\n      url: http://127.0.0.1:8099\n"
-
-	cases := []struct{ name, body, want string }{
-		{"bad scheme", "provider:\n  model_name: test-model\ndesktop:\n  instances:\n    - name: x\n      url: ftp://127.0.0.1:8099\n", "scheme must be http or https"},
-		{"empty name", "provider:\n  model_name: test-model\ndesktop:\n  instances:\n    - name: \"  \"\n      url: http://127.0.0.1:8099\n", "name is required"},
-		{"duplicate url", "provider:\n  model_name: test-model\ndesktop:\n  instances:\n    - name: a\n      url: http://127.0.0.1:8099\n    - name: b\n      url: http://127.0.0.1:8099/\n", "listed twice"},
-		{"over the cap", tooMany, "row cap"},
-		{"name too long", longName, "exceeds"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			_, err := LoadConfig(writeTestConfig(t, tc.body))
-			if err == nil {
-				t.Fatalf("a %s list loaded, want a config error", tc.name)
-			}
-			if !strings.Contains(err.Error(), "desktop.instances") || !strings.Contains(err.Error(), tc.want) {
-				t.Fatalf("error %q must name desktop.instances and %q", err, tc.want)
-			}
-		})
-	}
-}
-
-// TestOmegaSettingsInstancesRoundTrip pins the host's seam: SaveInstances writes through
-// the one atomic writer and Instances reads the same rows back, normalized.
-func TestOmegaSettingsInstancesRoundTrip(t *testing.T) {
-	path := writeTestConfig(t, testConfigYAML)
-	s := &omegaSettings{path: path}
-
-	if list, err := s.Instances(); err != nil || len(list) != 0 {
-		t.Fatalf("fresh config instances = %+v, %v; want empty", list, err)
-	}
-
-	want := []core.SavedInstance{
-		{Name: " laptop ", URL: "HTTP://127.0.0.1:8099/"},
-		{Name: "pi", URL: "https://omega.example.test"},
-	}
-	if err := s.SaveInstances(want); err != nil {
-		t.Fatalf("save: %v", err)
-	}
-
-	got, err := s.Instances()
-	if err != nil {
-		t.Fatalf("read back: %v", err)
-	}
-	if len(got) != 2 || got[0] != (core.SavedInstance{Name: "laptop", URL: "http://127.0.0.1:8099"}) || got[1] != want[1] {
-		t.Fatalf("instances = %+v, want the normalized list", got)
-	}
-
-	// The file is the receipt: desktop.instances landed in config.yaml.
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), "desktop:") || !strings.Contains(string(data), "url: http://127.0.0.1:8099") {
-		t.Fatalf("config.yaml lost the saved list:\n%s", data)
-	}
-
-	// A refused list writes nothing: the file keeps the rows it had.
-	before, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SaveInstances([]core.SavedInstance{{Name: "x", URL: "ftp://nope.test"}}); err == nil {
-		t.Fatal("an unsupported scheme saved, want a refusal")
-	}
-	after, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(before) != string(after) {
-		t.Fatal("a refused save rewrote config.yaml")
 	}
 }

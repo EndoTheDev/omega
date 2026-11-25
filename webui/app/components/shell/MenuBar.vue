@@ -1,7 +1,6 @@
 <template>
   <header class="menubar">
     <span class="brand">Ωmega</span>
-    <ConnectionMenu :current-origin="currentOrigin" />
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
@@ -68,7 +67,6 @@
 <script setup lang="ts">
   // the toggles drive app.vue's emits; app.vue routes each one on isMobile.
   import Icon from "../ui/Icon.vue";
-  import ConnectionMenu from "./ConnectionMenu.vue";
   import NotificationToasts from "./NotificationToasts.vue";
   import NavCluster from "../nav/NavCluster.vue";
 
@@ -82,8 +80,6 @@
     // arrows + the Ctrl+K toggle while the field is up (the cluster keeps their layout,
     // so the seat never moves).
     paletteOpen: boolean;
-    // the page's own origin: the connection switcher marks the row it matches.
-    currentOrigin: string;
   }>();
 
   defineEmits<{

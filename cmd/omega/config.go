@@ -15,7 +15,6 @@ import (
 	"github.com/EndoTheDev/omega/agent"
 	agentapi "github.com/EndoTheDev/omega/agent/api"
 	"github.com/EndoTheDev/omega/api"
-	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/approval"
 	"github.com/EndoTheDev/omega/harness/continuous"
 	files "github.com/EndoTheDev/omega/harness/files"
@@ -61,9 +60,6 @@ type Config struct {
 	Continuous      continuous.Config `yaml:"continuous"`
 	Approvals       ApprovalConfig    `yaml:"approvals"`
 	Process         ProcessConfig     `yaml:"process"`
-	// Desktop is the desktop shell's own config: the saved connection list the webui's
-	// switcher renders. Everything else the window needs is the serve config beside it.
-	Desktop  DesktopConfig      `yaml:"desktop"`
 	Disabled DisabledNamespaces `yaml:"disabled"`
 
 	// agentName and agentToggles are the applied agent layer's runtime facts, never config
@@ -347,13 +343,6 @@ type ServerConfig struct {
 	// without the declaration the Host guard refuses it.
 	PublicHosts []string `yaml:"public_hosts"`
 	DefaultWorkspace string `yaml:"default_workspace"`
-}
-
-// DesktopConfig is the desktop shell's config. Ruling 15: there is no desktop port - the
-// window loads the instance's own origin (server.port). The instance list is the
-// connection switcher's durable home; the store's index is derived and would be rebuilt.
-type DesktopConfig struct {
-	Instances []core.SavedInstance `yaml:"instances,omitempty"`
 }
 
 type StoreConfig struct {
@@ -829,10 +818,6 @@ func (c Config) Validate() error {
 	}
 	if !approval.ValidMonitor(c.Approvals.Monitor) {
 		return fmt.Errorf("config: approvals.monitor must be log-only or enforce, got %q", c.Approvals.Monitor)
-	}
-	// The saved connection list: one validator for a hand edit and the /instances PUT.
-	if _, err := core.NormalizeInstances(c.Desktop.Instances); err != nil {
-		return fmt.Errorf("config: desktop.instances: %v", err)
 	}
 	return nil
 }

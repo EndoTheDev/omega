@@ -2,11 +2,7 @@ package core
 
 import (
 	"context"
-	"fmt"
-	"net/url"
-	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // ToolProvider supplies tools to the agent.
@@ -141,76 +137,6 @@ type Settings interface {
 	// secrets) and knobs with no known default (provider.model_name - config requires it)
 	// are kept: resetting is never destructive.
 	Reset() (*SettingsSchema, error)
-}
-
-// SavedInstance is one named connection target in the webui's switcher. The list's home
-// is config.yaml (`desktop.instances`); the type lives here because the HTTP channel and
-// the host must agree on one shape and one validator.
-type SavedInstance struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-}
-
-// The saved-instance limits, shared by the route and the config validator.
-const (
-	MaxSavedInstances    = 32
-	MaxInstanceNameRunes = 64
-)
-
-// NormalizeInstances trims, validates and normalizes a saved-instance list. It is the
-// ONE validator: the /instances route and Config.Validate both call it, so a hand edit
-// and a PUT can never admit different rows.
-func NormalizeInstances(rows []SavedInstance) ([]SavedInstance, error) {
-	if len(rows) > MaxSavedInstances {
-		return nil, fmt.Errorf("%d rows exceed the %d-row cap", len(rows), MaxSavedInstances)
-	}
-	out := make([]SavedInstance, 0, len(rows))
-	seen := make(map[string]bool, len(rows))
-	for i, row := range rows {
-		name := strings.TrimSpace(row.Name)
-		if name == "" {
-			return nil, fmt.Errorf("row %d: name is required", i)
-		}
-		if utf8.RuneCountInString(name) > MaxInstanceNameRunes {
-			return nil, fmt.Errorf("row %d: name exceeds %d characters", i, MaxInstanceNameRunes)
-		}
-		normalized, err := normalizeInstanceURL(row.URL)
-		if err != nil {
-			return nil, fmt.Errorf("%s: %w", name, err)
-		}
-		if seen[normalized] {
-			return nil, fmt.Errorf("%s: %s is listed twice", name, normalized)
-		}
-		seen[normalized] = true
-		out = append(out, SavedInstance{Name: name, URL: normalized})
-	}
-	return out, nil
-}
-
-// normalizeInstanceURL accepts an http/https origin (a path prefix is allowed) and
-// returns it with a lowercased scheme and no trailing slash.
-func normalizeInstanceURL(raw string) (string, error) {
-	s := strings.TrimSpace(raw)
-	if s == "" {
-		return "", fmt.Errorf("url is required")
-	}
-	if strings.ContainsAny(s, " \t\r\n") {
-		return "", fmt.Errorf("url must not contain spaces")
-	}
-	u, err := url.Parse(s)
-	if err != nil {
-		return "", fmt.Errorf("url is not a valid address: %v", err)
-	}
-	scheme := strings.ToLower(u.Scheme)
-	if scheme != "http" && scheme != "https" {
-		return "", fmt.Errorf("url scheme must be http or https, got %q", u.Scheme)
-	}
-	if u.Hostname() == "" {
-		return "", fmt.Errorf("url needs a host")
-	}
-	u.Scheme = scheme
-	u.Path = strings.TrimSuffix(u.Path, "/")
-	return u.String(), nil
 }
 
 // ModuleStatus is one module in the registry introspection.

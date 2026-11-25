@@ -7,7 +7,6 @@
       :can-back="canBack"
       :can-forward="canForward"
       :palette-open="paletteOpen"
-      :current-origin="currentOrigin"
       @back="nav.back()"
       @forward="nav.forward()"
       @toggle-sidebar="toggleSidebar"
@@ -666,9 +665,6 @@
   const drawerOpen = ref(false);
   const inspectorOpen = ref(false);
   const isMobile = ref(false);
-  // the connection switcher compares a saved row against the page's own origin; a
-  // pre-render pass has no window, so it starts empty and the menu says "This instance".
-  const currentOrigin = typeof window === "undefined" ? "" : window.location.origin;
   // the BOTTOM drawer's mobile open flag - never coupled to the dock tree, so the
   // desktop tree state stays untouched below the breakpoint.
   const bottomDrawerOpen = ref(false);
