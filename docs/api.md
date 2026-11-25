@@ -544,6 +544,55 @@ schema, one validator and one writer:
 A host with no settings seam answers **501** on all three, like
 `/settings`.
 
+### /updates (the update channel)
+
+One engine serves the CLI, the webui's settings pane, the status bar chip
+and the desktop tray; these routes are its only wire face. A host that
+mounts no engine answers **501**.
+
+| route | body | answer |
+| --- | --- | --- |
+| `GET /updates/status` | - | the status body below |
+| `POST /updates/check` | `{"channel":"stable"\|"nightly"}` (optional; the config channel otherwise) | the status after the release read |
+| `POST /updates/stage` | same optional channel | **200** with `state: "staging"`; the download keeps running in the background |
+| `POST /updates/finalize` | `{"force":true}` (optional) | **202** and the process restarts itself; **409** `{"error":..., "state":...}` when nothing is staged or a run is live |
+| `POST /updates/discard` | - | drops the staged artifact, back to `idle` |
+
+```json
+{
+  "state": "ready",
+  "current": "v0.19.0",
+  "available": "v0.20.0",
+  "channel": "stable",
+  "managed": true,
+  "auto_check": true,
+  "auto_update": false,
+  "behind": 1,
+  "progress": 100,
+  "staged_version": "v0.20.0",
+  "active_runs": 0,
+  "receipt": {
+    "version": "v0.20.0",
+    "outcome": "rollback",
+    "why": "health window failed after 30s: ...",
+    "restored": ["omega.db", "config.yaml"],
+    "at": 1780000000
+  }
+}
+```
+
+`state` walks `idle` -> `checking` -> `up-to-date` or `available` ->
+`staging` -> `preflight` -> `ready` -> `finalizing`. `ready` means the
+staged binary already passed its pre-flight copy-boot (health ok and
+migrations green on a copy of the store), so finalize is legal. A pass
+ends the process and the new build serves. A window failure reverts to the
+old binary, and the receipt (persisted at `<data>/.update-receipt.json`)
+names the version, the cause and what was restored.
+
+`active_runs` is the live detached-run count. Finalize refuses without
+`force` while it is non-zero: an opted-in auto-update never restarts a busy
+home.
+
 ### GET/PUT /instances (the connection switcher's list)
 
 The saved connection list the webui's menubar switcher renders. It works

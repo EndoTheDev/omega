@@ -114,12 +114,34 @@ func desktopLaunch(cfg Config, configPath string) error {
 		Height: 860,
 	})
 
+	// The tray's update row talks to the home's own engine - the desktop adds an
+	// affordance, never a second updater.
+	updates := newTrayUpdates(origin,
+		func(title, body string) {
+			application.InvokeSync(func() {
+				app.Dialog.Info().SetTitle(title).SetMessage(body).Show()
+			})
+		},
+		func(title, body string, yes func()) {
+			application.InvokeSync(func() {
+				dialog := app.Dialog.Question()
+				dialog.SetTitle(title)
+				dialog.SetMessage(body)
+				dialog.AddButtons([]*application.Button{
+					{Label: "Restart now", IsDefault: true, Callback: yes},
+					{Label: "Later", IsCancel: true},
+				})
+				dialog.Show()
+			})
+		})
+
 	shell = newDesktopShell(
 		func() { win.Show(); win.Restore(); win.Focus() },
 		func() { win.Hide() },
 		func() { app.Quit() },
 		autostart,
 	)
+	shell.setUpdates(updates)
 	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		shell.windowClosing(event.Cancel)
 	})

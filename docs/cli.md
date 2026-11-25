@@ -395,6 +395,53 @@ builds fall back to the module version Go stamps, already collapsed to
 the same short tag-hash shape (`v0.9.1-nightly.20261022-c268097e`); a
 bare `go build` reports `dev`.
 
+#### The update channel in `omega serve`
+
+`serve` carries the same release channel as a staged pipeline: check ->
+stage -> pre-flight copy-boot -> finalize -> supervised restart. The
+command above keeps its direct fetch/verify/replace contract unchanged;
+both read the same release rules (channel resolution, downgrade refusal,
+checksum handling).
+
+- Check reads the release list. Nothing is downloaded.
+- Stage downloads the channel's asset for `GOOS_GOARCH`, verifies it
+  against `checksums.txt` when the release carries one (a warning and a
+  skip when it does not), and writes the staged binary beside the running
+  one as `<exe>.staged`.
+- Pre-flight copy-boot is the never-finalize guard: the staged binary
+  boots against a snapshot of the store in a throwaway home and must
+  answer `/health` with the new version. A migration failure refuses the
+  update, the staged artifact is discarded, and the running process is
+  untouched.
+- Finalize checkpoints the store's WAL, copies `omega.db` and
+  `config.yaml` into `<data>/.pre-<version>` (retention one: older
+  snapshots are deleted in the same step), stops the runtime, then hands
+  off to the platform mechanism. Unix execs the new binary in place (pid
+  stays). Windows renames the running exe into `omega.bak`, copies the
+  staged one into place, spawns it detached, and supervises the window
+  from the parent before exiting.
+- The window is 30 s of `/health` ok AND version equal to the new release.
+  A pass keeps the snapshot as the retained backup. A failure restores the
+  snapshot, restores `omega.bak`, respawns the old binary, and records the
+  receipt (version, why, what was restored) beside the store as
+  `.update-receipt.json`.
+- `omega update --rollback` stays the manual swap-back for a later
+  rollback. That path costs the writes since the snapshot, so roll forward
+  is always preferred.
+
+Config knobs (`config.yaml`, live unless noted):
+
+| key | default | meaning |
+| --- | --- | --- |
+| `updates.channel` | `stable` | `stable` follows the latest stable release, `nightly` the newest `-nightly.*` prerelease (a nightly sorts below its stable target, so switching back never reads as a downgrade) |
+| `updates.auto_check` | `true` | read the channel every six hours |
+| `updates.auto_update` | `false` | install and restart when the system is quiet (no active runs); with a run live the release stays staged and the pane asks |
+| `updates.managed` | `auto` | release-managed scope: `auto` derives it from the build stamp (a release tag with no local build hash is managed), `on` and `off` declare it. A dev build never self-updates - the tick builds it |
+
+The settings pane, the status bar chip and the desktop tray drive this
+same engine over `/updates` ([api.md](api.md)). There is no second
+updater over one binary.
+
 ### `omega health`
 
 GETs `<host>:<port>/health` with a 5 s client timeout. `ok: <url>` on

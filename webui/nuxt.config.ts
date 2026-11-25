@@ -171,6 +171,9 @@ export default defineNuxtConfig({
         // these routes the rows load SSR HTML and the tab never boots
         "/agents",
         "/continuous",
+        // the update channel: the settings pane's live section, the status chip and the
+        // tray's affordance all read /updates (status + the four POST actions).
+        "/updates",
       ].map(
         (p) => [
           p,

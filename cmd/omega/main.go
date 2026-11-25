@@ -717,6 +717,7 @@ type serveRuntime struct {
 	channels []core.Channel
 	logger   agent.LoggerProvider
 	store    agent.StoreProvider
+	updater  *updateManager
 	once     sync.Once
 }
 
@@ -794,6 +795,12 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 	// its resolution before the fence starts the runner.
 	pushRunTimeout(pctx, cfg)
 	rt.errs = make(chan error, len(pctx.Channels))
+	binds := serveBinds(cfg)
+	// The update engine: ONE per serving process, behind the shell's /updates routes. The
+	// graceful stop is the runtime's own shutdown, so a finalize releases the port and the
+	// store before the platform mechanism restarts the binary.
+	updater := newUpdateManager(configFile, "http://"+binds[0], rt.shutdown)
+	rt.updater = updater
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
 			Ctx:        pctx,
@@ -802,12 +809,20 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 			Modules:    mods,
 			Registries: registries,
 			Version:    omegaVersion,
+			Update:     updater,
 		}
 		go func(c core.Channel) {
 			rt.errs <- c.Start(ctx, deps)
 		}(ch)
 	}
 	rt.channels = pctx.Channels
+	// The quiet check's live half: the serving channel owns the run hub.
+	for _, ch := range rt.channels {
+		if counter, ok := ch.(interface{ ActiveRuns() int }); ok {
+			updater.activeRuns = counter.ActiveRuns
+			break
+		}
+	}
 
 	// The fence: module background work starts here, after the mount commit.
 	if err := pctx.RunGroup().StartAll(ctx, core.StartDeps{
@@ -820,7 +835,6 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 		return nil, fmt.Errorf("start module lifecycle: %w", err)
 	}
 
-	binds := serveBinds(cfg)
 	rt.URL = "http://" + binds[0]
 	banner := serveBanner(omegaVersion, len(pctx.Channels), binds,
 		configFile, canonPath(datadir.Dir(omegaHome())), ag.ModelName())
@@ -828,6 +842,9 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 	if logger != nil {
 		logger.Printf("%s", banner)
 	}
+	// The auto-check ladder is host work, started after the fence: it reads the same
+	// manager the routes serve.
+	go updater.runAutoUpdates(ctx)
 	return waitHealthy(rt, binds[0], healthTimeout)
 }
 
@@ -934,6 +951,11 @@ func cmdServe(configPath string, appendPrompts []string, trust trustFlags) error
 		if err != nil && rt.ctx.Err() == nil {
 			return fmt.Errorf("channel error: %w", err)
 		}
+	}
+	// A finalize owns the process fate from here: the Windows parent is the supervisor, so
+	// main must not return out from under the health window.
+	if rt.updater != nil {
+		rt.updater.waitFinalize()
 	}
 	return nil
 }

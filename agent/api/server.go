@@ -348,6 +348,11 @@ func (s *Server) BindInspectSeams(logger agent.LoggerProvider) {
 // BindRunHub swaps the per-process run registry in (HTTPChannel.wire).
 func (s *Server) BindRunHub(h *RunHub) { s.runs = h }
 
+// ActiveRuns is the process's live detached-run count. The update channel's quiet check
+// and the webui's "restart now?" prompt read it: a restart under a live run is a prompt,
+// never a silent kill.
+func (s *Server) ActiveRuns() int { return s.runs.count() }
+
 // BindSocketHub swaps the per-process push hub in (HTTPChannel.wire).
 func (s *Server) BindSocketHub(h *SocketHub) { s.sockets = h }
 

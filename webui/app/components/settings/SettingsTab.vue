@@ -335,6 +335,9 @@
         </div>
         </template>
       </div>
+      <!-- the update channel's live pane: current version, staged state, actions and the
+           last recorded outcome, all from the same /updates engine the CLI and tray drive -->
+      <UpdatesSection v-if="section.id === 'updates'" />
     </section>
     </template>
     <!--
@@ -502,6 +505,7 @@
     type SurfaceGroup,
   } from "./settingsNav";
   import ModulesSection from "./ModulesSection.vue";
+  import UpdatesSection from "./UpdatesSection.vue";
   import { useSettingsJump } from "~/composables/settingsJump";
   import { useNarrow } from "~/composables/narrow";
   import { openContextMenu } from "~/composables/contextMenu";

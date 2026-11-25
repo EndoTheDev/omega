@@ -247,6 +247,30 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			},
 		},
 		{
+			Key:   "updates",
+			Label: "updates",
+			Knobs: []core.SettingsKnob{
+				{Key: "updates.channel", Label: "channel", Type: "select",
+					Options: []string{"stable", "nightly"},
+					Value:   cfg.Updates.Channel, Live: true,
+					Default: def.Updates.Channel,
+					Help:    "stable follows the latest stable release; nightly follows the newest -nightly pre-release (a nightly sorts BELOW its stable target, so switching back to stable never looks like a downgrade); applies live - the next check reads it"},
+				{Key: "updates.auto_check", Label: "auto-check", Type: "toggle",
+					Value:   cfg.Updates.AutoCheck, Live: true,
+					Default: def.Updates.AutoCheck,
+					Help:    "check the channel every six hours; a check only reads the release list - nothing is downloaded or installed; on by default"},
+				{Key: "updates.auto_update", Label: "auto-update", Type: "toggle",
+					Value:   cfg.Updates.AutoUpdate, Live: true,
+					Default: def.Updates.AutoUpdate,
+					Help:    "install and restart when the system is quiet (no active runs); with a run live the release stays staged and the pane asks - never a silent restart; off by default"},
+				{Key: "updates.managed", Label: "release-managed", Type: "select",
+					Options: []string{ManagedAuto, ManagedOn, ManagedOff},
+					Value:   cfg.Updates.Managed, Live: true,
+					Default: def.Updates.Managed,
+					Help:    "auto = derive from the build stamp: a release tag with no local build hash self-updates, a dev build (tag + hash) never does; on/off declares it explicitly"},
+			},
+		},
+		{
 			Key:   "sessions",
 			Label: "sessions",
 			Knobs: []core.SettingsKnob{
@@ -560,7 +584,8 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "sessions.summarize_after_hours":
 			err = setInt(&cfg.Sessions.SummarizeAfterHours, key, raw, 0, math.MaxInt32) // 0 = the default
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
-			"logging.enabled", "approvals.judge_fail_closed":
+			"logging.enabled", "approvals.judge_fail_closed",
+			"updates.auto_check", "updates.auto_update":
 			err = setBool(cfg, key, raw)
 		case "compaction.threshold":
 			err = setFloat(&cfg.Compaction.Threshold, key, raw, 0.05, 1)
@@ -600,6 +625,26 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 				return fmt.Errorf("%s: must be log-only or enforce, got %q", key, m)
 			}
 			cfg.Approvals.Monitor = m
+		case "updates.channel":
+			var c string
+			if err = setString(&c, key, raw, trim); err != nil {
+				return err
+			}
+			if c != "stable" && c != "nightly" {
+				return fmt.Errorf("%s: must be stable or nightly, got %q", key, c)
+			}
+			cfg.Updates.Channel = c
+		case "updates.managed":
+			var m string
+			if err = setString(&m, key, raw, trim); err != nil {
+				return err
+			}
+			switch m {
+			case ManagedAuto, ManagedOn, ManagedOff:
+			default:
+				return fmt.Errorf("%s: must be auto, on, or off, got %q", key, m)
+			}
+			cfg.Updates.Managed = m
 		case "provider.compaction_model", "provider.summarizer_model",
 			"provider.skills_model", "provider.approvals_model":
 			// the per-subsystem model slots live in the provider group.
@@ -886,6 +931,10 @@ func setBool(cfg *Config, key string, raw any) error {
 		cfg.Logging.Enabled = b
 	case "approvals.judge_fail_closed":
 		cfg.Approvals.JudgeFailClosed = b
+	case "updates.auto_check":
+		cfg.Updates.AutoCheck = b
+	case "updates.auto_update":
+		cfg.Updates.AutoUpdate = b
 	default:
 		return fmt.Errorf("unknown setting: %s", key)
 	}

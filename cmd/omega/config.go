@@ -61,6 +61,8 @@ type Config struct {
 	Continuous      continuous.Config `yaml:"continuous"`
 	Approvals       ApprovalConfig    `yaml:"approvals"`
 	Process         ProcessConfig     `yaml:"process"`
+	// Updates is the update channel: one engine, release-managed installs only.
+	Updates         UpdatesConfig     `yaml:"updates"`
 	// Desktop is the desktop shell's own config: the saved connection list the webui's
 	// switcher renders. Everything else the window needs is the serve config beside it.
 	Desktop  DesktopConfig      `yaml:"desktop"`
@@ -356,6 +358,25 @@ type DesktopConfig struct {
 	Instances []core.SavedInstance `yaml:"instances,omitempty"`
 }
 
+// UpdatesConfig is the update channel's own config. managed declares release-managed:
+// "auto" (the default) derives it from the build stamp, so a release build is managed and
+// a dev build (tag + local hash) never self-updates.
+type UpdatesConfig struct {
+	Channel    string `yaml:"channel"`
+	AutoCheck  bool   `yaml:"auto_check"`
+	AutoUpdate bool   `yaml:"auto_update"`
+	Managed    string `yaml:"managed"`
+}
+
+// ManagedAuto is the managed knob's derive-from-the-build-stamp value.
+const ManagedAuto = "auto"
+
+// ManagedOn and ManagedOff are the explicit declarations.
+const (
+	ManagedOn  = "on"
+	ManagedOff = "off"
+)
+
 type StoreConfig struct {
 	DBPath string `yaml:"db_path"`
 }
@@ -409,6 +430,11 @@ func DefaultConfig() Config {
 		},
 		Kanban: KanbanConfig{
 			DBPath: "kanban.db",
+		},
+		Updates: UpdatesConfig{
+			Channel:   "stable",
+			AutoCheck: true, // reads are safe; an install stays the user's opt-in
+			Managed:   ManagedAuto,
 		},
 		Compaction: agent.CompactionConfig{
 			Enabled:       true,
@@ -829,6 +855,16 @@ func (c Config) Validate() error {
 	}
 	if !approval.ValidMonitor(c.Approvals.Monitor) {
 		return fmt.Errorf("config: approvals.monitor must be log-only or enforce, got %q", c.Approvals.Monitor)
+	}
+	// The update channel: two channels, and the managed declaration is one of the three
+	// words - a typo must fail here, never silently read as "off".
+	if c.Updates.Channel != "" && c.Updates.Channel != "stable" && c.Updates.Channel != "nightly" {
+		return fmt.Errorf("config: updates.channel must be stable or nightly, got %q", c.Updates.Channel)
+	}
+	switch strings.ToLower(c.Updates.Managed) {
+	case "", ManagedAuto, ManagedOn, ManagedOff:
+	default:
+		return fmt.Errorf("config: updates.managed must be auto, on, or off, got %q", c.Updates.Managed)
 	}
 	// The saved connection list: one validator for a hand edit and the /instances PUT.
 	if _, err := core.NormalizeInstances(c.Desktop.Instances); err != nil {
