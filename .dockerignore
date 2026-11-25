@@ -1,0 +1,23 @@
+# The Linux bench build context. Without this file every `docker build` ships the
+# checkout's runtime state to the daemon - node_modules alone is gigabytes per run -
+# while the image needs only Go source and the committed SPA bundle under api/static.
+
+.git
+.github
+.worktrees
+
+webui/node_modules
+webui/.nuxt
+webui/.output
+webui/dist
+webui/.data
+
+bin
+data
+tmp
+dist
+*.db
+*.db-shm
+*.db-wal
+*.exe
+*.log
