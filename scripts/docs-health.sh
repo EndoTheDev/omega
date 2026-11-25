@@ -87,6 +87,7 @@ docs/api.md|agent/|api/|cmd/
 docs/cli.md|cmd/
 docs/configuration.md|cmd/omega/config.go|agent/
 docs/webui.md|webui/
+docs/bench.md|docker/|scripts/bench-run.sh
 docs/modules.md,docs/migrating-a-module.md,docs/removing-a-module.md|harness/
 docs/pipeline.md|scripts/|.github/workflows/
 docs/release-gate.md|scripts/journeys/|scripts/train-pass.sh|scripts/review-at-close.sh|scripts/fence-test.sh|.github/workflows/release.yml

@@ -1,0 +1,64 @@
+# The Linux bench image: the real linux/amd64 omega binary built from this checkout,
+# plus a fresh home that starts as one config file and nothing else. The provider is
+# the mock, so a run never depends on a live model or a network call.
+
+FROM golang:1.26.11-bookworm
+
+# BENCH_VERSION stamps the binary so every receipt names the tree it tested.
+ARG BENCH_VERSION=bench
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN go build -trimpath -ldflags "-X main.omegaVersion=${BENCH_VERSION}" -o /usr/local/bin/omega ./cmd/omega
+
+# The fresh home: the database, logs and session rows are created at runtime inside the
+# container's writable layer, so `down -v` leaves nothing behind.
+#   - type: mock is the deterministic, network-free provider - no live model in a receipt.
+#   - bind 0.0.0.0 is required: a process on the container loopback is unreachable
+#     through a published port, and the Host guard refuses a wildcard bind with no
+#     declared public host.
+#   - public_hosts names the exact host:port identities; the guard keys on host:port.
+#     Two of them are not the host-side client: 0.0.0.0:8099 is the identity the binary's
+#     own startup probe uses (it probes binds[0], which IS the wildcard), and
+#     localhost:8099 is the HEALTHCHECK client's. Without them the serve exits right
+#     after logging "serve 0.0.0.0:8099: /health not ok within 5s: 403 Forbidden".
+#   - approvals off keeps a flagged tool from waiting on a human mid-receipt.
+RUN useradd --create-home --uid 1000 --shell /bin/bash omega \
+ && mkdir -p /home/omega/.omega/config \
+ && cat > /home/omega/.omega/config/config.yaml <<'EOF'
+provider:
+  model_name: mock-model
+  instances:
+    - name: default
+      type: mock
+      host: ""
+      api_key: ""
+server:
+  port: 8099
+  bind:
+    - 0.0.0.0
+  public_hosts:
+    - 127.0.0.1:18099
+    - localhost:18099
+    - 0.0.0.0:8099
+    - localhost:8099
+approvals:
+  mode: off
+logging:
+  enabled: true
+  file: /home/omega/.omega/bench.log
+EOF
+RUN chown -R omega:omega /home/omega
+
+USER omega
+WORKDIR /home/omega
+ENV OMEGA_HOME=/home/omega/.omega
+
+EXPOSE 8099
+HEALTHCHECK --interval=10s --timeout=5s --start-period=20s --retries=12 \
+  CMD ["/usr/local/bin/omega","health"]
+
+ENTRYPOINT ["/usr/local/bin/omega"]
+CMD ["serve"]

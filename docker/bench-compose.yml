@@ -1,0 +1,16 @@
+# One bench service per run. No volumes, no custom networks, no env_file: everything
+# the run needs is baked into the image, so `down -v` removes the whole run and the
+# only labels a leftover could carry are the compose project's own and the bench one.
+services:
+  omega:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.test
+      args:
+        BENCH_VERSION: ${BENCH_VERSION:-bench}
+    image: omega-bench:local
+    ports:
+      - "127.0.0.1:18099:8099"
+    restart: "no"
+    labels:
+      omega.bench: ${BENCH_RUN_ID:-local}
