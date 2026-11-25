@@ -37,6 +37,8 @@ type Server struct {
 	// logSeeded is test observability, nil in production: a test appends only after that
 	// baseline, set before the follower starts and never written back.
 	logSeeded chan struct{}
+	// update is the host's update engine behind /updates; nil answers 501.
+	update core.UpdateSurface
 }
 
 // NewServer creates the shell server.
@@ -56,6 +58,12 @@ func NewServer(a *agent.Agent, tools map[string]core.Tool, store agent.StoreProv
 	mux.HandleFunc("/skills", s.handleSkills)
 	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/extensions", s.handleExtensions)
+	// The update channel: one host engine behind check / stage / finalize / status.
+	mux.HandleFunc("GET /updates/status", s.handleUpdateStatus)
+	mux.HandleFunc("POST /updates/check", s.handleUpdateCheck)
+	mux.HandleFunc("POST /updates/stage", s.handleUpdateStage)
+	mux.HandleFunc("POST /updates/finalize", s.handleUpdateFinalize)
+	mux.HandleFunc("POST /updates/discard", s.handleUpdateDiscard)
 	// SPA + module REST: the built webui is embedded in the binary and served at "/".
 	mux.HandleFunc("/", s.handleModuleOrSPA)
 	// The unauthenticated surface is loopback-local, so cross-origin writes are the threat.

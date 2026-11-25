@@ -146,6 +146,13 @@ func (h *RunHub) active(id string) bool {
 	return ok
 }
 
+// count is the live run count across every session.
+func (h *RunHub) count() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.runs)
+}
+
 // setTail stores the run's live transcript tail.
 // Called from the run's own goroutine; the build happened OUTSIDE the lock
 // (liveTranscriptItems reads callStarts, which only that goroutine mutates).

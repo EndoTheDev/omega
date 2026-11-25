@@ -55,8 +55,8 @@ type SettingsKnob struct {
 	Step    *float64 `json:"step,omitempty"`
 	Help    string   `json:"help,omitempty"`
 	Live    bool     `json:"live,omitempty"`
-	Filter string `json:"filter,omitempty"`
-	Slot bool `json:"slot,omitempty"`
+	Filter  string   `json:"filter,omitempty"`
+	Slot    bool     `json:"slot,omitempty"`
 	// DefaultOption marks an AUXILIARY model knob whose picker offers the "default" entry:
 	// the aux lane then follows whatever model the current run serves, resolved at call
 	// time - the choice persists as the literal word, never frozen to a model name.
@@ -260,6 +260,52 @@ type UnknownName interface {
 	Unknown() bool
 }
 
+// UpdateStatus is the update channel's state as the shell serves it. The engine owns the
+// fields; the shell adds the live active-run count at the wire boundary.
+type UpdateStatus struct {
+	State      string         `json:"state"` // idle | checking | up-to-date | available | staging | preflight | ready | finalizing | failed
+	Current    string         `json:"current"`
+	Available  string         `json:"available,omitempty"`
+	Channel    string         `json:"channel"`
+	Managed    bool           `json:"managed"`
+	AutoCheck  bool           `json:"auto_check"`
+	AutoUpdate bool           `json:"auto_update"`
+	Behind     int            `json:"behind,omitempty"`
+	Progress   int            `json:"progress,omitempty"` // percent while staging
+	StagedVer  string         `json:"staged_version,omitempty"`
+	Error      string         `json:"error,omitempty"`
+	Receipt    *UpdateReceipt `json:"receipt,omitempty"`
+	CheckedAt  int64          `json:"checked_at,omitempty"`
+	ActiveRuns int            `json:"active_runs"`
+}
+
+// UpdateReceipt is the recorded outcome of one finalize: a pass, or a rollback with its
+// cause and exactly what was restored.
+type UpdateReceipt struct {
+	Version  string   `json:"version"`
+	Outcome  string   `json:"outcome"` // pass | rollback
+	Why      string   `json:"why,omitempty"`
+	Restored []string `json:"restored,omitempty"`
+	At       int64    `json:"at"`
+}
+
+// UpdateSurface is the host's update engine behind the shell's /updates routes. One
+// implementation serves the CLI, the webui and the desktop affordances (one updater over
+// one binary); a host that mounts no engine leaves it nil and the routes answer 501.
+type UpdateSurface interface {
+	Status() UpdateStatus
+	// Check resolves the channel's offered release without touching the install.
+	Check(ctx context.Context, channel string) (UpdateStatus, error)
+	// Stage downloads, verifies, and pre-flight copy-boots the release in the background;
+	// Stage returns while the work runs and the status reports its progress.
+	Stage(ctx context.Context, channel string) (UpdateStatus, error)
+	// Finalize installs the staged release and restarts the host. force overrides the
+	// quiet check (a human clicked through the prompt).
+	Finalize(ctx context.Context, force bool) (UpdateStatus, error)
+	// Discard throws the staged artifacts away and returns to idle.
+	Discard() (UpdateStatus, error)
+}
+
 type ChannelDeps struct {
 	Ctx      *Context
 	Store    any
@@ -269,6 +315,8 @@ type ChannelDeps struct {
 	// /disabled endpoints answer 501, like the module seam.
 	Registries RegistryToggles
 	Version    string
+	// Update (optional) is the host's update engine. Nil and /updates answers 501.
+	Update UpdateSurface
 }
 
 type QuestionPrompt struct {
@@ -359,9 +407,9 @@ func WithRunWorkspace(ctx context.Context, dir, promptContext string) context.Co
 type ToolOutputChunk struct {
 	// CallID and Tool identify the running call: the loop stamps them on the per-call ctx
 	// (WithToolCall), a tool never sets them.
-	CallID string
-	Tool   string
-	Text string
+	CallID    string
+	Tool      string
+	Text      string
 	Truncated bool
 }
 

@@ -11,6 +11,7 @@ type desktopShell struct {
 	mu        sync.Mutex
 	quitting  bool
 	autostart *autostartControl
+	updates   *trayUpdates
 	show      func()
 	hide      func()
 	quit      func()
@@ -19,6 +20,10 @@ type desktopShell struct {
 func newDesktopShell(show, hide, quit func(), autostart *autostartControl) *desktopShell {
 	return &desktopShell{show: show, hide: hide, quit: quit, autostart: autostart}
 }
+
+// setUpdates binds the update row's client. Nil leaves the row out (a hand-built shell in
+// a test never talks to a server).
+func (s *desktopShell) setUpdates(u *trayUpdates) { s.updates = u }
 
 // openWindow backs the "Open omega" item and a tray click.
 func (s *desktopShell) openWindow() { s.show() }
@@ -54,11 +59,14 @@ type desktopMenuEntry struct {
 
 // menu is the whole tray surface: no switcher, no settings.
 func (s *desktopShell) menu() []desktopMenuEntry {
-	return []desktopMenuEntry{
+	rows := []desktopMenuEntry{
 		{Label: "Open omega", Action: s.openWindow},
 		{Label: autostartItemLabel, Action: s.flipAutostart, Checked: s.autostart.checked},
-		{Label: "Quit", Action: s.quitApp},
 	}
+	if s.updates != nil {
+		rows = append(rows, desktopMenuEntry{Label: trayUpdateLabel, Action: s.updates.act})
+	}
+	return append(rows, desktopMenuEntry{Label: "Quit", Action: s.quitApp})
 }
 
 // flipAutostart applies the click to the live registration; the row's own Checked read

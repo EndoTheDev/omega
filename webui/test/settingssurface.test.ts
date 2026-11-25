@@ -102,6 +102,7 @@ test("the mapping: client state is frontend, server config is backend", () => {
     "provider",
     "server",
     "store",
+    "updates",
     "sessions",
     "compaction",
     "runtime",

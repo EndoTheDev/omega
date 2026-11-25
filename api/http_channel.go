@@ -155,6 +155,7 @@ func (c *HTTPChannel) wire(deps core.ChannelDeps) error {
 	c.srv.SetAgentRunFactory(c.agentRuns)
 	c.srv.SetPublicHosts(c.publicHosts)
 	c.srv.version = deps.Version
+	c.srv.SetUpdateSurface(deps.Update)
 	// The capsule pin goes live LAST, after every server field above is written: the Store
 	// publishes a fully-wired server, so a reader that Loads the pin never sees a
 	// half-wired one.
@@ -191,6 +192,15 @@ func (c *HTTPChannel) SetTitleModel(configured string) {
 // Stop shuts the HTTP server down.
 func (c *HTTPChannel) Stop() error {
 	return nil
+}
+
+// ActiveRuns is the live detached-run count. The host's update engine reads it through
+// this method: a restart under a live run is a prompt, never a silent kill.
+func (c *HTTPChannel) ActiveRuns() int {
+	if c.srv == nil {
+		return 0
+	}
+	return c.srv.ActiveRuns()
 }
 
 // Compile-time assertion that HTTPChannel implements core.Channel.

@@ -107,6 +107,7 @@
         out-rule.hide-sm and put the build back on the narrow bar (the seg itself stays
         flex + hide-sm).
       -->
+      <UpdateChip />
       <template v-if="shows('version')">
       <span
         v-if="version"
@@ -192,6 +193,7 @@
   import { formatCacheShare } from "../../composables/tokenstat";
   import { statMenuItems, statVisible } from "./statusStats";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
+  import UpdateChip from "./UpdateChip.vue";
 
   const props = defineProps<{
     healthy: boolean;
