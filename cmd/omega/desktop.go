@@ -29,9 +29,16 @@ type instanceProcess interface {
 	Wait() (*os.ProcessState, error)
 }
 
-// spawnInstanceServe starts `omega serve` as a detached background instance. The test
-// seam: a fake proves the green path spawns nothing.
-var spawnInstanceServe = func(configPath string) (instanceProcess, error) {
+// instanceOwner is the lifetime of a server this launch started. Nil means the desktop
+// connected to an instance it does not own, and nothing is ever closed.
+type instanceOwner interface {
+	release()
+}
+
+// spawnInstanceServe starts `omega serve` as a detached background instance and hands
+// back the handle that owns it. The test seam: a fake proves the green path spawns
+// nothing.
+var spawnInstanceServe = func(configPath string) (instanceProcess, instanceOwner, error) {
 	return spawnDetachedServe(configPath)
 }
 
@@ -125,15 +132,16 @@ func instanceOrigin(cfg Config) (string, int) {
 }
 
 // ensureInstance returns the origin of a live agent, spawning one detached when
-// nothing answers. The desktop never holds the home's stores itself.
-func ensureInstance(cfg Config, configPath string) (string, error) {
+// nothing answers, plus the owner a spawn came with. The desktop never holds the
+// home's stores itself.
+func ensureInstance(cfg Config, configPath string) (string, instanceOwner, error) {
 	origin, port := instanceOrigin(cfg)
 	if instanceHealthy(origin) {
-		return origin, nil
+		return origin, nil, nil
 	}
-	proc, err := spawnInstanceServe(configPath)
+	proc, owner, err := spawnInstanceServe(configPath)
 	if err != nil {
-		return "", fmt.Errorf("desktop: start the agent on port %d: %w", port, err)
+		return "", nil, fmt.Errorf("desktop: start the agent on port %d: %w", port, err)
 	}
 	deadline := time.Now().Add(instanceHealthBudget)
 	exited := make(chan error, 1)
@@ -146,15 +154,15 @@ func ensureInstance(cfg Config, configPath string) (string, error) {
 	}()
 	for {
 		if instanceHealthy(origin) {
-			return origin, nil
+			return origin, owner, nil
 		}
 		select {
 		case werr := <-exited:
-			return "", fmt.Errorf("desktop: the agent exited before port %d answered (%v)%s", port, werr, portDiagnosis(port))
+			return "", nil, fmt.Errorf("desktop: the agent exited before port %d answered (%v)%s", port, werr, portDiagnosis(port))
 		default:
 		}
 		if time.Now().After(deadline) {
-			return "", fmt.Errorf("desktop: no agent answered on port %d within %s%s", port, instanceHealthBudget, portDiagnosis(port))
+			return "", nil, fmt.Errorf("desktop: no agent answered on port %d within %s%s", port, instanceHealthBudget, portDiagnosis(port))
 		}
 		time.Sleep(150 * time.Millisecond)
 	}

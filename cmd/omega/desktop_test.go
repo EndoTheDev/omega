@@ -54,8 +54,15 @@ func (f *fakeInstance) Wait() (*os.ProcessState, error) {
 	return nil, f.err
 }
 
+// fakeOwner is the lifetime handle a fake spawn hands back; production never releases.
+type fakeOwner struct {
+	released int
+}
+
+func (f *fakeOwner) release() { f.released++ }
+
 // useSpawn swaps the spawn seam for one test.
-func useSpawn(t *testing.T, fn func(string) (instanceProcess, error)) {
+func useSpawn(t *testing.T, fn func(string) (instanceProcess, instanceOwner, error)) {
 	t.Helper()
 	old := spawnInstanceServe
 	t.Cleanup(func() { spawnInstanceServe = old })
@@ -185,17 +192,63 @@ func TestDesktopEnsureInstanceConnectsToLiveInstance(t *testing.T) {
 	}
 	defer rt.shutdown()
 
-	useSpawn(t, func(string) (instanceProcess, error) {
+	useSpawn(t, func(string) (instanceProcess, instanceOwner, error) {
 		t.Fatal("ensureInstance spawned although an instance was already live")
-		return nil, nil
+		return nil, nil, nil
 	})
 
-	origin, err := ensureInstance(cfg, cfgPath)
+	origin, owner, err := ensureInstance(cfg, cfgPath)
 	if err != nil {
 		t.Fatalf("ensureInstance: %v", err)
 	}
 	if origin != rt.URL {
 		t.Fatalf("ensureInstance origin = %q, want the live instance %q", origin, rt.URL)
+	}
+	if owner != nil {
+		t.Fatalf("ensureInstance owner = %T, want nil for an instance it only connected to", owner)
+	}
+}
+
+// TestDesktopEnsureInstanceSpawnOwnsInstance: a launch that started the agent keeps the
+// handle that ties the agent to it.
+func TestDesktopEnsureInstanceSpawnOwnsInstance(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	port := freeDesktopPort(t)
+	cfgPath := desktopTestConfig(t, port)
+	cfg, _, err := desktopConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("desktopConfig: %v", err)
+	}
+
+	owner := &fakeOwner{}
+	useSpawn(t, func(string) (instanceProcess, instanceOwner, error) {
+		ln, lerr := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+		if lerr != nil {
+			return nil, nil, lerr
+		}
+		serve := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, `{"status":"ok"}`)
+		})}
+		go func() { _ = serve.Serve(ln) }()
+		t.Cleanup(func() { _ = serve.Close() })
+		proc := &fakeInstance{done: make(chan struct{})}
+		t.Cleanup(func() { close(proc.done) })
+		return proc, owner, nil
+	})
+
+	origin, got, err := ensureInstance(cfg, cfgPath)
+	if err != nil {
+		t.Fatalf("ensureInstance: %v", err)
+	}
+	if origin != fmt.Sprintf("http://127.0.0.1:%d", port) {
+		t.Fatalf("ensureInstance origin = %q, want the config origin", origin)
+	}
+	if got != owner {
+		t.Fatalf("ensureInstance owner = %v, want the owner its spawn returned", got)
+	}
+	if owner.released != 0 {
+		t.Fatalf("ensureInstance released the owner %d times: production never releases", owner.released)
 	}
 }
 
@@ -225,11 +278,11 @@ func TestDesktopEnsureInstanceDiagnosesHeldPort(t *testing.T) {
 
 	done := make(chan struct{})
 	close(done)
-	useSpawn(t, func(string) (instanceProcess, error) {
-		return &fakeInstance{err: errors.New("listen tcp: bind: address already in use"), done: done}, nil
+	useSpawn(t, func(string) (instanceProcess, instanceOwner, error) {
+		return &fakeInstance{err: errors.New("listen tcp: bind: address already in use"), done: done}, nil, nil
 	})
 
-	if _, err = ensureInstance(cfg, cfgPath); err == nil {
+	if _, _, err = ensureInstance(cfg, cfgPath); err == nil {
 		t.Fatal("ensureInstance accepted a port that answers but is not an omega instance")
 	}
 	msg := err.Error()

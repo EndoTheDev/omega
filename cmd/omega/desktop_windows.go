@@ -8,8 +8,10 @@ package main
 import (
 	"context"
 	_ "embed"
+	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"syscall"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -62,7 +64,10 @@ func desktopLaunch(cfg Config, configPath string) error {
 		},
 	})
 
-	origin, err := ensureInstance(cfg, configPath)
+	// The owner is this process's job handle when the launch spawned the agent, and nil
+	// when it connected to one already running. It is held for the whole run: the close
+	// on process exit is the only thing that kills an owned agent.
+	origin, owner, err := ensureInstance(cfg, configPath)
 	if err != nil {
 		// The failure is diagnosed: a held port is named, never a silent spinner.
 		showBootError(err.Error())
@@ -163,9 +168,11 @@ func desktopLaunch(cfg Config, configPath string) error {
 	defer cancel()
 	go newNoticeConsumer(origin, wailsToastSink{svc: notifier}).Run(ctx)
 
-	// Quitting the shell never kills the agent: the instance is detached, and the next
-	// launch connects to the one already running.
-	return app.Run()
+	// A spawned agent dies with this process: its job handle closes on exit. An agent
+	// this launch found is never touched, and closing the window only hides it.
+	runErr := app.Run()
+	runtime.KeepAlive(owner)
+	return runErr
 }
 
 // wailsAutostart is the production autostartBackend: Wails v3 owns the registration
@@ -203,9 +210,28 @@ func (s wailsToastSink) SendToast(id, title, body string) error {
 	return s.svc.SendNotification(notifications.NotificationOptions{ID: id, Title: title, Body: body})
 }
 
-// spawnDetachedServe starts `omega serve` from this binary as a detached background
-// process: no console window, no inherited handles, no parent-death tie.
-func spawnDetachedServe(configPath string) (instanceProcess, error) {
+// spawnDetachedServe starts `omega serve` from this binary as a console-detached
+// background process and ties it to this process's job object: the child gets no
+// console, and it dies when the desktop does.
+func spawnDetachedServe(configPath string) (instanceProcess, instanceOwner, error) {
+	job, err := newInstanceJob()
+	if err != nil {
+		return nil, nil, err
+	}
+	proc, err := startDetachedServe(configPath)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := job.assign(proc); err != nil {
+		return nil, nil, fmt.Errorf("the agent did not join the desktop's job, so it would outlive the desktop: %w", err)
+	}
+	return proc, job, nil
+}
+
+// startDetachedServe starts `omega serve` from this binary with no console window and
+// no parent-death tie. The updater's restart uses it too: that child must outlive the
+// process that spawned it.
+func startDetachedServe(configPath string) (*os.Process, error) {
 	exe, err := os.Executable()
 	if err != nil {
 		return nil, err
