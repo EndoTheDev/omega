@@ -1,0 +1,19 @@
+<Configuration>
+  <!-- The bench proves the desktop works with no network at all: the provider runs in-process. -->
+  <Networking>Disable</Networking>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <VideoInput>Disable</VideoInput>
+  <AudioInput>Disable</AudioInput>
+  <MemoryInMB>4096</MemoryInMB>
+  <MappedFolders>
+    <MappedFolder>
+      <!-- edit this path for your machine -->
+      <HostFolder>D:\dev\bench\sandbox</HostFolder>
+      <SandboxFolder>C:\bench</SandboxFolder>
+      <ReadOnly>false</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <LogonCommand>
+    <Command>powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\bench\sandbox-smoke.ps1</Command>
+  </LogonCommand>
+</Configuration>
