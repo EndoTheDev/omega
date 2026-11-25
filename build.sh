@@ -34,12 +34,16 @@ if [ -n "$TAG" ] && [ -n "$SHORT" ]; then
 else
 	VERSION="dev"
 fi
+# A GUI-subsystem exe never paints a console on a shell double-click; startup's
+# AttachConsole decides the terminal launch (CLI loop) from the shell launch (window).
+LDFLAGS="-X main.omegaVersion=$VERSION"
 # Windows needs .exe; macOS/Linux don't.
 if [ "$(go env GOOS)" = "windows" ]; then
 	BIN=bin/omega.exe
+	LDFLAGS="-H=windowsgui $LDFLAGS"
 else
 	BIN=bin/omega
 fi
-go build -ldflags "-X main.omegaVersion=$VERSION" -o "$BIN" ./cmd/omega
+go build -ldflags "$LDFLAGS" -o "$BIN" ./cmd/omega
 echo "    $BIN (version: $VERSION)"
 echo "==> done"

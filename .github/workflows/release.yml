@@ -146,7 +146,7 @@ jobs:
       - name: Build Windows amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
-          GOOS=windows GOARCH=amd64 go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
+          GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
           cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-windows_amd64/
           cd dist && zip -r "omega-$VERSION-windows_amd64.zip" "omega-$VERSION-windows_amd64/"

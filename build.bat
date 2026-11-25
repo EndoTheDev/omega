@@ -17,7 +17,9 @@ if errorlevel 1 exit /b 1
 echo ==^> build
 for /f "delims=" %%v in ('git describe --tags --abbrev=0 2^>nul') do set VERSION=%%v
 if not defined VERSION set VERSION=dev
-go build -ldflags "-X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
+REM -H=windowsgui: no console on a shell double-click; AttachConsole at startup decides
+REM the terminal launch (CLI loop) from the shell launch (window).
+go build -ldflags "-H=windowsgui -X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
 if errorlevel 1 exit /b 1
 echo    bin\omega.exe (version: %VERSION%)
 echo ==^> done

@@ -35,8 +35,8 @@ var spawnInstanceServe = func(configPath string) (instanceProcess, error) {
 	return spawnDetachedServe(configPath)
 }
 
-// desktopForBareLaunch is the ruling-14 console check. A test seam: the go test binary
-// under a pty has no console, so the branch must be selectable rather than ambient.
+// desktopForBareLaunch answers the bare-launch routing. A test seam: the go test binary
+// has no console of its own, so the branch must be selectable rather than ambient.
 var desktopForBareLaunch = bareLaunchWantsDesktop
 
 // spawnSetupWizard runs the console wizard for a configless home. A test seam: the

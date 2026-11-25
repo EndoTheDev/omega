@@ -54,7 +54,21 @@ first window and exits without starting anything.
 - Same lifetime problem with more machinery: a parent-owned child still dies with the
   shell, and a shell crash leaves it without its supervisor.
 - The spawn that remains is DETACHED, from the same executable: no PATH resolution,
-  no second binary, no GUI-subsystem tricks.
+  no second binary.
+
+## Why the exe links GUI-subsystem
+
+- A console-subsystem exe opened from a file manager paints a console the window makes
+  pointless, and the parent-image check that used to tell a shell launch apart knew one
+  image (Explorer): another file manager, a shortcut host or an installer reads as a
+  terminal. The exe links `-H=windowsgui`, so no shell launch ever paints a console.
+- The discriminator is the console itself. Startup calls
+  `AttachConsole(ATTACH_PARENT_PROCESS)`: success means a terminal launched it, so the
+  CLI loop runs on that console with the standard streams rebound to `CONIN$` /
+  `CONOUT$` (a GUI-subsystem process gets no console handles of its own); failure means
+  no parent console - a shell launch - and a bare `omega` opens the window.
+- The check is per launch and needs no process list, so there is no file-manager list
+  to keep current and no image name to miss.
 
 ## Why not the Wails asset server
 
