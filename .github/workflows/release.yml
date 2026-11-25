@@ -39,7 +39,11 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           mkdir -p dist
+          # the icon group is a PE resource: generate it first and prove it landed
+          # after, so the shipped desktop asset never shows a faceless exe
+          go run ./scripts/desktopicon -syso
           go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega.exe ./cmd/omega
+          go run ./scripts/desktopicon -check dist/omega.exe
 
       - name: Package desktop asset
         shell: pwsh
@@ -146,6 +150,8 @@ jobs:
       - name: Build Windows amd64
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
+          # the icon group is a PE resource: the cross build needs the syso too
+          go run ./scripts/desktopicon -syso
           GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
           cp cmd/omega/omega.cmd dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-windows_amd64/

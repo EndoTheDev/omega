@@ -42,11 +42,16 @@ HOST_OS=$(go env GOOS)
 if [ "$HOST_OS" = "windows" ]; then
 	BIN=bin/omega.exe
 	LDFLAGS="-H=windowsgui $LDFLAGS"
+	# The icon group lives in the PE resource table: generate it before the build,
+	# prove it landed after, or every shell surface shows a faceless exe.
+	echo "==> icon resource"
+	go run ./scripts/desktopicon -syso
 else
 	BIN=bin/omega
 fi
 go build -ldflags "$LDFLAGS" -o "$BIN" ./cmd/omega
 if [ "$HOST_OS" = "windows" ]; then
+	go run ./scripts/desktopicon -check "$BIN"
 	# cmd.exe and PowerShell do not wait for a GUI-subsystem exe; the wrapper waits.
 	cp cmd/omega/omega.cmd bin/omega.cmd
 	echo "    bin/omega.cmd (the cmd.exe and PowerShell entry)"
