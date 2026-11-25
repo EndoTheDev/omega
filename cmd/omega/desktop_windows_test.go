@@ -2,21 +2,21 @@
 
 package main
 
-import (
-	"strings"
-	"testing"
-)
+import "testing"
 
-// TestDesktopParentProcessImage pins the ruling-14 mechanism: the bare-launch routing
-// reads the real parent image. The go test binary is never an Explorer child, so the
-// desktop branch must not fire for it.
-func TestDesktopParentProcessImage(t *testing.T) {
-	image := parentProcessImage()
-	if image == "" {
-		t.Fatal("parentProcessImage returned nothing")
+// TestDesktopAttachAnswerIsStable pins the memo behind the routing: main attaches
+// before its first write and bareLaunchWantsDesktop asks again, while a second
+// AttachConsole on an attached process fails. One answer per process keeps a terminal
+// launch out of the desktop branch.
+func TestDesktopAttachAnswerIsStable(t *testing.T) {
+	first := attachCallerConsole()
+	t.Logf("attach answer in the test process = %v", first)
+	for i := 2; i <= 4; i++ {
+		if got := attachCallerConsole(); got != first {
+			t.Fatalf("attach answer #%d = %v, want the first answer %v", i, got, first)
+		}
 	}
-	t.Logf("parent image = %s", image)
-	if strings.EqualFold(image, shellParentImage) {
-		t.Fatalf("the test process parent reads as %q, which is the desktop branch", image)
+	if got := bareLaunchWantsDesktop(); got == first {
+		t.Fatalf("bareLaunchWantsDesktop = %v after attach = %v, want its negation", got, first)
 	}
 }

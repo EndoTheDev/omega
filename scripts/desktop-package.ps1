@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 # Packages the Windows desktop asset: dist/omega-<version>-windows-desktop.zip
 #
-# Shape: the portable tree (omega.exe, the example configs) plus install.ps1 /
+# Shape: the portable tree (omega.exe, omega.cmd, the example configs) plus install.ps1 /
 # uninstall.ps1, which copy into %LOCALAPPDATA%\Programs\omega, create the Start
 # Menu shortcut and write the HKCU uninstall entry. Wails v3's own packaging
 # targets (nsis/msix) plan from a wails.yaml project manifest this repo does not
@@ -13,7 +13,8 @@ param(
 	[Parameter(Mandatory = $true)][string]$Version,
 	[Parameter(Mandatory = $true)][string]$Exe,
 	[string]$OutDir = 'dist',
-	[string]$ExamplesDir = 'cmd/omega/examples'
+	[string]$ExamplesDir = 'cmd/omega/examples',
+	[string]$Shim = 'cmd/omega/omega.cmd'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +27,7 @@ if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 
 Copy-Item -Path $Exe -Destination (Join-Path $stage 'omega.exe') -Force
+Copy-Item -Path $Shim -Destination $stage -Force
 Copy-Item -Path (Join-Path $ExamplesDir 'config.yaml.example') -Destination $stage -Force
 Copy-Item -Path (Join-Path $ExamplesDir 'mcp.yaml.example') -Destination $stage -Force
 
@@ -40,6 +42,7 @@ $dest = if ($env:OMEGA_INSTALL_DIR) { $env:OMEGA_INSTALL_DIR } else { Join-Path 
 
 New-Item -ItemType Directory -Force -Path $dest | Out-Null
 Copy-Item -Path (Join-Path $src 'omega.exe') -Destination $dest -Force
+Copy-Item -Path (Join-Path $src 'omega.cmd') -Destination $dest -Force
 Copy-Item -Path (Join-Path $src 'uninstall.ps1') -Destination $dest -Force
 Get-ChildItem -Path $src -Filter '*.example' -File | Copy-Item -Destination $dest -Force
 

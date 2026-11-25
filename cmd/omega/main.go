@@ -47,6 +47,9 @@ import (
 )
 
 func main() {
+	// First statement: a terminal launch must reclaim the caller's console before any
+	// subcommand writes to it, and the bare-launch routing reads the same answer.
+	attachCallerConsole()
 	home := omegaHome()
 	// Stray guard (finding C5): a home that IS a checkout root gets one visible warning.
 	// Hint, never a block - home resolution is unchanged.
@@ -208,9 +211,10 @@ func run(args []string) error {
 		return cmdRollback()
 	case "chat", "":
 		// The chat subcommand is a legacy alias for the CLI loop. A bare SHELL launch
-		// (double-click or shortcut, parent Explorer) is the desktop: the window
-		// guarantees an instance instead of opening a terminal nobody can see. Every
-		// argument launch stays the CLI loop, so no script or service can land in a GUI.
+		// (a double-click or a file-manager open, with no parent console to attach to)
+		// is the desktop: the window guarantees an instance instead of a terminal
+		// nobody can see. Every argument launch stays the CLI loop, so no script or
+		// service can land in a GUI.
 		if sub == "" && len(args) == 0 && desktopForBareLaunch() {
 			return cmdDesktop(nil)
 		}

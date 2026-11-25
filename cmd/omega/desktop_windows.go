@@ -10,9 +10,7 @@ import (
 	_ "embed"
 	"os"
 	"os/exec"
-	"strings"
 	"syscall"
-	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -33,41 +31,11 @@ const desktopSingleInstanceID = "dev.omega.desktop"
 // desktopWindowSupported: the window is the 0.19.0 desktop surface.
 func desktopWindowSupported() error { return nil }
 
-// bareLaunchWantsDesktop reports a shell launch - a double-click or a shortcut. A
-// console check cannot separate the cases: Windows gives a shell-launched console exe a
-// console of its own, and an agent/script shell launches children with none. The parent
-// image is the discriminator, so a script, service or terminal never lands in a GUI.
+// bareLaunchWantsDesktop reports a shell launch: no parent console to attach to. A
+// terminal launch attached at startup and keeps the CLI loop; the console itself is the
+// discriminator, so no process or file-manager list is involved.
 func bareLaunchWantsDesktop() bool {
-	return strings.EqualFold(parentProcessImage(), shellParentImage)
-}
-
-// shellParentImage is the Explorer image name: every double-click and shortcut launch
-// arrives from it.
-const shellParentImage = "explorer.exe"
-
-// parentProcessImage returns the parent process's executable name, or "".
-func parentProcessImage() string {
-	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
-	if err != nil {
-		return ""
-	}
-	defer windows.CloseHandle(snap)
-	rows := make(map[uint32]struct {
-		parent uint32
-		image  string
-	})
-	var entry windows.ProcessEntry32
-	entry.Size = uint32(unsafe.Sizeof(entry))
-	for err := windows.Process32First(snap, &entry); err == nil; err = windows.Process32Next(snap, &entry) {
-		rows[entry.ProcessID] = struct {
-			parent uint32
-			image  string
-		}{entry.ParentProcessID, windows.UTF16ToString(entry.ExeFile[:])}
-	}
-	if me, ok := rows[uint32(os.Getpid())]; ok {
-		return rows[me.parent].image
-	}
-	return ""
+	return !attachCallerConsole()
 }
 
 // desktopLaunch connects the one window to the home's agent, starting a detached

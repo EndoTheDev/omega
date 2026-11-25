@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -451,5 +452,21 @@ func TestLoopWorkspaceSwitch(t *testing.T) {
 	}
 	if len(tr.gated) != 1 || tr.gated[0] != dir {
 		t.Errorf("trust gate not re-run for the new dir: %v", tr.gated)
+	}
+}
+
+// TestStdinReaderTrimsConsoleLineEndings pins the line shape a Windows console
+// delivers: ReadFile on a console answers CRLF, and the trailing CR alone made every
+// slash command miss its case in the dispatch switch.
+func TestStdinReaderTrimsConsoleLineEndings(t *testing.T) {
+	lo := &cliLoop{in: bufio.NewReader(strings.NewReader("/exit\r\nhello there\r\n"))}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	lines := lo.startStdinReader(ctx)
+	for _, want := range []string{"/exit", "hello there"} {
+		if got := <-lines; got != want {
+			t.Fatalf("line = %q, want %q", got, want)
+		}
 	}
 }

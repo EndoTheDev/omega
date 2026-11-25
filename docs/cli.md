@@ -104,10 +104,16 @@ omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
   `uninstall.ps1`, which removes all three. Every tag is copy-booted before
   publish: the installed exe serves a copy of a seeded home through
   `--headless-health` or the release is not shipped ([pipeline.md](pipeline.md)).
-- A bare `omega` started by the shell (a double-click or a shortcut, parent Explorer)
-  routes here instead of the CLI loop; a terminal, script or service launch keeps the
-  CLI loop, and every argument launch is untouched - no script or service can land in
-  a GUI.
+- The Windows exe links GUI-subsystem, so a shell double-click never paints a console.
+  On startup `omega` attaches to its launcher's console: success means a terminal
+  launch and the CLI loop keeps running in that terminal; failure means a shell launch
+  (Explorer, a file manager) and a bare `omega` opens this window instead. Every
+  argument launch is untouched - no script or service can land in a GUI. A scheduled
+  task or service that runs bare `omega` with no parent console also fails the attach
+  and opens the window; give automation an argument (`omega serve`, `omega run`) to
+  keep it on the CLI. cmd.exe and PowerShell do not wait for a GUI-subsystem child, so
+  from those shells run `omega.cmd` (it ships beside the exe and waits for it);
+  git-bash runs `omega.exe` directly.
 - No `config.yaml`: the launch spawns `omega setup` in a new console and exits 0.
 - `--headless-health` is the release-gate surface: it boots the runtime in-process,
   prints the `/health` body, shuts down, and exits 0 (exit 1 when the boot is not
