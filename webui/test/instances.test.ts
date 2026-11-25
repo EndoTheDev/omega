@@ -27,6 +27,7 @@ import {
   type InstanceStorage,
   type SavedInstance,
 } from "../app/composables/instances.ts";
+import { NARROW_MAX_PX } from "../app/composables/narrow.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modules = join(here, "..", "..");
@@ -240,4 +241,21 @@ test("MenuBar mounts ConnectionMenu and app.vue supplies the origin", () => {
   const app = read("webui", "app", "app.vue");
   assert.match(app, /:current-origin="currentOrigin"/, "app.vue passes the origin down");
   assert.match(app, /window\.location\.origin/, "the origin is the page's own");
+});
+
+// source pin: the pill's narrow squeeze. The labelled bar's floor (brand + pill +
+// four edge toggles) is wider than a phone window; with the label up, a 340px page
+// measured 371 and every pane below 360 read that overflow as "not narrow", so the
+// settings drawer was unreachable. The breakpoint must therefore cover the narrow
+// threshold, and the panel must shed its beside-the-pill anchor with it.
+test("ConnectionMenu squeezes the pill below the narrow breakpoint", () => {
+  const src = read("webui", "app", "components", "shell", "ConnectionMenu.vue");
+  const block = src.match(/@media \(max-width: (\d+)px\) \{([\s\S]*?)\n  \}/);
+  assert.ok(block, "the pill carries a width breakpoint");
+  const px = Number(block![1]);
+  assert.ok(px >= NARROW_MAX_PX, `the squeeze covers the pane-narrow width (breakpoint ${px} >= ${NARROW_MAX_PX})`);
+  assert.ok(px <= 480, `the squeeze stays off a desktop bar (breakpoint ${px} <= 480)`);
+  assert.match(block![2], /\.conn-label \{[^}]*display: none/, "the label collapses under the breakpoint");
+  assert.match(block![2], /\.conn-panel \{[^}]*position: fixed/, "the panel becomes a bar-wide sheet, not a 320px box beside the pill");
+  assert.match(src, /:aria-label="`Connection: \$\{label\}`"/, "the accessible name outlives the hidden label");
 });

@@ -12,6 +12,9 @@
         pill's own click returns focus to the pill on close.
       escape: Escape inside the panel closes it and returns focus to the pill.
       dismissal: Escape, a second pill click, and a pointerdown outside the pill/panel.
+      narrow: below the squeeze breakpoint the pill keeps the dot + chevron only (its
+        accessible name rides aria-label) and the panel becomes a bar-wide sheet, so a
+        340px window never measures past its own width.
   -->
   <div ref="rootEl" class="conn" @keydown.esc.stop.prevent="closeMenu">
     <button
@@ -20,6 +23,7 @@
       class="conn-pill"
       aria-haspopup="dialog"
       :aria-expanded="open"
+      :aria-label="`Connection: ${label}`"
       :title="`Connection: ${label}`"
       @click="toggle">
       <span
@@ -449,5 +453,29 @@
   }
   .conn-save:hover {
     border-color: var(--accent);
+  }
+  /*
+   * the squeeze: the bar's floor with a labelled pill (brand + pill + four edge
+   * toggles) is 371px, so a 340px window measured 371 and the settings pane never
+   * flipped narrow. Below this breakpoint - the round stop above that floor - the
+   * pill sheds its label (aria-label carries the name) and the panel opens as a
+   * bar-wide sheet: a 320px dropdown anchored beside a 35px pill would overflow
+   * the same window.
+   */
+  @media (max-width: 480px) {
+    .conn-pill {
+      gap: 4px;
+      padding: 0 5px;
+    }
+    .conn-label {
+      display: none;
+    }
+    .conn-panel {
+      position: fixed;
+      top: calc(var(--menubar-h) + 4px);
+      left: 8px;
+      right: 8px;
+      width: auto;
+    }
   }
 </style>
