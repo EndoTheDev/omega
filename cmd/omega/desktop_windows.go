@@ -6,6 +6,8 @@ package main
 // client - the agent is a detached background instance (docs/adr/0010).
 
 import (
+	"context"
+	_ "embed"
 	"os"
 	"os/exec"
 	"strings"
@@ -13,8 +15,16 @@ import (
 	"unsafe"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
+	"github.com/wailsapp/wails/v3/pkg/services/notifications"
 	"golang.org/x/sys/windows"
 )
+
+// desktopTrayIcon is the tray glyph: a dark disc carrying a white omega, so it reads on
+// both light and dark taskbars.
+//
+//go:embed assets/omega.ico
+var desktopTrayIcon []byte
 
 // desktopSingleInstanceID is the one Wails instance lock: a second `omega desktop`
 // wakes the first window instead of starting a second shell.
@@ -64,16 +74,21 @@ func parentProcessImage() string {
 // instance when none answers. application.New owns the single-instance lock, so a
 // second launch notifies the first and exits from inside New.
 func desktopLaunch(cfg Config, configPath string) error {
+	notifier := notifications.New()
+	// A second launch restores this one; a hidden window needs Show, not just Restore.
+	var shell *desktopShell
 	var app *application.App
 	app = application.New(application.Options{
 		Name:        "omega",
 		Description: "omega desktop",
+		Services: []application.Service{
+			application.NewService(notifier),
+		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: desktopSingleInstanceID,
 			OnSecondInstanceLaunch: func(application.SecondInstanceData) {
-				if win := app.Window.Current(); win != nil {
-					win.Restore()
-					win.Focus()
+				if shell != nil {
+					shell.openWindow()
 				}
 			},
 		},
@@ -86,15 +101,51 @@ func desktopLaunch(cfg Config, configPath string) error {
 		return err
 	}
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
+	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "omega",
 		URL:    origin,
 		Width:  1280,
 		Height: 860,
 	})
+
+	shell = newDesktopShell(
+		func() { win.Show(); win.Restore(); win.Focus() },
+		func() { win.Hide() },
+		func() { app.Quit() },
+	)
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		shell.windowClosing(event.Cancel)
+	})
+
+	tray := app.SystemTray.New()
+	tray.SetIcon(desktopTrayIcon)
+	tray.SetTooltip("omega")
+	tray.OnClick(shell.openWindow)
+	menu := app.Menu.New()
+	for _, item := range shell.menu() {
+		menu.Add(item.Label).OnClick(func(*application.Context) { item.Action() })
+	}
+	tray.SetMenu(menu)
+
+	// A toast click asks for the window: the same action as the "Open omega" item.
+	notifier.OnNotificationResponse(func(notifications.NotificationResult) { shell.openWindow() })
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go newNoticeConsumer(origin, wailsToastSink{svc: notifier}).Run(ctx)
+
 	// Quitting the shell never kills the agent: the instance is detached, and the next
 	// launch connects to the one already running.
 	return app.Run()
+}
+
+// wailsToastSink is the native toast surface behind the consumer.
+type wailsToastSink struct {
+	svc *notifications.NotificationService
+}
+
+func (s wailsToastSink) SendToast(id, title, body string) error {
+	return s.svc.SendNotification(notifications.NotificationOptions{ID: id, Title: title, Body: body})
 }
 
 // spawnDetachedServe starts `omega serve` from this binary as a detached background
