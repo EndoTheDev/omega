@@ -43,15 +43,12 @@ func finalizePlatform(req finalizeRequest) (finalizeOutcome, error) {
 }
 
 // spawnFinalizeChild starts the installed binary detached, exactly like the desktop's
-// instance spawn: no console window, no parent-death tie.
+// instance spawn but with no job object: the replacement server outlives the parent
+// that supervises the swap.
 func spawnFinalizeChild(configPath string) (finalizeChild, error) {
-	proc, err := spawnDetachedServe(configPath)
+	proc, err := startDetachedServe(configPath)
 	if err != nil {
 		return nil, err
 	}
-	child, ok := proc.(finalizeChild)
-	if !ok {
-		return nil, fmt.Errorf("spawned process carries no kill handle")
-	}
-	return child, nil
+	return proc, nil
 }

@@ -1,6 +1,9 @@
 # ADR 0010: the desktop shell is a client of a detached agent
 
-Status: accepted (card 1 of the 0.19.0 desktop chain; supersedes the in-process shape this ADR first recorded)
+Status: accepted (card 1 of the 0.19.0 desktop chain; supersedes the in-process shape
+this ADR first recorded). AMENDED 2026-11-25: ruling 16 ("the spawned server survives
+quit") is superseded by the ownership rule - effective at the merge of the lifetime
+card into dev.
 
 ## Context
 
@@ -29,8 +32,10 @@ Consequences of the shape:
 - The desktop process never opens the home's stores. There is no second writer and
   no second core, so the old "desktop beside serve is two writers" limitation is
   gone by construction.
-- Quitting the shell never kills the agent. The instance has no parent-death tie, so
-  the next launch connects to the one already running, and autostart becomes
+- A spawned instance dies with the desktop process. The launch keeps one Job Object
+  handle open with kill-on-close, so tray Quit, a crash and a hard kill all take the
+  server down; the next launch starts a fresh one. An instance the launch found
+  running is never touched, and a window close kills nothing. Autostart stays
   ensure-an-instance at login.
 - The window's origin is the instance's origin. No separate desktop port exists, so
   the webui's origin-keyed localStorage (theme, dock layout) follows the instance.
@@ -49,12 +54,16 @@ first window and exits without starting anything.
 - The agent must outlive the window: a session running a cron fire or a wake must not
   die because a UI was closed.
 
-## Why not a child the window owns
+## Why the spawn is owned, not supervised
 
-- Same lifetime problem with more machinery: a parent-owned child still dies with the
-  shell, and a shell crash leaves it without its supervisor.
-- The spawn that remains is DETACHED, from the same executable: no PATH resolution,
-  no second binary.
+- Ownership is the lifetime: the launch that spawned the server keeps one Job Object
+  handle open, so the server dies with the desktop process. That covers a clean quit, a
+  crash and a hard kill with one mechanism, and needs no supervisor, no heartbeat and
+  no kill path.
+- An instance the launch found running was started by something else - a terminal, a
+  service, another launch - so it is connected to and never touched.
+- The spawn is console-detached, from the same executable: no PATH resolution, no
+  second binary, no console window. The job membership is the only tie.
 
 ## Why the exe links GUI-subsystem
 

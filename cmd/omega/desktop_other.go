@@ -14,8 +14,8 @@ func desktopLaunch(Config, string) error { return desktopWindowSupported() }
 // bareLaunchWantsDesktop: bare-launch routing is a Windows shell affordance only.
 func bareLaunchWantsDesktop() bool { return false }
 
-func spawnDetachedServe(string) (instanceProcess, error) {
-	return nil, fmt.Errorf("the detached agent spawn is Windows-only in 0.19.0")
+func spawnDetachedServe(string) (instanceProcess, instanceOwner, error) {
+	return nil, nil, fmt.Errorf("the detached agent spawn is Windows-only in 0.19.0")
 }
 
 func showBootError(string) {}

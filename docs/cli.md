@@ -90,13 +90,17 @@ omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
 ```
 
 - Boot: probe `/health` on `server.port`. A live instance means the window loads its
-  own origin - nothing restarts. Nothing answering means `omega serve` is spawned
-  detached from the same binary (no PATH lookup, no second executable), and the
-  window waits a bounded 15 s for `/health`. A port another process holds is named
-  in a dialog and the launch exits 1: no silent "not ready" loop, no fallback port.
-- Quitting the shell never kills the agent. The instance is detached; the next
-  launch connects to the one already running. The tray menu carries the
-  start-with-Windows row, and a boot launch arrives as `omega desktop`.
+  own origin - nothing restarts. Nothing answering means `omega serve` is spawned from
+  the same binary and tied to the desktop's job object (no PATH lookup, no second
+  executable), and the window waits a bounded 15 s for `/health`. A port another
+  process holds is named in a dialog and the launch exits 1: no silent "not ready"
+  loop, no fallback port.
+- Lifetime follows ownership. A server this launch started dies with the desktop
+  process - tray Quit, a crash, a hard kill: one Job Object carries kill-on-close, so
+  the next launch starts a fresh one. A server the launch found running is connected
+  to and never touched. Closing the window kills nothing: it hides to the tray, so a
+  running turn survives. The tray menu carries the start-with-Windows row, and a boot
+  launch arrives as `omega desktop`.
 - A second launch focuses the running window (one instance lock) and starts nothing.
 - Release asset: `omega-vX.Y.Z-windows-desktop.zip` carries the portable tree plus
   `install.ps1` (copies to `%LOCALAPPDATA%\Programs\omega`, adds a Start Menu
