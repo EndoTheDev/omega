@@ -92,6 +92,7 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dest 'uninstall.ps1')
           if ($LASTEXITCODE -ne 0) { throw "uninstall.ps1 exited $LASTEXITCODE" }
           if (Test-Path $exe) { throw "uninstall left $exe in place" }
+          if (Test-Path $lnk) { throw "uninstall left the Start Menu shortcut in place" }
           if (Test-Path $key) { throw "uninstall left the uninstall entry in place" }
 
       - uses: actions/upload-artifact@v4

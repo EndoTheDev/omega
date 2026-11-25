@@ -92,6 +92,8 @@ if ($runningFromTree) {
 }
 
 if (Test-Path $dest) { Remove-Item -Path $dest -Recurse -Force }
+$tempCopy = Join-Path $env:TEMP 'omega-desktop-uninstall.ps1'
+if ($PSCommandPath -and ($PSCommandPath -like $tempCopy)) { Remove-Item -Path $PSCommandPath -Force }
 Write-Host "omega desktop uninstalled"
 '@
 
