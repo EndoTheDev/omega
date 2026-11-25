@@ -6,18 +6,18 @@ package main
 
 import "sync"
 
-// desktopShell holds the shell's exit state. A window close hides the window; only a
-// Quit ends the process.
+// desktopShell holds the shell's exit state and the tray's one checkable row.
 type desktopShell struct {
-	mu       sync.Mutex
-	quitting bool
-	show     func()
-	hide     func()
-	quit     func()
+	mu        sync.Mutex
+	quitting  bool
+	autostart *autostartControl
+	show      func()
+	hide      func()
+	quit      func()
 }
 
-func newDesktopShell(show, hide, quit func()) *desktopShell {
-	return &desktopShell{show: show, hide: hide, quit: quit}
+func newDesktopShell(show, hide, quit func(), autostart *autostartControl) *desktopShell {
+	return &desktopShell{show: show, hide: hide, quit: quit, autostart: autostart}
 }
 
 // openWindow backs the "Open omega" item and a tray click.
@@ -44,16 +44,23 @@ func (s *desktopShell) windowClosing(cancelClose func()) {
 	cancelClose()
 }
 
-// desktopMenuEntry is one tray item: a label and the action behind it.
+// desktopMenuEntry is one tray item: a label and the action behind it. Checked marks a
+// checkable row - it reports the live state each time the menu opens, never a copy.
 type desktopMenuEntry struct {
-	Label  string
-	Action func()
+	Label   string
+	Action  func()
+	Checked func() bool
 }
 
 // menu is the whole tray surface: no switcher, no settings.
 func (s *desktopShell) menu() []desktopMenuEntry {
 	return []desktopMenuEntry{
 		{Label: "Open omega", Action: s.openWindow},
+		{Label: autostartItemLabel, Action: s.flipAutostart, Checked: s.autostart.checked},
 		{Label: "Quit", Action: s.quitApp},
 	}
 }
+
+// flipAutostart applies the click to the live registration; the row's own Checked read
+// renders the result.
+func (s *desktopShell) flipAutostart() { s.autostart.flip() }
