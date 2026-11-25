@@ -169,7 +169,7 @@ if ! "${COMPOSE[@]}" build >"$OUT/01-build.log" 2>&1; then
   fail build "docker compose build failed - 01-build.log"
   exit 1
 fi
-pass build "linux/amd64 omega built as ${VERSION} - 01-build.log"
+pass build "linux/$(uname -m) omega built as ${VERSION} - 01-build.log"
 
 if ! "${COMPOSE[@]}" up -d >>"$OUT/01-build.log" 2>&1; then
   fail up "docker compose up failed - 01-build.log"

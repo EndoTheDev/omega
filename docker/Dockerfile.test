@@ -26,30 +26,8 @@ RUN go build -trimpath -ldflags "-X main.omegaVersion=${BENCH_VERSION}" -o /usr/
 #     after logging "serve 0.0.0.0:8099: /health not ok within 5s: 403 Forbidden".
 #   - approvals off keeps a flagged tool from waiting on a human mid-receipt.
 RUN useradd --create-home --uid 1000 --shell /bin/bash omega \
- && mkdir -p /home/omega/.omega/config \
- && cat > /home/omega/.omega/config/config.yaml <<'EOF'
-provider:
-  model_name: mock-model
-  instances:
-    - name: default
-      type: mock
-      host: ""
-      api_key: ""
-server:
-  port: 8099
-  bind:
-    - 0.0.0.0
-  public_hosts:
-    - 127.0.0.1:18099
-    - localhost:18099
-    - 0.0.0.0:8099
-    - localhost:8099
-approvals:
-  mode: off
-logging:
-  enabled: true
-  file: /home/omega/.omega/bench.log
-EOF
+ && mkdir -p /home/omega/.omega/config
+COPY docker/bench-config.yaml /home/omega/.omega/config/config.yaml
 RUN chown -R omega:omega /home/omega
 
 USER omega

@@ -1,0 +1,22 @@
+# The bench home's only starting file; Dockerfile.test explains the bind and public_hosts.
+provider:
+  model_name: mock-model
+  instances:
+    - name: default
+      type: mock
+      host: ""
+      api_key: ""
+server:
+  port: 8099
+  bind:
+    - 0.0.0.0
+  public_hosts:
+    - 127.0.0.1:18099
+    - localhost:18099
+    - 0.0.0.0:8099
+    - localhost:8099
+approvals:
+  mode: off
+logging:
+  enabled: true
+  file: /home/omega/.omega/bench.log
