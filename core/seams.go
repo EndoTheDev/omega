@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -187,8 +188,18 @@ func NormalizeInstances(rows []SavedInstance) ([]SavedInstance, error) {
 	return out, nil
 }
 
+// The shorthand forms: a bare `host:port` is the address every user types (the webui's
+// client half reads it the same way), so it takes http://; a bare non-http scheme is
+// refused rather than guessed at.
+var (
+	instanceShorthand  = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:\d+(/.*)?$`)
+	instanceBareScheme = regexp.MustCompile(`^([a-zA-Z][a-zA-Z0-9+.-]*):`)
+)
+
 // normalizeInstanceURL accepts an http/https origin (a path prefix is allowed) and
-// returns it with a lowercased scheme and no trailing slash.
+// returns it with a lowercased scheme and no trailing slash. A bare `host:port` and a
+// bare host are the http shorthand; the webui's own add row and this validator must
+// accept the same addresses or the pane teaches a spelling the file refuses.
 func normalizeInstanceURL(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -196,6 +207,13 @@ func normalizeInstanceURL(raw string) (string, error) {
 	}
 	if strings.ContainsAny(s, " \t\r\n") {
 		return "", fmt.Errorf("url must not contain spaces")
+	}
+	if !strings.Contains(s, "://") {
+		if instanceBareScheme.MatchString(s) && !instanceShorthand.MatchString(s) {
+			m := instanceBareScheme.FindStringSubmatch(s)
+			return "", fmt.Errorf("url scheme must be http or https, got %q", strings.ToLower(m[1]))
+		}
+		s = "http://" + s
 	}
 	u, err := url.Parse(s)
 	if err != nil {

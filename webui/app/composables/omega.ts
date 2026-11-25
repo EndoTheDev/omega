@@ -2067,7 +2067,8 @@ export interface SettingKnob {
     | "textarea"
     | "bindlist"
     | "model"
-    | "providers";
+    | "providers"
+    | "instances";
   value: unknown;
   // default is the knob's effective default. The settings pane's modified dot and
   // reset-to-default compare against exactly this field.
@@ -2136,7 +2137,7 @@ export interface SettingsPayload {
 // groups/knobs are dropped (wrong shape never blanks the pane with an
 // exception), knobs keep only known types - an unknown type would have
 // no control to render, so it falls out like any other stale entry.
-const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers"];
+const SETTING_KNOB_TYPES = ["toggle", "number", "text", "secret", "select", "textarea", "bindlist", "model", "providers", "instances"];
 
 // normalizeSettingKnob sanitizes ONE knob object - the shape the groups carry and the
 // one-knob read (`GET /settings?key=`) answers verbatim: both readers run through this

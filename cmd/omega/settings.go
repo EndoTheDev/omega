@@ -185,7 +185,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Help: "every provider is a named instance: the name is the instance id the model pickers and slots speak (instance:model), so two accounts of one type are two rows; the row named \"default\" is the provider the agent serves. Rows can be added, renamed, retyped and removed here; a row's base url and api key are config.yaml-only, and changes apply live"},
 				{Key: "provider.model_name", Label: "model name", Type: "model",
 					Value: cfg.Provider.ModelName,
-					Help: "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
+					Help:  "default model the agent serves; the webui model picker overrides per chat; applies on restart"},
 				{Key: "provider.vision_model", Label: "vision model", Type: "model", Filter: "vision", DefaultOption: true,
 					Value:   cfg.VisionModel,
 					Default: def.VisionModel, Live: true,
@@ -213,6 +213,15 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			},
 		},
 		{
+			Key:   "desktop",
+			Label: "desktop",
+			Knobs: []core.SettingsKnob{
+				{Key: "desktop.instances", Label: "instances", Type: "instances",
+					Value: desktopInstancesKnob(cfg), Default: desktopInstancesKnob(&def), Live: true,
+					Help: "the saved connections the status bar panel lists and switches to; each row is a name and an address; the same list a hand edit of config.yaml desktop.instances carries; applies live"},
+			},
+		},
+		{
 			Key:   "server",
 			Label: "server",
 			Knobs: []core.SettingsKnob{
@@ -222,7 +231,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Default: def.Server.Port,
 					Help:    "HTTP channel port; applies on restart"},
 				{Key: "server.bind", Label: "bind addresses", Type: "bindlist",
-					Value: strings.Join(cfg.Server.Bind, ", "),
+					Value:   strings.Join(cfg.Server.Bind, ", "),
 					Default: strings.Join(def.Server.Bind, ", "),
 					Help:    "comma-separated listen addresses; loopback only by default (unauthenticated API); edit config.yaml instead (applies on restart)"},
 				{Key: "server.run_timeout", Label: "run timeout (s)", Type: "number",
@@ -256,11 +265,11 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Default: def.Updates.Channel,
 					Help:    "stable follows the latest stable release; nightly follows the newest -nightly pre-release (a nightly sorts BELOW its stable target, so switching back to stable never looks like a downgrade); applies live - the next check reads it"},
 				{Key: "updates.auto_check", Label: "auto-check", Type: "toggle",
-					Value:   cfg.Updates.AutoCheck, Live: true,
+					Value: cfg.Updates.AutoCheck, Live: true,
 					Default: def.Updates.AutoCheck,
 					Help:    "check the channel every six hours; a check only reads the release list - nothing is downloaded or installed; on by default"},
 				{Key: "updates.auto_update", Label: "auto-update", Type: "toggle",
-					Value:   cfg.Updates.AutoUpdate, Live: true,
+					Value: cfg.Updates.AutoUpdate, Live: true,
 					Default: def.Updates.AutoUpdate,
 					Help:    "install and restart when the system is quiet (no active runs); with a run live the release stays staged and the pane asks - never a silent restart; off by default"},
 				{Key: "updates.managed", Label: "release-managed", Type: "select",
@@ -362,7 +371,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 					Default: def.Logging.Enabled,
 					Help:    "operational log; applies on restart"},
 				{Key: "logging.file", Label: "log file", Type: "text",
-					Value: cfg.Logging.File,
+					Value:   cfg.Logging.File,
 					Default: def.Logging.File,
 					Help:    "applies on restart"},
 			},
@@ -414,7 +423,7 @@ func compactionKnobs(cfg, def *Config) []core.SettingsKnob {
 			Help:    "fraction of the context window that triggers compaction", Live: true},
 		{Key: "compaction.context_window", Label: "context window", Type: "number",
 			Min: ptrF(0), Step: ptrF(1),
-			Value: c.ContextWindow,
+			Value:   c.ContextWindow,
 			Default: d.ContextWindow,
 			Help:    "model context window in tokens the budget is measured against; 0 = auto (probed from the provider at startup)", Live: true},
 		{Key: "compaction.keep_last", Label: "keep last", Type: "number",
@@ -448,6 +457,20 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 			"type":    strings.ToLower(inst.Type),
 			"host":    inst.Host,
 			"api_key": maskSecret(inst.APIKey),
+		})
+	}
+	return out
+}
+
+// desktopInstancesKnob renders the saved connections as the list editor's value. The
+// list order is the config.yaml order, so the pane never reshuffles its rows between
+// reloads and a save cannot reorder the file.
+func desktopInstancesKnob(cfg *Config) []map[string]any {
+	out := make([]map[string]any, 0, len(cfg.Desktop.Instances))
+	for _, inst := range cfg.Desktop.Instances {
+		out = append(out, map[string]any{
+			"name": inst.Name,
+			"url":  inst.URL,
 		})
 	}
 	return out
@@ -1528,6 +1551,20 @@ func coerceSettingValue(k core.SettingsKnob, raw string) (any, error) {
 		var list []any
 		if err := json.Unmarshal([]byte(raw), &list); err != nil {
 			return nil, fmt.Errorf("%s: expected a JSON array of instances, got %q", k.Key, raw)
+		}
+		return list, nil
+	case "instances":
+		// Only the SHAPE is decoded here: names, addresses, duplicates and the row cap
+		// stay applyDesktopInstances/NormalizeInstances' call, so the CLI can never
+		// refuse a row the pane would keep.
+		var list []any
+		if err := json.Unmarshal([]byte(raw), &list); err != nil || list == nil {
+			return nil, fmt.Errorf("%s: expected a JSON array of instance objects, got %q", k.Key, raw)
+		}
+		for _, item := range list {
+			if _, ok := item.(map[string]any); !ok {
+				return nil, fmt.Errorf("%s: expected a JSON array of instance objects, got %q", k.Key, raw)
+			}
 		}
 		return list, nil
 	default:

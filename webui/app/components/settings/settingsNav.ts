@@ -38,6 +38,7 @@ export const SECTION_SURFACES: Readonly<Record<string, string>> = {
   chat: SURFACE_FRONTEND,
   dock: SURFACE_FRONTEND,
   provider: SURFACE_BACKEND,
+  desktop: SURFACE_BACKEND,
   server: SURFACE_BACKEND,
   store: SURFACE_BACKEND,
   updates: SURFACE_BACKEND,

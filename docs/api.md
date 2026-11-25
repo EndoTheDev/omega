@@ -604,6 +604,13 @@ throw a table there away), and the host writes them through the same
 `SaveInstances`), so there is one atomic writer, one validation pass and
 one hot-apply.
 
+The list is WRITTEN in the settings pane (`desktop.instances`, a knob of
+type `instances` beside the provider list) or by `omega settings set
+desktop.instances '<json array>'` - both ride the same settings seam and
+the same `core.NormalizeInstances` pass, so they land identical rows.
+`PUT /instances` stays the wire for the same list (the pane's save path
+is `/settings`); no new endpoint exists.
+
 - `GET /instances` - `{"instances":[{"name":"laptop","url":"http://127.0.0.1:8099"}]}`,
   never a bare array and never `null`. Rows come back normalized
   (name trimmed, scheme lowercased, no trailing slash).
@@ -611,9 +618,11 @@ one hot-apply.
   list, answers the normalized list. The rules are `core.NormalizeInstances`,
   the same function `Config.Validate` runs on a hand edit: name trimmed,
   non-empty, at most 64 characters; URL parsed with scheme `http` or
-  `https` and a non-empty host, no spaces; a duplicate URL is refused
-  (one row per endpoint); at most 32 rows. Any violation answers
-  **400** with the row named and the file untouched.
+  `https` and a non-empty host, no spaces; a bare `host:port` takes
+  `http` (the shorthand the webui's add row accepts), and a bare
+  non-http scheme is refused; a duplicate URL is refused (one row per
+  endpoint); at most 32 rows. Any violation answers **400** with the row
+  named and the file untouched.
 - A host whose settings seam does not carry the list answers **501** on
   both methods - the same nil-safe floor `/settings` keeps.
 
