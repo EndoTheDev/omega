@@ -1,11 +1,12 @@
-// omega webui: the connection switcher's client half. Three layers, matching the house
-// patterns: the fetch wrappers (URL/method/body under fetch interception), the pure
-// helpers (normalize, upsert, remove, the cache round-trip and the failed-fetch floor),
-// and a source pin that the menubar mounts the menu.
+// omega webui: the connection list's client half. Three layers, matching the house
+// patterns: the fetch wrapper (URL/method under fetch interception), the pure helpers
+// (normalize, upsert, remove, the cache round-trip and the failed-fetch floor), and
+// source pins that the STATUS BAR carries the control and its list - the menubar pill
+// and its add form are gone, and settings is the one write surface.
 // Run: node --test webui/test/ (node >= 23 runs TS natively)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -20,7 +21,6 @@ import {
   normalizeInstanceURL,
   readInstanceCache,
   removeInstance,
-  saveInstances,
   setLastUsedInstance,
   upsertInstance,
   writeInstanceCache,
@@ -76,32 +76,12 @@ test("fetchInstances GETs /instances and unwraps the envelope", async () => {
   }
 });
 
-test("saveInstances PUTs the {instances:[...]} envelope and answers the stored list", async () => {
-  const seen: { url: string; method: string; body: string; contentType: string }[] = [];
-  const realFetch = globalThis.fetch;
-  globalThis.fetch = ((url: string | URL, init?: RequestInit) => {
-    const headers = new Headers(init?.headers);
-    seen.push({ url: String(url), method: init?.method ?? "", body: String(init?.body), contentType: headers.get("content-type") ?? "" });
-    return Promise.resolve(new Response(JSON.stringify({ instances: [row("pi", "https://omega.example.test")] }), { status: 200 }));
-  }) as typeof globalThis.fetch;
-  try {
-    const saved = await saveInstances([row("pi", "https://omega.example.test")]);
-    assert.equal(seen[0].url, "/instances");
-    assert.equal(seen[0].method, "PUT");
-    assert.equal(seen[0].contentType, "application/json");
-    assert.deepEqual(JSON.parse(seen[0].body), { instances: [row("pi", "https://omega.example.test")] });
-    assert.deepEqual(saved, [row("pi", "https://omega.example.test")]);
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
-
-test("a refused save throws the host's own sentence", async () => {
+test("a refused fetch throws instead of reading as an empty list", async () => {
   const realFetch = globalThis.fetch;
   globalThis.fetch = (() =>
-    Promise.resolve(new Response("instances: row 0: name is required\n", { status: 400 }))) as typeof globalThis.fetch;
+    Promise.resolve(new Response("instances unavailable\n", { status: 501 }))) as typeof globalThis.fetch;
   try {
-    await assert.rejects(() => saveInstances([row("x", "http://h.test")]), /name is required/);
+    await assert.rejects(() => fetchInstances(), /instances: 501/);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -226,36 +206,74 @@ test("switching writes lastUsed and navigates to the normalized target", () => {
   assert.deepEqual(seen, ["http://127.0.0.1:8099"]);
 });
 
-test("the cap the menu enforces matches the host's", () => {
+test("the cap the panel reports matches the host's", () => {
   assert.equal(MAX_INSTANCES, 32);
 });
 
-// source pin: the menubar mounts the switcher
+// source pin: the control lives in the STATUS BAR now - the menubar pill is gone
 
-test("MenuBar mounts ConnectionMenu and app.vue supplies the origin", () => {
+test("the status bar renders the connection control and the panel's rows", () => {
+  const bar = read("webui", "app", "components", "shell", "StatusBar.vue");
+  // the trigger: the health dot + the connected instance's name, one click opens the list
+  assert.match(bar, /class="seg seg-btn health"/, "the bar's health segment IS the control");
+  assert.match(bar, /:aria-label="`Connection: \$\{instanceName\}`"/, "the accessible name is Connection: <name>");
+  assert.match(bar, /<span class="hide-sm">\{\{ instanceName \}\}<\/span>/, "the label is the instance's name");
+  assert.doesNotMatch(bar, /"online" : "offline"/, "the words died - the dot is the state");
+  assert.match(bar, /:class="\[healthy \? 'ok' : 'down', \{ offline \}\]"/, "the dot keeps ok/down, plus offline for a stale list");
+  assert.match(bar, /aria-haspopup="dialog"/);
+  assert.match(bar, /:aria-expanded="healthOpen"/);
+  // the panel: the current row marked, then the saved rows as switches
+  assert.match(bar, /<span class="hp-head">connections<\/span>/);
+  assert.match(bar, /class="hp-crow hp-cur"\s+aria-current="true"/, "the current connection is marked");
+  assert.match(bar, /\{\{ currentOrigin \|\| "this page" \}\}/, "the current row carries its origin");
+  assert.match(bar, /v-for="row in savedRows"/, "the saved rows render");
+  assert.match(bar, /@click="switchTo\(row\)"/, "a saved row is the switch");
+  assert.match(bar, /navigateToInstance\(row\.url\)/, "switching is the full reload");
+  assert.match(bar, /v-if="row\.url === lastUsed"/, "the last-used word marks the last switch");
+  assert.match(bar, /offline - showing the cached list/, "the stale list says so");
+  // ONE write surface: no form, no remove, no reconnect
+  assert.doesNotMatch(bar, /<form|<input/, "no add form in the panel");
+  assert.doesNotMatch(bar, /reconnect/i, "no reconnect control anywhere");
+});
+
+test("the menubar carries no connection control, and the pill component is gone", () => {
   const menubar = read("webui", "app", "components", "shell", "MenuBar.vue");
-  assert.match(menubar, /<ConnectionMenu\b/, "MenuBar renders the connection pill");
-  assert.match(menubar, /:current-origin="currentOrigin"/, "the pill is fed the page origin");
-  assert.match(menubar, /currentOrigin: string/, "the origin rides a declared prop");
+  assert.doesNotMatch(menubar, /ConnectionMenu/, "the pill is unmounted");
+  assert.doesNotMatch(menubar, /currentOrigin/, "and its origin prop died with it");
+  assert.ok(
+    !existsSync(join(modules, "webui", "app", "components", "shell", "ConnectionMenu.vue")),
+    "the component file is deleted, not just unused",
+  );
 
   const app = read("webui", "app", "app.vue");
-  assert.match(app, /:current-origin="currentOrigin"/, "app.vue passes the origin down");
+  const barAt = app.indexOf("<StatusBar");
+  assert.ok(barAt > 0, "app.vue still mounts the status bar");
+  assert.match(
+    app.slice(barAt, app.indexOf("/>", barAt)),
+    /:current-origin="currentOrigin"/,
+    "the bar is fed the page origin",
+  );
+  const menuAt = app.indexOf("<MenuBar");
+  assert.doesNotMatch(
+    app.slice(menuAt, app.indexOf("/>", menuAt)),
+    /current-origin/,
+    "the menubar is no longer fed the origin",
+  );
   assert.match(app, /window\.location\.origin/, "the origin is the page's own");
 });
 
-// source pin: the pill's narrow squeeze. The labelled bar's floor (brand + pill +
-// four edge toggles) is wider than a phone window; with the label up, a 340px page
-// measured 371 and every pane below 360 read that overflow as "not narrow", so the
-// settings drawer was unreachable. The breakpoint must therefore cover the narrow
-// threshold, and the panel must shed its beside-the-pill anchor with it.
-test("ConnectionMenu squeezes the pill below the narrow breakpoint", () => {
-  const src = read("webui", "app", "components", "shell", "ConnectionMenu.vue");
+// source pin: the panel's narrow shape. The labelled bar is wider than a phone window,
+// so under the squeeze the panel spans the bar instead of a 280px card anchored at its
+// left edge - a 340px window never measures past its own width.
+test("the status bar panel squeezes below the narrow breakpoint", () => {
+  const src = read("webui", "app", "components", "shell", "StatusBar.vue");
   const block = src.match(/@media \(max-width: (\d+)px\) \{([\s\S]*?)\n  \}/);
-  assert.ok(block, "the pill carries a width breakpoint");
+  assert.ok(block, "the panel carries a width breakpoint");
   const px = Number(block![1]);
   assert.ok(px >= NARROW_MAX_PX, `the squeeze covers the pane-narrow width (breakpoint ${px} >= ${NARROW_MAX_PX})`);
   assert.ok(px <= 480, `the squeeze stays off a desktop bar (breakpoint ${px} <= 480)`);
-  assert.match(block![2], /\.conn-label \{[^}]*display: none/, "the label collapses under the breakpoint");
-  assert.match(block![2], /\.conn-panel \{[^}]*position: fixed/, "the panel becomes a bar-wide sheet, not a 320px box beside the pill");
-  assert.match(src, /:aria-label="`Connection: \$\{label\}`"/, "the accessible name outlives the hidden label");
+  assert.match(block![2], /\.health-pop \{[^}]*left: 8px/, "the panel sheds its left anchor");
+  assert.match(block![2], /\.health-pop \{[^}]*right: 8px/, "and spans the bar to the right edge");
+  assert.match(block![2], /\.health-pop \{[^}]*width: auto/, "a bar-wide sheet, not a 280px box");
+  assert.doesNotMatch(src, /class="dot hide-sm"/, "the dot never hides - only the name does");
 });

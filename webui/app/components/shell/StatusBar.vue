@@ -6,21 +6,24 @@
     @contextmenu="onStatMenu">
     <div class="zone left">
       <!--
-        health leads the bar: the dot (and its word on wide) stays visible on narrow.
+        the connection control: the health dot and the connected instance's name.
+        One click opens the panel - the connection list above the health facts.
+        The dot is the state (ok / down, plus offline for a stale cached list);
+        the name is the label, and it sheds on narrow while the dot never does.
       -->
       <button
         class="seg seg-btn health"
         type="button"
-        title="server health - click for detail"
-        aria-label="server health"
+        :title="`${instanceName} - click for connections and server health`"
+        :aria-label="`Connection: ${instanceName}`"
         aria-haspopup="dialog"
         :aria-expanded="healthOpen"
         @click="toggleHealth">
         <span
           class="dot"
-          :class="healthy ? 'ok' : 'down'"
+          :class="[healthy ? 'ok' : 'down', { offline }]"
           aria-hidden="true" />
-        <span class="hide-sm">{{ healthy ? "online" : "offline" }}</span>
+        <span class="hide-sm">{{ instanceName }}</span>
       </button>
       <WorkspaceSelect
         :workspace="workdir"
@@ -122,6 +125,44 @@
         class="health-pop"
         role="dialog"
         aria-label="server health detail">
+        <!--
+          the connection list: who this page is talking to, and the saved rows one
+          click away. The list is settings' write surface - this panel only reads
+          it and switches, so there is no add form and no remove button here.
+        -->
+        <div class="hp-conn">
+          <span class="hp-head">connections</span>
+          <div
+            class="hp-crow hp-cur"
+            aria-current="true">
+            <span class="hp-cname">{{ instanceName }}</span>
+            <span class="hp-curl">{{ currentOrigin || "this page" }}</span>
+          </div>
+          <button
+            v-for="row in savedRows"
+            :key="row.url"
+            type="button"
+            class="hp-crow hp-switch"
+            :title="`Switch to ${row.name} - ${row.url}`"
+            @click="switchTo(row)">
+            <span class="hp-cname">{{ row.name }}</span>
+            <span class="hp-curl">{{ row.url }}</span>
+            <span
+              v-if="row.url === lastUsed"
+              class="hp-used">last used</span>
+          </button>
+          <p
+            v-if="offline"
+            class="hp-note"
+            role="status">
+            offline - showing the cached list
+          </p>
+          <p
+            v-else-if="!rows.length"
+            class="hp-note">
+            no saved connections yet
+          </p>
+        </div>
         <div class="hp-row">
           <span class="hp-key">server</span>
           <span
@@ -192,6 +233,13 @@
   import { openContextMenu } from "../../composables/contextMenu";
   import { formatCacheShare } from "../../composables/tokenstat";
   import { statMenuItems, statVisible } from "./statusStats";
+  import {
+    lastUsedInstance,
+    loadInstances,
+    navigateToInstance,
+    readInstanceCache,
+    type SavedInstance,
+  } from "../../composables/instances.ts";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   import UpdateChip from "./UpdateChip.vue";
 
@@ -216,6 +264,8 @@
     workdirTarget: boolean;
     pending: number;
     socket: string;
+    /** the page's own origin: the saved row it matches is the current connection */
+    currentOrigin: string;
     /** the persisted hidden stat ids (the layout record's set); absent = every stat shows */
     hiddenStats?: readonly string[];
     providerReachable?: boolean | null;
@@ -298,6 +348,35 @@
     return formatDurationMs(total * 1000);
   });
 
+  // the connection control: the bar's dot and name ARE the switcher now. The
+  // cache paints at setup (so the label is never blank) and the backend list
+  // replaces it on mount; an unreachable instance keeps the cached rows and the
+  // panel says the list is stale.
+  const cachedInstances = readInstanceCache();
+  const rows = ref<SavedInstance[]>(cachedInstances.list);
+  const lastUsed = ref(cachedInstances.lastUsed);
+  const offline = ref(false);
+
+  const instanceName = computed(
+    () => rows.value.find((row) => row.url === props.currentOrigin)?.name ?? "This instance",
+  );
+  // the current connection has its own marked row; the rest are the switches.
+  const savedRows = computed(() => rows.value.filter((row) => row.url !== props.currentOrigin));
+
+  async function refreshInstances(): Promise<void> {
+    const loaded = await loadInstances();
+    rows.value = loaded.list;
+    offline.value = loaded.offline;
+    lastUsed.value = lastUsedInstance();
+  }
+
+  // switching is a full reload: navigateToInstance remembers the target first.
+  function switchTo(row: SavedInstance): void {
+    lastUsed.value = row.url;
+    healthOpen.value = false;
+    navigateToInstance(row.url);
+  }
+
   const healthOpen = ref(false);
   function toggleHealth() {
     healthOpen.value = !healthOpen.value;
@@ -309,6 +388,92 @@
       healthOpen.value = false;
     }
   }
-  onMounted(() => document.addEventListener("mousedown", onDocClick));
+  onMounted(() => {
+    document.addEventListener("mousedown", onDocClick);
+    void refreshInstances();
+  });
   onBeforeUnmount(() => document.removeEventListener("mousedown", onDocClick));
 </script>
+
+<style scoped>
+  /* the connection list, above the health facts: one column, each row a name and
+     its address. The current row is marked and inert; a saved row IS the switch
+     (a full reload on the other origin). */
+  .hp-conn {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--stroke);
+  }
+  .hp-head {
+    margin: 0 4px 2px;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .hp-crow {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+    padding: 3px 4px;
+    border-radius: var(--r-chip);
+  }
+  .hp-cur {
+    color: var(--text);
+  }
+  .hp-switch {
+    background: 0 0;
+    border: 0;
+    font: inherit;
+    text-align: left;
+    color: var(--text-dim);
+    cursor: pointer;
+  }
+  .hp-switch:hover {
+    background: var(--z1-raised);
+    color: var(--text);
+  }
+  .hp-cname {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hp-curl {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
+    opacity: 0.75;
+  }
+  .hp-used {
+    flex: none;
+    font-size: 10px;
+    opacity: 0.7;
+  }
+  /* a stale cached list reads dim: absence is not a health claim. */
+  .dot.offline {
+    background: var(--text-dim);
+    opacity: 0.6;
+  }
+  /*
+   * the squeeze: below 480px the panel spans the bar instead of a 280px card
+   * anchored at its left edge, so a 340px window keeps the whole sheet inside
+   * the viewport (the name already sheds with .hide-sm). The panel stays a child
+   * of the bar - absolute, not fixed - so it opens directly above it at every
+   * width and never needs viewport math.
+   */
+  @media (max-width: 480px) {
+    .health-pop {
+      left: 8px;
+      right: 8px;
+      width: auto;
+    }
+  }
+</style>
