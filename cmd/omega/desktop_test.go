@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -240,8 +241,10 @@ func TestDesktopEnsureInstanceDiagnosesHeldPort(t *testing.T) {
 	}
 }
 
-// TestDesktopBareLaunchWithoutConsole: a windowless bare `omega` is the desktop, and a
-// configless home hands it the setup gate instead of a dead end.
+// TestDesktopBareLaunchWithoutConsole: a windowless bare `omega` is routed to the
+// desktop, and a configless home hands it the setup gate instead of a dead end. The
+// window is Windows-only in 0.19.0, so every other GOOS must land on that platform
+// gate: the seam proves the routing even where the window cannot open.
 func TestDesktopBareLaunchWithoutConsole(t *testing.T) {
 	t.Setenv("OMEGA_HOME", t.TempDir())
 
@@ -254,7 +257,17 @@ func TestDesktopBareLaunchWithoutConsole(t *testing.T) {
 		return nil
 	}
 
-	if err := run(nil); err != nil {
+	err := run(nil)
+	if runtime.GOOS != "windows" {
+		if err == nil || !strings.Contains(err.Error(), "Windows-only") {
+			t.Fatalf("bare launch on %s = %v, want the platform gate's Windows-only error", runtime.GOOS, err)
+		}
+		if wizards != 0 {
+			t.Fatalf("setup wizard spawns = %d, want 0 behind the platform gate", wizards)
+		}
+		return
+	}
+	if err != nil {
 		t.Fatalf("bare windowless launch: %v", err)
 	}
 	if wizards != 1 {
