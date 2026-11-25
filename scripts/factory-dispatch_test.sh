@@ -2006,12 +2006,12 @@ grep -qF 'Onboarded: 1 (t_law)' <<<"$out" \
 	&& ok || bad "T28c: the pass rewrote the card's thread (expected the 2 seeded rows, nothing else)"
 rm -rf "$SPAWN_BASE"
 
-# T29 (local + CI): the tip-CI check (card t_a78c6f3a). The merge gate's
-# browser legs moved to CI, so the dispatcher reads the dev tip's `Journeys
-# regression` job BEFORE spawning: red or in flight HOLDS the pass (no
-# local-green landings pile onto an unproven tip), green or absent proceeds,
-# and an unreadable verdict (no gh) proceeds LOUDLY. The gh binary is the
-# $FD_GH seam; the stub answers the two calls the check makes - `run list
+# T29 (local + CI): the tip-CI check (card t_a78c6f3a). The merge gate moved to
+# CI, so the dispatcher reads the dev tip's ci.yml run BEFORE spawning - the
+# UNION of its job rows (`test` and the browser leg): red or in flight HOLDS
+# the pass (no local-green landings pile onto an unproven tip), green or absent
+# proceeds, and an unreadable verdict (no gh) proceeds LOUDLY. The gh binary is
+# the $FD_GH seam; the stub answers the two calls the check makes - `run list
 # --commit <sha>` (the run id) and `run view <id> --json jobs` (the job rows
 # after --jq, exactly what real gh prints) - and logs each invocation.
 #
@@ -2049,6 +2049,12 @@ TIPSHOW=$(git -C "$TIPROOT_N" rev-parse dev)
 JOB_RED="$(printf 'Journeys regression (CI-owned: the merge gate)\tcompleted\tfailure')"
 JOB_DONE="$(printf 'Journeys regression (CI-owned: the merge gate)\tcompleted\tsuccess')"
 JOB_RUN="$(printf 'Journeys regression (CI-owned: the merge gate)\tin_progress\t')"
+# The union legs below add the OTHER ci.yml job (`test`, the tree leg) and a
+# third job that is not part of the merge gate at all, one row each.
+JOB_TEST_FAIL="$(printf 'test\tcompleted\tfailure')"
+JOB_TEST_OK="$(printf 'test\tcompleted\tsuccess')"
+JOB_TEST_RUN="$(printf 'test\tin_progress\t')"
+JOB_SOAK_RED="$(printf 'post-merge soak\tcompleted\tfailure')"
 GUARD_SAVED="$GUARD"
 GUARD="$TIPGUARD"
 export FD_GH="$GHTIP"
@@ -2098,6 +2104,71 @@ grep -qF 'tip CI: unknown' <<<"$out" \
 	&& ok || bad "T29e: a missing gh must read unknown, out loud (out: $out)"
 grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
 	&& ok || bad "T29e: a missing gh must not block the factory (out: $out)"
+
+# T29f (the ratchet pin, card t_274ba60b): THE UNION. The verdict once matched
+# the `Journeys regression` row and returned, so the `test` job - go vet, go
+# test and the shell suites - was invisible to the gate. Live receipts: runs
+# 45498514231 (da0e0809) and 45514708548 (d024f8aa65) carried a RED `test` job
+# and the guard printed `tip CI: green`. This leg is that exact shape and must
+# stay red forever.
+export FD_GH="$GHTIP"
+GH_STUB_LIST=12345; GH_STUB_JOBS="$(printf '%s\n%s' "$JOB_TEST_FAIL" "$JOB_DONE")"
+export GH_STUB_LIST GH_STUB_JOBS
+out=$(SPAWNRUN tip-union-red "$TIPSEED" --dry-run)
+grep -qF "tip CI: red - dev ${TIPSHOW:0:12}" <<<"$out" \
+	&& ok || bad "T29f: a RED test job beside a green journeys job must read red (out: $out)"
+grep -qF '"test" failure' <<<"$out" \
+	&& ok || bad "T29f: the red verdict must name the failing job (out: $out)"
+grep -qF 'tip CI: HOLD' <<<"$out" \
+	&& ok || bad "T29f: a red union must print the hold (out: $out)"
+out=$(SPAWNRUN tip-union-red "$TIPSEED" --max 1)
+grep -qF 'no dispatch (tip CI red' <<<"$out" \
+	&& ok || bad "T29f: a red union must refuse the dispatch (out: $out)"
+grep -qF 'Spawned' <<<"$out" && bad "T29f: a card spawned onto a tip whose tree leg is red (out: $out)" || ok
+[ ! -s "$(splog tip-union-red)" ] || bad "T29f: the inner dispatcher was invoked on a held union pass"
+
+# T29g: the tree leg still running -> inflight, held. The union reads EVERY
+# row, so a jobs list whose first row is green cannot hide a queued second row.
+GH_STUB_JOBS="$(printf '%s\n%s' "$JOB_TEST_RUN" "$JOB_DONE")"; export GH_STUB_JOBS
+out=$(SPAWNRUN tip-union-run "$TIPSEED" --max 1)
+grep -qF 'tip CI: inflight' <<<"$out" \
+	&& ok || bad "T29g: an in-progress tree job beside a green journeys job must read inflight (out: $out)"
+grep -qF 'tip CI: HOLD' <<<"$out" \
+	&& ok || bad "T29g: an inflight union must print the hold (out: $out)"
+grep -qF 'Spawned' <<<"$out" && bad "T29g: a card spawned while a tip job was still running (out: $out)" || ok
+
+# T29h: both ci.yml jobs green -> green, and the why NAMES both (a green that
+# names one job would be the old single-job read wearing a union label).
+GH_STUB_JOBS="$(printf '%s\n%s' "$JOB_TEST_OK" "$JOB_DONE")"; export GH_STUB_JOBS
+out=$(SPAWNRUN tip-union-green "$TIPSEED" --max 1)
+grep -qF "tip CI: green - dev ${TIPSHOW:0:12}" <<<"$out" \
+	&& ok || bad "T29h: both jobs green must read green (out: $out)"
+grep -qF 'all 2 job(s) green: "test" success, "Journeys regression (CI-owned: the merge gate)" success' <<<"$out" \
+	&& ok || bad "T29h: the green why must name every job the verdict read (out: $out)"
+grep -qF 'Spawned: 1 (t_tip)' <<<"$out" \
+	&& ok || bad "T29h: a green union must NOT block the spawn (out: $out)"
+
+# T29i: a declared exclusion is skipped AND printed. The set is empty in the
+# script today; FD_TIP_CI_EXCLUSIONS is the suite's seam for proving the
+# machinery (never set by a live pass).
+export FD_TIP_CI_EXCLUSIONS='post-merge soak|post-merge soak, not a merge gate'
+GH_STUB_JOBS="$(printf '%s\n%s\n%s' "$JOB_TEST_OK" "$JOB_DONE" "$JOB_SOAK_RED")"; export GH_STUB_JOBS
+out=$(SPAWNRUN tip-union-excl "$TIPSEED" --max 1)
+grep -qF 'tip CI: green' <<<"$out" \
+	&& ok || bad "T29i: a declared-excluded red job must not hold the pass (out: $out)"
+grep -qF 'excluded: "post-merge soak" (post-merge soak, not a merge gate)' <<<"$out" \
+	&& ok || bad "T29i: an excluded job must be PRINTED with its reason (out: $out)"
+unset FD_TIP_CI_EXCLUSIONS
+
+# T29j: the same red job, NOT declared -> red. Exclusion is opt-in; the default
+# never widens to "unknown jobs are advisory".
+GH_STUB_JOBS="$(printf '%s\n%s\n%s' "$JOB_TEST_OK" "$JOB_DONE" "$JOB_SOAK_RED")"; export GH_STUB_JOBS
+out=$(SPAWNRUN tip-union-unexcl "$TIPSEED" --max 1)
+grep -qF 'tip CI: red' <<<"$out" \
+	&& ok || bad "T29j: an undeclared red job must read red - every job gates by default (out: $out)"
+grep -qF '"post-merge soak" failure' <<<"$out" \
+	&& ok || bad "T29j: the red verdict must name the undeclared job (out: $out)"
+grep -qF 'Spawned' <<<"$out" && bad "T29j: a card spawned past an undeclared red job (out: $out)" || ok
 # T30: the verdict has THREE states, not two. `absent` is
 # GitHub ANSWERING with no run, so the guard may stand down. A read that never
 # reached GitHub - curl exit nonzero, the bounded timeout firing, a body gh

@@ -118,8 +118,9 @@ non-positive value refuses in every mode.
 
 FD_GH names the gh binary the tip-CI verdict reads through (default `gh`;
 the test suite's seam). The pass prints one `tip CI:` line every run and
-holds the spawn while the dev tip's `Journeys regression` job is red or in
-flight (the merge-before-dispatch law) - docs/pipeline.md. Three verdict
+holds the spawn while the dev tip's ci.yml run is red or in flight across
+ANY of its jobs - the verdict is the union of the run's job rows (the
+merge-before-dispatch law) - docs/pipeline.md. Three verdict
 states, never two: `absent` is GitHub ANSWERING with no run, so the guard
 stands down; a read that never reached GitHub is `unknown` and proceeds
 with a `tip CI: WARN` line, because a failed read is not a green tip. The
@@ -1197,17 +1198,26 @@ if [ "${#UNSLOTTED[@]}" -gt 0 ]; then
   echo "impl lane over-cap: ${UNSLOTTED[*]} - legal, but no implementation slot this pass ($SLOTS head slot(s), $RUNIMPL_N of $IMPL_SEATS seats live)"
 fi
 
-# ---- tip CI verdict: the CI-owned journeys gate (card t_a78c6f3a) ---------
-# Every push to dev triggers the ci.yml `Journeys regression` job, so the LOCAL
-# battery can no longer say anything about the browser legs - and a pass that
-# never reads them would pile local-green landings onto a tip whose suite is
-# unproven. The merge-before-dispatch law gains this leg: read the dev tip's
-# verdict BEFORE anything spawns and hold the pass while it is red or in
-# flight. Green or absent (no run for that sha: a docs-only push, or a
-# workflow revision older than the job) proceeds. An unreadable verdict (no
-# gh, no auth, no dev ref) proceeds LOUDLY - a missing tool must never freeze
-# the factory. FD_GH is the suite's seam: the gh binary the check reads
-# through.
+# ---- tip CI verdict: the CI-owned merge gate, read as a UNION --------------
+# Every push to dev triggers ci.yml, whose jobs ARE the merge gate's tree legs:
+# `test` (go vet, go test, the shell suites) and `Journeys regression` (the
+# browser legs). The LOCAL battery can say nothing about the browser legs, and
+# a pass that never read the tree legs would pile local-green landings onto a
+# tip whose suite is unproven. The merge-before-dispatch law gains this leg:
+# read the dev tip's verdict BEFORE anything spawns and hold the pass while it
+# is red or in flight.
+#
+# READ EVERY JOB, NEVER ONE. The verdict is the UNION of the run's job rows -
+# the check once matched the `Journeys regression` row and returned, so a tip
+# whose `test` job was RED printed `tip CI: green` and three tips carried a red
+# tree leg through dispatch passes. Precedence: any job not `completed` ->
+# `inflight`; else any completed job whose conclusion is neither `success` nor
+# `skipped` -> `red`; else `green`. The `why` names the jobs behind the verdict
+# (all of them on green), so a reader can see the union is real. `absent` means
+# GitHub answered with NO RUN for that sha (a docs-only push) and keeps exactly
+# that one meaning. An unreadable verdict (no gh, no auth, no dev ref, a failed
+# read, no job rows) proceeds LOUDLY - a missing tool must never freeze the
+# factory. FD_GH is the suite's seam: the gh binary the check reads through.
 #
 # THREE STATES, NEVER TWO. `absent` means GitHub ANSWERED - no run for that sha
 # - so the guard may stand down. A read that never reached GitHub (curl exit
@@ -1215,12 +1225,46 @@ fi
 # proceeds, but with a WARN line of its own. The two used to collapse into
 # `absent`, so a TLS timeout printed `tip CI: absent` over a red tip and
 # silently turned the guard off - a failed read is not a green tip.
+#
+# NAMED EXCLUSIONS. A job deliberately outside the merge gate is listed here as
+# `<job name>|<reason>`, is skipped by the verdict, and is PRINTED as
+# `excluded: "<job>" (<reason>)` - never a wildcard, never a silent skip. The
+# set is EMPTY today: ci.yml's `test` and `journeys` both gate the merge.
+# FD_TIP_CI_EXCLUSIONS is the suite's seam (like FD_GH) for proving the
+# exclusion machinery; no live pass sets it.
 FD_GH="${FD_GH:-gh}"
+TIP_CI_EXCLUSIONS=()
+if [ -n "${FD_TIP_CI_EXCLUSIONS:-}" ]; then
+  IFS=';' read -r -a fd_excl_extra <<<"$FD_TIP_CI_EXCLUSIONS"
+  TIP_CI_EXCLUSIONS+=("${fd_excl_extra[@]}")
+fi
 TIP_SHA=""
 TIP_VERDICT="unknown"
 TIP_WHY=""
 TIP_HOLD=0
 TIP_WARN=0
+
+# Prints the reason when $1 is an excluded job; nonzero when it gates the merge.
+tip_ci_excluded() {
+  local entry
+  for entry in ${TIP_CI_EXCLUSIONS[@]+"${TIP_CI_EXCLUSIONS[@]}"}; do
+    case "$entry" in
+      "$1"\|*) printf '%s' "${entry#*|}"; return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# Joins its arguments with $1 as the separator: bash's "$*" keeps only the
+# first IFS character, so `IFS=', '` joins with a bare comma.
+tip_ci_join() {
+  local sep="$1" out="" item
+  shift
+  for item in "$@"; do
+    out="${out:+$out$sep}$item"
+  done
+  printf '%s' "$out"
+}
 
 # Reads through FD_GH; bounded by coreutils timeout where the host has it, so a
 # hung GitHub call can never stall the tick (the read is advisory, the hold is
@@ -1279,25 +1323,45 @@ tip_ci_verdict() {
     TIP_VERDICT="unknown"
     return 0
   fi
+  local gated=() inflight=() failed=() excluded=() reason joined
   while IFS=$'\t' read -r jname jstatus jconcl; do
-    case "$jname" in
-      'Journeys regression'*)
-        if [ "$jstatus" != "completed" ]; then
-          TIP_WHY="job \"$jname\" is $jstatus (run $runid)"
-          TIP_VERDICT="inflight"
-          return 0
-        fi
-        case "$jconcl" in
-          success) TIP_WHY="job \"$jname\" green (run $runid)"; TIP_VERDICT="green" ;;
-          skipped) TIP_WHY="job \"$jname\" skipped (run $runid)"; TIP_VERDICT="absent" ;;
-          *) TIP_WHY="job \"$jname\" $jconcl (run $runid)"; TIP_VERDICT="red" ;;
-        esac
-        return 0
-        ;;
+    [ -n "$jname" ] || continue
+    if reason="$(tip_ci_excluded "$jname")"; then
+      excluded+=("\"$jname\" ($reason)")
+      continue
+    fi
+    gated+=("\"$jname\" ${jconcl:-$jstatus}")
+    if [ "$jstatus" != "completed" ]; then
+      inflight+=("\"$jname\" is $jstatus")
+      continue
+    fi
+    case "$jconcl" in
+      success|skipped) ;;
+      *) failed+=("\"$jname\" $jconcl") ;;
     esac
   done <<<"$jobs"
-  TIP_WHY="run $runid carries no \"Journeys regression\" job (workflow revision older than the job)"
-  TIP_VERDICT="absent"
+  if [ "${#gated[@]}" -eq 0 ]; then
+    TIP_WHY="run $runid carries no job outside the named exclusions - cannot tell green from red"
+    TIP_VERDICT="unknown"
+    return 0
+  fi
+  if [ "${#inflight[@]}" -gt 0 ]; then
+    joined="$(tip_ci_join ', ' "${inflight[@]}")"
+    TIP_WHY="job $joined (run $runid)"
+    TIP_VERDICT="inflight"
+  elif [ "${#failed[@]}" -gt 0 ]; then
+    joined="$(tip_ci_join ', ' "${failed[@]}")"
+    TIP_WHY="job $joined (run $runid)"
+    TIP_VERDICT="red"
+  else
+    joined="$(tip_ci_join ', ' "${gated[@]}")"
+    TIP_WHY="all ${#gated[@]} job(s) green: $joined (run $runid)"
+    TIP_VERDICT="green"
+  fi
+  if [ "${#excluded[@]}" -gt 0 ]; then
+    joined="$(tip_ci_join ', ' "${excluded[@]}")"
+    TIP_WHY="$TIP_WHY; excluded: $joined"
+  fi
 }
 
 tip_ci_verdict
