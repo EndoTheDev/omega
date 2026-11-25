@@ -104,8 +104,8 @@ saved_other=${counts#* }
 probe_connections() {
   jsq "(()=>{const p=document.querySelector('.health-pop');if(!p)return 'no-panel';const head=p.querySelector('.hp-head');if(!head||head.textContent.trim().toLowerCase()!=='connections')return 'no-heading';const cur=p.querySelector('.hp-crow[aria-current=\"true\"]');if(!cur)return 'unmarked-current';const cname=((cur.querySelector('.hp-cname')||{}).textContent||'').trim();if(!cname)return 'current-unnamed';const bar=document.querySelector('.statusbar .seg.seg-btn.health');const label=(bar&&bar.getAttribute('aria-label'))||'';if(label!=='Connection: '+cname)return 'label['+label+']name['+cname+']';const rows=[...p.querySelectorAll('.hp-switch')];if(rows.length!==$saved_other)return 'rows['+rows.length+'/'+'$saved_other'+']';for(const r of rows){const n=((r.querySelector('.hp-cname')||{}).textContent||'').trim();const u=((r.querySelector('.hp-curl')||{}).textContent||'').trim();if(!n||!u)return 'row-incomplete['+(r.textContent||'').replace(/\\s+/g,' ')+']'}const bad=[...p.querySelectorAll('*')].filter(e=>/reconnect/i.test(((e.getAttribute('aria-label')||'')+(e.getAttribute('title')||'')+(e.tagName==='BUTTON'?(e.textContent||''):''))));if(bad.length)return 'reconnect-control';return 'ok'})()"
 }
-v=$(probe_connections)
-assert_eq "$v" "ok" "the panel's connection list is wrong"
+v=$(probe_connections | tr -d '"')
+assert_eq "$v" "ok" "the panel leads with the connection list - current row marked, saved rows switchable, no reconnect"
 step "ok: the panel lists the connections above the facts - current instance marked and named on the bar, $saved_other saved row(s) switchable, no add/remove/reconnect control"
 
 # card t_0b52537a: provider / database / last error are OPTIONAL facts on the
@@ -147,8 +147,8 @@ wait_js '!!document.querySelector(".health-pop")' 10 \
 probe_340() {
   jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "no-panel";const r=p.getBoundingClientRect();const vw=document.documentElement.clientWidth;if(r.left<0||r.right>vw)return "panel-outside:"+Math.round(r.left)+".."+Math.round(r.right)+"/"+vw;if(document.documentElement.scrollWidth>vw+1)return "hscroll:"+document.documentElement.scrollWidth+"/"+vw;const bar=document.querySelector(".statusbar");const dot=bar.querySelector(".seg.seg-btn.health .dot");if(!dot||getComputedStyle(dot).display==="none")return "dot-hidden";const name=bar.querySelector(".seg.seg-btn.health .hide-sm");if(name&&getComputedStyle(name).display!=="none")return "name-visible";return "ok"})()'
 }
-v=$(probe_340)
-assert_eq "$v" "ok" "the 340px bar/panel geometry is wrong"
+v=$(probe_340 | tr -d '"')
+assert_eq "$v" "ok" "the 340px bar keeps the dot alone and the open sheet inside the viewport"
 step "ok: 340px - the dot alone carries the name and the open sheet stays inside the viewport"
 jsq 'document.querySelector(".statusbar .seg.seg-btn.health").click()' >/dev/null 2>&1
 wait_js '!document.querySelector(".health-pop")' 10 || die "the panel never closed at 340px"
