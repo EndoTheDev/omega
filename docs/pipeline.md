@@ -179,11 +179,12 @@ assumptions were wrong on a host whose live home was remapped.
 
 ### The journeys gate is CI-owned (ruling 2026-11-22)
 
-The browser legs of the merge gate run in CI, not in the pass. Every push to
-dev triggers the `Journeys regression` job in `.github/workflows/ci.yml`: it
-builds the binary, boots a provider-less validation lane and runs
-`scripts/journeys/run.sh --regression` inside the runner. The nightly keeps
-its full-suite soak unchanged.
+The merge gate's browser legs run in CI, not in the pass. Every push to dev
+triggers `.github/workflows/ci.yml`, whose two jobs are the legs the gate
+reads: `test` (vet, the Go suite, the shell suites) and the `Journeys
+regression` job, which builds the binary, boots a provider-less validation
+lane and runs `scripts/journeys/run.sh --regression` inside the runner. The
+nightly keeps its full-suite soak unchanged.
 
 - **Why.** The one host that can serve a lane also runs the workers and the
   gateway. A local chrome battery there starves itself and reports the
@@ -193,8 +194,13 @@ its full-suite soak unchanged.
   push, instead of blocking the landing. The mitigations are fix-forward, the
   un-land discipline (the tick reverts the merge exactly like a local red,
   branch kept, card back to ready), the tip check in
-  `scripts/factory-dispatch.sh` (no new dispatch while the dev tip's
-  regression job is red or in flight), and the nightly soak as the 24h fence.
+  `scripts/factory-dispatch.sh` (no new dispatch while ANY job of the dev
+  tip's ci.yml run is red or in flight), and the nightly soak as the 24h fence.
+- **Every job on the tip gates, never one.** The guard's tip verdict is the
+  union of the run's job rows, so a green journeys job cannot stand down a red
+  `test` job. The verdict once matched the journeys row and returned, and
+  three tips carried a red tree leg through dispatch passes that announced a
+  green tip.
 - **No local chrome at all, not even a subset.** The lane-smoke covers boot
   liveness; any local chrome recreates the starvation class at smaller scale.
 - **`TRAIN_JOURNEYS_CMD` is the debugging unit.** One command, hand-run when
@@ -407,19 +413,25 @@ that hook covers an ABSENT file only, so a present config with a missing
 or non-positive knob still refuses.
 
 The guard also holds new work on the dev tip's CI verdict. Before anything
-spawns it reads the tip's `Journeys regression` job (`gh run list` for that
-sha, then that job's own status) and refuses the pass with one `tip CI: HOLD`
-line while the verdict is red or in flight - the merge-before-dispatch law
-gaining a leg, so local-green landings never pile onto a tip whose browser
-gate is unproven. Green, or absent (no run for that sha: a docs-only push),
-proceeds; an unreadable verdict (no `gh`, no auth, no git) also proceeds,
-loudly - a missing tool must not freeze the factory. `FD_GH` names the gh
-binary the check reads through (the suite's seam).
+spawns it reads the tip's ci.yml run (`gh run list` for that sha) and then
+every job row of that run (`gh run view --json jobs`), and refuses the pass
+with one `tip CI: HOLD` line while the UNION is red or in flight - the
+merge-before-dispatch law gaining a leg, so local-green landings never pile
+onto a tip whose suite is unproven. A job named in the guard's exclusion set
+is skipped by the verdict and printed as `excluded: "<job>" (<reason>)`; the
+set is empty today because both ci.yml jobs gate the merge, and an exclusion
+is opt-in and named, never a wildcard. Green, or absent (no run for that sha:
+a docs-only push), proceeds; an unreadable verdict (no `gh`, no auth, no git,
+a failed read, no job rows) also proceeds, loudly - a missing tool must not
+freeze the factory. `FD_GH` names the gh binary the check reads through (the
+suite's seam).
 
 Three verdict states, never two. `absent` means GitHub answered and there is
 no run; a read that never reached GitHub (curl exit nonzero, the bounded
 timeout firing, a body `gh` cannot parse) is `unknown` - it proceeds with its
-own `tip CI: WARN` line, because a failed read is not a green tip. The hold
+own `tip CI: WARN` line, because a failed read is not a green tip. The
+verdict's `why` names the jobs behind it (every job read, on green), so a
+reader can see the union is real. The hold
 itself carries one door: a ready card whose declared `FILES:` surface is
 entirely under `scripts/journeys/recipes/` may still spawn while the tip is
 red. Recipe bytes touch no runtime, so that card class is the only one that
