@@ -12,7 +12,10 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/EndoTheDev/omega/agent"
 )
 
 // ErrNeedsSetup is the desktop's first-run signal: with no config.yaml there is no
@@ -194,4 +197,87 @@ func hasFlag(args []string, name string) bool {
 		}
 	}
 	return false
+}
+
+// desktopWebView2Help is the actionable half of the fallback text: the box names the
+// cause, then the one thing a user can do about it.
+const desktopWebView2Help = "The Microsoft Edge WebView2 Runtime is missing or failed to start. " +
+	"Install it from https://go.microsoft.com/fwlink/p/?LinkId=2124703 and start omega again."
+
+// desktopBootErrors owns the fallback dialog for a window that never came up. The first
+// error before the window is on screen writes the log line and shows the box; every
+// later error is a log entry only. Wails reports runtime WebView2 errors - a non-fatal
+// rasterization complaint included - through the same callback, so the gate is the
+// window's own show event, not the error's shape.
+type desktopBootErrors struct {
+	logf    agent.LoggerProvider
+	logPath string
+	box     func(title, msg string)
+
+	mu   sync.Mutex
+	up   bool
+	seen bool
+}
+
+// newDesktopBootErrors takes no Wails type and starts no app: the whole decision is a
+// value a test can drive without a window, a WebView2 runtime or an OS.
+func newDesktopBootErrors(logf agent.LoggerProvider, logPath string, box func(title, msg string)) *desktopBootErrors {
+	return &desktopBootErrors{logf: logf, logPath: logPath, box: box}
+}
+
+// Message is the exact text of the box: what failed, the WebView2 cause, what to install,
+// and where the record is.
+func (b *desktopBootErrors) Message(cause error) string {
+	text := "unknown error"
+	if cause != nil {
+		text = cause.Error()
+	}
+	details := b.logPath
+	if details == "" {
+		details = "no log file (logging is disabled)"
+	}
+	return fmt.Sprintf("omega could not open its window.\n\nWebView2: %s\n\n%s\n\nDetails: %s", text, desktopWebView2Help, details)
+}
+
+// Handle is the Wails error callback. The log line lands before the box, so a user who
+// leaves the dialog open still leaves a record; a disabled logger is silent and the box
+// still shows.
+func (b *desktopBootErrors) Handle(err error) {
+	if err == nil {
+		return
+	}
+	b.mu.Lock()
+	if b.up {
+		b.mu.Unlock()
+		b.line("desktop: window error after boot: %v; no fallback dialog, the window is up", err)
+		return
+	}
+	if b.seen {
+		b.mu.Unlock()
+		b.line("desktop: window boot failed again: %v; the fallback dialog already showed", err)
+		return
+	}
+	b.seen = true
+	b.mu.Unlock()
+
+	b.line("desktop: window boot failed: %v; the user saw the fallback dialog", err)
+	b.box("omega", b.Message(err))
+}
+
+// WindowUp records that the window reached the screen: from here on an error is a
+// running app's complaint, never a boot failure, and it must not stack a box over a
+// usable window.
+func (b *desktopBootErrors) WindowUp() {
+	b.mu.Lock()
+	b.up = true
+	b.mu.Unlock()
+}
+
+// line writes one log entry. The box never waits on logging: a nil logger skips the
+// write and the dialog still shows.
+func (b *desktopBootErrors) line(format string, args ...any) {
+	if b.logf == nil {
+		return
+	}
+	b.logf.Errorf(format, args...)
 }

@@ -13,11 +13,14 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/EndoTheDev/omega/harness/observability"
 )
 
 // freeDesktopPort reserves a port and releases it for the test's own bind.
@@ -292,6 +295,115 @@ func TestDesktopEnsureInstanceDiagnosesHeldPort(t *testing.T) {
 	if !strings.Contains(msg, "held by another process") {
 		t.Fatalf("error %q does not diagnose the foreign listener", msg)
 	}
+}
+
+// TestDesktopBootErrors is the fallback-dialog contract without a window, a WebView2
+// runtime or an OS: one box for the first boot failure, a log line before it, and no
+// second box for anything after - a storm included.
+func TestDesktopBootErrors(t *testing.T) {
+	logLines := func(t *testing.T, path string) []string {
+		t.Helper()
+		body, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read the log: %v", err)
+		}
+		var lines []string
+		for _, line := range strings.Split(string(body), "\n") {
+			if strings.TrimSpace(line) != "" {
+				lines = append(lines, line)
+			}
+		}
+		return lines
+	}
+	newTestBootErrors := func(t *testing.T) (*desktopBootErrors, *[]string, string) {
+		t.Helper()
+		logPath := filepath.Join(t.TempDir(), "omega.log")
+		logf, err := observability.NewLogger(observability.Config{Enabled: true, File: logPath})
+		if err != nil {
+			t.Fatalf("NewLogger: %v", err)
+		}
+		t.Cleanup(func() { _ = logf.Close() })
+		var boxes []string
+		boot := newDesktopBootErrors(logf, logPath, func(title, msg string) {
+			boxes = append(boxes, title+"\n"+msg)
+		})
+		return boot, &boxes, logPath
+	}
+
+	t.Run("first boot error boxes once and logs the line", func(t *testing.T) {
+		boot, boxes, logPath := newTestBootErrors(t)
+		cause := errors.New("error getting Webview2 runtime version: the runtime is not installed")
+		boot.Handle(cause)
+
+		if len(*boxes) != 1 {
+			t.Fatalf("boxes = %d, want exactly 1", len(*boxes))
+		}
+		box := (*boxes)[0]
+		if !strings.HasPrefix(box, "omega\n") {
+			t.Fatalf("box title = %q, want the omega caption", strings.SplitN(box, "\n", 2)[0])
+		}
+		for _, want := range []string{"omega could not open its window.", "WebView2", cause.Error(), logPath} {
+			if !strings.Contains(box, want) {
+				t.Fatalf("box text is missing %q:\n%s", want, box)
+			}
+		}
+
+		lines := logLines(t, logPath)
+		if len(lines) != 1 {
+			t.Fatalf("log lines = %d, want exactly 1: %q", len(lines), lines)
+		}
+		for _, want := range []string{"desktop: window boot failed:", cause.Error(), "the user saw the fallback dialog"} {
+			if !strings.Contains(lines[0], want) {
+				t.Fatalf("log line is missing %q: %q", want, lines[0])
+			}
+		}
+	})
+
+	t.Run("second boot error logs and never stacks a box", func(t *testing.T) {
+		boot, boxes, logPath := newTestBootErrors(t)
+		boot.Handle(errors.New("browser path 'C:/gone' does not exist"))
+		boot.Handle(errors.New("unable to initialise WebView2 for window \"omega\""))
+
+		if len(*boxes) != 1 {
+			t.Fatalf("boxes = %d, want exactly 1 for the storm", len(*boxes))
+		}
+		lines := logLines(t, logPath)
+		if len(lines) != 2 {
+			t.Fatalf("log lines = %d, want 2: %q", len(lines), lines)
+		}
+		if !strings.Contains(lines[1], "already showed") {
+			t.Fatalf("second log line does not say the box already showed: %q", lines[1])
+		}
+	})
+
+	t.Run("an error after the window is up logs and never boxes", func(t *testing.T) {
+		boot, boxes, logPath := newTestBootErrors(t)
+		boot.WindowUp()
+		boot.Handle(errors.New("rasterization scale unavailable"))
+
+		if len(*boxes) != 0 {
+			t.Fatalf("boxes = %d, want 0 after the window is up", len(*boxes))
+		}
+		lines := logLines(t, logPath)
+		if len(lines) != 1 || !strings.Contains(lines[0], "window error after boot") {
+			t.Fatalf("post-boot log = %q, want one after-boot line", lines)
+		}
+	})
+
+	t.Run("a disabled logger never suppresses the dialog", func(t *testing.T) {
+		var boxes []string
+		boot := newDesktopBootErrors(observability.NopLogger{}, "", func(title, msg string) {
+			boxes = append(boxes, title+"\n"+msg)
+		})
+		boot.Handle(errors.New("unable to initialise WebView2 for window \"omega\""))
+
+		if len(boxes) != 1 {
+			t.Fatalf("boxes = %d, want 1 with logging disabled", len(boxes))
+		}
+		if !strings.Contains(boxes[0], "WebView2") {
+			t.Fatalf("box text names no WebView2 cause:\n%s", boxes[0])
+		}
+	})
 }
 
 // TestDesktopBareLaunchWithoutConsole: a windowless bare `omega` is routed to the

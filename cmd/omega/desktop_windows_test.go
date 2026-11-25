@@ -3,8 +3,10 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"os/exec"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -89,5 +91,75 @@ func TestDesktopAttachAnswerIsStable(t *testing.T) {
 	}
 	if got := bareLaunchWantsDesktop(); got == first {
 		t.Fatalf("bareLaunchWantsDesktop = %v after attach = %v, want its negation", got, first)
+	}
+}
+
+// TestDesktopWebView2RuntimeProbe is the host receipt for the gate's input: the same
+// client-state keys the WebView2 loader reads, answered by this machine.
+func TestDesktopWebView2RuntimeProbe(t *testing.T) {
+	version, err := webView2RuntimeVersion()
+	if err != nil {
+		t.Fatalf("webView2RuntimeVersion on this host: %v", err)
+	}
+	t.Logf("webView2RuntimeVersion on this host = %q", version)
+	if version == "" {
+		t.Skip("no WebView2 runtime on this host; the missing path is covered by the seam test")
+	}
+	if version[0] < '0' || version[0] > '9' {
+		t.Fatalf("probe answered %q, want the installed runtime's version", version)
+	}
+}
+
+// TestDesktopLaunchStopsWhenWebView2IsMissing is the defect's end-to-end proof without a
+// broken machine: the probe answers "nothing installed", and the launch must log, draw
+// exactly one box, start no agent, and return the error main turns into exit 1.
+func TestDesktopLaunchStopsWhenWebView2IsMissing(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("OMEGA_HOME", home)
+	cfgPath := desktopTestConfig(t, freeDesktopPort(t))
+	cfg, _, err := desktopConfig(cfgPath)
+	if err != nil {
+		t.Fatalf("desktopConfig: %v", err)
+	}
+
+	oldProbe, oldBox, oldSpawn := desktopWebView2Version, desktopBootBox, spawnInstanceServe
+	t.Cleanup(func() {
+		desktopWebView2Version, desktopBootBox, spawnInstanceServe = oldProbe, oldBox, oldSpawn
+	})
+	desktopWebView2Version = func() (string, error) { return "", nil }
+	var boxes []string
+	desktopBootBox = func(title, msg string) { boxes = append(boxes, title+"\n"+msg) }
+	spawnInstanceServe = func(string) (instanceProcess, instanceOwner, error) {
+		t.Error("a WebView2-less launch started the agent: the gate must stop before ensureInstance")
+		return nil, nil, errors.New("unreachable")
+	}
+
+	launchErr := desktopLaunch(cfg, cfgPath)
+	if launchErr == nil {
+		t.Fatal("desktopLaunch returned nil with no WebView2 runtime")
+	}
+	if !strings.Contains(launchErr.Error(), "WebView2") {
+		t.Fatalf("launch error = %q, want it to name WebView2", launchErr)
+	}
+	if len(boxes) != 1 {
+		t.Fatalf("boxes = %d, want exactly 1", len(boxes))
+	}
+	if !strings.HasPrefix(boxes[0], "omega\n") {
+		t.Fatalf("box = %q, want the omega caption first", boxes[0])
+	}
+	for _, want := range []string{"omega could not open its window.", "WebView2", "go.microsoft.com/fwlink", cfg.Logging.File} {
+		if !strings.Contains(boxes[0], want) {
+			t.Fatalf("box text is missing %q:\n%s", want, boxes[0])
+		}
+	}
+
+	body, readErr := os.ReadFile(cfg.Logging.File)
+	if readErr != nil {
+		t.Fatalf("read the desktop log: %v", readErr)
+	}
+	for _, want := range []string{"desktop: window boot failed:", "no WebView2 runtime is installed", "the user saw the fallback dialog"} {
+		if !strings.Contains(string(body), want) {
+			t.Fatalf("log is missing %q:\n%s", want, body)
+		}
 	}
 }
