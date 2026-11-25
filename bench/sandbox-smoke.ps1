@@ -30,6 +30,9 @@ $checks = @('install shape', 'headless health', 'webview2 probe', 'fallback dial
 $receipts = @('log.txt', 'inventory.txt', 'health-headless.txt', 'webview2.txt', 'desktop.png', 'verdict.txt')
 $results = New-Object System.Collections.ArrayList
 $phase = 'install shape'
+# Set by the install-shape block; declared here so the finally can scope its stop even
+# when the run dies before the install lands.
+$dest = $null
 
 function Add-Result([string]$name, [bool]$ok, [string]$detail) {
     [void]$results.Add([pscustomobject]@{ Name = $name; Ok = $ok; Detail = $detail })
@@ -181,10 +184,39 @@ function Set-Topmost([IntPtr]$handle, [bool]$on) {
     [void][Bench.Win32]::SetWindowPos($handle, $insertAfter, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040)
 }
 
-function Stop-Omega {
-    Get-Process -Name omega -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+# Only what this run staged. This script also runs off the sandbox - the harness leg, and
+# anyone debugging the smoke outside a VM - where an unrelated omega (a dev lane serve) is
+# a normal resident. A kill by name would take it silently, with no log line and no fault
+# entry to show for it, so the staged install root is the boundary.
+function Get-StagedOmega([string]$installDir) {
+    if ([string]::IsNullOrEmpty($installDir)) { return @() }
+    $prefix = [System.IO.Path]::GetFullPath($installDir).TrimEnd('\') + '\'
+    return @(Get-Process -Name omega -ErrorAction SilentlyContinue | Where-Object {
+            $path = $null
+            try { $path = $_.Path } catch { }
+            if ([string]::IsNullOrEmpty($path)) { return $false }
+            ([System.IO.Path]::GetFullPath($path)).StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)
+        })
+}
+
+function Stop-Omega([string]$installDir) {
+    # A .lnk launch cannot hand back the target's pid (Start-Process -PassThru returns the
+    # shell that opened it, when it returns anything), so the install root is the handle.
+    $staged = @(Get-StagedOmega $installDir)
+    if ($staged.Count -eq 0) {
+        Write-Host "stop: nothing staged under $installDir is running"
+        return
+    }
+    foreach ($p in $staged) {
+        Write-Host "stop: closing pid $($p.Id) - $($p.Path)"
+        try { $p.CloseMainWindow() | Out-Null } catch { }
+    }
     Start-Sleep -Seconds 2
-    Get-Process -Name omega -ErrorAction SilentlyContinue | Stop-Process -Force
+    # A modal box does not answer the polite close, and a windowed app may ignore it.
+    foreach ($p in @(Get-StagedOmega $installDir)) {
+        Write-Host "stop: forcing pid $($p.Id) - $($p.Path)"
+        Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+    }
     Start-Sleep -Seconds 1
 }
 
@@ -393,7 +425,7 @@ approvals:
 
     # Whatever the shape: a running exe holds its own file open and blocks the
     # uninstall, and the log is read after the process that writes it has gone.
-    Stop-Omega
+    Stop-Omega $dest
 
     $newLines = @()
     if (Test-Path $logPath) {
@@ -438,7 +470,7 @@ approvals:
 } catch {
     Add-Result $phase $false $_.Exception.Message
 } finally {
-    Stop-Omega
+    Stop-Omega $dest
 }
 
 # Last, because every file above must exist before it can be counted.
