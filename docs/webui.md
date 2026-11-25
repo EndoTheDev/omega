@@ -1166,9 +1166,10 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
 - Shell: `MenuBar` (the three seats, see the top-bar paragraph),
   `NavCluster` (back / forward / the palette seat - clock closed, the
   palette's own field open, in place - / the Ctrl+K trigger, dead
-  center), `StatusBar` (health dot,
-  token/ctx/rate telemetry, build version; uptime lives in the health
-  popover the dot opens), `SearchInput`,
+  center), `StatusBar` (the connection control - the health dot and the
+  connected instance's name - whose one panel leads with the saved-instance
+  list and keeps the health facts below it; token/ctx/rate telemetry, build
+  version), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
   actions right, outside every scrollport), `TogglePill` (the one
   switch, see above), `BandSelect` (the themed select - chip button +
