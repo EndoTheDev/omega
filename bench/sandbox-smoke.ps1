@@ -1,10 +1,17 @@
 # omega desktop sandbox smoke.
 #
 # bench\windows-sandbox.wsb maps the host's bench folder to C:\bench and runs this
-# script at logon. It installs the packaged portable zip the way a user does, boots
-# the desktop, proves the instance and the window, uninstalls, and writes every
-# receipt into the mapped folder. Closing the sandbox discards the machine, so the
-# mapped folder is the only thing the host keeps.
+# script at logon. It installs the packaged portable zip the way a user does, proves
+# the instance headless, records the WebView2 registration, then launches the Start
+# Menu shortcut and proves the user SAW something: the omega window, or the native
+# fallback box that names the missing runtime. It uninstalls and writes every receipt
+# into the mapped folder. Closing the sandbox discards the machine, so the mapped
+# folder is the only thing the host keeps.
+#
+# The sandbox is the machine where the window path is known to die for want of a
+# WebView2 runtime, so the windowed launch is proven by its fallback here and by the
+# real window on a real machine. A forced PASS (a runtime install, a browser
+# substitute) would hide exactly the failure this bench exists to catch.
 #
 # Windows PowerShell 5.1 with OS modules only: the sandbox has no package feed.
 
@@ -19,7 +26,8 @@ Start-Transcript -Path (Join-Path $out 'log.txt') -Force | Out-Null
 
 # Every check gets one verdict line, including the ones a fatal failure never
 # reached: a silent skip would read as a pass.
-$checks = @('install shape', 'headless health', 'instance health', 'window screenshot', 'uninstall', 'receipts written')
+$checks = @('install shape', 'headless health', 'webview2 probe', 'fallback dialog', 'uninstall', 'receipts written')
+$receipts = @('log.txt', 'inventory.txt', 'health-headless.txt', 'webview2.txt', 'desktop.png', 'verdict.txt')
 $results = New-Object System.Collections.ArrayList
 $phase = 'install shape'
 
@@ -58,7 +66,7 @@ function Write-Verdict {
     }
     [void]$lines.Add('')
     [void]$lines.Add('receipts:')
-    foreach ($name in @('log.txt', 'inventory.txt', 'health-headless.txt', 'health-instance.txt', 'desktop.png', 'verdict.txt')) {
+    foreach ($name in $receipts) {
         [void]$lines.Add("  " + (Join-Path $out $name))
     }
     [void]$lines.Add('')
@@ -67,6 +75,117 @@ function Write-Verdict {
     [void]$lines.Add("  sandbox-local state: " + (Join-Path $env:LOCALAPPDATA 'Programs\omega') + ", $env:TEMP\omega-portable")
     [void]$lines.Add('  host: nothing outside the mapped folder - the sandbox discards the rest')
     Set-Content -Path (Join-Path $out 'verdict.txt') -Value $lines -Encoding UTF8
+}
+
+# The runtime registration, read the way the WebView2 loader reads it: an EBWebView
+# folder under the Evergreen ClientState key. The loader opens the 32-bit registry view
+# (WOW6432Node on a 64-bit host), so both HKLM views are recorded beside HKCU - the
+# receipt names the cause instead of guessing it. An empty value is "no runtime here":
+# Edge registers the channel key on many machines and the loader still finds nothing.
+function Write-WebView2Receipt([string]$path) {
+    $uuid = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+    $lines = New-Object System.Collections.ArrayList
+    [void]$lines.Add('WebView2 runtime registration (EdgeUpdate ClientState, EBWebView):')
+    $versions = New-Object System.Collections.ArrayList
+    $missingBinary = New-Object System.Collections.ArrayList
+    $views = New-Object System.Collections.ArrayList
+    if ([Environment]::Is64BitProcess) {
+        [void]$views.Add([pscustomobject]@{ Hive = 'HKLM'; View = '32-bit view (the loader view)'; Path = "HKLM:\Software\WOW6432Node\Microsoft\EdgeUpdate\ClientState\$uuid" })
+        [void]$views.Add([pscustomobject]@{ Hive = 'HKLM'; View = '64-bit view'; Path = "HKLM:\Software\Microsoft\EdgeUpdate\ClientState\$uuid" })
+    } else {
+        [void]$views.Add([pscustomobject]@{ Hive = 'HKLM'; View = '32-bit view (the loader view)'; Path = "HKLM:\Software\Microsoft\EdgeUpdate\ClientState\$uuid" })
+    }
+    [void]$views.Add([pscustomobject]@{ Hive = 'HKCU'; View = 'current user'; Path = "HKCU:\Software\Microsoft\EdgeUpdate\ClientState\$uuid" })
+    foreach ($view in $views) {
+        $label = "$($view.Hive) $($view.View)"
+        if (-not (Test-Path $view.Path)) {
+            [void]$lines.Add("  ${label}: key absent - $($view.Path)")
+            continue
+        }
+        $value = (Get-ItemProperty -Path $view.Path -Name EBWebView -ErrorAction SilentlyContinue).EBWebView
+        if ([string]::IsNullOrEmpty($value)) {
+            [void]$lines.Add("  ${label}: key present, EBWebView empty - $($view.Path)")
+        } else {
+            [void]$lines.Add("  ${label}: EBWebView = $value")
+            [void]$versions.Add($value)
+            # The loader needs the binary at the registered path, not just the key: a
+            # registry value whose folder is gone reads as "installed" to a key-only
+            # probe and fails in the loader.
+            $binary = Join-Path $value 'msedgewebview2.exe'
+            if (Test-Path $binary) {
+                [void]$lines.Add("    binary present: $binary")
+            } else {
+                [void]$lines.Add("    binary MISSING: $binary - a loader pointed at this registration cannot start")
+                [void]$missingBinary.Add($value)
+            }
+        }
+    }
+    [void]$lines.Add('')
+    [void]$lines.Add('runtime directory listing:')
+    $appDir = "${env:ProgramFiles(x86)}\Microsoft\EdgeWebView\Application"
+    $dirFound = @()
+    if (Test-Path $appDir) {
+        [void]$lines.Add("  $appDir")
+        foreach ($entry in Get-ChildItem -Path $appDir -ErrorAction SilentlyContinue) {
+            [void]$lines.Add("    $($entry.Name)")
+            if ($entry.PSIsContainer) { $dirFound += $entry.Name }
+        }
+    } else {
+        [void]$lines.Add("  absent: $appDir")
+    }
+    Set-Content -Path $path -Value $lines -Encoding UTF8
+
+    if ($versions.Count -gt 0) {
+        $summary = "runtime registered: " + (($versions | Select-Object -Unique) -join ', ')
+        if ($missingBinary.Count -gt 0) {
+            $summary += "; msedgewebview2.exe missing at " + (($missingBinary | Select-Object -Unique) -join ', ')
+        }
+        return $summary
+    }
+    if ($dirFound.Count -gt 0) { return "no ClientState value, runtime directory holds: " + ($dirFound -join ', ') }
+    return 'no runtime registered in HKLM/HKCU and no Application directory - a fallback box is the expected desktop launch'
+}
+
+# Window discovery for the desktop proof. A Wails window is an ordinary top-level
+# window titled 'omega'; the fallback is a MessageBox, whose class is #32770. Both
+# carry the 'omega' caption, so the class is what tells them apart.
+function Initialize-Win32 {
+    if (-not ('Bench.Win32' -as [type])) {
+        Add-Type -Namespace Bench -Name Win32 -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+[DllImport("user32.dll")]
+public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+[DllImport("user32.dll")]
+public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+[DllImport("user32.dll")]
+public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+    }
+}
+
+function Get-WindowClassName([IntPtr]$handle) {
+    $text = New-Object System.Text.StringBuilder 256
+    [void][Bench.Win32]::GetClassName($handle, $text, $text.Capacity)
+    return $text.ToString()
+}
+
+# A window opened by a non-foreground process lands behind whatever holds the desktop,
+# and Windows refuses SetForegroundWindow to a background caller: topmost does not need
+# that right, so the screenshot shows the window.
+function Set-Topmost([IntPtr]$handle, [bool]$on) {
+    $insertAfter = if ($on) { [IntPtr](-1) } else { [IntPtr](-2) }
+    [void][Bench.Win32]::ShowWindow($handle, 9)
+    [void][Bench.Win32]::SetWindowPos($handle, $insertAfter, 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040)
+}
+
+function Stop-Omega {
+    Get-Process -Name omega -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
+    Start-Sleep -Seconds 2
+    Get-Process -Name omega -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 1
 }
 
 try {
@@ -173,65 +292,82 @@ approvals:
         Add-Result 'headless health' $false "exit $($probe.ExitCode), body: $($probe.Output.Trim())"
     }
 
-    # The user path, not the exe directly: launching the shortcut proves the shortcut.
-    $phase = 'instance health'
-    Start-Process -FilePath $lnk
-    $instance = Join-Path $out 'health-instance.txt'
-    $probes = New-Object System.Collections.ArrayList
-    # A cold first boot of the packaged exe measured a minute on a warm machine, so this
-    # wait bounds a HANG; it is not a boot-time assertion.
-    $deadline = (Get-Date).AddSeconds($firstBootBudget)
-    $instanceOk = $false
-    while ((Get-Date) -lt $deadline) {
-        $probe = Invoke-Native $exe @('health')
-        [void]$probes.Add("$((Get-Date).ToUniversalTime().ToString('HH:mm:ssZ')) exit $($probe.ExitCode)")
-        [void]$probes.Add($probe.Output.TrimEnd())
-        if ($probe.ExitCode -eq 0 -and $probe.Output -match 'ok: http://localhost:8099') { $instanceOk = $true; break }
-        Start-Sleep -Seconds 2
-    }
-    Set-Content -Path $instance -Value $probes -Encoding UTF8
-    if ($instanceOk) {
-        Add-Result 'instance health' $true 'omega health answered ok: http://localhost:8099'
-    } else {
-        Add-Result 'instance health' $false "no ok: http://localhost:8099 line within $firstBootBudget s (probes in health-instance.txt)"
+    # Recorded before the launch, not after: the probe is the context the launch's
+    # outcome is read against. PASS is "recorded", never "installed" - the sandbox is
+    # expected to answer "absent".
+    $phase = 'webview2 probe'
+    try {
+        $summary = Write-WebView2Receipt (Join-Path $out 'webview2.txt')
+        Add-Result 'webview2 probe' $true $summary
+    } catch {
+        Add-Result 'webview2 probe' $false "could not write webview2.txt: $($_.Exception.Message)"
     }
 
-    $phase = 'window screenshot'
-    $desktopPng = Join-Path $out 'desktop.png'
+    # The user path, not the exe directly: launching the shortcut proves the shortcut.
+    # The desktop proof is "the user saw something": the window, or the fallback box.
+    $phase = 'fallback dialog'
+    $logPath = Join-Path $dest 'omega.log'
+    $logBefore = 0
+    if (Test-Path $logPath) {
+        $logBefore = @(Get-Content -Path $logPath -ErrorAction SilentlyContinue).Count
+    }
+
+    Start-Process -FilePath $lnk
+
+    Initialize-Win32
     $deadline = (Get-Date).AddSeconds($firstBootBudget)
+    $dialogHandle = [IntPtr]::Zero
     $window = $null
     while ((Get-Date) -lt $deadline) {
-        $window = Get-Process -Name omega -ErrorAction SilentlyContinue |
-            Where-Object { $_.MainWindowTitle -eq 'omega' } | Select-Object -First 1
+        $dialogHandle = [Bench.Win32]::FindWindow('#32770', 'omega')
+        if ($dialogHandle -ne [IntPtr]::Zero) { break }
+        foreach ($p in @(Get-Process -Name omega -ErrorAction SilentlyContinue)) {
+            if ($p.MainWindowHandle -eq [IntPtr]::Zero) { continue }
+            if ($p.MainWindowTitle -ne 'omega') { continue }
+            if ((Get-WindowClassName $p.MainWindowHandle) -eq '#32770') { continue }
+            $window = $p
+            break
+        }
         if ($window) { break }
         Start-Sleep -Seconds 2
     }
-    if ($window) {
-        Write-Host "window title: '$($window.MainWindowTitle)' (pid $($window.Id))"
-        # A window opened by a non-foreground process lands behind whatever holds the
-        # desktop, and Windows refuses SetForegroundWindow to a background caller:
-        # topmost does not need that right, so the screenshot shows the window.
-        $raised = $false
+
+    # A cold first boot of the packaged exe measured a minute on a warm machine, so this
+    # wait bounds a HANG; it is not a boot-time assertion.
+    $shape = 'none'
+    $targetHandle = [IntPtr]::Zero
+    $pidText = ''
+    if ($dialogHandle -ne [IntPtr]::Zero) {
+        $shape = 'dialog'
+        $targetHandle = $dialogHandle
+        $boxPid = 0
+        [void][Bench.Win32]::GetWindowThreadProcessId($dialogHandle, [ref]$boxPid)
+        $pidText = "pid $boxPid"
+        Write-Host "saw: fallback dialog box (#32770) titled 'omega' ($pidText)"
+    } elseif ($window) {
+        $shape = 'window'
+        $targetHandle = $window.MainWindowHandle
+        $pidText = "pid $($window.Id)"
+        Write-Host "saw: window titled '$($window.MainWindowTitle)' ($pidText)"
+    } else {
+        Write-Host "saw: neither a window nor a fallback box titled 'omega' within $firstBootBudget s"
+    }
+
+    $raised = $false
+    if ($targetHandle -ne [IntPtr]::Zero) {
         try {
-            Add-Type -Namespace Bench -Name Win32 -MemberDefinition @'
-[DllImport("user32.dll")]
-public static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
-[DllImport("user32.dll")]
-public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-'@
-            [void][Bench.Win32]::ShowWindow($window.MainWindowHandle, 9)
-            # SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW
-            [void][Bench.Win32]::SetWindowPos($window.MainWindowHandle, [IntPtr](-1), 0, 0, 0, 0, 0x0001 -bor 0x0002 -bor 0x0040)
+            Set-Topmost $targetHandle $true
             $raised = $true
         } catch {
             Write-Host "could not raise the window: $($_.Exception.Message)"
         }
-        # Let the SPA paint: the screenshot is the evidence a reviewer reads.
+        # Let the frame paint: the screenshot is the evidence a reviewer reads.
         Start-Sleep -Seconds 3
     }
 
-    # Captured on success and failure alike: a missing window photographed is a
-    # diagnosis, a missing window unphotographed is a guess.
+    # Captured on success and failure alike: a missing desktop photographed is a
+    # diagnosis, a missing desktop unphotographed is a guess.
+    $desktopPng = Join-Path $out 'desktop.png'
     $shotError = $null
     try {
         Add-Type -AssemblyName System.Windows.Forms
@@ -250,52 +386,64 @@ public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     }
 
     # The bench raised the window for the capture only: hand the desktop back.
-    if ($window -and $raised) {
-        try { [void][Bench.Win32]::SetWindowPos($window.MainWindowHandle, [IntPtr](-2), 0, 0, 0, 0, 0x0001 -bor 0x0002) }
+    if ($raised) {
+        try { Set-Topmost $targetHandle $false }
         catch { Write-Host "could not unset topmost: $($_.Exception.Message)" }
     }
 
-    $windowOk = $false
-    if (-not $window) {
-        Add-Result 'window screenshot' $false "no omega process with MainWindowTitle 'omega' within $firstBootBudget s; desktop.png kept as the evidence"
-    } elseif ($shotError) {
-        Add-Result 'window screenshot' $false "window '$($window.MainWindowTitle)' found, screenshot failed: $shotError"
+    # Whatever the shape: a running exe holds its own file open and blocks the
+    # uninstall, and the log is read after the process that writes it has gone.
+    Stop-Omega
+
+    $newLines = @()
+    if (Test-Path $logPath) {
+        $all = @(Get-Content -Path $logPath -ErrorAction SilentlyContinue)
+        if ($all.Count -gt $logBefore) { $newLines = @($all[$logBefore..($all.Count - 1)]) }
+    }
+    if ($newLines.Count -gt 0) {
+        Write-Host 'new omega.log lines:'
+        foreach ($line in $newLines) { Write-Host "  $line" }
+    }
+    $webview2Line = $newLines | Where-Object { $_ -match 'WebView2' } | Select-Object -First 1
+
+    if ($shotError) {
+        Add-Result 'fallback dialog' $false "$shape found, but the screenshot failed: $shotError"
+    } elseif ($shape -eq 'dialog') {
+        if ($webview2Line) {
+            Add-Result 'fallback dialog' $true "fallback box (#32770, $pidText) photographed to desktop.png; omega.log gained: $($webview2Line.Trim())"
+        } else {
+            Add-Result 'fallback dialog' $false 'the box was photographed but omega.log gained no line naming WebView2 since the launch'
+        }
+    } elseif ($shape -eq 'window') {
+        Add-Result 'fallback dialog' $true "window titled '$($window.MainWindowTitle)' ($pidText) photographed to desktop.png"
     } else {
-        Add-Result 'window screenshot' $true "window titled 'omega' (pid $($window.Id)) captured to desktop.png"
-        $windowOk = $true
+        Add-Result 'fallback dialog' $false "no window and no fallback box titled 'omega' within $firstBootBudget s; desktop.png kept as the evidence"
     }
 
-    # A window this bench cannot see is the run's finding: report it with the log and
-    # the screenshot, never paper over it with a runtime install or a browser.
-    if ($windowOk) {
-        $phase = 'uninstall'
-        # A running exe holds its own file open, so the app stops before the tree goes.
-        Get-Process -Name omega -ErrorAction SilentlyContinue | ForEach-Object { $_.CloseMainWindow() | Out-Null }
-        Start-Sleep -Seconds 2
-        Get-Process -Name omega -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Seconds 1
+    # Ungated: the wipe must hold whoever showed up on the desktop.
+    $phase = 'uninstall'
+    $uninstaller = Join-Path $dest 'uninstall.ps1'
+    $uninstall = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $uninstaller)
+    Write-Host $uninstall.Output
 
-        $uninstaller = Join-Path $dest 'uninstall.ps1'
-        $uninstall = Invoke-Native 'powershell.exe' @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $uninstaller)
-        Write-Host $uninstall.Output
-
-        $left = @()
-        foreach ($p in @($exe, $shim, $lnk, $key, $dest)) { if (Test-Path $p) { $left += $p } }
-        if ($uninstall.ExitCode -ne 0) {
-            Add-Result 'uninstall' $false "uninstall.ps1 exited $($uninstall.ExitCode)"
-        } elseif ($left.Count -gt 0) {
-            Add-Result 'uninstall' $false ("left behind: " + ($left -join ', '))
-        } else {
-            Add-Result 'uninstall' $true 'exe, shim, shortcut, uninstall entry and install dir all gone'
-        }
+    $left = @()
+    foreach ($p in @($exe, $shim, $lnk, $key, $dest)) { if (Test-Path $p) { $left += $p } }
+    if ($uninstall.ExitCode -ne 0) {
+        Add-Result 'uninstall' $false "uninstall.ps1 exited $($uninstall.ExitCode)"
+    } elseif ($left.Count -gt 0) {
+        Add-Result 'uninstall' $false ("left behind: " + ($left -join ', '))
+    } else {
+        Add-Result 'uninstall' $true 'exe, shim, shortcut, uninstall entry and install dir all gone'
     }
 } catch {
     Add-Result $phase $false $_.Exception.Message
+} finally {
+    Stop-Omega
 }
 
 # Last, because every file above must exist before it can be counted.
 $phase = 'receipts written'
-$missingReceipts = @(@('log.txt', 'inventory.txt', 'health-headless.txt', 'health-instance.txt', 'desktop.png') | Where-Object {
+$missingReceipts = @(@('log.txt', 'inventory.txt', 'health-headless.txt', 'webview2.txt', 'desktop.png') | Where-Object {
         -not (Test-Path (Join-Path $out $_))
     })
 if ($missingReceipts.Count -eq 0) {
