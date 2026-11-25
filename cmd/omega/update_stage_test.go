@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -452,7 +453,12 @@ func TestProbeServeVersionRequiresNewVersion(t *testing.T) {
 // abort the artifact (the request context is detached on purpose).
 func TestStagingIsQueryable(t *testing.T) {
 	m, _ := updateTestManager(t)
-	release := githubRelease{TagName: "v9.9.9", Assets: []githubAsset{{Name: "omega-x-windows_amd64.zip", BrowserDownloadURL: "https://example.com/x.zip"}}}
+	// The asset must match the RUNNING platform: findAsset filters by
+	// assetNameForOS(GOOS, GOARCH), so a hardcoded windows_amd64 name makes
+	// stageRun fail before the download on every non-Windows runner - the
+	// exact hang the linux CI saw twice (found while landing t_a7d6b182).
+	platformAsset := fmt.Sprintf("omega-x-%s.zip", assetNameForOS(runtime.GOOS, runtime.GOARCH))
+	release := githubRelease{TagName: "v9.9.9", Assets: []githubAsset{{Name: platformAsset, BrowserDownloadURL: "https://example.com/x.zip"}}}
 	m.fetchStable = func() (githubRelease, error) { return release, nil }
 	m.fetchList = func() ([]githubRelease, error) { return []githubRelease{release}, nil }
 	started := make(chan struct{})
