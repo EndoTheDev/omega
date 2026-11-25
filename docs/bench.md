@@ -60,7 +60,7 @@ dev work); the Pi proves Linux things (this bench, and native arm64 from the sam
 
 | file | what it proves |
 | --- | --- |
-| `00-meta.txt` | the tree, base image digest and tool versions the run tested |
+| `00-meta.txt` | the tree, base image, tool versions and built image digest the run tested |
 | `01-build.log` | the linux binary built from this checkout |
 | `02-health.json` | `omega serve` came up on a fresh home and reported healthy |
 | `03-webui.html` | the committed SPA bundle is served |
