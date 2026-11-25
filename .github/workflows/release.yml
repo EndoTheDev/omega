@@ -5,7 +5,104 @@ on:
     tags: ["v*"]
 
 jobs:
+  desktop-windows:
+    # every tag ships the Windows desktop asset, and it is built, packaged,
+    # copy-booted and uploaded BEFORE the release job can publish anything:
+    # the release job needs this job, so a red smoke here means no release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Determine version
+        id: version
+        shell: bash
+        run: echo "VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Build webui (embedded SPA)
+        shell: bash
+        run: |
+          cd webui
+          npm ci
+          sh scripts/build.sh
+
+      - name: Build desktop
+        shell: bash
+        env:
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          mkdir -p dist
+          go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega.exe ./cmd/omega
+
+      - name: Package desktop asset
+        shell: pwsh
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/desktop-package.ps1 -Version "${{ steps.version.outputs.VERSION }}" -Exe dist/omega.exe -OutDir dist
+
+      - name: Copy-boot the packaged asset
+        # the gate: install the extracted tree for real, then boot the
+        # INSTALLED exe against a copy of a seeded home and require a healthy
+        # /health. Red here means the asset never reaches users.
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $zip = "dist/omega-$version-windows-desktop.zip"
+          $extract = Join-Path $env:RUNNER_TEMP 'omega-desktop-extract'
+          Expand-Archive -Path $zip -DestinationPath $extract -Force
+          $installer = Get-ChildItem -Path $extract -Recurse -Filter install.ps1 | Select-Object -First 1
+          if (-not $installer) { throw "install.ps1 missing from $zip" }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installer.FullName
+          if ($LASTEXITCODE -ne 0) { throw "install.ps1 exited $LASTEXITCODE" }
+
+          $dest = Join-Path $env:LOCALAPPDATA 'Programs\omega'
+          $exe = Join-Path $dest 'omega.exe'
+          $lnk = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\omega.lnk'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\omega'
+          if (-not (Test-Path $exe)) { throw "install.ps1 left no $exe" }
+          if (-not (Test-Path $lnk)) { throw "install.ps1 left no Start Menu shortcut" }
+          if (-not (Test-Path $key)) { throw "install.ps1 left no uninstall entry" }
+          if (-not (Get-ItemProperty -Path $key).UninstallString) { throw "uninstall entry carries no UninstallString" }
+
+          $seedHome = Join-Path $env:RUNNER_TEMP 'omega-home'
+          New-Item -ItemType Directory -Force -Path (Join-Path $seedHome 'config') | Out-Null
+          @'
+          provider:
+            model_name: smoke-model
+            type: ollama
+            host: http://127.0.0.1:11434
+          server:
+            port: 18247
+          '@ | Set-Content -Path (Join-Path $seedHome 'config\config.yaml') -Encoding ascii
+          $homeCopy = Join-Path $env:RUNNER_TEMP 'omega-home-copy'
+          Copy-Item -Path $seedHome -Destination $homeCopy -Recurse
+
+          $env:OMEGA_HOME = $homeCopy
+          $out = & $exe desktop --headless-health 2>&1 | Out-String
+          if ($LASTEXITCODE -ne 0) { throw "omega desktop --headless-health exited $LASTEXITCODE`n$out" }
+          if ($out -notmatch '"status":"ok"') { throw "health body carries no status ok`n$out" }
+          Write-Host $out
+
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $dest 'uninstall.ps1')
+          if ($LASTEXITCODE -ne 0) { throw "uninstall.ps1 exited $LASTEXITCODE" }
+          if (Test-Path $exe) { throw "uninstall left $exe in place" }
+          if (Test-Path $lnk) { throw "uninstall left the Start Menu shortcut in place" }
+          if (Test-Path $key) { throw "uninstall left the uninstall entry in place" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-windows
+          path: dist/omega-${{ steps.version.outputs.VERSION }}-windows-desktop.zip
+          if-no-files-found: error
+
   release:
+    needs: desktop-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -86,6 +183,14 @@ jobs:
           cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-linux_arm64/
           cd dist && tar czf "omega-$VERSION-linux_arm64.tar.gz" "omega-$VERSION-linux_arm64/"
 
+      - name: Download the desktop asset
+        # the windows job built, packaged and copy-booted it; checksums and
+        # the published files list must see it in dist/
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-windows
+          path: dist/
+
       - name: Generate checksums
         # both filename shapes: the full release filename for current
         # updaters, plus bare platform-tag aliases so pre-Oct-16 binaries
@@ -141,6 +246,7 @@ jobs:
           ## omega ${{ steps.version.outputs.VERSION }}
 
           ### Downloads
+          - **Windows desktop** (app window, tray, start with Windows): `omega-${{ steps.version.outputs.VERSION }}-windows-desktop.zip`
           - **Windows**: `omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip`
           - **Linux**: `omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz`
           - **Linux (arm64, e.g. Raspberry Pi)**: `omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz`
@@ -151,6 +257,11 @@ jobs:
           1. Download the archive for your OS
           2. Extract to a directory on your PATH
           3. Run `omega setup` on first install, then `omega` to start the CLI loop
+
+          The Windows desktop archive is its own install: extract it, run
+          `install.ps1` (copies to `%LOCALAPPDATA%\Programs\omega`, adds the Start
+          Menu shortcut and an uninstall entry), then launch omega from the Start
+          Menu. `uninstall.ps1` in the same folder removes it.
 
           ### Update
           If you already have omega installed: `omega update`
@@ -166,6 +277,7 @@ jobs:
           generate_release_notes: true
           prerelease: ${{ steps.version.outputs.PRERELEASE == 'true' }}
           files: |
+            dist/omega-${{ steps.version.outputs.VERSION }}-windows-desktop.zip
             dist/omega-${{ steps.version.outputs.VERSION }}-windows_amd64.zip
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_amd64.tar.gz
             dist/omega-${{ steps.version.outputs.VERSION }}-linux_arm64.tar.gz
