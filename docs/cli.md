@@ -111,7 +111,9 @@ omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
   argument launch is untouched - no script or service can land in a GUI. A scheduled
   task or service that runs bare `omega` with no parent console also fails the attach
   and opens the window; give automation an argument (`omega serve`, `omega run`) to
-  keep it on the CLI.
+  keep it on the CLI. cmd.exe and PowerShell do not wait for a GUI-subsystem child, so
+  from those shells run `omega.cmd` (it ships beside the exe and waits for it);
+  git-bash runs `omega.exe` directly.
 - No `config.yaml`: the launch spawns `omega setup` in a new console and exits 0.
 - `--headless-health` is the release-gate surface: it boots the runtime in-process,
   prints the `/health` body, shuts down, and exits 0 (exit 1 when the boot is not

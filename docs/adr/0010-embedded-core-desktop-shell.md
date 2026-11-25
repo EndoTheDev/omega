@@ -69,6 +69,9 @@ first window and exits without starting anything.
   no parent console - a shell launch - and a bare `omega` opens the window.
 - The check is per launch and needs no process list, so there is no file-manager list
   to keep current and no image name to miss.
+- cmd.exe and PowerShell do not wait for a GUI-subsystem child, so the release tree
+  carries `omega.cmd` beside the exe: two lines that run the sibling binary, which is
+  what makes those shells wait for the loop. git-bash waits on its own.
 
 ## Why not the Wails asset server
 

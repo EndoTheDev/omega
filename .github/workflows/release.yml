@@ -39,7 +39,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.VERSION }}
         run: |
           mkdir -p dist
-          go build -ldflags "-X main.omegaVersion=$VERSION" -o dist/omega.exe ./cmd/omega
+          go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega.exe ./cmd/omega
 
       - name: Package desktop asset
         shell: pwsh
@@ -147,6 +147,7 @@ jobs:
         run: |
           VERSION=${{ steps.version.outputs.VERSION }}
           GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
+          cp cmd/omega/omega.cmd dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-windows_amd64/
           cd dist && zip -r "omega-$VERSION-windows_amd64.zip" "omega-$VERSION-windows_amd64/"
@@ -318,5 +319,8 @@ jobs:
           Expand-Archive -Path "omega-*windows_amd64.zip" -DestinationPath smoke
           $exe = Get-ChildItem -Path smoke -Recurse -Filter omega.exe | Select-Object -First 1
           if (-not $exe) { throw "omega.exe not found in the windows asset" }
-          & $exe.FullName --version
-          & $exe.FullName run --help
+          # the wrapper waits for the GUI-subsystem exe; pwsh alone does not
+          $omega = Join-Path $exe.DirectoryName 'omega.cmd'
+          if (-not (Test-Path $omega)) { throw "omega.cmd missing from the windows asset" }
+          & $omega --version; if ($LASTEXITCODE -ne 0) { throw "omega --version exited $LASTEXITCODE" }
+          & $omega run --help; if ($LASTEXITCODE -ne 0) { throw "omega run --help exited $LASTEXITCODE" }

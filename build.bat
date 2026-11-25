@@ -21,5 +21,7 @@ REM -H=windowsgui: no console on a shell double-click; AttachConsole at startup 
 REM the terminal launch (CLI loop) from the shell launch (window).
 go build -ldflags "-H=windowsgui -X main.omegaVersion=%VERSION%" -o bin\omega.exe .\cmd\omega
 if errorlevel 1 exit /b 1
+REM cmd.exe and PowerShell do not wait for a GUI-subsystem exe; the wrapper waits.
+copy /y cmd\omega.cmd bin\omega.cmd >nul
 echo    bin\omega.exe (version: %VERSION%)
 echo ==^> done
