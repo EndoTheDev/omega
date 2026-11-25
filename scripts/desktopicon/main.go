@@ -259,7 +259,11 @@ func inFoot(x, y float64) bool {
 // up for GOOS=windows GOARCH=amd64. The object is a build artifact: every
 // sanctioned build regenerates it and -check proves the result.
 func writeSyso() error {
-	file, err := os.Open(assetPath)
+	return writeSysoTo(assetPath, sysoPath)
+}
+
+func writeSysoTo(asset, object string) error {
+	file, err := os.Open(asset)
 	if err != nil {
 		return err
 	}
@@ -267,22 +271,22 @@ func writeSyso() error {
 
 	icon, err := winres.LoadICO(file)
 	if err != nil {
-		return fmt.Errorf("%s: %w", assetPath, err)
+		return fmt.Errorf("%s: %w", asset, err)
 	}
 	resources := winres.ResourceSet{}
 	if err := resources.SetIcon(winres.ID(groupID), icon); err != nil {
 		return err
 	}
 
-	object, err := os.Create(sysoPath)
+	out, err := os.Create(object)
 	if err != nil {
 		return err
 	}
-	if err := resources.WriteObject(object, winres.ArchAMD64); err != nil {
-		object.Close()
+	if err := resources.WriteObject(out, winres.ArchAMD64); err != nil {
+		out.Close()
 		return err
 	}
-	return object.Close()
+	return out.Close()
 }
 
 const (

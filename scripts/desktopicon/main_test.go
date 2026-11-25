@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"runtime"
@@ -130,14 +131,47 @@ func TestCheckFailsOnExecutableWithoutIconGroup(t *testing.T) {
 	}
 }
 
+// buildFixture links a windows executable that carries the icon resource. The
+// object is the one every sanctioned build generates from the committed asset,
+// and it is linked in a module of the test's own: the real binary is not
+// rebuilt on every gate run, and no object ever appears beside cmd/omega's
+// sources, where a package building at the same moment would read it.
+func buildFixture(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := writeSysoTo(filepath.Join(root, assetPath), filepath.Join(dir, "rsrc_windows_amd64.syso")); err != nil {
+		t.Fatalf("write the icon object: %v", err)
+	}
+	for name, content := range map[string]string{
+		"go.mod":  "module fixture\n\ngo 1.26.5\n",
+		"main.go": "package main\n\nfunc main() {}\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	exe := filepath.Join(dir, "omega.exe")
+	build := exec.Command("go", "build", "-o", exe, ".")
+	build.Dir = dir
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("go build the fixture: %v\n%s", err, out)
+	}
+	return exe
+}
+
 func TestCheckAcceptsTheBuiltExecutable(t *testing.T) {
 	if runtime.GOOS != "windows" {
-		t.Skip("the built executable is windows-only")
+		t.Skip("the resource target is a windows PE")
 	}
-	exe := filepath.Join("..", "..", "bin", "omega.exe")
-	if _, err := os.Stat(exe); err != nil {
-		t.Skip("bin/omega.exe is not built")
+	if testing.Short() {
+		t.Skip("links a fixture executable")
 	}
+	exe := buildFixture(t)
 
 	var stdout, stderr bytes.Buffer
 	code := run([]string{"-check", exe}, &stdout, &stderr)
