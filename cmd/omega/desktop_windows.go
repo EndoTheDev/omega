@@ -101,6 +101,12 @@ func desktopLaunch(cfg Config, configPath string) error {
 		return err
 	}
 
+	// One dialog for both directions: a registration the app cannot read or write says
+	// so, and the row re-reads status afterwards instead of guessing.
+	autostart := newAutostartControl(wailsAutostart{manager: app.Autostart}, func(err error) {
+		app.Dialog.Error().SetTitle("omega").SetMessage("Start with Windows: " + err.Error()).Show()
+	})
+
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:  "omega",
 		URL:    origin,
@@ -112,6 +118,7 @@ func desktopLaunch(cfg Config, configPath string) error {
 		func() { win.Show(); win.Restore(); win.Focus() },
 		func() { win.Hide() },
 		func() { app.Quit() },
+		autostart,
 	)
 	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		shell.windowClosing(event.Cancel)
@@ -122,10 +129,42 @@ func desktopLaunch(cfg Config, configPath string) error {
 	tray.SetTooltip("omega")
 	tray.OnClick(shell.openWindow)
 	menu := app.Menu.New()
-	for _, item := range shell.menu() {
-		menu.Add(item.Label).OnClick(func(*application.Context) { item.Action() })
+	type menuRow struct {
+		entry desktopMenuEntry
+		item  *application.MenuItem
+	}
+	rows := make([]menuRow, 0, 3)
+	for _, entry := range shell.menu() {
+		var item *application.MenuItem
+		if entry.Checked == nil {
+			item = menu.Add(entry.Label)
+		} else {
+			item = menu.AddCheckbox(entry.Label, entry.Checked())
+		}
+		item.OnClick(func(*application.Context) {
+			entry.Action()
+			if entry.Checked == nil {
+				return
+			}
+			// The native row flipped itself on the click; the registration decides.
+			checked := entry.Checked()
+			application.InvokeSync(func() { item.SetChecked(checked) })
+		})
+		rows = append(rows, menuRow{entry: entry, item: item})
 	}
 	tray.SetMenu(menu)
+
+	// The popup is a native snapshot and Wails exposes no will-open hook, so every
+	// checkable row is re-read in the click path that opens it. A registration changed
+	// outside the tray (regedit, an installer) then shows the truth.
+	tray.OnRightClick(func() {
+		for _, row := range rows {
+			if row.entry.Checked != nil {
+				row.item.SetChecked(row.entry.Checked())
+			}
+		}
+		tray.OpenMenu()
+	})
 
 	// A toast click asks for the window: the same action as the "Open omega" item.
 	notifier.OnNotificationResponse(func(notifications.NotificationResult) { shell.openWindow() })
@@ -138,6 +177,32 @@ func desktopLaunch(cfg Config, configPath string) error {
 	// launch connects to the one already running.
 	return app.Run()
 }
+
+// wailsAutostart is the production autostartBackend: Wails v3 owns the registration
+// (the Run key on Windows), so omega never hand-rolls one.
+type wailsAutostart struct {
+	manager *application.AutostartManager
+}
+
+// Status reports whether a registration points at THIS binary.
+func (w wailsAutostart) Status() (bool, error) {
+	st, err := w.manager.Status()
+	if err != nil {
+		return false, err
+	}
+	return st.Enabled, nil
+}
+
+// Enable pins the value name and carries the caller's launch arguments.
+func (w wailsAutostart) Enable(args []string) error {
+	return w.manager.EnableWithOptions(application.AutostartOptions{
+		Identifier: autostartIdentifier,
+		Arguments:  args,
+	})
+}
+
+// Disable removes the registration; Wails no-ops when there is none.
+func (w wailsAutostart) Disable() error { return w.manager.Disable() }
 
 // wailsToastSink is the native toast surface behind the consumer.
 type wailsToastSink struct {
