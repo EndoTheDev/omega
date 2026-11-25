@@ -553,7 +553,7 @@ func (lo *cliLoop) startStdinReader(ctx context.Context) chan string {
 				close(lines)
 				return
 			}
-			line = strings.TrimRight(line, "\n")
+			line = strings.TrimRight(line, "\r\n")
 			if line == "" {
 				continue
 			}
