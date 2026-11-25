@@ -12,8 +12,11 @@ import {
   NAV_STORAGE_KEY,
   SETTINGS_SECTION_PARAM,
   SUBGROUP_LABELS,
+  SURFACE_BACKEND,
+  SURFACE_FRONTEND,
   anchorSelection,
   buildNav,
+  categorySurface,
   clampEndFollow,
   clampedRange,
   documentFor,
@@ -1518,4 +1521,26 @@ test("the nav watcher asks the normalisation question of BOTH ids", () => {
     /const id = selection\.value;\s*if \(id && !resolveSelection\(next, id\)\) \{/,
     "the highlight-only check (the blank-pane shape) is gone",
   );
+});
+
+// the desktop group is BACKEND state: its knob writes config.yaml's desktop.instances,
+// beside the provider list it sits next to in the pane.
+test("the desktop group classifies as backend", () => {
+  assert.equal(categorySurface("desktop"), SURFACE_BACKEND);
+  assert.equal(categorySurface("chat"), SURFACE_FRONTEND, "the frontend class is unchanged");
+  const nav = buildNav(
+    withSubgroups([
+      group("desktop", "desktop", [knob("desktop.instances", "instances", [])]),
+    ]),
+  );
+  assert.equal(nav.length, 1);
+  assert.equal(nav[0].surface, SURFACE_BACKEND);
+  assert.equal(nav[0].id, "desktop");
+  // ONE knob renders flat: the category carries no child row
+  assert.deepEqual(
+    documentFor(nav).map((section) => section.blocks.length),
+    [1],
+    "the single-knob section renders one flat block",
+  );
+  assert.equal(documentFor(nav)[0].blocks[0].heading, false, "no subgroup line");
 });

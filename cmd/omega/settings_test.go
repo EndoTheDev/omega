@@ -31,6 +31,7 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"provider.skills_model":          true,
 		"provider.approvals_model":       true,
 		"provider.instances":             true,
+		"desktop.instances":              true,
 		"server.port":                    true,
 		"server.bind":                    true,
 		"server.run_timeout":             true,
@@ -1131,5 +1132,147 @@ func TestOmegaSettingsInstancesRoundTrip(t *testing.T) {
 	}
 	if string(before) != string(after) {
 		t.Fatal("a refused save rewrote config.yaml")
+	}
+}
+
+// TestDesktopInstancesKnobShape pins the settings pane's desktop group: the knob is the
+// list editor's own type, its value is the file's rows in file order, and its default is
+// the SAME renderer on the defaults - never a hand-typed literal.
+func TestDesktopInstancesKnobShape(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Desktop.Instances = []core.SavedInstance{
+		{Name: "laptop", URL: "http://127.0.0.1:8099"},
+		{Name: "pi", URL: "https://omega.example.test"},
+	}
+	def := defaultConfig()
+
+	var knob *core.SettingsKnob
+	for _, g := range settingGroups(&cfg) {
+		if g.Key != "desktop" {
+			continue
+		}
+		for i := range g.Knobs {
+			if g.Knobs[i].Key == "desktop.instances" {
+				knob = &g.Knobs[i]
+			}
+		}
+	}
+	if knob == nil {
+		t.Fatal("settingGroups carries no desktop.instances knob")
+	}
+	if knob.Type != "instances" {
+		t.Fatalf("type = %q, want instances", knob.Type)
+	}
+	if !knob.Live {
+		t.Error("desktop.instances must apply live")
+	}
+	want := []map[string]any{
+		{"name": "laptop", "url": "http://127.0.0.1:8099"},
+		{"name": "pi", "url": "https://omega.example.test"},
+	}
+	if !reflect.DeepEqual(knob.Value, want) {
+		t.Fatalf("value = %#v, want the file rows in file order", knob.Value)
+	}
+	if !reflect.DeepEqual(knob.Default, desktopInstancesKnob(&def)) {
+		t.Fatalf("default = %#v, want the same renderer on the defaults", knob.Default)
+	}
+	if !reflect.DeepEqual(knob.Default, []map[string]any{}) {
+		t.Fatalf("default = %#v, want the empty list", knob.Default)
+	}
+}
+
+// TestSettingsSetDesktopInstances pins the CLI door: `omega settings set` lands the rows
+// through the same writer, a re-read shows the normalized list, and a bad row is refused
+// with the validator's own sentence without touching the file.
+func TestSettingsSetDesktopInstances(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	var out strings.Builder
+	rows := `[{"name":"laptop","url":"127.0.0.1:8099"},{"name":" pi ","url":"HTTPS://Omega.Example.Test/"}]`
+	if err := settingsSet(path, "desktop.instances", rows, &out); err != nil {
+		t.Fatalf("settings set: %v", err)
+	}
+	if !strings.Contains(out.String(), `"url":"http://127.0.0.1:8099"`) {
+		t.Fatalf("answer %q did not carry the normalized row", out.String())
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []core.SavedInstance{
+		{Name: "laptop", URL: "http://127.0.0.1:8099"},
+		{Name: "pi", URL: "https://Omega.Example.Test"},
+	}
+	if !reflect.DeepEqual(cfg.Desktop.Instances, want) {
+		t.Fatalf("config rows = %+v, want the normalized list", cfg.Desktop.Instances)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "url: http://127.0.0.1:8099") {
+		t.Fatalf("config.yaml lost the saved list:\n%s", data)
+	}
+
+	// a bad row is the VALIDATOR's refusal, and the file keeps its rows
+	before := string(data)
+	err = settingsSet(path, "desktop.instances", `[{"name":"x","url":"ftp://nope.test"}]`, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "scheme must be http or https") {
+		t.Fatalf("bad row error = %v, want the validator's own sentence", err)
+	}
+	if after, readErr := os.ReadFile(path); readErr != nil || string(after) != before {
+		t.Fatalf("a refused row rewrote config.yaml (err %v)", readErr)
+	}
+
+	// a payload that is not an array of objects is refused BEFORE the writer, naming the key
+	for _, bad := range []string{`{"name":"x"}`, `null`, `["x"]`} {
+		err := settingsSet(path, "desktop.instances", bad, &strings.Builder{})
+		if err == nil || !strings.Contains(err.Error(), "desktop.instances") {
+			t.Fatalf("%s: error = %v, want a refusal naming the key", bad, err)
+		}
+	}
+}
+
+// TestDesktopInstancesOneWriter pins that a settings-pane save and the CLI land the same
+// bytes: one writer, one validator, no second config write.
+func TestDesktopInstancesOneWriter(t *testing.T) {
+	cliPath := writeTestConfig(t, testConfigYAML)
+	rows := `[{"name":"laptop","url":"127.0.0.1:8099"},{"name":" pi ","url":"HTTPS://Omega.Example.Test/"}]`
+	if err := settingsSet(cliPath, "desktop.instances", rows, &strings.Builder{}); err != nil {
+		t.Fatalf("settings set: %v", err)
+	}
+
+	panePath := writeTestConfig(t, testConfigYAML)
+	pane, err := saveSettings(panePath, nil, nil, nil, nil, nil, map[string]any{
+		"desktop.instances": []any{
+			map[string]any{"name": "laptop", "url": "127.0.0.1:8099"},
+			map[string]any{"name": " pi ", "url": "HTTPS://Omega.Example.Test/"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("pane save: %v", err)
+	}
+	knob, ok := pane.Knob("desktop.instances")
+	if !ok {
+		t.Fatal("the refreshed payload lost desktop.instances")
+	}
+	want := []map[string]any{
+		{"name": "laptop", "url": "http://127.0.0.1:8099"},
+		{"name": "pi", "url": "https://Omega.Example.Test"},
+	}
+	if !reflect.DeepEqual(knob.Value, want) {
+		t.Fatalf("pane knob = %#v, want the normalized rows", knob.Value)
+	}
+
+	cliData, err := os.ReadFile(cliPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	paneData, err := os.ReadFile(panePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(cliData) != string(paneData) {
+		t.Fatalf("one writer drifted:\nCLI:\n%s\npane:\n%s", cliData, paneData)
 	}
 }

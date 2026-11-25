@@ -340,12 +340,13 @@ Keys are the dotted paths the pane shows (`provider.model_name`,
 aliases (`provider.vision_model` / `provider.title_model` and the four
 `provider.*_model` subsystem slots). Values coerce to the knob's type:
 `yes/no`, `on/off`, `true/false` for a toggle, a decimal for a number,
-a JSON array for `provider.instances`, text otherwise. Provider rows
-read masked (`****`) like the pane; `server.bind` stays config.yaml's
-door, and so does a stored row's host and secret - a write is refused
-and nothing is written. A live host (`omega serve`) applies every
-provider knob on the spot - the instance list included - and picks the
-rest up through its config watch; every other process reads at boot.
+a JSON array for `provider.instances` and `desktop.instances`, text
+otherwise. Provider rows read masked (`****`) like the pane;
+`server.bind` stays config.yaml's door, and so does a stored row's host
+and secret - a write is refused and nothing is written. A live host
+(`omega serve`) applies every provider knob on the spot - the instance
+list included - and picks the rest up through its config watch; every
+other process reads at boot.
 
 ```bash
 omega settings                                  # every knob, grouped

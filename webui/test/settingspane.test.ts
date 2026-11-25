@@ -1,6 +1,8 @@
 // omega webui: unit tests for the settings-pane pure helpers.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import {
   filterSettingGroups,
@@ -232,4 +234,114 @@ test("settingsDiff ships an edited providers list and skips a JSON-equal one", (
   const renamed = JSON.parse(JSON.stringify([row]));
   renamed[0].name = "second";
   assert.deepEqual(settingsDiff(loaded, { provider_instances: renamed }), { provider_instances: renamed });
+});
+
+// --- the desktop instances editor: the panel's write surface moved here -----
+//
+// The saved-connection list has ONE write surface: this pane. The editor emits the
+// WHOLE array into the pane's draft, the pane's existing save path submits it, and the
+// server's refusal (config.yaml desktop.instances -> core.NormalizeInstances) renders
+// as written. These are source pins: node --test has no DOM and no SFC compiler.
+
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
+const paneSource = readFileSync(`${repoRoot}/app/components/settings/SettingsTab.vue`, "utf8");
+const instancesField = readFileSync(
+  `${repoRoot}/app/components/settings/InstancesField.vue`,
+  "utf8",
+);
+
+test("normalize keeps the instances knob type", () => {
+  const out = normalizeSettingsPayload({
+    groups: [
+      {
+        key: "desktop",
+        label: "desktop",
+        knobs: [
+          {
+            key: "desktop.instances",
+            label: "instances",
+            type: "instances",
+            value: [{ name: "laptop", url: "http://127.0.0.1:8099" }],
+            default: [],
+          },
+        ],
+      },
+    ],
+  });
+  assert.equal(out.groups.length, 1);
+  assert.equal(out.groups[0]!.knobs.length, 1, "an unlisted type would drop the knob");
+  assert.equal(out.groups[0]!.knobs[0]!.type, "instances");
+});
+
+test("settingsDiff ships an edited connection list and skips a JSON-equal one", () => {
+  const row = { name: "laptop", url: "http://127.0.0.1:8099" };
+  const loaded = { "desktop.instances": [row] };
+  // a round-tripped copy (fresh object identity) is NOT dirty
+  assert.deepEqual(
+    settingsDiff(loaded, { "desktop.instances": JSON.parse(JSON.stringify([row])) }),
+    {},
+  );
+  // add, rename and remove are all real edits
+  assert.deepEqual(settingsDiff(loaded, { "desktop.instances": [] }), {
+    "desktop.instances": [],
+  });
+  const renamed = [{ ...row, name: "desk" }];
+  assert.deepEqual(settingsDiff(loaded, { "desktop.instances": renamed }), {
+    "desktop.instances": renamed,
+  });
+});
+
+test("the pane dispatches the instances knob type to its editor", () => {
+  assert.match(
+    paneSource,
+    /<InstancesField\s+v-else-if="knob\.type === 'instances'"/,
+    "the instances knob type renders InstancesField",
+  );
+  assert.match(paneSource, /:value="instancesValue\(knob\)"/);
+  assert.match(paneSource, /@update="setServer\(knob, \$event\)"/, "one write path: the pane's draft");
+  assert.match(
+    paneSource,
+    /:error="fieldError\(knob\)"/,
+    "the server's refusal reaches the field as written",
+  );
+  // the foot line yields to the field's own alert line
+  assert.match(paneSource, /!inlineErrorShown/, "no second copy of the same sentence");
+});
+
+test("instancesValue coerces the rows tolerantly", () => {
+  const at = paneSource.indexOf("const instancesValue");
+  assert.ok(at > 0, "the pane carries instancesValue");
+  const body = paneSource.slice(at, paneSource.indexOf("// fieldError", at));
+  assert.match(body, /if \(!Array\.isArray\(v\)\) return \[\];/, "an unexpected kind degrades to no rows");
+  assert.match(body, /typeof r\["name"\] === "string"/);
+  assert.match(body, /typeof r\["url"\] === "string"/);
+});
+
+test("adding a row emits the whole list - an existing address is a rename", () => {
+  assert.match(
+    instancesField,
+    /emit\(\s*"update",\s*upsertInstance\(/,
+    "add emits the WHOLE array through the shared upsert",
+  );
+  assert.match(instancesField, /@click="addRow"/, "one add row");
+  assert.match(instancesField, /ref\(""\)/, "the add row is its own draft, never a blank submitted row");
+});
+
+test("removing a row emits the whole list", () => {
+  assert.match(
+    instancesField,
+    /emit\("update", removeInstance\(rows\.value, row\.url\)\)/,
+    "remove emits the WHOLE array through the shared remover",
+  );
+  assert.match(instancesField, /@click="removeRow\(i\)"/, "one remove button per row");
+});
+
+test("the editor re-validates nothing the server would refuse", () => {
+  assert.doesNotMatch(instancesField, /normalizeInstanceName|normalizeInstanceURL/);
+  assert.doesNotMatch(instancesField, /throw new Error/);
+});
+
+test("the refusal renders in the alert line, as the server wrote it", () => {
+  assert.match(instancesField, /role="alert">\{\{ error \}\}/, "the alert line prints the prop verbatim");
+  assert.match(instancesField, /v-if="error"/, "and only when a refusal exists");
 });

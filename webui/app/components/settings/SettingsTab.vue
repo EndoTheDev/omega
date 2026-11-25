@@ -294,6 +294,12 @@
             :knob="knob"
             :value="providersValue(knob)"
             @update="setServer(knob, $event)" />
+          <InstancesField
+            v-else-if="knob.type === 'instances'"
+            :knob="knob"
+            :value="instancesValue(knob)"
+            :error="fieldError(knob)"
+            @update="setServer(knob, $event)" />
           <textarea
             v-else-if="knob.type === 'textarea'"
             class="setting-input setting-textarea"
@@ -373,7 +379,7 @@
         discard
       </button>
     </div>
-    <p v-if="saveError" class="settings-error">{{ saveError }}</p>
+    <p v-if="saveError && !inlineErrorShown" class="settings-error" role="alert">{{ saveError }}</p>
     <p class="settings-note">
       {{ noteText }}
     </p>
@@ -467,6 +473,8 @@
   import { refreshModelCatalog } from "~/composables/modelCatalog";
   import ModelField from "./ModelField.vue";
   import ProvidersField from "./ProvidersField.vue";
+  import InstancesField from "./InstancesField.vue";
+  import type { SavedInstance } from "~/composables/instances";
   import {
     NAV_STORAGE_KEY,
     MODULES_CATEGORY,
@@ -566,7 +574,15 @@
   const loaded = ref<Record<string, unknown>>({});
   const draft = ref<Record<string, unknown>>({});
   const loadError = ref<string | null>(null);
+  // the pane's one refusal line. saveErrorKey names the knob the sentence was ABOUT when
+  // the failed save submitted exactly one, so a list editor can carry it at its own field
+  // and the foot line can step aside.
   const saveError = ref<string | null>(null);
+  const saveErrorKey = ref<string | null>(null);
+  function setSaveError(text: string | null, key: string | null = null) {
+    saveError.value = text;
+    saveErrorKey.value = text === null ? null : key;
+  }
   const saving = ref(false);
 
   // the payload's scopes ARE the tab strip; each keeps its OWN loaded/draft/unset, so
@@ -612,7 +628,7 @@
   function selectScope(name: string | null) {
     if (activeScope.value === name) return;
     activeScope.value = name;
-    saveError.value = null;
+    setSaveError(null);
   }
 
   const scopeMessage = computed(() => {
@@ -644,7 +660,7 @@
 
   async function reload() {
     loadError.value = null;
-    saveError.value = null;
+    setSaveError(null);
     try {
       applyPayload(await fetchSettings());
       refreshModelCatalog();
@@ -1469,6 +1485,34 @@
       }));
   };
 
+  // instancesValue: the saved-connection rows, coerced with the same tolerance as the
+  // providers list - an unexpected kind degrades to no rows, never a render crash.
+  const instancesValue = (knob: SettingKnob): SavedInstance[] => {
+    const v = serverValue(knob);
+    if (!Array.isArray(v)) return [];
+    return v
+      .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
+      .map((r) => ({
+        name: typeof r["name"] === "string" ? r["name"] : "",
+        url: typeof r["url"] === "string" ? r["url"] : "",
+      }));
+  };
+
+  // fieldError: a list editor renders the server's refusal at the field, as written.
+  // Only the last failed save's own knob answers - a refusal about another knob is the
+  // foot line's.
+  const fieldError = (knob: SettingKnob): string | null =>
+    saveError.value !== null && saveErrorKey.value === knob.key ? saveError.value : null;
+
+  // inlineErrorShown: the foot line yields to a knob type that renders the refusal itself.
+  const inlineErrorShown = computed(() => {
+    const key = saveErrorKey.value;
+    if (saveError.value === null || key === null) return false;
+    for (const group of groups.value)
+      for (const knob of group.knobs) if (knob.key === key) return knob.type === "instances";
+    return false;
+  });
+
   function toggleValue(group: SettingGroup, knob: SettingKnob): boolean {
     if (isClient(group, knob)) return clientValue(knob) === true;
     return serverValue(knob) === true;
@@ -1877,7 +1921,7 @@
   });
 
   function resetDraft() {
-    saveError.value = null;
+    setSaveError(null);
     if (activeScope.value !== null) {
       const state = activeState.value;
       if (state) {
@@ -1897,11 +1941,15 @@
     const changes = settingsDiff(loaded.value, draft.value);
     if (Object.keys(changes).length === 0) return;
     saving.value = true;
-    saveError.value = null;
+    setSaveError(null);
     try {
       applyPayload(await saveSettings(changes));
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : String(err);
+      const keys = Object.keys(changes).filter((k) => k !== "unset");
+      setSaveError(
+        err instanceof Error ? err.message : String(err),
+        keys.length === 1 ? keys[0]! : null,
+      );
     } finally {
       saving.value = false;
     }
@@ -1913,12 +1961,12 @@
   async function saveScope(name: string) {
     const diff = scopePending.value;
     if (diff.invalid) {
-      saveError.value = diff.invalid;
+      setSaveError(diff.invalid);
       return;
     }
     if (diff.count === 0) return;
     saving.value = true;
-    saveError.value = null;
+    setSaveError(null);
     try {
       await updateAgentConfig(name, diff.body);
     } catch (err) {
@@ -1937,7 +1985,7 @@
     try {
       applyScopes(await fetchSettingsScopes());
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : String(err);
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       saving.value = false;
     }
@@ -1992,12 +2040,12 @@
     }
     resetArmed.value = false;
     configBusy.value = true;
-    saveError.value = null;
+    setSaveError(null);
     try {
       applyPayload(await resetSettings());
       closeConfigMenu();
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : String(err);
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       configBusy.value = false;
     }
@@ -2006,11 +2054,11 @@
   async function onExportYaml() {
     closeConfigMenu();
     configBusy.value = true;
-    saveError.value = null;
+    setSaveError(null);
     try {
       downloadText(configExportFilename(), await fetchConfigYaml());
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : String(err);
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       configBusy.value = false;
     }
@@ -2039,7 +2087,7 @@
 
   async function onEditYaml() {
     closeConfigMenu();
-    saveError.value = null;
+    setSaveError(null);
     yamlError.value = null;
     configBusy.value = true;
     try {
@@ -2047,7 +2095,7 @@
       yamlText.value = text;
       yamlLoaded.value = text;
     } catch (err) {
-      saveError.value = err instanceof Error ? err.message : String(err);
+      setSaveError(err instanceof Error ? err.message : String(err));
       return;
     } finally {
       configBusy.value = false;
