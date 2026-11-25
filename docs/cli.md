@@ -95,8 +95,15 @@ omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
   window waits a bounded 15 s for `/health`. A port another process holds is named
   in a dialog and the launch exits 1: no silent "not ready" loop, no fallback port.
 - Quitting the shell never kills the agent. The instance is detached; the next
-  launch connects to the one already running. (Tray and autostart follow in 0.19.x.)
+  launch connects to the one already running. The tray menu carries the
+  start-with-Windows row, and a boot launch arrives as `omega desktop`.
 - A second launch focuses the running window (one instance lock) and starts nothing.
+- Release asset: `omega-vX.Y.Z-windows-desktop.zip` carries the portable tree plus
+  `install.ps1` (copies to `%LOCALAPPDATA%\Programs\omega`, adds a Start Menu
+  shortcut that runs `omega desktop`, and writes the HKCU uninstall entry) and
+  `uninstall.ps1`, which removes all three. Every tag is copy-booted before
+  publish: the installed exe serves a copy of a seeded home through
+  `--headless-health` or the release is not shipped ([pipeline.md](pipeline.md)).
 - A bare `omega` started by the shell (a double-click or a shortcut, parent Explorer)
   routes here instead of the CLI loop; a terminal, script or service launch keeps the
   CLI loop, and every argument launch is untouched - no script or service can land in

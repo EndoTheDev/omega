@@ -468,14 +468,49 @@ dev tip (pinned - scheduled runs otherwise default to master):
    lane with no provider - model-driven journeys SKIP loudly, the
    presentation journeys decide the build.
 3. Green -> tag `vX.Y.(Z+1)-nightly.YYYYMMDD` and push it. `release.yml`
-   fires on the tag push for free and ships the 5-platform assets
-   flagged prerelease (the Discord announcement step is quarantined to
-   stable releases - the word is the marketing moment).
+   fires on the tag push for free and ships the 5 platform assets plus the
+   Windows desktop asset, flagged prerelease (the Discord announcement step
+   is quarantined to stable releases - the word is the marketing moment).
 4. Red or partial -> NO tag. The run summary carries an alert block and
    GitHub notifies the failed scheduled run; master keeps its current
    soak point.
 5. Green re-run on a day that already has its nightly skips loudly
    (one nightly per day).
+
+## The Windows desktop asset (copy-boot before publish)
+
+Every tag also ships `omega-<version>-windows-desktop.zip`. The
+`desktop-windows` job in `release.yml` (windows-latest) builds the SPA,
+compiles `omega.exe` with the tag baked in, then
+`scripts/desktop-package.ps1` packs the portable tree with
+`install.ps1` and `uninstall.ps1`: install copies into
+`%LOCALAPPDATA%\Programs\omega`, writes a Start Menu shortcut that runs
+`omega desktop`, and writes the HKCU uninstall entry; uninstall removes
+all three.
+
+The copy-boot gate runs BEFORE anything publishes:
+
+1. extract the zip and run `install.ps1` for real,
+2. require the installed `omega.exe`, the Start Menu shortcut and the
+   uninstall entry, with an `UninstallString`,
+3. boot the INSTALLED exe against a copy of a seeded home
+   (`OMEGA_HOME=<copy> omega.exe desktop --headless-health`) and require
+   `"status":"ok"` and exit 0,
+4. uninstall and require the tree, the shortcut and the entry gone.
+
+A red step fails `desktop-windows`; the `release` job needs that job, so
+a red smoke means no release at all. The release job downloads the zip
+into `dist/` before the checksum step, so `scripts/release-checksums.sh`
+writes its full filename line plus the `windows_desktop` alias (the
+filename derives `desktop`, which names the asset family, not a
+goos_goarch tag), and the `files:` list publishes it. The desktop asset
+leads the release body's Downloads block.
+
+The installer is those two scripts, not an external toolchain: Wails v3's
+`wails3 package` plans nsis/msix from a wails.yaml project manifest and
+Taskfile this repo does not carry (probed at the pinned v3.1.0:
+`ERROR task: No Taskfile found`), and NSIS is not on the runner. A native
+installer is its own card, with its toolchain decided there.
 
 ## The prod deploy leg (copy-boot)
 
@@ -584,6 +619,8 @@ stable channel from ever seeing a nightly.
 | `scripts/fixture-boot.sh`       | boot a binary over a copied legacy-store fixture; health + green migration  |
 | `scripts/store-fixture-extract.py` | sanitize a real legacy store into a committable fixture + its manifest    |
 | `scripts/prod-deploy.sh`        | the push word's deploy leg: eight steps, copy-boot before the flip          |
+| `.github/workflows/release.yml` | the tag push's release: five platform assets + the copy-booted desktop asset, checksums, publish |
+| `scripts/desktop-package.ps1`   | packs the Windows desktop asset: portable tree + `install.ps1`/`uninstall.ps1` |
 
 Journeys (run 3b) wire their suite in as `scripts/journeys/run.sh`;
 train-pass already calls that path when it exists.

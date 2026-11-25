@@ -111,5 +111,46 @@ bash "$SUT" "$fx" >/dev/null 2>&1
 lines=$(wc -l <"$fx/checksums.txt")
 [ "$lines" -eq 2 ] && ok || bad "C7: re-run duplicated lines: got $lines"
 
+# --- C8: the desktop asset aliases to windows_desktop, platforms unchanged ---
+fx=$(new_dist)
+echo win >"$fx/omega-v0.19.0-windows_amd64.zip"
+echo lin >"$fx/omega-v0.19.0-linux_amd64.tar.gz"
+echo pi >"$fx/omega-v0.19.0-linux_arm64.tar.gz"
+echo mac >"$fx/omega-v0.19.0-darwin_arm64.tar.gz"
+echo intel >"$fx/omega-v0.19.0-darwin_amd64.tar.gz"
+echo desk >"$fx/omega-v0.19.0-windows-desktop.zip"
+run_sut "$fx"
+[ "$RC" -eq 0 ] && ok || bad "C8: script exited $RC"
+alias_pair() { # alias_pair <alias> <asset-filename>: alias line with that file's hash
+	local h
+	h=$(sha "$fx/$2")
+	grep -qF "$h  $1" "$fx/checksums.txt" && ok || bad "C8: alias '$1' missing or carries the wrong hash"
+}
+alias_pair windows_amd64 omega-v0.19.0-windows_amd64.zip
+alias_pair linux_amd64 omega-v0.19.0-linux_amd64.tar.gz
+alias_pair linux_arm64 omega-v0.19.0-linux_arm64.tar.gz
+alias_pair darwin_arm64 omega-v0.19.0-darwin_arm64.tar.gz
+alias_pair darwin_amd64 omega-v0.19.0-darwin_amd64.tar.gz
+alias_pair windows_desktop omega-v0.19.0-windows-desktop.zip
+grep -qF "$(sha "$fx/omega-v0.19.0-windows-desktop.zip")  omega-v0.19.0-windows-desktop.zip" "$fx/checksums.txt" \
+	&& ok || bad "C8: desktop full-filename line missing"
+awk '$2 == "desktop" { found = 1 } END { exit found ? 1 : 0 }' "$fx/checksums.txt" \
+	&& ok || bad "C8: a bare 'desktop' alias line leaked"
+lines=$(wc -l <"$fx/checksums.txt")
+[ "$lines" -eq 12 ] && ok || bad "C8: want 12 lines (2 per asset), got $lines"
+
+# --- C9: a nightly desktop asset aliases the same way ----------------------
+fx=$(new_dist)
+echo nd >"$fx/omega-v0.19.1-nightly.20261125-windows-desktop.zip"
+run_sut "$fx"
+[ "$RC" -eq 0 ] && ok || bad "C9: script exited $RC"
+h=$(sha "$fx/omega-v0.19.1-nightly.20261125-windows-desktop.zip")
+grep -qF "$h  windows_desktop" "$fx/checksums.txt" \
+	&& ok || bad "C9: nightly desktop alias missing or wrong tag"
+awk '$2 == "desktop" { found = 1 } END { exit found ? 1 : 0 }' "$fx/checksums.txt" \
+	&& ok || bad "C9: a bare 'desktop' alias line leaked"
+lines=$(wc -l <"$fx/checksums.txt")
+[ "$lines" -eq 2 ] && ok || bad "C9: want 2 lines for the nightly desktop asset, got $lines"
+
 echo "release-checksums_test.sh: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

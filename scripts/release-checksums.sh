@@ -55,6 +55,9 @@ for f in "${assets[@]}"; do
 	bare="${name%.*}" # drop .zip / .gz
 	bare="${bare%.tar}" # drop .tar (two-part extension)
 	bare="${bare##*-}" # drop through the last dash
+	# omega-<ver>-windows-desktop.zip derives "desktop" - the asset family,
+	# not a goos_goarch tag. Pin the alias consumers read.
+	case "$bare" in desktop) bare="windows_desktop" ;; esac
 	printf '%s  %s\n' "$hash" "$bare" >>"$tmp"
 done
 
