@@ -429,6 +429,42 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 	return out
 }
 
+// applyDesktopInstances sets the saved-connection list from the switcher's PUT payload
+// (JSON objects) or a Go caller's typed slice.
+func applyDesktopInstances(cfg *Config, key string, raw any) error {
+	var rows []core.SavedInstance
+	switch list := raw.(type) {
+	case []core.SavedInstance:
+		rows = list
+	case []any:
+		rows = make([]core.SavedInstance, 0, len(list))
+		for i, item := range list {
+			obj, ok := item.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s: entry %d: expected an object, got %T", key, i, item)
+			}
+			name, err := asTrimmedString(obj["name"])
+			if err != nil {
+				return fmt.Errorf("%s: entry %d: name: %w", key, i, err)
+			}
+			url, err := asTrimmedString(obj["url"])
+			if err != nil {
+				return fmt.Errorf("%s: entry %d: url: %w", key, i, err)
+			}
+			rows = append(rows, core.SavedInstance{Name: name, URL: url})
+		}
+	default:
+		return fmt.Errorf("%s: expected a list of instance objects, got %T", key, raw)
+	}
+	// Normalized on the way in, so the file and every later read carry the same rows.
+	normalized, err := core.NormalizeInstances(rows)
+	if err != nil {
+		return fmt.Errorf("%s: %v", key, err)
+	}
+	cfg.Desktop.Instances = normalized
+	return nil
+}
+
 // saveSettings applies values (dotted yaml path -> value), validates, and writes.
 func saveSettings(path string, pctx *agent.Context, setFilesWorkspace func(string), setChannelWorkspace func(string), setTerminalWorkspace func(string), setAgentConfig func(string, int), values map[string]any) (*core.SettingsSchema, error) {
 	cfg, err := LoadConfig(path)
@@ -467,6 +503,10 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 		case "provider.instances":
 			// The provider instances: the ONE list every provider lives in, the primary row.
 			err = applyProviderInstances(cfg, key, raw)
+		case "desktop.instances":
+			// The connection switcher's list. The rows are validated by cfg.Validate on the
+			// same stroke (one validator with a hand edit of config.yaml).
+			err = applyDesktopInstances(cfg, key, raw)
 		case "provider.api_key", "server.bind":
 			// gated knobs: config.yaml is the only door - bind is the escalation lever for the
 			// whole LAN surface, and api_key is the provider credential.
@@ -1015,6 +1055,25 @@ func (s *omegaSettings) Schema() (*core.SettingsSchema, error) {
 
 func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error) {
 	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
+}
+
+// Instances reads the saved connections for the webui's switcher. The config file is the
+// only home, so a hand edit lands on the next read rather than on a restart.
+func (s *omegaSettings) Instances() ([]core.SavedInstance, error) {
+	cfg, err := LoadConfig(s.path)
+	if err != nil {
+		return nil, err
+	}
+	// Normalized on the read too: a hand-edited row answers the wire in the same shape a
+	// PUT would have produced.
+	return core.NormalizeInstances(cfg.Desktop.Instances)
+}
+
+// SaveInstances writes the list through saveSettings: the same atomic writer, the same
+// validation pass and the same hot-apply as every other knob.
+func (s *omegaSettings) SaveInstances(list []core.SavedInstance) error {
+	_, err := s.Save(map[string]any{"desktop.instances": list})
+	return err
 }
 
 // Raw returns the config FILE as YAML text for the pane's export and edit-as-YAML. The
