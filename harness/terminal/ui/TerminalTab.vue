@@ -37,6 +37,7 @@
   import { openContextMenu } from "../../../webui/app/composables/contextMenu";
   import { copyText, readClipboardText } from "../../../webui/app/composables/clipboard";
   import { terminalMenuItems } from "./terminalMenu";
+  import { createInputWriter } from "./terminalInputWriter";
 
   // The shell's spawn workspace follows the focused chat session. The SHELL ONLY reads
   // it at claim time; a later focus change never re-roots a living shell.
@@ -67,12 +68,6 @@
     const raw = atob(b64 ?? "");
     const out = new Uint8Array(raw.length);
     for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
-    return out;
-  }
-
-  function strBytes(s: string): Uint8Array {
-    const out = new Uint8Array(s.length);
-    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
     return out;
   }
 
@@ -184,6 +179,7 @@
       }
       if (killed.value) return;
       if (id) {
+        if (sessionId.value && sessionId.value !== id) writer.reset();
         sessionId.value = id;
         dead.value = false;
         stateLine.value = "connecting...";
@@ -202,16 +198,33 @@
     }
   }
 
+  // One input POST is in flight at a time, so a request that never settles would hold
+  // every later keystroke behind it - the shape a dropped packet takes on a degraded
+  // link. It gives up on its own clock instead; that burst is dropped, never replayed.
+  const INPUT_TIMEOUT_MS = 10_000;
+
   /** keystrokes ride POST /input as raw frame bodies: control chars are data. */
-  async function input(s: string) {
+  async function postInput(bytes: Uint8Array): Promise<unknown> {
     const id = sessionId.value;
     if (!id || dead.value) return;
-    await fetch(`/terminal/${encodeURIComponent(id)}/input`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: strBytes(s) as unknown as BodyInit,
-    });
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), INPUT_TIMEOUT_MS);
+    try {
+      return await fetch(`/terminal/${encodeURIComponent(id)}/input`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes as unknown as BodyInit,
+        signal: ctl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
+
+  // The pane's writer owns the shape of typing: printable runs coalesce into one POST,
+  // control keys leave at once, and only one POST is ever in flight - so the shell reads
+  // the bytes in the order they were typed.
+  const writer = createInputWriter({ send: postInput });
 
   async function resize() {
     const t = term.value;
@@ -237,6 +250,7 @@
     const id = sessionId.value;
     if (!id) return;
     killed.value = true;
+    writer.reset();
     connectSeq++;
     closeStream();
     await fetch(`/terminal/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -300,7 +314,7 @@
     });
     const f = new FitAddon();
     t.loadAddon(f);
-    t.onData((s) => void input(s));
+    t.onData((s) => writer.push(s));
     term.value = t;
     fit.value = f;
     observer = new ResizeObserver(() => void resize());
@@ -312,6 +326,7 @@
   onBeforeUnmount(() => {
     // the outlet unmount unbinds the SSE, never the SHELL.
     killed.value = false;
+    writer.reset();
     connectSeq++;
     observer?.disconnect();
     observer = null;

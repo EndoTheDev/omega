@@ -131,6 +131,28 @@ test("keystrokes POST input, size POSTs resize, no raw bytes on the wire", () =>
   assert.match(tabVue, /t\.onData/, "xterm keystrokes feed the input");
 });
 
+// The pane writes through its own writer (terminalInputWriter.ts): xterm input feeds the
+// writer, never a fetch per event, and teardown drops the bytes that belong to a dying
+// session before any POST can carry them.
+test("keystrokes ride the pane writer - coalesced, ordered, dropped on teardown", () => {
+  assert.match(
+    tabVue,
+    /import \{ createInputWriter \} from "\.\/terminalInputWriter"/,
+    "the writer is the pane's one input path",
+  );
+  assert.match(
+    tabVue,
+    /t\.onData\(\(s\) => writer\.push\(s\)\)/,
+    "xterm input feeds the writer, never a POST of its own",
+  );
+  assert.match(tabVue, /createInputWriter\(\{ send: postInput \}\)/, "the writer posts raw bytes");
+  assert.doesNotMatch(tabVue, /onData\(\(s\) => void input\(s\)\)/, "no per-event POST survives");
+  const kill = tabVue.slice(tabVue.indexOf("async function kill"));
+  assert.match(kill.slice(0, 400), /writer\.reset\(\)/, "kill drops the pending burst");
+  const unmount = tabVue.slice(tabVue.indexOf("onBeforeUnmount(() =>"));
+  assert.match(unmount.slice(0, 200), /writer\.reset\(\)/, "the unmount drops it too");
+});
+
 test("the kill affordance is the module's DELETE route", () => {
   assert.match(tabVue, /method: "DELETE"/, "kill = DELETE /terminal/{id}");
   assert.match(tabVue, /kill terminal/, "the button exists by aria-label");
