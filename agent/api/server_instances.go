@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/EndoTheDev/omega/core"
@@ -108,10 +109,10 @@ const (
 // validator's own words.
 const probeRowName = "address"
 
-// instanceProbeAnswer is the wire shape: one envelope for both outcomes, so a caller reads
+// InstanceProbeAnswer is the wire shape: one envelope for both outcomes, so a caller reads
 // `ok` and then either `facts` or `failure`+`reason`. 200 either way - a refusal is an
 // answer, not a transport failure.
-type instanceProbeAnswer struct {
+type InstanceProbeAnswer struct {
 	OK      bool            `json:"ok"`
 	URL     string          `json:"url"`
 	State   string          `json:"state,omitempty"`
@@ -135,9 +136,9 @@ func (s *Server) handleInstanceProbe(w http.ResponseWriter, r *http.Request) {
 }
 
 // probeInstanceAddress runs the four checks in order and answers the first that fails.
-func probeInstanceAddress(typed string) instanceProbeAnswer {
-	refused := func(address, failure, reason string) instanceProbeAnswer {
-		return instanceProbeAnswer{URL: address, Failure: failure, Reason: reason}
+func probeInstanceAddress(typed string) InstanceProbeAnswer {
+	refused := func(address, failure, reason string) InstanceProbeAnswer {
+		return InstanceProbeAnswer{URL: address, Failure: failure, Reason: reason}
 	}
 
 	raw := strings.TrimSpace(typed)
@@ -204,7 +205,7 @@ func probeInstanceAddress(typed string) instanceProbeAnswer {
 			"that endpoint is not an omega instance (answered %d, body is not omega's health shape)", resp.StatusCode))
 	}
 
-	return instanceProbeAnswer{OK: true, URL: target, State: "omega", Facts: json.RawMessage(body)}
+	return InstanceProbeAnswer{OK: true, URL: target, State: "omega", Facts: json.RawMessage(body)}
 }
 
 // instanceProbeClient is the probe's outbound client. No redirect hops: a hop is a
@@ -230,4 +231,146 @@ func clampProbeCause(err error) string {
 		line = line[:max] + "..."
 	}
 	return line
+}
+
+// --- the list's per-row states ----------------------------------------------------
+// GET /instances/status?urls=<a>&urls=<b> is the panel's one read: the URLs come from the
+// CLIENT because the desktop's list is app-local, so a page served by a remote must never
+// be handed dots for that remote's own (empty) list. Stateless - no cache, no server-side
+// polling loop - and one dead row never holds another's verdict: the probes run four at a
+// time under the same per-address bound as the add-time check.
+
+// The dot's inputs. `unverified` is the pane's own read of the hatch flag, which lives in
+// the app's list and never on the wire; the server's rows say the other three.
+const (
+	InstanceHealthy    = "healthy"
+	InstanceWarning    = "warning"
+	InstanceError      = "error"
+	InstanceUnverified = "unverified"
+)
+
+// instanceStatusWorkers bounds the probes in flight, so 32 rows answer in bounded rounds
+// instead of one slow address per round.
+var instanceStatusWorkers = 4
+
+// instanceStatusRow is one address's verdict: the state the dot wears, the failure class
+// when the probe refused, the operator-facing reason, and the health body when one came
+// back (the tooltip's facts).
+type instanceStatusRow struct {
+	URL     string          `json:"url"`
+	State   string          `json:"state"`
+	Failure string          `json:"failure,omitempty"`
+	Reason  string          `json:"reason,omitempty"`
+	Facts   json.RawMessage `json:"facts,omitempty"`
+}
+
+// InstanceState maps one probe answer to the dot's state. Stated once here, so the route
+// and its tests can never disagree about what green means:
+//   - an ANSWER that is not omega is error whatever the flag says (we know what it is,
+//     and it is wrong);
+//   - no answer at all is error, softened to unverified on a hatched row;
+//   - an omega answer is warning when a SOURCED fact is false, healthy otherwise - a body
+//     that does not carry a fact is unknown, not degraded.
+//
+// last_error is deliberately not an input: it is a historical fact, so a row would sit
+// orange forever. It stays in the tooltip.
+func InstanceState(answer InstanceProbeAnswer, unverified bool) string {
+	switch answer.Failure {
+	case probeFailureNotOmega:
+		return InstanceError
+	case probeFailureSyntax, probeFailureUnreachable, probeFailureGuard:
+		if unverified {
+			return InstanceUnverified
+		}
+		return InstanceError
+	}
+	if !answer.OK {
+		return InstanceError
+	}
+	var facts struct {
+		Provider *struct {
+			Reachable *bool `json:"reachable"`
+		} `json:"provider"`
+		Database *struct {
+			Healthy *bool `json:"healthy"`
+		} `json:"database"`
+	}
+	if json.Unmarshal(answer.Facts, &facts) == nil {
+		if (facts.Provider != nil && facts.Provider.Reachable != nil && !*facts.Provider.Reachable) ||
+			(facts.Database != nil && facts.Database.Healthy != nil && !*facts.Database.Healthy) {
+			return InstanceWarning
+		}
+	}
+	return InstanceHealthy
+}
+
+// handleInstanceStatus serves the batch read beside /instances/probe.
+func (s *Server) handleInstanceStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	targets := dedupeInstanceTargets(r.URL.Query()["urls"])
+	if len(targets) > core.MaxSavedInstances {
+		http.Error(w, fmt.Sprintf("%d addresses exceed the %d-row cap", len(targets), core.MaxSavedInstances),
+			http.StatusBadRequest)
+		return
+	}
+	rows := probeInstanceBatch(targets, probeInstanceAddress, instanceStatusWorkers)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
+	_ = json.NewEncoder(w).Encode(struct {
+		Rows []instanceStatusRow `json:"rows"`
+	}{Rows: rows})
+}
+
+// dedupeInstanceTargets keeps the first ask for every address, in ask order: the same
+// endpoint listed twice costs one probe and answers one row.
+func dedupeInstanceTargets(asked []string) []string {
+	seen := make(map[string]bool, len(asked))
+	out := make([]string, 0, len(asked))
+	for _, raw := range asked {
+		target := strings.TrimSpace(raw)
+		if seen[target] {
+			continue
+		}
+		seen[target] = true
+		out = append(out, target)
+	}
+	return out
+}
+
+// probeInstanceBatch answers one row per address, in the order asked. probe is a parameter
+// so the concurrency bound is testable without a network.
+func probeInstanceBatch(targets []string, probe func(string) InstanceProbeAnswer, workers int) []instanceStatusRow {
+	rows := make([]instanceStatusRow, len(targets))
+	if len(rows) == 0 {
+		return rows
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	gate := make(chan struct{}, workers)
+	var wg sync.WaitGroup
+	for i, target := range targets {
+		wg.Add(1)
+		go func(i int, target string) {
+			defer wg.Done()
+			gate <- struct{}{}
+			defer func() { <-gate }()
+			answer := probe(target)
+			rows[i] = instanceStatusRow{
+				URL:     answer.URL,
+				State:   InstanceState(answer, false),
+				Failure: answer.Failure,
+				Reason:  answer.Reason,
+				Facts:   answer.Facts,
+			}
+			if rows[i].URL == "" {
+				rows[i].URL = target
+			}
+		}(i, target)
+	}
+	wg.Wait()
+	return rows
 }

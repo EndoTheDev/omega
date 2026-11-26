@@ -134,7 +134,15 @@
           <span class="hp-head">connections</span>
           <div
             class="hp-crow hp-cur"
-            aria-current="true">
+            role="group"
+            aria-current="true"
+            :title="connectionTitle(instanceName, currentOrigin)"
+            :aria-label="connectionLabel(instanceName, currentOrigin)">
+            <span
+              v-if="stateOf(currentOrigin)"
+              class="dot hp-dot"
+              :class="dotClass(currentOrigin)"
+              aria-hidden="true" />
             <span class="hp-cname">{{ instanceName }}</span>
             <span class="hp-curl">{{ currentOrigin || "this page" }}</span>
             <span
@@ -149,8 +157,14 @@
             :key="row.url"
             type="button"
             class="hp-crow hp-switch"
-            :title="`Switch to ${row.name} - ${row.url}`"
+            :title="connectionTitle(row.name, row.url)"
+            :aria-label="connectionLabel(`Switch to ${row.name}`, row.url)"
             @click="switchTo(row)">
+            <span
+              v-if="stateOf(row.url)"
+              class="dot hp-dot"
+              :class="dotClass(row.url)"
+              aria-hidden="true" />
             <span class="hp-cname">{{ row.name }}</span>
             <span class="hp-curl">{{ row.url }}</span>
             <span
@@ -163,6 +177,12 @@
               v-if="row.url === lastUsed"
               class="hp-used">last used</span>
           </button>
+          <p
+            v-if="statusNote"
+            class="hp-note"
+            role="status">
+            {{ statusNote }}
+          </p>
           <p
             v-if="offline"
             class="hp-note"
@@ -237,7 +257,7 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
   import {
     formatDurationMs,
     shortVersion,
@@ -247,6 +267,7 @@
   import { statMenuItems, statVisible } from "./statusStats";
   import {
     INSTANCE_CHANGED_EVENT,
+    instanceAddressKey,
     instancesAreAppOwned,
     lastUsedInstance,
     loadInstances,
@@ -256,6 +277,13 @@
     switchInstancesInApp,
     type SavedInstance,
   } from "../../composables/instances.ts";
+  import {
+    instanceReasons,
+    startInstanceStatusPoll,
+    stateFor,
+    stateView,
+    type InstanceState,
+  } from "../../composables/instancesStatus.ts";
   import { RUNTIME_CONFIG_READY } from "../../composables/desktopChrome.ts";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   import UpdateChip from "./UpdateChip.vue";
@@ -386,11 +414,59 @@
     () => rows.value.find((row) => row.url === props.currentOrigin)?.unverified === true,
   );
 
+  // the panel's dots: ONE batch read of every listed address, started when the panel
+  // opens and stopped when it closes - a closed panel probes nothing. The list and its
+  // flags are the input; the serve answers one row per address.
+  const statusStates = ref<Map<string, InstanceState>>(new Map());
+  const statusReasons = ref<Map<string, string>>(new Map());
+  const statusNote = ref("");
+  const statusPoll = startInstanceStatusPoll({
+    onReply: (reply, states) => {
+      statusStates.value = states;
+      statusReasons.value = instanceReasons(reply);
+      statusNote.value = reply.note;
+    },
+  });
+  const stateOf = (url: string): InstanceState | "" => stateFor(statusStates.value, url);
+  // the batch's rows: the list plus this page's own connection, which may not be a saved
+  // row at all (a desktop window's list is the app's) - the bar's row still gets a dot.
+  const statusRows = computed<SavedInstance[]>(() => {
+    const origin = props.currentOrigin;
+    if (!origin || rows.value.some((row) => row.url === origin)) return rows.value;
+    return [...rows.value, { name: instanceName.value, url: origin }];
+  });
+  function stateWord(url: string): string {
+    const state = stateOf(url);
+    return state ? stateView(state).word : "";
+  }
+  function dotClass(url: string): string {
+    const state = stateOf(url);
+    return state ? stateView(state).cls : "";
+  }
+  // the reason rides the tooltip; a row with no answer yet carries the plain address
+  function connectionTitle(name: string, url: string): string {
+    if (!url) return name;
+    const state = stateOf(url);
+    if (!state) return `${name} - ${url}`;
+    const reason = statusReasons.value.get(instanceAddressKey(url)) ?? "";
+    return `${name} - ${url}\n${stateView(state).word}${reason ? `: ${reason}` : ""}`;
+  }
+  // the row's accessible name carries the state word - the dot itself is aria-hidden, so
+  // the colour is never the only carrier
+  function connectionLabel(name: string, url: string): string {
+    const word = url ? stateWord(url) : "";
+    return word ? `${name} - ${word}` : name;
+  }
+  function repaintStates(): void {
+    if (statusPoll.running) void statusPoll.refresh(statusRows.value);
+  }
+
   async function refreshInstances(): Promise<void> {
     const loaded = await loadInstances();
     rows.value = loaded.list;
     offline.value = loaded.offline;
     lastUsed.value = lastUsedInstance();
+    repaintStates();
   }
 
   // switching is a full reload: a browser tab leaves the page, the app moves its window.
@@ -410,6 +486,7 @@
     rows.value = reply.instances;
     offline.value = false;
     lastUsed.value = lastUsedInstance();
+    repaintStates();
   });
   function onInstancesChanged() {
     void refreshInstances();
@@ -426,6 +503,11 @@
   function toggleHealth() {
     healthOpen.value = !healthOpen.value;
   }
+  // OPEN the poll with the panel, CLOSE it with the panel: a shut panel costs no traffic.
+  watch(healthOpen, (open) => {
+    if (open) statusPoll.start(statusRows.value);
+    else statusPoll.stop();
+  });
   // outside click closes it (the WorkspaceSelect / ModelSelect family)
   function onDocClick(e: MouseEvent) {
     if (!healthOpen.value) return;
@@ -443,6 +525,7 @@
     document.removeEventListener("mousedown", onDocClick);
     window.removeEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
     window.removeEventListener(RUNTIME_CONFIG_READY, onRuntimeReady);
+    statusPoll.stop();
     stopInstanceReplies();
   });
 </script>
@@ -472,6 +555,11 @@
     min-width: 0;
     padding: 3px 4px;
     border-radius: var(--r-chip);
+  }
+  /* the row's state dot: shared .dot paint, centered on the row's line box */
+  .hp-dot {
+    flex: none;
+    align-self: center;
   }
   .hp-cur {
     color: var(--text);

@@ -343,3 +343,20 @@ func TestResolveThemesDir(t *testing.T) {
 		t.Fatalf("override ignored: %q", d)
 	}
 }
+
+// The connection dots' warning state needs a token a theme may recolour, like every other
+// colour in the UI: the allowlist carries `warn`, and a theme that sets it keeps the value.
+func TestThemeTokenKeysCarriesWarn(t *testing.T) {
+	if !themeTokenKeys["warn"] {
+		t.Fatal("themeTokenKeys must allow `warn` - the row dots' warning state is a token, not a literal")
+	}
+	dir := t.TempDir()
+	writeTheme(t, dir, "amber.yaml", "name: Amber\ntokens:\n  warn: \"#ffaa00\"\n")
+	got := loadThemes(dir)
+	if len(got) != 1 {
+		t.Fatalf("loadThemes: got %d themes, want 1", len(got))
+	}
+	if got[0].Tokens["warn"] != "#ffaa00" {
+		t.Fatalf("a theme may recolour warn: %+v", got[0])
+	}
+}

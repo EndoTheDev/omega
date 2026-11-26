@@ -25,6 +25,13 @@
       :key="i"
       class="instance-row"
       :data-instance="row.name || undefined">
+      <span
+        v-if="stateOf(row.url)"
+        class="dot instance-dot"
+        :class="dotClass(row.url)"
+        role="img"
+        :aria-label="stateLabel(row.url)"
+        :title="stateLabel(row.url)" />
       <div class="instance-row-fields">
         <label class="instance-cell">
           <span>name</span>
@@ -65,6 +72,12 @@
         unverified
       </span>
     </div>
+    <p
+      v-if="statusNote"
+      class="instance-add-note"
+      role="status">
+      {{ statusNote }}
+    </p>
     <p
       v-if="!rows.length"
       class="instance-empty">
@@ -130,15 +143,24 @@
 </template>
 
 <script setup lang="ts">
-  import { computed, ref } from "vue";
+  import { computed, onBeforeUnmount, onMounted, ref } from "vue";
   import type { SettingKnob } from "~/composables/omega";
   import {
+    INSTANCE_CHANGED_EVENT,
     addInstanceRow,
     hatchInstanceRow,
+    instanceAddressKey,
     removeInstance,
     type InstanceProbe,
     type SavedInstance,
   } from "~/composables/instances";
+  import {
+    instanceReasons,
+    startInstanceStatusPoll,
+    stateFor,
+    stateView,
+    type InstanceState,
+  } from "~/composables/instancesStatus";
 
   const props = defineProps<{
     knob: SettingKnob;
@@ -161,6 +183,43 @@
 
   const UNVERIFIED_TITLE =
     "added anyway - nothing answered at this address when it was added";
+
+  // the pane's dots: the same one batch read the status-bar panel runs, started when the
+  // pane mounts and stopped when it unmounts. Nothing runs while the pane is shut.
+  const statusStates = ref<Map<string, InstanceState>>(new Map());
+  const statusReasons = ref<Map<string, string>>(new Map());
+  const statusNote = ref("");
+  const statusPoll = startInstanceStatusPoll({
+    onReply: (reply, states) => {
+      statusStates.value = states;
+      statusReasons.value = instanceReasons(reply);
+      statusNote.value = reply.note;
+    },
+  });
+  const stateOf = (url: string): InstanceState | "" => (url ? stateFor(statusStates.value, url) : "");
+  function dotClass(url: string): string {
+    const state = stateOf(url);
+    return state ? stateView(state).cls : "";
+  }
+  // the dot's accessible name carries the word and the reason: never colour alone
+  function stateLabel(url: string): string {
+    const state = stateOf(url);
+    if (!state) return "";
+    const reason = statusReasons.value.get(instanceAddressKey(url)) ?? "";
+    const word = stateView(state).word;
+    return reason ? `${word}: ${reason}` : word;
+  }
+  function onInstancesChanged(): void {
+    void statusPoll.refresh(rows.value);
+  }
+  onMounted(() => {
+    statusPoll.start(rows.value);
+    window.addEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
+  });
+  onBeforeUnmount(() => {
+    statusPoll.stop();
+    window.removeEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
+  });
 
   // a shape the file's validator refuses could never be saved by any build, so the hatch is
   // offered on every refusal but that one.
@@ -225,9 +284,18 @@
   }
 
   .instance-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+  }
+
+  /* the row's state dot, aligned with the input line below the cell label */
+  .instance-dot {
+    margin: 1.1rem 0.4rem 0 0;
+  }
+
+  .instance-row-fields {
+    grid-column: 2;
   }
 
   .instance-row-fields,
@@ -288,7 +356,8 @@
 
   /* the added-anyway marker: text, never a colour - the row says why it is unproven */
   .instance-unverified {
-    align-self: flex-start;
+    grid-column: 2;
+    justify-self: start;
     margin-left: 0.1rem;
     padding: 0 0.3rem;
     border: 1px solid var(--border, rgba(128, 128, 128, 0.35));

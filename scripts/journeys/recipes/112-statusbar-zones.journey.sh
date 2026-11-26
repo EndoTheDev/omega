@@ -25,6 +25,15 @@
 #              /health carries the fact and "not reported" when it does
 #              not - the probe accepts either, and the "no source" note
 #              must render exactly when at least one row is unsourced.
+#   dots     - every connection row carries a state dot fed by ONE batch read
+#              of the health body (/instances/status): green for the row that
+#              answers (this lane's own origin), red for a dead port, a hollow
+#              ring for a dead port the operator added anyway (unverified).
+#              The state WORD rides the row's accessible name - never colour
+#              alone. The ORANGE (warning) branch is not journey-seeded: a
+#              degraded provider needs a broken provider on the lane, so the
+#              node suite pins that table (webui/test/instancesstatus.test.ts)
+#              and this recipe leaves it out.
 #   narrow   - at 700px: every .hide-sm segment is gone, the health DOT and
 #              the workdir chip are still there. At 340px the dot is alone
 #              and the open panel is a bar-wide sheet inside the viewport.
@@ -32,6 +41,64 @@
 # No model needed: the bar is chrome, the picker is a filesystem listing and
 # the popover reads the health frame the socket already pushes.
 . "${JROOT:?run must export JROOT}/lib.sh"
+
+# --- the dots' witnesses (card t_0d90c69a) -----------------------------------
+# The panel lists the saved rows and probes them on open. Seed two throwaway
+# rows BEFORE the page loads - a dead port, and a dead port added anyway - then
+# PUT the lane's own list back in the EXIT trap. No model, no provider: the
+# dead port must be free on the lane, and 1/2 are the ports 121 already uses.
+DOT_TAG=$(date +%H%M%S)
+DOT_DEAD_NAME="jrn-dead-$DOT_TAG"
+DOT_HATCH_NAME="jrn-hatch-$DOT_TAG"
+DOT_BEFORE_FILE="$JOURNEY_WORKTMP/omega-112-instances-before.json"
+
+dot_restore() {
+  [ -f "$DOT_BEFORE_FILE" ] || return 0
+  curl -s -X PUT "${JOURNEY_BASE_URL}/instances" \
+    -H 'Content-Type: application/json' \
+    -d "{\"instances\": $(cat "$DOT_BEFORE_FILE")}" >/dev/null
+}
+trap dot_restore EXIT
+
+dot_snapshot() {
+  curl -s "${JOURNEY_BASE_URL}/instances" | python3 -c '
+import sys, json
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+rows = (json.load(sys.stdin) or {}).get("instances") or []
+print(json.dumps(rows))
+'
+}
+
+dot_seed() {
+  python3 - "$DOT_BEFORE_FILE" "$DOT_DEAD_NAME" "$DOT_HATCH_NAME" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))
+# two free loopback ports the lane's own list does not already use: a duplicate
+# URL is refused by the one validator, so the seed must not collide with a row
+used = {(r.get("url") or "").rstrip("/") for r in rows}
+ports, port = [], 1
+while len(ports) < 2:
+    if f"http://127.0.0.1:{port}" not in used:
+        ports.append(port)
+    port += 1
+rows.append({"name": sys.argv[2], "url": f"http://127.0.0.1:{ports[0]}"})
+rows.append({"name": sys.argv[3], "url": f"http://127.0.0.1:{ports[1]}", "unverified": True})
+print(json.dumps(rows))
+PY
+}
+
+dot_snapshot > "$DOT_BEFORE_FILE"
+seeded=$(dot_seed)
+curl -s -X PUT "${JOURNEY_BASE_URL}/instances" \
+  -H 'Content-Type: application/json' \
+  -d "{\"instances\": $seeded}" >/dev/null
+wire_after_seed=$(curl -s "${JOURNEY_BASE_URL}/instances")
+grep -q "$DOT_DEAD_NAME" <<<"$wire_after_seed" \
+  || { printf 'the lane refused the dots seed: %s\n' "$seeded" >&2; exit 1; }
+step "ok: seeded a dead port and an add-anyway dead port into the lane's list (restored on exit)"
 
 open_app
 wait_js '!!document.querySelector(".statusbar .zone.left .ws-btn")' 20 \
@@ -107,6 +174,45 @@ probe_connections() {
 v=$(probe_connections | tr -d '"')
 assert_eq "$v" "ok" "the panel leads with the connection list - current row marked, saved rows switchable, no reconnect"
 step "ok: the panel lists the connections above the facts - current instance marked and named on the bar, $saved_other saved row(s) switchable, no add/remove/reconnect control"
+
+# --- 4c. the per-row state dots (card t_0d90c69a) ---------------------------
+# The panel opened above and its poll read every listed address once. The seed
+# guarantees three dots to read: the origin (green), the dead port (red), and
+# the add-anyway dead port (the hollow ring). Each row's accessible name and
+# title carry the state WORD and the reason - the assertion never trusts the
+# colour alone.
+if ! poll_js '(()=>{const p=document.querySelector(".health-pop");if(!p)return false;const cur=p.querySelector(".hp-crow[aria-current=\"true\"] .dot");const dots=[...p.querySelectorAll(".hp-switch .dot")];return !!cur&&dots.length>=2})()' 40; then
+  die "the panel's state dots never landed (the batch read answered nothing): $(jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "no-panel";return "current="+!!p.querySelector(".hp-crow[aria-current=\"true\"] .dot")+" saved="+p.querySelectorAll(".hp-switch .dot").length})()' 2>&1 | tr -d '\"')"
+fi
+probe_dots() {
+  jsq "(()=>{const p=document.querySelector('.health-pop');if(!p)return 'no-panel';
+const byName=n=>[...p.querySelectorAll('.hp-switch')].find(b=>((b.querySelector('.hp-cname')||{}).textContent||'').trim()===n);
+const cur=p.querySelector('.hp-crow[aria-current=\"true\"]');
+if(!cur)return 'no-current';
+const curDot=cur.querySelector('.dot');
+if(!curDot||!curDot.classList.contains('ok'))return 'origin-not-green:'+(curDot?curDot.className:'missing');
+if(((cur.getAttribute('aria-label')||'')).indexOf('healthy')<0)return 'origin-word-missing:'+(cur.getAttribute('aria-label')||'');
+const dead=byName('$DOT_DEAD_NAME');
+if(!dead)return 'dead-row-missing';
+const deadDot=dead.querySelector('.dot');
+if(!deadDot||!deadDot.classList.contains('down'))return 'dead-not-red:'+(deadDot?deadDot.className:'missing');
+if(((dead.getAttribute('aria-label')||'')+(dead.getAttribute('title')||'')).indexOf('error')<0)return 'dead-word-missing:'+(dead.getAttribute('title')||'');
+const hatch=byName('$DOT_HATCH_NAME');
+if(!hatch)return 'hatch-row-missing';
+const hatchDot=hatch.querySelector('.dot');
+if(!hatchDot||!hatchDot.classList.contains('unverified'))return 'hatch-not-ring:'+(hatchDot?hatchDot.className:'missing');
+if(((hatch.getAttribute('aria-label')||'')).indexOf('unverified')<0)return 'hatch-word-missing:'+(hatch.getAttribute('aria-label')||'');
+return 'ok'})()"
+}
+v=$(probe_dots | tr -d '"')
+assert_eq "$v" "ok" "the origin row is green, the dead port red, the add-anyway row a hollow ring, each naming its state"
+step "ok: panel dots - origin healthy (green), dead port error (red), add-anyway unverified (ring); words ride the row's accessible name"
+# the reasons are the tooltip: the dead row's title names why it is red
+dead_title=$(jsq "(()=>{const p=document.querySelector('.health-pop');const b=[...p.querySelectorAll('.hp-switch')].find(x=>((x.querySelector('.hp-cname')||{}).textContent||'').trim()==='$DOT_DEAD_NAME');return b?((b.getAttribute('title')||'')):'missing'})()" 2>&1 | tail -1 | tr -d '"')
+case "$dead_title" in
+  *"unreachable at that address"*) step "ok: the red row's title carries the reason [$dead_title]" ;;
+  *) die "the red row's title does not carry the probe's reason: [$dead_title]" ;;
+esac
 
 # card t_0b52537a: provider / database / last error are OPTIONAL facts on the
 # /health body (701ce273) - absent means "not reported", present means a

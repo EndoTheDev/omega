@@ -123,6 +123,7 @@ rebinding attacker's Host is its own domain, not the machine's name.
 | `/settings/reset`                         | POST               | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept)                                                                                                                                                               |
 | `/instances`                              | GET, PUT           | the connection switcher's saved-instance list (`config.yaml desktop.instances`): `{"instances":[{name,url}]}`, PUT replaces it whole and answers the normalized list; 400 on a bad row, 501 without the host's list face                                                                                                       |
 | `/instances/probe`                        | GET                | the add-time check: `?url=<address>` answers one JSON envelope - `{ok:true,url,state:"omega",facts}` or `{ok:false,url,failure,reason}` with `failure` in `syntax\|unreachable\|not-omega\|guard`; never writes, never caches                                                                                                    |
+| `/instances/status`                       | GET                | the list's dot batch: `?urls=<a>&urls=<b>` answers `{"rows":[{url,state,failure?,reason?,facts?}]}` with `state` in `healthy\|warning\|error` (the pane softens an unanswered hatched row to `unverified`), one row per unique address in ask order, four probes in flight, no-store, never writes                                                                                                  |
 | `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
 | `/`                                       | GET                | embedded SPA catch-all (history-mode fallback)                                                                                                                                                                                                              |
 
@@ -706,6 +707,46 @@ A build with no probe route answers its SPA catch-all instead: **200** with
 HTML. The client reads a body that is not this envelope as `no-route` ("this
 server cannot check addresses (its build predates the check)") - never as a
 pass, and never as a guessed colour.
+
+### GET /instances/status (one batch read behind the list's dots)
+
+The status-bar panel and the settings pane paint one state dot per saved row:
+green (healthy), orange (warning), red (error), or a hollow ring (unverified).
+The dots are fed by ONE stateless batch read - the URLs come from the CLIENT,
+not from the serving host's own list, because a desktop window's list lives in
+the app and a page served by a remote must never be handed dots for that
+remote's empty list:
+
+- `GET /instances/status?urls=<a>&urls=<b>` answers
+  `{"rows":[{"url":"<normalized>","state":"healthy|warning|error","failure":"<class, when the probe refused>","reason":"<one line>","facts":{...}}]}`,
+  `Cache-Control: no-store`, one row per unique address in first-ask order. The
+  probes run four at a time under the same 5s per-address bound as
+  `/instances/probe`, so one dead row never delays another's verdict. An empty
+  query answers `{"rows":[]}`; past the 32-row list cap answers **400**; a
+  malformed address is that row's own `error` (with `failure: "syntax"`), never
+  the whole request's. The route never writes and never caches.
+
+The state law is `api.InstanceState` (agent/api/server_instances.go), stated
+once:
+
+- **healthy** - the probe answered omega and neither `provider.reachable` nor
+  `database.healthy` is `false`. A fact the body does not carry is unknown, not
+  degraded.
+- **warning** - omega answered, and a SOURCED fact is `false`.
+- **error** - nothing answered, or an answer that is not omega (a wrong address
+  in the list - the row is telling the truth).
+- **unverified** - the row carries the hatch flag AND nothing answered. The flag
+  lives in the app's own list, never on this wire, so the pane applies it: it is
+  the ONE place that can turn "no answer" into the neutral ring.
+
+A not-omega ANSWER always wins over the flag (we know what it is, and it is
+wrong); the flag only softens NO ANSWER. `last_error` is deliberately not a
+colour input - it is a historical fact, so a row would sit orange forever; it
+stays in the row's tooltip with the reason. The client polls on panel open
+(immediately, then every 30s) and stops on close: a shut panel costs no traffic.
+A build without this route answers its SPA catch-all, and the client then paints
+no dots and one muted note ("states not checked (this server's build predates
+them)") rather than a guessed colour.
 
 The client never fetches a remote origin (CORS): a browser tab's switch
 writes the `omega.instances` localStorage cache's `lastUsed` and

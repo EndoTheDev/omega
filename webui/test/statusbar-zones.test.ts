@@ -259,7 +259,7 @@ describe("the health popover", () => {
     const panel = bar.slice(bar.indexOf('class="health-pop"'));
     assert.ok(panel.indexOf("hp-conn") < panel.indexOf('class="hp-key">server'), "connections lead the panel");
     assert.match(panel, /<span class="hp-head">connections<\/span>/);
-    assert.match(panel, /class="hp-crow hp-cur"\s+aria-current="true"/, "the current row is marked");
+    assert.match(panel, /class="hp-crow hp-cur"[\s\S]{0,120}aria-current="true"/, "the current row is marked");
     assert.match(panel, /v-for="row in savedRows"/, "the saved rows render as switches");
     assert.match(panel, /v-if="row\.url === lastUsed"/, "the last switch is named on a non-current row");
     assert.match(panel, /offline - showing the cached list/, "a stale cached list says so");
@@ -397,5 +397,75 @@ describe("the connection list updates in place", () => {
       "the host owns the navigation inside the window",
     );
     assert.match(bar, /navigateToInstance\(row\.url\)/, "a browser tab still leaves the page itself");
+  });
+});
+
+// the per-row state dots: one batch read, one dot per row, never colour alone
+
+const settingsField = () => src("components/settings/InstancesField.vue");
+
+describe("the connection rows' state dots", () => {
+  it("the panel paints a dot per row and names the state in the row's title", () => {
+    const bar = statusBar();
+    assert.match(
+      bar,
+      /class="dot hp-dot"\s*\n\s*:class="dotClass\(currentOrigin\)"/,
+      "the current connection's row carries its own dot",
+    );
+    assert.match(
+      bar,
+      /class="dot hp-dot"\s*\n\s*:class="dotClass\(row\.url\)"\s*\n\s*aria-hidden="true"/,
+      "a saved row carries a dot, and the glyph alone carries no name",
+    );
+    assert.match(bar, /:title="connectionTitle\(row\.name, row\.url\)"/, "the reason rides the row's title");
+    assert.match(
+      bar,
+      /:aria-label="connectionLabel\(`Switch to \$\{row\.name\}`, row\.url\)"/,
+      "the row's accessible name carries the state word",
+    );
+  });
+
+  it("the poll opens with the panel and dies with it", () => {
+    const bar = statusBar();
+    assert.match(bar, /watch\(healthOpen, \(open\) => \{/, "the panel's open state is the poll's switch");
+    assert.match(bar, /if \(open\) statusPoll\.start\(statusRows\.value\);/);
+    assert.match(bar, /else statusPoll\.stop\(\);/);
+    assert.match(bar, /onBeforeUnmount\([\s\S]{0,400}statusPoll\.stop\(\)/, "the bar unmounts the poll");
+    assert.match(bar, /v-if="statusNote"/, "an old build's muted note has a home");
+    assert.match(
+      bar,
+      /const statusRows = computed<SavedInstance\[\]>\(\(\) => \{/,
+      "the page's own connection rides the batch even when it is not a saved row",
+    );
+  });
+
+  it("the settings pane paints the same dots as icons whose names carry the word", () => {
+    const pane = settingsField();
+    assert.match(pane, /class="dot instance-dot"\s*\n\s*:class="dotClass\(row\.url\)"/);
+    assert.match(pane, /role="img"\s*\n\s*:aria-label="stateLabel\(row\.url\)"/);
+    assert.match(pane, /onMounted\(\(\) => \{[\s\S]{0,120}statusPoll\.start\(rows\.value\)/);
+    assert.match(pane, /onBeforeUnmount\(\(\) => \{[\s\S]{0,80}statusPoll\.stop\(\)/);
+    assert.match(pane, /v-if="statusNote"/);
+  });
+
+  it("the four states are token paints: warn is a token, unverified is a hollow ring", () => {
+    const sheet = css();
+    assert.match(sheet, /--warn: #[0-9a-fA-F]{6};/, "the warning token ships with its default");
+    assert.match(sheet, /\.dot\.warn \{ background: var\(--warn\); \}/);
+    assert.match(
+      sheet,
+      /\.dot\.unverified \{\s*background: transparent;\s*border: 1px solid var\(--text-dim\);\s*\}/,
+      "unverified is a ring, not a fourth colour",
+    );
+  });
+
+  it("neither surface paints a colour literal", () => {
+    for (const surface of [statusBar(), settingsField()]) {
+      assert.doesNotMatch(
+        surface,
+        /(?:^|[;{\s])(?:background|background-color|color|border|border-color):\s*#[0-9a-fA-F]{3,8}\b/m,
+        "a component paints only with tokens",
+      );
+    }
   });
 });

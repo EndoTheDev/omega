@@ -1977,8 +1977,9 @@
         loaded.value = { ...loaded.value, "desktop.instances": hostSaved };
         draft.value = { ...draft.value, "desktop.instances": hostSaved };
       }
-      // A browser tab's own save IS the list's source: the bar re-reads without a reload.
-      if (!instancesAreAppOwned() && "desktop.instances" in changes) {
+      // A save that landed this list announces it in BOTH modes: the bar re-reads the
+      // list, and the open panel/pane re-reads the per-row states.
+      if ("desktop.instances" in changes) {
         window.dispatchEvent(new CustomEvent(INSTANCE_CHANGED_EVENT));
       }
     } catch (err) {

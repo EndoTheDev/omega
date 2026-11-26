@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -221,7 +223,7 @@ func probeServer(t *testing.T) *httptest.Server {
 }
 
 // probeAddress asks the route about one address and decodes the envelope.
-func probeAddress(t *testing.T, base, address string) (instanceProbeAnswer, http.Header) {
+func probeAddress(t *testing.T, base, address string) (InstanceProbeAnswer, http.Header) {
 	t.Helper()
 	resp, err := http.Get(base + "/instances/probe?url=" + url.QueryEscape(address))
 	if err != nil {
@@ -231,7 +233,7 @@ func probeAddress(t *testing.T, base, address string) (instanceProbeAnswer, http
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("probe %q: status %d, want 200 (a refusal is an answer)", address, resp.StatusCode)
 	}
-	var answer instanceProbeAnswer
+	var answer InstanceProbeAnswer
 	if err := json.NewDecoder(resp.Body).Decode(&answer); err != nil {
 		t.Fatalf("probe %q: decode: %v", address, err)
 	}
@@ -483,5 +485,229 @@ func TestInstanceProbeAnswersBesideTheList(t *testing.T) {
 	}
 	if list, err := fake.Instances(); err != nil || len(list) != 0 {
 		t.Fatalf("the probe touched the list: %+v, %v", list, err)
+	}
+}
+
+// --- the list's per-row states ---------------------------------------------------
+//
+// One batch read answers the panel's dots. The table below is the whole law: an answer
+// that is not omega is error whatever the flag says, no answer is error on a plain row and
+// unverified on a hatched one, and an omega answer is warning only when a SOURCED fact is
+// false (an absent fact is unknown, not degraded).
+
+func TestInstanceStateTable(t *testing.T) {
+	healthy := json.RawMessage(`{"status":"ok","uptime_seconds":9,"provider":{"reachable":true},"database":{"healthy":true}}`)
+	degradedProvider := json.RawMessage(`{"status":"ok","uptime_seconds":9,"provider":{"reachable":false},"database":{"healthy":true}}`)
+	degradedStore := json.RawMessage(`{"status":"ok","uptime_seconds":9,"provider":{"reachable":true},"database":{"healthy":false}}`)
+	unsourced := json.RawMessage(`{"status":"ok","uptime_seconds":9}`)
+	emptyProvider := json.RawMessage(`{"status":"ok","uptime_seconds":9,"provider":{}}`)
+
+	cases := []struct {
+		name       string
+		answer     InstanceProbeAnswer
+		unverified bool
+		want       string
+	}{
+		{"omega, both facts healthy", InstanceProbeAnswer{OK: true, Facts: healthy}, false, InstanceHealthy},
+		{"omega, provider not reachable", InstanceProbeAnswer{OK: true, Facts: degradedProvider}, false, InstanceWarning},
+		{"omega, database unhealthy", InstanceProbeAnswer{OK: true, Facts: degradedStore}, false, InstanceWarning},
+		{"omega, no facts carried (unknown, not degraded)", InstanceProbeAnswer{OK: true, Facts: unsourced}, false, InstanceHealthy},
+		{"omega, empty provider object", InstanceProbeAnswer{OK: true, Facts: emptyProvider}, false, InstanceHealthy},
+		{"omega degraded on a hatched row still warns (live evidence wins)", InstanceProbeAnswer{OK: true, Facts: degradedProvider}, true, InstanceWarning},
+		{"no answer, plain row", InstanceProbeAnswer{Failure: probeFailureUnreachable}, false, InstanceError},
+		{"no answer, hatched row", InstanceProbeAnswer{Failure: probeFailureUnreachable}, true, InstanceUnverified},
+		{"host guard refusal, hatched row", InstanceProbeAnswer{Failure: probeFailureGuard}, true, InstanceUnverified},
+		{"not omega, plain row", InstanceProbeAnswer{Failure: probeFailureNotOmega}, false, InstanceError},
+		{"not omega, hatched row: the answer wins over the flag", InstanceProbeAnswer{Failure: probeFailureNotOmega}, true, InstanceError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := InstanceState(tc.answer, tc.unverified); got != tc.want {
+				t.Fatalf("InstanceState(%+v, %v) = %q, want %q", tc.answer, tc.unverified, got, tc.want)
+			}
+		})
+	}
+}
+
+// instanceStatus asks the batch route and decodes its envelope.
+func instanceStatus(t *testing.T, base string, urls ...string) ([]instanceStatusRow, http.Header, int) {
+	t.Helper()
+	query := make([]string, 0, len(urls))
+	for _, u := range urls {
+		query = append(query, "urls="+url.QueryEscape(u))
+	}
+	resp, err := http.Get(base + "/instances/status?" + strings.Join(query, "&"))
+	if err != nil {
+		t.Fatalf("status %v: %v", urls, err)
+	}
+	defer resp.Body.Close()
+	var payload struct {
+		Rows []instanceStatusRow `json:"rows"`
+	}
+	if resp.StatusCode == http.StatusOK {
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+			t.Fatalf("status %v: decode: %v", urls, err)
+		}
+	}
+	return payload.Rows, resp.Header, resp.StatusCode
+}
+
+func TestInstanceStatusOrderAndStates(t *testing.T) {
+	ok := omegaHealth(t, `{"status":"ok","uptime_seconds":3,"provider":{"reachable":true},"database":{"healthy":true}}`)
+	degraded := omegaHealth(t, `{"status":"ok","uptime_seconds":3,"provider":{"reachable":false},"database":{"healthy":true}}`)
+	dead := "http://127.0.0.1:1"
+	ts := probeServer(t)
+
+	rows, header, code := instanceStatus(t, ts.URL, dead, degraded, ok)
+	if code != http.StatusOK {
+		t.Fatalf("status %d, want 200", code)
+	}
+	if cc := header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("cache-control %q, want no-store", cc)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %+v, want three", rows)
+	}
+	want := []struct {
+		url   string
+		state string
+	}{
+		{dead, InstanceError},
+		{degraded, InstanceWarning},
+		{ok, InstanceHealthy},
+	}
+	for i, w := range want {
+		if rows[i].URL != w.url {
+			t.Fatalf("row %d url = %q, want %q (ask order is preserved)", i, rows[i].URL, w.url)
+		}
+		if rows[i].State != w.state {
+			t.Fatalf("row %d (%s) state = %q, want %q", i, rows[i].URL, rows[i].State, w.state)
+		}
+	}
+	if rows[0].Failure != probeFailureUnreachable || rows[0].Reason == "" {
+		t.Fatalf("the dead row must name its failure and reason: %+v", rows[0])
+	}
+	if len(rows[2].Facts) == 0 {
+		t.Fatalf("a healthy row carries the health body: %+v", rows[2])
+	}
+}
+
+func TestInstanceStatusDedupesAndAnswersInAskOrder(t *testing.T) {
+	ok := omegaHealth(t, `{"status":"ok","uptime_seconds":3}`)
+	ts := probeServer(t)
+
+	rows, _, code := instanceStatus(t, ts.URL, ok, "http://127.0.0.1:1", ok)
+	if code != http.StatusOK {
+		t.Fatalf("status %d, want 200", code)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want one row per unique address", rows)
+	}
+	if rows[0].URL != ok || rows[1].URL != "http://127.0.0.1:1" {
+		t.Fatalf("order = %q, %q; want the first ask for each address", rows[0].URL, rows[1].URL)
+	}
+}
+
+func TestInstanceStatusEmptyAnswersEmptyList(t *testing.T) {
+	ts := probeServer(t)
+	rows, _, code := instanceStatus(t, ts.URL)
+	if code != http.StatusOK {
+		t.Fatalf("status %d, want 200", code)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("rows = %+v, want none", rows)
+	}
+	resp, err := http.Get(ts.URL + "/instances/status")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if got := strings.TrimSpace(string(body)); got != `{"rows":[]}` {
+		t.Fatalf("body = %s, want the empty rows array (never null)", got)
+	}
+}
+
+func TestInstanceStatusRowCap(t *testing.T) {
+	ts := probeServer(t)
+	urls := make([]string, core.MaxSavedInstances+1)
+	for i := range urls {
+		urls[i] = "http://127.0.0.1:" + strconv.Itoa(9000+i)
+	}
+	_, _, code := instanceStatus(t, ts.URL, urls...)
+	if code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400 past the %d-row cap", code, core.MaxSavedInstances)
+	}
+}
+
+// A malformed address is that row's own refusal: the batch still answers its siblings.
+func TestInstanceStatusMalformedURLIsItsOwnRow(t *testing.T) {
+	ok := omegaHealth(t, `{"status":"ok","uptime_seconds":3}`)
+	ts := probeServer(t)
+
+	rows, _, code := instanceStatus(t, ts.URL, "javascript:alert(1)", ok)
+	if code != http.StatusOK {
+		t.Fatalf("status %d, want 200 (a refusal is a row)", code)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v, want two", rows)
+	}
+	if rows[0].State != InstanceError || rows[0].Failure != probeFailureSyntax || rows[0].Reason == "" {
+		t.Fatalf("malformed row = %+v, want an error naming syntax", rows[0])
+	}
+	if rows[1].State != InstanceHealthy {
+		t.Fatalf("the sibling row = %+v, one bad address must not poison it", rows[1])
+	}
+}
+
+// The worker bound: never more than four probes in flight, every row answered, and a slow
+// row never blanks its siblings.
+func TestProbeInstanceBatchBoundsConcurrency(t *testing.T) {
+	var mu sync.Mutex
+	inFlight, peak := 0, 0
+	probe := func(target string) InstanceProbeAnswer {
+		mu.Lock()
+		inFlight++
+		if inFlight > peak {
+			peak = inFlight
+		}
+		mu.Unlock()
+		delay := 20 * time.Millisecond
+		if strings.HasSuffix(target, "/slow") {
+			delay = 120 * time.Millisecond
+		}
+		time.Sleep(delay)
+		mu.Lock()
+		inFlight--
+		mu.Unlock()
+		return InstanceProbeAnswer{OK: true, URL: target, Facts: json.RawMessage(`{"status":"ok","uptime_seconds":1}`)}
+	}
+	targets := []string{"http://a", "http://b/slow", "http://c", "http://d", "http://e", "http://f", "http://g", "http://h"}
+	rows := probeInstanceBatch(targets, probe, 4)
+	if len(rows) != len(targets) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(targets))
+	}
+	if peak > 4 {
+		t.Fatalf("peak concurrency = %d, want at most 4", peak)
+	}
+	for i, row := range rows {
+		if row.URL != targets[i] {
+			t.Fatalf("row %d = %q, want %q (order is the ask's)", i, row.URL, targets[i])
+		}
+		if row.State != InstanceHealthy {
+			t.Fatalf("row %d = %+v, want its own healthy answer", i, row)
+		}
+	}
+}
+
+func TestInstanceStatusMethodNotAllowed(t *testing.T) {
+	ts := probeServer(t)
+	resp, err := http.Post(ts.URL+"/instances/status", "application/json", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("status %d, want 405", resp.StatusCode)
 	}
 }

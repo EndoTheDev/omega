@@ -64,7 +64,7 @@ var themeTokenKeys = map[string]bool{
 	"accent": true, "unread": true,
 	"z0": true, "z1": true, "z1-raised": true, "z2": true,
 	"stroke": true, "text": true, "text-dim": true,
-	"ok": true, "err": true,
+	"ok": true, "warn": true, "err": true,
 	"shadow-1": true, "shadow-2": true,
 }
 

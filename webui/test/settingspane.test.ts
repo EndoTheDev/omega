@@ -389,9 +389,13 @@ test("every other knob keeps the /settings door in both", () => {
   assert.doesNotMatch(body, /"desktop\.instances" in changes \? .* delete changes\["server\./);
 });
 
-test("a browser tab's save announces itself; the app's does not need to", () => {
+test("a save that landed the connection list announces it in both modes", () => {
   const at = paneSource.indexOf("async function save()");
   const body = paneSource.slice(at, paneSource.indexOf("async function saveScope", at));
-  assert.match(body, /if \(!instancesAreAppOwned\(\) && "desktop\.instances" in changes\)/, "the tab is the only one that announces");
+  assert.match(
+    body,
+    /if \("desktop\.instances" in changes\) \{\s*window\.dispatchEvent\(new CustomEvent\(INSTANCE_CHANGED_EVENT\)\);\s*\}/,
+    "the bar re-reads the list and the open panel re-reads its states, app-owned or not",
+  );
   assert.match(body, /window\.dispatchEvent\(new CustomEvent\(INSTANCE_CHANGED_EVENT\)\)/, "one window event, no reload");
 });
