@@ -301,7 +301,8 @@ func desktopLaunch(cfg Config, configPath string) error {
 // dragstart then dragend, no dragover, no drop. Windowed hosting keeps the child HWND
 // that owns the drag. NonClientRegionSupport is what turns the header's app-region
 // surface into the native caption in that mode (the frame drag and the double-click
-// maximise); the border resize is the page's edge report to this window.
+// maximise); the border resize is the page's no-drag edge strips reporting to this
+// window, so all four edges - the top one under the header band included - are grabbable.
 //
 // Decorations stay on for the Win11 shadow and rounded corners; resizing stays enabled.
 //

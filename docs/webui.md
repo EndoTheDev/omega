@@ -524,8 +524,11 @@ Everything else animates through `transition`, not keyframes.
   controller starts the drag and cancels it at once - no ghost, no caret,
   no drop). The header keeps the window chrome through
   `-webkit-app-region` (WebView2 non-client region support: caption drag
-  and double-click maximise), and the page reports the border edge a press
-  grabs (`wails:resize:<edge>`), so the frameless window still resizes.
+  and double-click maximise), and a no-drag 6px band along all four
+  edges names the border a press grabs (`wails:resize:<edge>`) - the
+  top edge included, since the band opts out of the header's drag rule -
+  so the frameless window resizes from every edge while the header's
+  controls keep their own clicks.
 - **Boot repair**: a persisted dock shell from before a
   built host's bottom-home addition is repaired at boot - new
   bottom-home registry members are injected into the persisted bottom

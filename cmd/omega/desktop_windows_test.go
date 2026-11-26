@@ -171,8 +171,9 @@ func TestDesktopLaunchStopsWhenWebView2IsMissing(t *testing.T) {
 // title bar and the dock's tab drag both depend on: without Frameless the system
 // caption comes back above the header; with WebView2CompositionHosting the window's
 // input never reaches Chromium's drag controller (a dock tab starts a drag and is
-// cancelled at once), so the caption is the shell's own WM_NCHITTEST instead; turning
-// either decoration or resize off costs the Win11 shadow and the edge resize borders.
+// cancelled at once), so the caption is the header's app-region surface answered by
+// WebView2's own non-client support instead; turning either decoration or resize off
+// costs the Win11 shadow and the edge resize borders.
 func TestDesktopWindowOptionsIsAFramelessHostOwnedTitleBar(t *testing.T) {
 	const origin = "http://127.0.0.1:18123"
 	opts := desktopWindowOptions(origin)
