@@ -1491,16 +1491,21 @@
   };
 
   // instancesValue: the saved-connection rows, coerced with the same tolerance as the
-  // providers list - an unexpected kind degrades to no rows, never a render crash.
+  // providers list - an unexpected kind degrades to no rows, never a render crash. The
+  // unverified flag rides through here or a pane save would clear a hatch row's marker.
   const instancesValue = (knob: SettingKnob): SavedInstance[] => {
     const v = serverValue(knob);
     if (!Array.isArray(v)) return [];
     return v
       .filter((r): r is Record<string, unknown> => !!r && typeof r === "object")
-      .map((r) => ({
-        name: typeof r["name"] === "string" ? r["name"] : "",
-        url: typeof r["url"] === "string" ? r["url"] : "",
-      }));
+      .map((r) => {
+        const row: SavedInstance = {
+          name: typeof r["name"] === "string" ? r["name"] : "",
+          url: typeof r["url"] === "string" ? r["url"] : "",
+        };
+        if (r["unverified"] === true) row.unverified = true;
+        return row;
+      });
   };
 
   // fieldError: a list editor renders the server's refusal at the field, as written.
