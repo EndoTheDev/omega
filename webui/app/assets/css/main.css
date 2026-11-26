@@ -121,6 +121,35 @@ body {
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
 
+/* ---- desktop window chrome (a Wails window only): the header IS the title bar.
+   Three EQUAL cells, each the header's full height, flush to the window edge - the
+   lane is only ever as wide as its cells, and the nav cluster keeps its absolute
+   centre (nothing else is reserved). The press on a cell is a NATIVE caption press:
+   the cell is a hit-test region, so the OS moves the window and the CSS only paints
+   it (hover/active arrive as forwarded mouse input, like any other click). ---- */
+.window-controls {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  align-self: stretch;
+  margin-left: 4px;
+  /* cancel the menubar's right padding: the close cell reaches the window edge */
+  margin-right: -12px;
+}
+.win-cell {
+  width: 46px;
+  height: var(--menubar-h);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+}
+.win-cell:hover { background: var(--z2); color: var(--text); }
+.win-cell:active { background: var(--stroke); }
+.win-close:hover { background: var(--err); color: #fff; }
+
 /* ---- card t_20fd8745 (Endo ruling 2026-11-13): the nav cluster seats
    DEAD CENTER on the menubar's FULL width - the absolute-middle trick the
    deleted 'Omega' wordmark used (robust to any left/right width), now the

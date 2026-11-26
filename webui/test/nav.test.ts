@@ -169,8 +169,10 @@ describe("nav cluster wiring", () => {
     // MenuBar DECLARES the dims as props.
     assert.match(menubar, /canBack: boolean/);
     assert.match(menubar, /canForward: boolean/);
-    // ONE brand - glyph + word in a SINGLE element, far left
-    assert.match(menubar, /<span class="brand">Ωmega<\/span>/);
+    // ONE brand - glyph + word in a SINGLE element, far left. The attribute is the
+    // desktop window's caption marker; the element and its one-word content are the
+    // contract (webui/test/windowcontrols.test.ts pins the marker itself).
+    assert.match(menubar, /<span[^>]*class="brand"[\s\S]*?>Ωmega<\/span>/);
     assert.equal(
       (menubar.match(/class="brand"/g) ?? []).length,
       1,

@@ -1,6 +1,10 @@
 <template>
   <header class="menubar">
-    <span class="brand">Ωmega</span>
+    <!-- the two caption strips are the window's drag surface in a Wails window
+         (data-caption-region); every control keeps its own clicks -->
+    <span
+      class="brand"
+      data-caption-region>Ωmega</span>
     <NavCluster
       :can-back="canBack"
       :can-forward="canForward"
@@ -8,7 +12,9 @@
       @back="$emit('back')"
       @forward="$emit('forward')"
       @open-palette="$emit('open-palette')" />
-    <span class="menubar-spacer" />
+    <span
+      class="menubar-spacer"
+      data-caption-region />
     <button
       class="icon-btn edge-toggle"
       aria-label="Toggle left sidebar"
@@ -61,6 +67,12 @@
         :size="16" />
     </button>
     <NotificationToasts @open="$emit('open-notification', $event)" />
+    <WindowControls
+      :desktop="desktop"
+      :maximised="maximised"
+      @minimise="act('minimise')"
+      @toggle-maximise="act('toggle-maximise')"
+      @close="act('close')" />
   </header>
 </template>
 
@@ -69,6 +81,12 @@
   import Icon from "../ui/Icon.vue";
   import NotificationToasts from "./NotificationToasts.vue";
   import NavCluster from "../nav/NavCluster.vue";
+  import WindowControls from "./WindowControls.vue";
+  import { useDesktopChrome } from "../../composables/desktopChrome";
+
+  // inside the Wails window the header is the title bar: the lane renders and the
+  // region publishing arms the native hit test. A browser tab gets neither.
+  const { desktop, maximised, act } = useDesktopChrome();
 
   defineProps<{
     sidebarOpen: boolean;
