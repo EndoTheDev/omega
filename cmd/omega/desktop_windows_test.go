@@ -163,3 +163,45 @@ func TestDesktopLaunchStopsWhenWebView2IsMissing(t *testing.T) {
 		}
 	}
 }
+
+// TestDesktopWindowOptionsIsAFramelessNativeHitTestTitleBar pins the window a merged
+// title bar depends on: without Frameless the system caption comes back above the
+// header, without the region route the page's controls are dead pixels, and turning
+// either decoration or resize off costs the Win11 shadow and the edge resize borders.
+func TestDesktopWindowOptionsIsAFramelessNativeHitTestTitleBar(t *testing.T) {
+	const origin = "http://127.0.0.1:18123"
+	opts := desktopWindowOptions(origin)
+
+	if !opts.Frameless {
+		t.Error("Frameless is off: the system caption still stacks above omega's header")
+	}
+	if !opts.Windows.NonClientRegionSupport {
+		t.Error("NonClientRegionSupport is off: the page's app-region fallback is unavailable")
+	}
+	if !opts.Windows.WebView2CompositionHosting {
+		t.Error("WebView2CompositionHosting is off: no native hit test for the published regions")
+	}
+	if opts.Windows.DisableFramelessWindowDecorations {
+		t.Error("DisableFramelessWindowDecorations is on: the Win11 shadow and rounded corners go with it")
+	}
+	if opts.DisableResize {
+		t.Error("DisableResize is on: a frameless window then has no resize borders")
+	}
+	if !opts.AllowSimpleEventEmit {
+		t.Error("AllowSimpleEventEmit is off: the caption cells' presses never reach the host")
+	}
+	for _, event := range desktopWindowEvents {
+		if !strings.HasPrefix(event, "omega:window:") {
+			t.Errorf("window event %q is not in the omega:window: namespace", event)
+		}
+	}
+	if len(desktopWindowEvents) != 3 {
+		t.Errorf("desktopWindowEvents = %v, want the three caption cells", desktopWindowEvents)
+	}
+	if opts.Title != "omega" {
+		t.Errorf("Title = %q, want omega", opts.Title)
+	}
+	if opts.URL != origin {
+		t.Errorf("URL = %q, want %q", opts.URL, origin)
+	}
+}

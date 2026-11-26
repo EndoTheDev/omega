@@ -35,6 +35,7 @@ import {
   History,
   Kanban,
   MailOpen,
+  Minus,
   MessageSquare,
   PanelBottomClose,
   PanelBottomOpen,
@@ -47,11 +48,13 @@ import {
   RefreshCw,
   ScrollText,
   SlidersHorizontal,
+  Square,
   SquareTerminal,
   Star,
   Trash2,
   Users,
   Wrench,
+  X,
   Zap,
 } from "lucide-vue-next";
 import type { LucideIcon } from "lucide-vue-next";
@@ -93,7 +96,11 @@ export const ICONS = {
   "chevron-right": ChevronRight, // row expanders: closed at rest, rotate 90deg when open
   star: Star, // pinned sessions
   download: Download, // session export
-  copy: Copy, // the row's copy-session-id action
+  copy: Copy, // the row's copy-session-id action; also the desktop window's restore glyph
+  // the desktop window's caption glyphs (WindowControls.vue): the header IS the title bar
+  minus: Minus,
+  square: Square,
+  x: X,
   pencil: Pencil, // inline rename
   plus: Plus, // the cron tab's add-job editor tool
   branch: GitFork, // session fork

@@ -50,6 +50,7 @@ the others:
 | Constant          | Value |
 | ----------------- | ----- |
 | MenuBar height    | 35px  |
+| Window control cell | 46px wide, the bar's full height |
 | StatusBar height  | 29px  |
 | Tool pane floor   | 128px |
 | Chat pane floor   | 320px |
@@ -86,6 +87,25 @@ pointerdown anywhere outside the palette closes it (the scrimless
 overlay listens on the document; the `data-palette-trigger` markers and
 the teleported field itself are the exemptions, so a click that opens
 cannot close on the way out).
+
+**The title-bar lane (desktop window only)**: inside the Wails
+window the header IS the title bar - the window is frameless, so the
+system caption no longer stacks above the bar - and a WINDOW CONTROLS
+lane sits pinned to the bar's right end: three EQUAL cells (46px wide,
+each the bar's full `--menubar-h`) for minimise / maximise / close. The
+maximise cell shows the restore glyph from the window's REAL state
+(the framework's `windows:WindowMaximise` / `windows:WindowUnMaximise`
+events), never from a click count. The lane is sized by its cells -
+never a fixed width - and it is the ONLY space the bar reserves: the
+nav cluster keeps its absolute centre. The cells are native caption
+hit-test regions published by the page, so the press is a real Win32
+caption press (the page only paints it, hover included), and the bar's
+non-interactive strips are the drag surface - the brand and the spacer
+(`data-caption-region`) - over which the OS owns the double-click
+maximise, the caption system menu and the edge resize borders. A plain
+browser tab renders none of it: the lane exists only where the Wails
+Core shim does (`window._wails`), which `omega serve` in a browser never
+has, so the browser header is unchanged.
 
 **The command palette's geometry** (VS Code
 quick-open): the panel HANGS from the top bar. Its top edge is

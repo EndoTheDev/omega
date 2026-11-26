@@ -114,12 +114,15 @@ func desktopLaunch(cfg Config, configPath string) error {
 		app.Dialog.Error().SetTitle("omega").SetMessage("Start with Windows: " + err.Error()).Show()
 	})
 
-	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:  "omega",
-		URL:    origin,
-		Width:  1280,
-		Height: 860,
-	})
+	win := app.Window.NewWithOptions(desktopWindowOptions(origin))
+
+	// The caption cells' presses come back here: the hit test routes them to the page,
+	// so the page names the action and the window performs it.
+	for _, event := range desktopWindowEvents {
+		app.Event.On(event, func(*application.CustomEvent) {
+			desktopWindowAction(win, event)
+		})
+	}
 
 	// The tray's update row talks to the home's own engine - the desktop adds an
 	// affordance, never a second updater.
@@ -216,6 +219,62 @@ func desktopLaunch(cfg Config, configPath string) error {
 	// into a second log line only.
 	bootErrors.Handle(runErr)
 	return runErr
+}
+
+// desktopWindowOptions is the window the desktop opens: omega's own header IS the
+// title bar. Frameless hands the whole window rect to the client, so the system caption
+// no longer stacks above the header; the page then publishes hit-test regions
+// (wails:non-client-region) and the composition-hosted controller answers WM_NCHITTEST
+// from them. That route is also what restores resize borders, the caption system menu
+// and the double-click maximise. Decorations stay on for the Win11 shadow and rounded
+// corners; resizing stays enabled.
+//
+// AllowSimpleEventEmit is the caption cells' return path: a press on a minimize /
+// maximize / close region is forwarded to the page as mouse input instead of being
+// performed, so the page sends the bare event name back (see desktopWindowEvents). The
+// shortcut carries names only and cannot reach the binding path, but a script in this
+// window could trigger those three handlers - window chrome, on the same loopback
+// channel the whole app already trusts.
+func desktopWindowOptions(origin string) application.WebviewWindowOptions {
+	return application.WebviewWindowOptions{
+		Title:                "omega",
+		URL:                  origin,
+		Width:                1280,
+		Height:               860,
+		Frameless:            true,
+		AllowSimpleEventEmit: true,
+		Windows: application.WindowsWindow{
+			NonClientRegionSupport:     true,
+			WebView2CompositionHosting: true,
+		},
+	}
+}
+
+// The caption cells' page -> host names. The page's WindowControls sends the bare name
+// (wails:event:emit:<name>); desktopWindowAction performs it.
+const (
+	desktopWindowEventMinimise       = "omega:window:minimise"
+	desktopWindowEventToggleMaximise = "omega:window:toggle-maximise"
+	desktopWindowEventClose          = "omega:window:close"
+)
+
+var desktopWindowEvents = []string{
+	desktopWindowEventMinimise,
+	desktopWindowEventToggleMaximise,
+	desktopWindowEventClose,
+}
+
+// desktopWindowAction performs one caption-cell press on the window. Close rides the
+// existing WindowClosing hook, so the close cell still hides to the tray.
+func desktopWindowAction(win *application.WebviewWindow, event string) {
+	switch event {
+	case desktopWindowEventMinimise:
+		win.Minimise()
+	case desktopWindowEventToggleMaximise:
+		win.ToggleMaximise()
+	case desktopWindowEventClose:
+		win.Close()
+	}
 }
 
 // wailsAutostart is the production autostartBackend: Wails v3 owns the registration
