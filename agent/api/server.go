@@ -300,6 +300,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// plain browser, so it belongs to the shell ring, not the desktop shell.
 	mux.HandleFunc("/instances", s.handleInstances)
 	mux.HandleFunc("/instances/probe", s.handleInstanceProbe)
+	mux.HandleFunc("/instances/status", s.handleInstanceStatus)
 	mux.HandleFunc("/ui/canvas", s.handleCanvas)
 	mux.HandleFunc("/ui/actions", s.handleUIActions)
 }

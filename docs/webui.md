@@ -1089,6 +1089,38 @@ dot, reset link, draft star, live note).
   and hatch rows, the cache keeping the flag) and
   `webui/test/settingspane.test.ts` (the source pins), walked live by
   `scripts/journeys/recipes/121-instance-add-validation.journey.sh`.
+- **Every connection row wears a state dot, and the word rides its name.**
+  The status-bar panel's rows and the pane's rows both paint one dot from
+  ONE batch read of the health body (`GET /instances/status`, documented in
+  `api.md`). The URL list comes from the page, never from the serving
+  host's own list: a desktop window's list is the app's, so a page served
+  by a remote must not be handed dots for the remote's empty one.
+  - Four states, one law (`api.InstanceState` server-side,
+    `classifyInstance` in `webui/app/composables/instancesStatus.ts` where
+    the app-local hatch flag applies): **healthy** green (omega answered,
+    no sourced fact is false), **warning** orange (a sourced
+    `provider.reachable` / `database.healthy` is false), **error** red
+    (nothing answered, or an answer that is not omega), **unverified** the
+    hollow `--text-dim` ring (the flag softened a NO ANSWER; a not-omega
+    answer always wins over the flag). An absent fact is unknown, never
+    degraded; `last_error` is history and stays in the tooltip.
+  - Colour is never the only carrier: the panel row's `title` and
+    `aria-label` carry the state word and the probe's reason, the pane's
+    dot is a `role="img"` whose accessible name is `word: reason`.
+    `.dot.ok` / `.dot.warn` / `.dot.down` / `.dot.unverified` in
+    `main.css`; `--warn` is a theme-overridable token beside `--ok` and
+    `--err`.
+  - One poll: the composable reads immediately on open, ticks every 30s,
+    stops on close, and refreshes once after a pane save. Nothing runs on
+    page load and nothing runs with the panel shut.
+  - A build without the route answers its SPA shell: the page paints no
+    dots and one muted note ("states not checked (this server's build
+    predates them)"), never a guessed colour.
+  Pinned by `webui/test/instancesstatus.test.ts` (the state table, the
+  precedence and flag rules, the poll lifecycle) and
+  `webui/test/statusbar-zones.test.ts` (the dot markup and the accessible
+  names); journey 112 asserts the green / red / ring rows live (the orange
+  branch needs a broken provider on the lane, so the node suite owns it).
 
 ## The Logs tab
 

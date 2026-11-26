@@ -392,7 +392,7 @@ test("the status bar renders the connection control and the panel's rows", () =>
   assert.match(bar, /:aria-expanded="healthOpen"/);
   // the panel: the current row marked, then the saved rows as switches
   assert.match(bar, /<span class="hp-head">connections<\/span>/);
-  assert.match(bar, /class="hp-crow hp-cur"\s+aria-current="true"/, "the current connection is marked");
+  assert.match(bar, /class="hp-crow hp-cur"[\s\S]{0,120}aria-current="true"/, "the current connection is marked");
   assert.match(bar, /\{\{ currentOrigin \|\| "this page" \}\}/, "the current row carries its origin");
   assert.match(bar, /v-for="row in savedRows"/, "the saved rows render");
   assert.match(bar, /@click="switchTo\(row\)"/, "a saved row is the switch");

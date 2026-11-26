@@ -23,6 +23,9 @@
   --text: #e6e6e9;
   --text-dim: #8a8a92;
   --ok: #3ecf6e;
+  /* warning: the in-between a per-row state needs (the connection dots) - a theme
+     may recolour it like every other token */
+  --warn: #d9a03a;
   --err: #e05252;
 
   /* three-tier radii */
@@ -54,6 +57,8 @@ html[data-theme='light'] {
   --text-dim: #6a6a72;
   /* unread, light theme: a blue that survives the light background */
   --unread: #2563EB;
+  /* warning, light theme: a darker amber that holds contrast on the light panes */
+  --warn: #a9761a;
   /* light mode: tight blur matches the pane-area's 3px breathing room so the
      shadow fades fully before the status bar - float without the bleed */
   --shadow-1: 0 1px 4px rgba(0, 0, 0, 0.10);
@@ -3361,7 +3366,13 @@ labels stopped short of the right edge. */
   border-radius: 50%;
 }
 .dot.ok { background: var(--ok); }
+.dot.warn { background: var(--warn); }
 .dot.down { background: var(--err); }
+/* unverified: a hollow ring, not a fourth colour - the row says why it is unproven */
+.dot.unverified {
+  background: transparent;
+  border: 1px solid var(--text-dim);
+}
 
 .streaming-seg { color: var(--accent); }
 
