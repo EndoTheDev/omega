@@ -116,6 +116,9 @@ export function windowActionMessage(action: WindowAction): string {
 /** the maximize-state feed: Wails' WM_SIZE events, by name */
 export const MAXIMISE_EVENT = "windows:WindowMaximise";
 export const UNMAXIMISE_EVENT = "windows:WindowUnMaximise";
+/** wails v3.1.0 emits THIS on a restore, not WindowUnMaximise - without it the page
+ *  would hold "maximised" for the rest of the session */
+export const RESTORE_EVENT = "windows:WindowRestore";
 
 export type RegionKind = "caption" | "minimize" | "maximize" | "close";
 
@@ -225,10 +228,22 @@ export function nonClientRegionMessage(regions: HitRegion[]): string {
   );
 }
 
+/** the frameless window's border, named as the cursor CSS paints it and as the edge the
+ *  host's resize message takes */
+export type ResizeEdge = "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+
+/** every edge the page reports; corners last, so they paint over the edges they join */
+export const RESIZE_EDGES: readonly ResizeEdge[] = ["n", "s", "w", "e", "nw", "ne", "se", "sw"];
+
+/** the host's resize message for one edge: wails:resize:<edge>-resize */
+export function resizeMessage(edge: ResizeEdge): string {
+  return `wails:resize:${edge}-resize`;
+}
+
 /** the maximize state an event name carries; null for every unrelated event */
 export function maximisedFromEvent(name: unknown): boolean | null {
   if (name === MAXIMISE_EVENT) return true;
-  if (name === UNMAXIMISE_EVENT) return false;
+  if (name === UNMAXIMISE_EVENT || name === RESTORE_EVENT) return false;
   return null;
 }
 
@@ -345,6 +360,10 @@ export function useDesktopChrome(): DesktopChrome {
     }
   }
 
+  // The frameless border is the page's: windowed hosting has no native frame, so the
+  // no-drag strips (ResizeFrame.vue) report the edge a press grabbed and the host runs
+  // the OS resize. The strips own the border; interactive chrome paints above them.
+
   function watchResolution(): void {
     if (typeof window.matchMedia !== "function") return;
     let query: MediaQueryList | null = null;
@@ -393,8 +412,11 @@ export function useDesktopChrome(): DesktopChrome {
     }
     watchResolution();
 
+    // The lane is a render away: publish once it has its boxes. A windowed-hosted
+    // window has no framework caption route - the frame's drag is the header's
+    // app-region surface and the border is the page's own edge strips - and the
+    // page-side drag stays as the last resort.
     if (hasNativeRegions(globalThis)) {
-      // the lane is a render away: publish once it has its boxes
       void nextTick(schedulePublish);
     } else {
       wireDragFallback();

@@ -82,6 +82,10 @@
     right: 12px;
     bottom: 40px;
     z-index: 60;
+    /* the header is the window's drag surface and app-region INHERITS: a fixed child
+       without this opt-out is a caption rectangle, so a toast click would drag the
+       window instead of opening the row */
+    -webkit-app-region: no-drag;
     display: flex;
     flex-direction: column;
     gap: 8px;

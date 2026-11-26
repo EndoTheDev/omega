@@ -167,22 +167,25 @@ func TestDesktopLaunchStopsWhenWebView2IsMissing(t *testing.T) {
 	}
 }
 
-// TestDesktopWindowOptionsIsAFramelessNativeHitTestTitleBar pins the window a merged
-// title bar depends on: without Frameless the system caption comes back above the
-// header, without the region route the page's controls are dead pixels, and turning
-// either decoration or resize off costs the Win11 shadow and the edge resize borders.
-func TestDesktopWindowOptionsIsAFramelessNativeHitTestTitleBar(t *testing.T) {
+// TestDesktopWindowOptionsIsAFramelessHostOwnedTitleBar pins the window the merged
+// title bar and the dock's tab drag both depend on: without Frameless the system
+// caption comes back above the header; with WebView2CompositionHosting the window's
+// input never reaches Chromium's drag controller (a dock tab starts a drag and is
+// cancelled at once), so the caption is the header's app-region surface answered by
+// WebView2's own non-client support instead; turning either decoration or resize off
+// costs the Win11 shadow and the edge resize borders.
+func TestDesktopWindowOptionsIsAFramelessHostOwnedTitleBar(t *testing.T) {
 	const origin = "http://127.0.0.1:18123"
 	opts := desktopWindowOptions(origin)
 
 	if !opts.Frameless {
 		t.Error("Frameless is off: the system caption still stacks above omega's header")
 	}
-	if !opts.Windows.NonClientRegionSupport {
-		t.Error("NonClientRegionSupport is off: the page's app-region fallback is unavailable")
+	if opts.Windows.WebView2CompositionHosting {
+		t.Error("WebView2CompositionHosting is on: a composition-hosted controller has no OLE drag source, so a page drag dies at dragstart")
 	}
-	if !opts.Windows.WebView2CompositionHosting {
-		t.Error("WebView2CompositionHosting is off: no native hit test for the published regions")
+	if !opts.Windows.NonClientRegionSupport {
+		t.Error("NonClientRegionSupport is off: windowed hosting then has no native route for the header's app-region drag surface")
 	}
 	if opts.Windows.DisableFramelessWindowDecorations {
 		t.Error("DisableFramelessWindowDecorations is on: the Win11 shadow and rounded corners go with it")

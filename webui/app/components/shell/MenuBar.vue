@@ -73,6 +73,7 @@
       @minimise="act('minimise')"
       @toggle-maximise="act('toggle-maximise')"
       @close="act('close')" />
+    <ResizeFrame v-if="desktop && !maximised" />
   </header>
 </template>
 
@@ -82,6 +83,7 @@
   import NotificationToasts from "./NotificationToasts.vue";
   import NavCluster from "../nav/NavCluster.vue";
   import WindowControls from "./WindowControls.vue";
+  import ResizeFrame from "./ResizeFrame.vue";
   import { useDesktopChrome } from "../../composables/desktopChrome";
 
   // inside the Wails window the header is the title bar: the lane renders and the

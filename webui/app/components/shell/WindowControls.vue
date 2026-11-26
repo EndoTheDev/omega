@@ -44,9 +44,9 @@
 </template>
 
 <script setup lang="ts">
-  // The press is a native caption press (the cell is a hit-test region); the ACTION is
-  // named to the host, because Wails forwards that press to the page instead of
-  // performing it. No state is guessed here: the restore glyph follows the prop.
+  // The window is windowed-hosted, so the cells are no-drag client elements and a press
+  // goes through the page; the ACTION is named to the host, which performs it. No state
+  // is guessed here: the restore glyph follows the prop.
   import Icon from "../ui/Icon.vue";
 
   defineProps<{

@@ -20,6 +20,9 @@ import {
   isDesktopWindow,
   maximisedFromEvent,
   MAXIMISE_EVENT,
+  RESIZE_EDGES,
+  RESTORE_EVENT,
+  resizeMessage,
   RUNTIME_POLL_TRIES,
   shellDecision,
   UNMAXIMISE_EVENT,
@@ -166,6 +169,7 @@ describe("the maximize glyph follows the window, not the click count", () => {
   it("maps the framework's WM_SIZE events", () => {
     assert.equal(maximisedFromEvent(MAXIMISE_EVENT), true);
     assert.equal(maximisedFromEvent(UNMAXIMISE_EVENT), false);
+    assert.equal(maximisedFromEvent(RESTORE_EVENT), false, "a restore is the event wails emits");
     assert.equal(maximisedFromEvent("windows:WindowMinimise"), null);
     assert.equal(maximisedFromEvent(undefined), null);
   });
@@ -173,6 +177,7 @@ describe("the maximize glyph follows the window, not the click count", () => {
   it("names the windows events, not a counter", () => {
     assert.equal(MAXIMISE_EVENT, "windows:WindowMaximise");
     assert.equal(UNMAXIMISE_EVENT, "windows:WindowUnMaximise");
+    assert.equal(RESTORE_EVENT, "windows:WindowRestore");
   });
 });
 
@@ -380,6 +385,34 @@ describe("desktopChrome.ts: the framework, not a runtime bundle", () => {
     assert.ok(src.includes("wails:non-client-region:"));
     assert.ok(src.includes("dispatchWailsEvent"), "the event entry point it installs");
     assert.ok(src.includes("wails:drag"), "the path-B drag invokes");
+  });
+
+  it("names every frameless border edge, and each strip is a client surface", () => {
+    assert.deepEqual(
+      [...RESIZE_EDGES],
+      ["n", "s", "w", "e", "nw", "ne", "se", "sw"],
+      "all four edges plus the four corners, corners last so they paint over the edges",
+    );
+    assert.equal(resizeMessage("n"), "wails:resize:n-resize");
+    assert.equal(resizeMessage("se"), "wails:resize:se-resize");
+    const frame = read("app/components/shell/ResizeFrame.vue");
+    assert.match(frame, /data-resize-edge/, "each strip carries its own edge");
+    assert.match(frame, /resizeMessage\(edge\)/, "the strip sends the host's name");
+    const css = read("app/assets/css/main.css");
+    assert.match(
+      css,
+      /\.resize-strip \{[^}]*-webkit-app-region: no-drag/,
+      "the strip is a client surface: the press reaches the page instead of the caption",
+    );
+    assert.match(css, /\.menubar \{[^}]*-resize-edge: 6px/, "one width names the border");
+    assert.ok(!frame.includes("resize-frame"), "no full-window wrapper inside the drag element");
+    assert.match(css, /\.menubar button \{[^}]*z-index: 2/, "the controls paint above the strips");
+    const menubar = read("app/components/shell/MenuBar.vue");
+    assert.match(
+      menubar,
+      /<ResizeFrame v-if="desktop && !maximised" \/>/,
+      "strips exist only in the desktop window, and never while maximised",
+    );
   });
 });
 

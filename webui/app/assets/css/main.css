@@ -118,25 +118,60 @@ body {
   padding: 0 12px;
   background: var(--z0);
   /* chrome stays above all overlays: drawers (12), scrim (10),
-     model dropdown (30). Coupling: mobile drawer insets use this height. */
+     model dropdown (30). Coupling: mobile drawer insets use this height.
+     Above the status bar's own 40: an equal level would let the later
+     sibling paint over the header's border strips at the bottom edge. */
   position: relative;
-  z-index: 40;
+  z-index: 41;
 }
 
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
 
+/* ---- the window's drag surface (a Wails window only): the header IS the title bar,
+   so the header's band is app-region drag and every control opts back out. The window
+   is WINDOWED-hosted, so WebView2's non-client region support turns those points into
+   the native caption: the frame moves, the double-click maximises, both from the OS.
+   A browser tab ignores app-region, so the rule is inert there. ---- */
+.menubar { -webkit-app-region: drag; --resize-edge: 6px; }
+.menubar button,
+.menubar .nav-cluster { -webkit-app-region: no-drag; }
+/* the controls paint above the border strips below: a press in the close cell's flush
+   right edge is a click, never a resize */
+.menubar button { position: relative; z-index: 2; }
+
+/* ---- the frameless window's border (a Wails window only): each strip is a NO-DRAG
+   surface over the page's edge, so the press reaches the page instead of the caption
+   and names the edge the host resizes. That is what makes the top edge - inside the
+   header's drag band - reachable at all. The strips sit directly in the header: one
+   full-window wrapper inside the drag element turns the whole window into caption.
+   Corner strips paint over the edges they join; a browser tab renders none. ---- */
+.resize-strip {
+  position: fixed;
+  z-index: 1;
+  -webkit-app-region: no-drag;
+}
+.resize-n { top: 0; left: 0; right: 0; height: var(--resize-edge); cursor: ns-resize; }
+.resize-s { bottom: 0; left: 0; right: 0; height: var(--resize-edge); cursor: ns-resize; }
+.resize-w { top: 0; bottom: 0; left: 0; width: var(--resize-edge); cursor: ew-resize; }
+.resize-e { top: 0; bottom: 0; right: 0; width: var(--resize-edge); cursor: ew-resize; }
+.resize-nw { top: 0; left: 0; width: var(--resize-edge); height: var(--resize-edge); cursor: nwse-resize; }
+.resize-ne { top: 0; right: 0; width: var(--resize-edge); height: var(--resize-edge); cursor: nesw-resize; }
+.resize-sw { bottom: 0; left: 0; width: var(--resize-edge); height: var(--resize-edge); cursor: nesw-resize; }
+.resize-se { bottom: 0; right: 0; width: var(--resize-edge); height: var(--resize-edge); cursor: nwse-resize; }
+
 /* ---- desktop window chrome (a Wails window only): the header IS the title bar.
    Three EQUAL cells, each the header's full height, flush to the window edge - the
    lane is only ever as wide as its cells, and the nav cluster keeps its absolute
-   centre (nothing else is reserved). The press on a cell is a NATIVE caption press:
-   the cell is a hit-test region, so the OS moves the window and the CSS only paints
-   it (hover/active arrive as forwarded mouse input, like any other click). ---- */
+   centre (nothing else is reserved). The cells are no-drag client elements, so a
+   press goes through the page; the page names the action and the host performs it. ---- */
 .window-controls {
   display: flex;
   flex: none;
   align-items: stretch;
   align-self: stretch;
+  position: relative;
+  z-index: 2;
   margin-left: 4px;
   /* cancel the menubar's right padding: the close cell reaches the window edge */
   margin-right: -12px;
@@ -166,6 +201,8 @@ body {
 .nav-cluster {
   position: absolute;
   left: 50%;
+  /* above the border strips, like the buttons: the seat keeps its own presses */
+  z-index: 2;
   transform: translateX(-50%);
   display: flex;
   align-items: center;
