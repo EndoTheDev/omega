@@ -375,41 +375,104 @@ func TestDesktopHostRefusesEveryOtherPage(t *testing.T) {
 	}
 }
 
-// TestDesktopHostSwitchIsTheHostsNavigation: a page switch is the host's SetURL, and the
-// active origin follows it - which is what the tray's check mark and the frame rule read.
-func TestDesktopHostSwitchIsTheHostsNavigation(t *testing.T) {
+// TestDesktopHostSwitchResolvesTheShellsRows: a page switch names a ROW, never a
+// destination. The host resolves the key against its own set - an exact saved row, then
+// an origin match, then home - and the window moves to the member's own spelling. A miss
+// navigates nothing and answers the refusal on the event.
+func TestDesktopHostSwitchResolvesTheShellsRows(t *testing.T) {
 	const origin = "http://127.0.0.1:18101"
-	const other = "http://192.0.2.10:8098"
-	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	const saved = "http://192.0.2.10:8098"
+	const prefixed = "http://192.0.2.10:8100/omega"
+	store := &fakeInstanceStore{list: []core.SavedInstance{
+		{Name: "pi", URL: saved},
+		{Name: "work", URL: prefixed},
+	}}
+	host, probe := newTestDesktopHost(origin, store)
+	page := func(at string) *application.OriginInfo {
+		return &application.OriginInfo{Origin: at + "/", TopOrigin: at + "/"}
+	}
+	last := func() desktopInstancesReply {
+		if len(probe.events) == 0 {
+			t.Fatal("the host answered nothing")
+		}
+		return probe.events[len(probe.events)-1].payload.(desktopInstancesReply)
+	}
 
-	if err := host.Handle(&application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}, `{"omega":"instances:switch","url":"HTTP://192.0.2.10:8098/"}`); err != nil {
+	// an exact saved row: the key's spelling is normalized, the window gets the row's own
+	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"HTTP://192.0.2.10:8098/"}`); err != nil {
 		t.Fatalf("switch: %v", err)
 	}
-	if len(probe.navs) != 1 || probe.navs[0] != other {
-		t.Fatalf("navigations = %q, want the one normalized target", probe.navs)
+	if len(probe.navs) != 1 || probe.navs[0] != saved {
+		t.Fatalf("navigations = %q, want the saved row %q", probe.navs, saved)
 	}
-	if got := host.ActiveOrigin(); got != other {
-		t.Fatalf("active origin = %q, want %q", got, other)
-	}
-
-	// the page the window now shows is the one allowed to ask, and the old one is not
-	if err := host.Handle(&application.OriginInfo{Origin: other + "/", TopOrigin: other + "/"}, `{"omega":"instances:get"}`); err != nil {
-		t.Fatalf("the page the window shows was refused: %v", err)
-	}
-	if err := host.Handle(&application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}, `{"omega":"instances:get"}`); err == nil {
-		t.Fatal("the origin the window left could still ask")
+	if got := host.ActiveOrigin(); got != saved {
+		t.Fatalf("active origin = %q, want %q", got, saved)
 	}
 
-	// a switch to nothing names the refusal instead of navigating
+	// an origin-key match resolves a prefixed row, and the window gets the stored path
+	if err := host.Handle(page(saved), `{"omega":"instances:switch","url":"http://192.0.2.10:8100"}`); err != nil {
+		t.Fatalf("origin-key switch: %v", err)
+	}
+	if len(probe.navs) != 2 || probe.navs[1] != prefixed {
+		t.Fatalf("navigations = %q, want the stored row %q", probe.navs, prefixed)
+	}
+
+	// home is a member: the page names it with the address the answer carried
+	if err := host.Handle(page(prefixed), `{"omega":"instances:switch","url":"`+origin+`"}`); err != nil {
+		t.Fatalf("switch home: %v", err)
+	}
+	if len(probe.navs) != 3 || probe.navs[2] != origin {
+		t.Fatalf("navigations = %q, want home %q", probe.navs, origin)
+	}
+	if got := host.HomeOrigin(); got != origin {
+		t.Fatalf("a switch rewrote home to %q", got)
+	}
+
+	// a stranger address is a miss: the refusal answers, the window does not move
 	before := len(probe.navs)
-	if err := host.Handle(&application.OriginInfo{Origin: other + "/", TopOrigin: other + "/"}, `{"omega":"instances:switch","url":"javascript:alert(1)"}`); err != nil {
-		t.Fatalf("a bad switch is the page's answer, not a dropped message: %v", err)
+	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"http://198.51.100.7:1234"}`); err != nil {
+		t.Fatalf("a miss is the page's answer, not a dropped message: %v", err)
 	}
 	if len(probe.navs) != before {
-		t.Fatal("a refused switch still navigated the window")
+		t.Fatalf("a refused switch navigated the window: %q", probe.navs)
 	}
-	if got := probe.events[len(probe.events)-1].payload.(desktopInstancesReply); !strings.Contains(got.Error, "http") {
-		t.Fatalf("a refused switch answered %q, want the validator's words", got.Error)
+	if got := host.ActiveOrigin(); got != origin {
+		t.Fatalf("a refused switch moved the active origin to %q", got)
+	}
+	refusal := last()
+	if !strings.Contains(refusal.Error, "not one of this desktop's connections") {
+		t.Fatalf("a miss answered %q, want the refusal", refusal.Error)
+	}
+	if len(refusal.Instances) != len(store.list) {
+		t.Fatalf("a refused switch answered %d rows, want the unchanged list of %d", len(refusal.Instances), len(store.list))
+	}
+
+	// a non-http key never reaches the list
+	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"javascript:alert(1)"}`); err != nil {
+		t.Fatalf("a bad scheme is the page's answer, not a dropped message: %v", err)
+	}
+	if len(probe.navs) != before {
+		t.Fatal("a refused scheme still navigated the window")
+	}
+	if got := last(); !strings.Contains(got.Error, "http") {
+		t.Fatalf("a refused scheme answered %q, want the validator's words", got.Error)
+	}
+
+	// a page the window has left is refused, as before: the door's origin gate stands
+	if err := host.Handle(page(prefixed), `{"omega":"instances:switch","url":"`+saved+`"}`); err == nil {
+		t.Fatal("the origin the window left could still ask")
+	}
+	if len(probe.navs) != before {
+		t.Fatal("a refused page still navigated the window")
+	}
+
+	// an unreadable list costs the list's members, never home
+	store.readErr = errors.New("config.yaml is unreadable")
+	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"`+origin+`"}`); err != nil {
+		t.Fatalf("switch home with an unreadable list: %v", err)
+	}
+	if len(probe.navs) != before+1 || probe.navs[before] != origin {
+		t.Fatalf("navigations = %q, want home still resolvable", probe.navs)
 	}
 }
 
@@ -420,7 +483,8 @@ func TestDesktopHostSwitchIsTheHostsNavigation(t *testing.T) {
 func TestDesktopHostHomeIsShellState(t *testing.T) {
 	const origin = "http://127.0.0.1:18101"
 	const other = "http://192.0.2.10:8098"
-	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	store := &fakeInstanceStore{list: []core.SavedInstance{{Name: "pi", URL: other}}}
+	host, probe := newTestDesktopHost(origin, store)
 	page := func(at string) *application.OriginInfo {
 		return &application.OriginInfo{Origin: at + "/", TopOrigin: at + "/"}
 	}
@@ -453,7 +517,7 @@ func TestDesktopHostHomeIsShellState(t *testing.T) {
 		t.Fatalf("a page-supplied home reached the answer: %q", got)
 	}
 
-	// a switch moves the active origin only
+	// a switch shows a member of the shell's own set and moves the active origin only
 	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"http://192.0.2.10:8098"}`); err != nil {
 		t.Fatalf("switch: %v", err)
 	}

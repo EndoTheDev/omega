@@ -66,6 +66,10 @@ function row(name: string, url: string): SavedInstance {
   return { name, url };
 }
 
+// the shell verdict, injected: these tests own the timing, the SPA owns the arm
+const armed = () => Promise.resolve("armed" as const);
+const absent = () => Promise.resolve("absent" as const);
+
 // fetch wrappers: URL + method + body contract
 
 test("fetchInstances GETs /instances and unwraps the envelope", async () => {
@@ -183,8 +187,9 @@ test("a failed fetch keeps the cache and reports the offline list", async () => 
   const realFetch = globalThis.fetch;
   globalThis.fetch = (() => Promise.reject(new Error("network down"))) as typeof globalThis.fetch;
   try {
-    const loaded = await loadInstances(storage);
+    const loaded = await loadInstances(storage, absent);
     assert.equal(loaded.offline, true);
+    assert.equal(loaded.shell, "absent");
     assert.deepEqual(loaded.list, [row("pi", "http://b.test")]);
   } finally {
     globalThis.fetch = realFetch;
@@ -202,7 +207,7 @@ test("a successful origin fetch never rewrites the app's cache", async () => {
     return Promise.resolve(new Response(JSON.stringify({ instances: [row("remote", "http://192.0.2.10:8098")] }), { status: 200 }));
   }) as typeof globalThis.fetch;
   try {
-    const loaded = await loadInstances(storage);
+    const loaded = await loadInstances(storage, absent);
     assert.equal(loaded.offline, false);
     assert.equal(fetched, 1, "a browser tab reads its own origin");
     assert.deepEqual(loaded.list, [row("remote", "http://192.0.2.10:8098")], "the panel shows what this serve answers");
@@ -254,12 +259,63 @@ test("a desktop window takes the app's list, never the active server's", async (
   }) as typeof globalThis.fetch;
   try {
     assert.equal(instancesAreAppOwned(), true, "the shim is the desktop");
-    const loaded = await loadInstances(storage);
+    const loaded = await loadInstances(storage, armed);
     assert.equal(fetched, 0, "a desktop page never asks its own origin - that page may be an older build");
     assert.equal(loaded.offline, false);
+    assert.equal(loaded.shell, "armed");
     assert.deepEqual(loaded.list, app);
     assert.deepEqual(sent, [{ omega: "instances:get" }], "the page asked the app");
     assert.deepEqual(readInstanceCache(storage).list, app, "the app's list is the cache's source");
+  } finally {
+    globalThis.fetch = realFetch;
+    clearDesktopHost();
+  }
+});
+
+test("nothing is asked before the verdict, and each verdict opens only its own source", async () => {
+  const storage = fakeStorage();
+  writeInstanceCache({ list: [row("cached", "http://cached.test")], lastUsed: "" }, storage);
+  let release: (verdict: "armed" | "absent") => void = () => {};
+  const decided = () => new Promise<"armed" | "absent">((resolve) => (release = resolve));
+  const { sent } = fakeDesktopHost((body) => (body.omega === "instances:get" ? { instances: [row("app", "http://app.test")], error: "" } : null));
+  let fetched = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (() => {
+    fetched++;
+    return Promise.resolve(new Response(JSON.stringify({ instances: [row("serve", "http://serve.test")] }), { status: 200 }));
+  }) as typeof globalThis.fetch;
+  try {
+    const pending = loadInstances(storage, decided);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepEqual(sent, [], "a pending verdict asks the app nothing");
+    assert.equal(fetched, 0, "and fetches nothing from the serving server");
+
+    release("absent");
+    const loaded = await pending;
+    assert.equal(loaded.shell, "absent");
+    assert.deepEqual(loaded.list, [row("serve", "http://serve.test")], "absent reads the serving server");
+    assert.deepEqual(sent, [], "absent never speaks the shell message");
+  } finally {
+    globalThis.fetch = realFetch;
+    clearDesktopHost();
+  }
+});
+
+test("an armed page whose app answers a refusal keeps the cache and never reads the serving server", async () => {
+  const storage = fakeStorage();
+  writeInstanceCache({ list: [row("cached", "http://cached.test")], lastUsed: "" }, storage);
+  fakeDesktopHost((body) => (body.omega === "instances:get" ? { instances: [], error: "config.yaml is read-only" } : null));
+  let fetched = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (() => {
+    fetched++;
+    return Promise.resolve(new Response(JSON.stringify({ instances: [row("serve", "http://serve.test")] }), { status: 200 }));
+  }) as typeof globalThis.fetch;
+  try {
+    const loaded = await loadInstances(storage, armed);
+    assert.equal(loaded.offline, true, "the panel says the list is stale");
+    assert.deepEqual(loaded.list, [row("cached", "http://cached.test")], "the cache is the armed page's fallback");
+    assert.equal(fetched, 0, "an armed page never falls back to the serving server's rows");
   } finally {
     globalThis.fetch = realFetch;
     clearDesktopHost();
@@ -280,12 +336,12 @@ test("the app's home origin rides the answer and the load, and a tab's fetch ans
     const asked = await requestInstances();
     assert.equal(asked.home, home, "the reply carries the desktop's home origin");
 
-    const loaded = await loadInstances(storage);
+    const loaded = await loadInstances(storage, armed);
     assert.equal(loaded.home, home, "loadInstances passes it through");
 
     // the browser tab's path: its own origin is the home, so there is nothing to add
     clearDesktopHost();
-    const tab = await loadInstances(storage);
+    const tab = await loadInstances(storage, absent);
     assert.equal(tab.offline, false);
     assert.equal(tab.home, undefined, "a browser tab's fetch answers no home");
 
@@ -304,7 +360,7 @@ test("a silent app answers the cached list as offline", async () => {
   writeInstanceCache({ list: [row("main", "http://127.0.0.1:18101")], lastUsed: "" }, storage);
   fakeDesktopHost(() => null);
   try {
-    const loaded = await loadInstances(storage);
+    const loaded = await loadInstances(storage, armed);
     assert.equal(loaded.offline, true, "an unanswered host is not an empty list");
     assert.deepEqual(loaded.list, [row("main", "http://127.0.0.1:18101")]);
   } finally {
@@ -334,13 +390,14 @@ test("a save goes to the app and a refusal throws the host's words", async () =>
   }
 });
 
-test("a switch names the normalized address to the app", () => {
+test("a switch names the row key to the app, never a destination", () => {
   const storage = fakeStorage();
   const { sent } = fakeDesktopHost();
   try {
-    switchInstancesInApp("HTTP://192.0.2.10:8098/", storage);
-    assert.deepEqual(sent, [{ omega: "instances:switch", url: "http://192.0.2.10:8098" }]);
-    assert.equal(lastUsedInstance(storage), "http://192.0.2.10:8098", "the target is remembered first");
+    // the panel's row is the key: the host resolves it against its own list plus home
+    switchInstancesInApp("http://192.0.2.10:8098/omega", storage);
+    assert.deepEqual(sent, [{ omega: "instances:switch", url: "http://192.0.2.10:8098/omega" }]);
+    assert.equal(lastUsedInstance(storage), "http://192.0.2.10:8098/omega", "the attempt is remembered first");
   } finally {
     clearDesktopHost();
   }

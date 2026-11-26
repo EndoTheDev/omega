@@ -1,14 +1,16 @@
-// omega webui: the connection list's client half. In a desktop window the APP owns the
-// list: the host stores it in the local home's config.yaml (`desktop.instances`) and
+// omega webui: the connection list's client half. Inside a desktop window the APP owns
+// the list: the host stores it in the local home's config.yaml (`desktop.instances`) and
 // answers every read, write and switch over the raw message channel, so a page served by
 // a build that predates the title bar still lists and switches the app's own
-// connections. A plain browser tab keeps the active server's GET /instances as its
-// source - the switcher still works against any serve. localStorage under
+// connections. That source is DECIDED once, by the shell verdict (desktopChrome.ts): an
+// armed page asks the app and an armed answer that fails keeps the cache - it never falls
+// back to the serving server's list. A page the shim never reached (a plain browser tab, a
+// stranger's omega) reads the active server's GET /instances. localStorage under
 // `omega.instances` is the paint-first copy of whichever source is in charge, never a
-// second truth. Switching never fetches the remote origin (CORS): it navigates, and the
-// page reloads.
+// second truth. Switching never fetches the remote origin (CORS): an armed page asks the
+// host to show the row, a tab navigates, and the page reloads.
 
-import { isDesktopWindow } from "./desktopChrome.ts";
+import { isDesktopWindow, whenShellDecided, type ShellVerdict } from "./desktopChrome.ts";
 
 export interface SavedInstance {
   name: string;
@@ -43,7 +45,8 @@ export const INSTANCE_EVENT = "omega:instances";
 /** the pane -> status bar event after a browser tab's own save lands */
 export const INSTANCE_CHANGED_EVENT = "omega:instances-changed";
 
-/** the raw message bodies the desktop host decodes */
+/** the raw message bodies the desktop host decodes. The switch's `url` is a row KEY: the
+ * host resolves it against its own list plus home and refuses a miss. */
 export type InstanceRequest =
   | { omega: "instances:get" }
   | { omega: "instances:save"; instances: SavedInstance[] }
@@ -384,7 +387,9 @@ function hostApi(): NonNullable<InstanceHost["_wails"]> | null {
   return api && typeof api.invoke === "function" ? api : null;
 }
 
-/** true inside the Wails window: the app, not the loaded page, owns the list */
+/** true when the Wails shim is present: the settings pane routes its `desktop.instances`
+ * save to the app on it. The LIST's source is the shell verdict (whenShellDecided), not
+ * this shape read. */
 export function instancesAreAppOwned(host: unknown = globalThis): boolean {
   return isDesktopWindow(host);
 }
@@ -500,9 +505,9 @@ export async function saveInstancesInApp(list: SavedInstance[]): Promise<SavedIn
   return reply.instances;
 }
 
-/** show another instance: the app records the active origin and navigates the window */
-export function switchInstancesInApp(url: string, storage: InstanceStorage | null = defaultStorage()): void {
-  const target = normalizeInstanceURL(url);
+/** show another instance: the app resolves the row key and navigates the window */
+export function switchInstancesInApp(key: string, storage: InstanceStorage | null = defaultStorage()): void {
+  const target = String(key ?? "").trim();
   setLastUsedInstance(target, storage);
   sendInstances({ omega: "instances:switch", url: target });
 }
@@ -510,26 +515,34 @@ export function switchInstancesInApp(url: string, storage: InstanceStorage | nul
 export interface InstanceLoad {
   list: SavedInstance[];
   offline: boolean;
+  /** the shell verdict this read was decided by: armed = the app's list, absent = the
+   * serving server's */
+  shell: Exclude<ShellVerdict, "undecided">;
   /** the desktop's own home origin; a browser tab has none (its own origin is home) */
   home?: string;
 }
 
-// loadInstances reads whichever source is in charge. A desktop window asks the app; a
-// browser tab fetches its own origin and leaves the app's cache alone. The app's answer
-// also carries the desktop's home origin - derived state the page only displays.
-export async function loadInstances(storage: InstanceStorage | null = defaultStorage()): Promise<InstanceLoad> {
+// loadInstances reads whichever source the shell verdict names, and asks nothing before
+// the verdict lands: an armed page asks the app (a failed answer keeps the cache and says
+// so - never the serving server's rows), an absent page fetches its own origin. The app's
+// answer also carries the desktop's home origin - derived state the page only displays.
+export async function loadInstances(
+  storage: InstanceStorage | null = defaultStorage(),
+  decided: () => Promise<Exclude<ShellVerdict, "undecided">> = whenShellDecided,
+): Promise<InstanceLoad> {
   const cache = readInstanceCache(storage);
-  if (instancesAreAppOwned()) {
+  const shell = await decided();
+  if (shell === "armed") {
     const reply = await requestInstances();
-    if (reply.error) return { list: cache.list, offline: true, home: reply.home };
+    if (reply.error) return { list: cache.list, offline: true, shell, home: reply.home };
     adoptInstances(reply.instances, storage);
-    return { list: reply.instances, offline: false, home: reply.home };
+    return { list: reply.instances, offline: false, shell, home: reply.home };
   }
   try {
     const list = await fetchInstances();
-    return { list, offline: false };
+    return { list, offline: false, shell };
   } catch {
-    return { list: cache.list, offline: true };
+    return { list: cache.list, offline: true, shell };
   }
 }
 

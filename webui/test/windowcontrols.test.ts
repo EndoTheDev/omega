@@ -15,15 +15,19 @@ import {
   carveCaption,
   chromeReadyMessage,
   clampToBand,
+  createShellDecision,
   hasNativeRegions,
   isDesktopWindow,
   maximisedFromEvent,
   MAXIMISE_EVENT,
+  RUNTIME_POLL_TRIES,
+  shellDecision,
   UNMAXIMISE_EVENT,
   nonClientRegionMessage,
   regionKindOf,
   regionOf,
   RUNTIME_CONFIG_READY,
+  whenShellDecided,
   WINDOW_ACTION_EVENTS,
   windowActionMessage,
 } from "../app/composables/desktopChrome.ts";
@@ -310,6 +314,48 @@ describe("the caption actions agree across the tree", () => {
       windowActionMessage("toggle-maximise"),
       "wails:event:emit:omega:window:toggle-maximise",
     );
+  });
+});
+
+describe("the shell verdict: one decision, one clock", () => {
+  it("starts undecided and settles armed on the shim's shape", async () => {
+    const decision = createShellDecision();
+    assert.equal(decision.verdict, "undecided");
+    decision.arm();
+    assert.equal(decision.verdict, "armed");
+    assert.equal(await decision.when(), "armed");
+  });
+
+  it("settles absent when the bound expires with no shim", async () => {
+    const decision = createShellDecision();
+    decision.expire();
+    assert.equal(decision.verdict, "absent");
+    assert.equal(await decision.when(), "absent");
+  });
+
+  it("answers a late arm after absent with armed, so the panel can re-read", async () => {
+    const decision = createShellDecision();
+    decision.expire();
+    assert.equal(await decision.when(), "absent");
+    decision.arm();
+    assert.equal(decision.verdict, "armed", "a late config-ready arm still arms");
+    assert.equal(await decision.when(), "armed", "a fresh read sees the arm");
+    decision.expire();
+    assert.equal(decision.verdict, "armed", "an expiry after the arm changes nothing");
+  });
+
+  it("rides useDesktopChrome's one poll - the arm in activate, the expiry at the bound", () => {
+    const src = read("app/composables/desktopChrome.ts");
+    assert.match(src, /shell\.arm\(\);/, "the shim's shape arms the verdict");
+    assert.match(
+      src,
+      /if \(\+\+tries >= RUNTIME_POLL_TRIES\) \{\s*stopPolling\(\);[\s\S]{0,160}shell\.expire\(\);/,
+      "the same bound expires it - no second clock",
+    );
+    assert.equal(typeof shellDecision, "function");
+    assert.equal(shellDecision(), "undecided", "nothing arms in a plain node process");
+    assert.ok(whenShellDecided() instanceof Promise, "the awaited form is exported beside the value");
+    assert.equal(RUNTIME_POLL_TRIES, 75);
   });
 });
 
