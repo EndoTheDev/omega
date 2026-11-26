@@ -1181,6 +1181,64 @@ func TestDesktopInstancesKnobShape(t *testing.T) {
 	}
 }
 
+// TestDesktopInstancesUnverifiedFlag pins the hatch's flag through every door: the pane's
+// JSON payload, a Go caller's typed slice, the knob the pane reads back, and the file.
+func TestDesktopInstancesUnverifiedFlag(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	var out strings.Builder
+	rows := `[{"name":"pi","url":"pibtw:8099","unverified":true},{"name":"desk","url":"winbtw:8099"}]`
+	if err := settingsSet(path, "desktop.instances", rows, &out); err != nil {
+		t.Fatalf("settings set: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []core.SavedInstance{
+		{Name: "pi", URL: "http://pibtw:8099", Unverified: true},
+		{Name: "desk", URL: "http://winbtw:8099"},
+	}
+	if !reflect.DeepEqual(cfg.Desktop.Instances, want) {
+		t.Fatalf("config rows = %+v, want %+v", cfg.Desktop.Instances, want)
+	}
+	// the file is the receipt: the flag is persisted, and only on the row that carries it.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(string(data), "unverified: true"); got != 1 {
+		t.Fatalf("config.yaml carries %d unverified markers, want exactly the hatch row:\n%s", got, data)
+	}
+	// the pane's own value: the flag rides only where it is set, so a verified row cannot
+	// read dirty against a payload that omits it.
+	knob := desktopInstancesKnob(&cfg)
+	wantKnob := []map[string]any{
+		{"name": "pi", "url": "http://pibtw:8099", "unverified": true},
+		{"name": "desk", "url": "http://winbtw:8099"},
+	}
+	if !reflect.DeepEqual(knob, wantKnob) {
+		t.Fatalf("knob = %#v, want %#v", knob, wantKnob)
+	}
+
+	// the typed-slice door carries it too (the desktop host's SaveInstances shape).
+	typed := DefaultConfig()
+	if err := applyDesktopInstances(&typed, "desktop.instances", []core.SavedInstance{
+		{Name: "mac", URL: "macbtw:8099", Unverified: true},
+	}); err != nil {
+		t.Fatalf("typed slice: %v", err)
+	}
+	if len(typed.Desktop.Instances) != 1 || !typed.Desktop.Instances[0].Unverified {
+		t.Fatalf("typed rows = %+v, want the flag carried", typed.Desktop.Instances)
+	}
+
+	// a flag that is not a boolean is refused, never read as true.
+	err = settingsSet(path, "desktop.instances", `[{"name":"x","url":"h:1","unverified":"yes"}]`, &strings.Builder{})
+	if err == nil || !strings.Contains(err.Error(), "unverified") {
+		t.Fatalf("bad flag error = %v, want a refusal naming unverified", err)
+	}
+}
+
 // TestSettingsSetDesktopInstances pins the CLI door: `omega settings set` lands the rows
 // through the same writer, a re-read shows the normalized list, and a bad row is refused
 // with the validator's own sentence without touching the file.

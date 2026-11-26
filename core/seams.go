@@ -144,12 +144,23 @@ type Settings interface {
 	Reset() (*SettingsSchema, error)
 }
 
+// GuardHostRefusal is the Host guard's own sentence for a request from a foreign host. It
+// lives here because two layers must agree on it: the guard writes it, and the instance
+// probe reads it - a 403 carrying this line is an omega refusing a NAME, not a foreign
+// endpoint answering.
+const GuardHostRefusal = "forbidden: request from a foreign host (Host guard)"
+
 // SavedInstance is one named connection target in the webui's switcher. The list's home
 // is config.yaml (`desktop.instances`); the type lives here because the HTTP channel and
 // the host must agree on one shape and one validator.
+//
+// Unverified marks a row the operator added through the hatch, knowing the address is real
+// but that nothing answered when it was added. It is a note about the last check, never a
+// verdict: a later contact that answers makes the row healthy whatever the flag says.
 type SavedInstance struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name       string `json:"name" yaml:"name"`
+	URL        string `json:"url" yaml:"url"`
+	Unverified bool   `json:"unverified,omitempty" yaml:"unverified,omitempty"`
 }
 
 // The saved-instance limits, shared by the route and the config validator.
@@ -183,7 +194,7 @@ func NormalizeInstances(rows []SavedInstance) ([]SavedInstance, error) {
 			return nil, fmt.Errorf("%s: %s is listed twice", name, normalized)
 		}
 		seen[normalized] = true
-		out = append(out, SavedInstance{Name: name, URL: normalized})
+		out = append(out, SavedInstance{Name: name, URL: normalized, Unverified: row.Unverified})
 	}
 	return out, nil
 }

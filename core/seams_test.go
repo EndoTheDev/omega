@@ -53,3 +53,25 @@ func TestNormalizeInstancesAddressShorthand(t *testing.T) {
 		t.Fatalf("duplicate error = %v, want the duplicate refusal", err)
 	}
 }
+
+// TestNormalizeInstancesCarriesUnverified pins the hatch's marker through the ONE
+// validator: a set flag survives the normalization, and an absent one stays false so a
+// verified row and a hand edit without it are one row.
+func TestNormalizeInstancesCarriesUnverified(t *testing.T) {
+	out, err := NormalizeInstances([]SavedInstance{
+		{Name: "down", URL: "pibtw:8099", Unverified: true},
+		{Name: "up", URL: "winbtw:8099"},
+	})
+	if err != nil {
+		t.Fatalf("rows refused: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("rows = %+v, want two", out)
+	}
+	if !out[0].Unverified || out[0].URL != "http://pibtw:8099" {
+		t.Fatalf("row 0 = %+v, want the flag kept beside the normalized address", out[0])
+	}
+	if out[1].Unverified {
+		t.Fatalf("row 1 = %+v, want an absent flag to stay false", out[1])
+	}
+}

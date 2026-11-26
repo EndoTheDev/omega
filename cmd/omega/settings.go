@@ -468,10 +468,16 @@ func providerInstancesKnob(cfg *Config) []map[string]any {
 func desktopInstancesKnob(cfg *Config) []map[string]any {
 	out := make([]map[string]any, 0, len(cfg.Desktop.Instances))
 	for _, inst := range cfg.Desktop.Instances {
-		out = append(out, map[string]any{
+		row := map[string]any{
 			"name": inst.Name,
 			"url":  inst.URL,
-		})
+		}
+		// the flag rides only when set: a verified row and an absent flag are one row, so a
+		// pane round trip can never dirty a list that did not change.
+		if inst.Unverified {
+			row["unverified"] = true
+		}
+		out = append(out, row)
 	}
 	return out
 }
@@ -498,7 +504,17 @@ func applyDesktopInstances(cfg *Config, key string, raw any) error {
 			if err != nil {
 				return fmt.Errorf("%s: entry %d: url: %w", key, i, err)
 			}
-			rows = append(rows, core.SavedInstance{Name: name, URL: url})
+			// optional: a hand edit that omits the flag means verified, and a payload that is
+			// not a boolean is refused rather than read as true.
+			unverified := false
+			if flag, ok := obj["unverified"]; ok && flag != nil {
+				b, ok := flag.(bool)
+				if !ok {
+					return fmt.Errorf("%s: entry %d: unverified: expected true or false, got %T", key, i, flag)
+				}
+				unverified = b
+			}
+			rows = append(rows, core.SavedInstance{Name: name, URL: url, Unverified: unverified})
 		}
 	default:
 		return fmt.Errorf("%s: expected a list of instance objects, got %T", key, raw)

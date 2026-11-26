@@ -78,7 +78,9 @@ func (s *Server) SetPublicHosts(hosts []string) {
 	if g, ok := s.httpSrv.Handler.(*hostGuard); ok && len(hosts) > 0 {
 		set := make(map[string]bool, len(hosts))
 		for _, h := range hosts {
-			set[h] = true
+			// lowercased: the guard compares a lowercased Host header, and a declaration is
+			// a name the operator typed, not a wire spelling.
+			set[strings.ToLower(h)] = true
 		}
 		g.public.Store(set)
 	}
