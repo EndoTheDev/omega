@@ -299,6 +299,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// The connection switcher's list (config.yaml `desktop.instances`): it works in a
 	// plain browser, so it belongs to the shell ring, not the desktop shell.
 	mux.HandleFunc("/instances", s.handleInstances)
+	mux.HandleFunc("/instances/probe", s.handleInstanceProbe)
 	mux.HandleFunc("/ui/canvas", s.handleCanvas)
 	mux.HandleFunc("/ui/actions", s.handleUIActions)
 }

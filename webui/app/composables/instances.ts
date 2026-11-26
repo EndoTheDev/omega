@@ -13,6 +13,12 @@ import { isDesktopWindow } from "./desktopChrome.ts";
 export interface SavedInstance {
   name: string;
   url: string;
+  /**
+   * added anyway: the operator knew the address was real but nothing answered when it was
+   * checked. A note about the last check, never a verdict - a later answer makes the row
+   * healthy whatever this says.
+   */
+  unverified?: boolean;
 }
 
 export interface InstanceCache {
@@ -135,6 +141,19 @@ export function removeInstance(list: SavedInstance[], url: string): SavedInstanc
   return list.filter((item) => item.url !== url).map((item) => ({ ...item }));
 }
 
+// coerceRow reads one row off a wire body or the cache; the flag rides only when it is
+// true, so an absent flag and a verified row stay the same row.
+function coerceRow(item: unknown): SavedInstance | null {
+  if (!item || typeof item !== "object") return null;
+  const doc = item as { name?: unknown; url?: unknown; unverified?: unknown };
+  const name = typeof doc.name === "string" ? doc.name : "";
+  const url = typeof doc.url === "string" ? doc.url : "";
+  if (!name || !url) return null;
+  const row: SavedInstance = { name, url };
+  if (doc.unverified === true) row.unverified = true;
+  return row;
+}
+
 // readInstanceCache parses the cache; a corrupt or absent document is the empty cache.
 export function readInstanceCache(storage: InstanceStorage | null = defaultStorage()): InstanceCache {
   const empty: InstanceCache = { list: [], lastUsed: "" };
@@ -150,10 +169,8 @@ export function readInstanceCache(storage: InstanceStorage | null = defaultStora
   const list: SavedInstance[] = [];
   if (Array.isArray(doc.list)) {
     for (const item of doc.list) {
-      if (!item || typeof item !== "object") continue;
-      const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name : "";
-      const url = typeof (item as { url?: unknown }).url === "string" ? (item as { url: string }).url : "";
-      if (name && url) list.push({ name, url });
+      const row = coerceRow(item);
+      if (row) list.push(row);
     }
   }
   return { list, lastUsed: typeof doc.lastUsed === "string" ? doc.lastUsed : "" };
@@ -189,7 +206,163 @@ export async function fetchInstances(): Promise<SavedInstance[]> {
   const r = await fetch("/instances");
   if (!r.ok) throw new Error(`instances: ${r.status}`);
   const body = (await r.json()) as { instances?: unknown };
-  return Array.isArray(body?.instances) ? (body.instances as SavedInstance[]) : [];
+  if (!Array.isArray(body?.instances)) return [];
+  const list: SavedInstance[] = [];
+  for (const item of body.instances) {
+    const row = coerceRow(item);
+    if (row) list.push(row);
+  }
+  return list;
+}
+
+// --- the add-time probe -----------------------------------------------------------
+
+/** the failure classes the serve answers, plus the one the PAGE adds */
+export const PROBE_FAILURES = ["syntax", "unreachable", "not-omega", "guard"] as const;
+export type InstanceProbeFailure = (typeof PROBE_FAILURES)[number] | "no-route";
+
+/** the serve's answer about one address: `ok` decides, a refusal carries its own reason */
+export interface InstanceProbe {
+  ok: boolean;
+  url: string;
+  state?: string;
+  facts?: Record<string, unknown>;
+  failure?: InstanceProbeFailure;
+  reason?: string;
+}
+
+/** an older serve answers its SPA shell where the probe route would be: not an answer */
+export const PROBE_NO_ROUTE_REASON = "this server cannot check addresses (its build predates the check)";
+
+// probeInstance asks the serve to fetch the address on this page's behalf - a browser cannot
+// read another origin's health body, so the check can only be the server's. A 200 that is
+// not the probe's envelope is an older build's SPA catch-all: no-route, never a pass.
+export async function probeInstance(
+  raw: string,
+  doFetch: (target: string) => Promise<Response> = (target) => fetch(target),
+): Promise<InstanceProbe> {
+  const typed = String(raw ?? "").trim();
+  let response: Response;
+  try {
+    response = await doFetch(`/instances/probe?url=${encodeURIComponent(typed)}`);
+  } catch {
+    return {
+      ok: false,
+      url: typed,
+      failure: "no-route",
+      reason: "this page could not reach its own server to check the address",
+    };
+  }
+  let doc: unknown = null;
+  try {
+    doc = await response.json();
+  } catch {
+    doc = null;
+  }
+  const envelope = (doc ?? {}) as {
+    ok?: unknown;
+    url?: unknown;
+    state?: unknown;
+    facts?: unknown;
+    failure?: unknown;
+    reason?: unknown;
+  };
+  if (typeof envelope.ok !== "boolean") {
+    return { ok: false, url: typed, failure: "no-route", reason: PROBE_NO_ROUTE_REASON };
+  }
+  const url = typeof envelope.url === "string" && envelope.url ? envelope.url : typed;
+  if (envelope.ok) {
+    return {
+      ok: true,
+      url,
+      state: typeof envelope.state === "string" ? envelope.state : "omega",
+      facts:
+        envelope.facts && typeof envelope.facts === "object"
+          ? (envelope.facts as Record<string, unknown>)
+          : undefined,
+    };
+  }
+  return {
+    ok: false,
+    url,
+    failure: typeof envelope.failure === "string" ? (envelope.failure as InstanceProbeFailure) : "no-route",
+    reason: typeof envelope.reason === "string" && envelope.reason ? envelope.reason : "the address was refused without a reason",
+  };
+}
+
+export interface InstanceDraft {
+  name: string;
+  url: string;
+}
+
+export interface InstanceAdd {
+  list: SavedInstance[];
+  probe: InstanceProbe;
+  added: boolean;
+}
+
+// instanceAddressKey folds the spellings of one address: the same endpoint typed with or
+// without its scheme and trailing slash is the same row, so an add renames instead of
+// appending a duplicate the serve would refuse.
+export function instanceAddressKey(raw: string): string {
+  const s = String(raw ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/\/+$/, "");
+  return /^[a-z][a-z0-9+.-]*:\/\//.test(s) ? s : `http://${s}`;
+}
+
+// matchedURL keeps an existing row's own spelling when the address is the same endpoint.
+function matchedURL(list: SavedInstance[], address: string): string {
+  const key = instanceAddressKey(address);
+  return list.find((row) => instanceAddressKey(row.url) === key)?.url ?? address;
+}
+
+// addInstanceRow is the add ACTION: prove the address, then append. A refusal appends
+// nothing and answers the probe, so the pane renders the reason beside the hatch.
+export async function addInstanceRow(
+  list: SavedInstance[],
+  draft: InstanceDraft,
+  probe: (raw: string) => Promise<InstanceProbe> = probeInstance,
+): Promise<InstanceAdd> {
+  const typed = String(draft.url ?? "").trim();
+  const name = String(draft.name ?? "").trim();
+  // the name is the other half of the file's validator: no build saves a nameless row, so
+  // an add without one never reaches the network.
+  if (!name) {
+    return {
+      list,
+      added: false,
+      probe: { ok: false, url: typed, failure: "syntax", reason: "a name is required" },
+    };
+  }
+  const answer = await probe(typed);
+  if (!answer.ok) return { list, added: false, probe: answer };
+  // a verified row carries no flag: live evidence outranks one a hatch stamped earlier.
+  return { list: upsertInstance(list, { name, url: matchedURL(list, answer.url) }), probe: answer, added: true };
+}
+
+// hatchInstanceRow is the add-anyway door: the operator knows the address is real and only
+// unreachable right now, so the row lands stamped unverified. A syntax refusal never
+// reaches it - a shape the file refuses could not be saved by any build.
+export function hatchInstanceRow(
+  list: SavedInstance[],
+  draft: InstanceDraft,
+  refused?: InstanceProbe,
+): SavedInstance[] {
+  const typed = String(draft.url ?? "").trim();
+  const address = refused?.url ? refused.url : typed;
+  let normalized = address;
+  try {
+    normalized = normalizeInstanceURL(address);
+  } catch {
+    normalized = address;
+  }
+  return upsertInstance(list, {
+    name: String(draft.name ?? "").trim(),
+    url: matchedURL(list, normalized),
+    unverified: true,
+  });
 }
 
 // --- the desktop host's channel ---------------------------------------------------
@@ -219,10 +392,8 @@ function coerceReply(data: unknown): InstanceReply {
   const instances: SavedInstance[] = [];
   if (Array.isArray(doc.instances)) {
     for (const item of doc.instances) {
-      if (!item || typeof item !== "object") continue;
-      const name = typeof (item as { name?: unknown }).name === "string" ? (item as { name: string }).name : "";
-      const url = typeof (item as { url?: unknown }).url === "string" ? (item as { url: string }).url : "";
-      if (name && url) instances.push({ name, url });
+      const row = coerceRow(item);
+      if (row) instances.push(row);
     }
   }
   return { instances, error: typeof doc.error === "string" ? doc.error : "" };

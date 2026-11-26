@@ -137,6 +137,12 @@
             aria-current="true">
             <span class="hp-cname">{{ instanceName }}</span>
             <span class="hp-curl">{{ currentOrigin || "this page" }}</span>
+            <span
+              v-if="currentUnverified"
+              class="hp-unverified"
+              :title="UNVERIFIED_TITLE">
+              unverified
+            </span>
           </div>
           <button
             v-for="row in savedRows"
@@ -147,6 +153,12 @@
             @click="switchTo(row)">
             <span class="hp-cname">{{ row.name }}</span>
             <span class="hp-curl">{{ row.url }}</span>
+            <span
+              v-if="row.unverified"
+              class="hp-unverified"
+              :title="UNVERIFIED_TITLE">
+              unverified
+            </span>
             <span
               v-if="row.url === lastUsed"
               class="hp-used">last used</span>
@@ -368,6 +380,11 @@
   );
   // the current connection has its own marked row; the rest are the switches.
   const savedRows = computed(() => rows.value.filter((row) => row.url !== props.currentOrigin));
+  // the marker is one field on the row (the row type both surfaces read), never a colour.
+  const UNVERIFIED_TITLE = "added anyway - nothing answered at this address when it was added";
+  const currentUnverified = computed(
+    () => rows.value.find((row) => row.url === props.currentOrigin)?.unverified === true,
+  );
 
   async function refreshInstances(): Promise<void> {
     const loaded = await loadInstances();
@@ -491,6 +508,18 @@
     flex: none;
     font-size: 10px;
     opacity: 0.7;
+  }
+  /* added anyway: text, never a colour - the tooltip says why the row is unproven. */
+  .hp-unverified {
+    flex: none;
+    font-size: 9.5px;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    opacity: 0.8;
+    cursor: help;
   }
   /* a stale cached list reads dim: absence is not a health claim. */
   .dot.offline {

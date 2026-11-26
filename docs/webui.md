@@ -1061,6 +1061,34 @@ dot, reset link, draft star, live note).
   larger document is refused with 413). Scope-aware: the main tab edits
   `config.yaml`; an agent scope tab edits its own layer. The endpoints are
   documented in `api.md`.
+- **The connections editor proves the address before the row lands.**
+  The `desktop.instances` knob renders `InstancesField.vue`: one row per
+  saved connection, plus a draft row for the add. The add is a COMMITMENT,
+  so it is async - the field asks the serve to probe the address
+  (`GET /instances/probe`, documented in `api.md`; the browser cannot read
+  another origin's `/health` itself) and the button reads `checking...`
+  while it runs. A passing probe appends the row with the NORMALIZED
+  address the serve proved; a refusal appends nothing and prints the
+  serve's `reason` inline in the field's own alert line (`role="alert"`),
+  with an `add anyway` control beside it.
+  - The hatch is offered on every refusal but `syntax`: a shape the file's
+    validator refuses could never be saved by any build, so a hatch there
+    would be a button into a refused write.
+  - The hatch appends the row with `unverified: true` on
+    `core.SavedInstance`. The marker renders as TEXT (never a colour) in
+    both surfaces that read the row type - the pane's row and the
+    status-bar panel's connection list - with the reason in its tooltip.
+  - Live evidence outranks the flag: an add whose probe passes clears it
+    on that row (an absent flag and a verified row are one row, so a
+    round-tripped list never reads dirty), and the pane's save carries the
+    flag through untouched.
+  - An older serve answers its SPA shell where the probe route would be: a
+    non-envelope body reads as `no-route` - "this server cannot check
+    addresses (its build predates the check)" - never as a pass.
+  Pinned by `webui/test/instances.test.ts` (the probe envelopes, the add
+  and hatch rows, the cache keeping the flag) and
+  `webui/test/settingspane.test.ts` (the source pins), walked live by
+  `scripts/journeys/recipes/121-instance-add-validation.journey.sh`.
 
 ## The Logs tab
 

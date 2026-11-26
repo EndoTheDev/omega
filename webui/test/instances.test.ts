@@ -15,7 +15,11 @@ import {
   INSTANCE_CHANGED_EVENT,
   INSTANCE_EVENT,
   MAX_INSTANCES,
+  PROBE_NO_ROUTE_REASON,
+  addInstanceRow,
   fetchInstances,
+  hatchInstanceRow,
+  instanceAddressKey,
   instancesAreAppOwned,
   lastUsedInstance,
   loadInstances,
@@ -23,6 +27,7 @@ import {
   normalizeInstanceName,
   normalizeInstanceURL,
   onInstancesReply,
+  probeInstance,
   readInstanceCache,
   removeInstance,
   requestInstances,
@@ -439,4 +444,142 @@ test("the status bar panel squeezes below the narrow breakpoint", () => {
   assert.match(block![2], /\.health-pop \{[^}]*right: 8px/, "and spans the bar to the right edge");
   assert.match(block![2], /\.health-pop \{[^}]*width: auto/, "a bar-wide sheet, not a 280px box");
   assert.doesNotMatch(src, /class="dot hide-sm"/, "the dot never hides - only the name does");
+});
+
+// --- the add-time probe and the add action ---------------------------------------
+//
+// The serve fetches the address on the page's behalf (a browser cannot read another
+// origin's health body). The pane's add is a commitment: probe, then append - a refusal
+// appends nothing and carries the reason the hatch is offered beside.
+
+function probeResponse(payload: unknown, init: ResponseInit = { status: 200 }): Response {
+  return new Response(JSON.stringify(payload), {
+    ...init,
+    headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+  });
+}
+
+test("probeInstance asks the serve about the typed address, encoded", async () => {
+  const seen: string[] = [];
+  const probe = await probeInstance("pibtw:8099", (target) => {
+    seen.push(target);
+    return Promise.resolve(
+      probeResponse({
+        ok: true,
+        url: "http://pibtw:8099",
+        state: "omega",
+        facts: { status: "ok", uptime_seconds: 12 },
+      }),
+    );
+  });
+  assert.deepEqual(seen, ["/instances/probe?url=pibtw%3A8099"]);
+  assert.equal(probe.ok, true);
+  assert.equal(probe.url, "http://pibtw:8099", "the address the serve proved, normalized");
+  assert.equal(probe.facts?.["uptime_seconds"], 12);
+});
+
+test("each refusal keeps its own class and reason", async () => {
+  for (const failure of ["syntax", "unreachable", "not-omega", "guard"] as const) {
+    const probe = await probeInstance("http://pibtw:8099", () =>
+      Promise.resolve(
+        probeResponse({ ok: false, url: "http://pibtw:8099", failure, reason: `refused: ${failure}` }),
+      ),
+    );
+    assert.equal(probe.ok, false);
+    assert.equal(probe.failure, failure);
+    assert.equal(probe.reason, `refused: ${failure}`);
+  }
+});
+
+test("a 200 that is not the probe's envelope is no-route, never a pass", async () => {
+  // an older serve answers its SPA shell here: 200, HTML, no envelope
+  const probe = await probeInstance("127.0.0.1:8099", () =>
+    Promise.resolve(
+      new Response("<!doctype html><html></html>", { status: 200, headers: { "content-type": "text/html" } }),
+    ),
+  );
+  assert.equal(probe.ok, false);
+  assert.equal(probe.failure, "no-route");
+  assert.equal(probe.reason, PROBE_NO_ROUTE_REASON, "the refusal names the older build");
+});
+
+test("a probe that cannot reach its own server is no-route, not a verdict", async () => {
+  const probe = await probeInstance("127.0.0.1:8099", () => Promise.reject(new Error("offline")));
+  assert.equal(probe.ok, false);
+  assert.equal(probe.failure, "no-route");
+});
+
+test("addInstanceRow appends only on a passing probe", async () => {
+  const list: SavedInstance[] = [row("laptop", "http://127.0.0.1:8099")];
+  const added = await addInstanceRow(list, { name: " pi ", url: "pibtw:8099" }, () =>
+    Promise.resolve({ ok: true, url: "http://pibtw:8099" }),
+  );
+  assert.equal(added.added, true);
+  assert.deepEqual(added.list, [
+    row("laptop", "http://127.0.0.1:8099"),
+    row("pi", "http://pibtw:8099"),
+  ]);
+
+  const refused = await addInstanceRow(list, { name: "pi", url: "pibtw:8099" }, () =>
+    Promise.resolve({ ok: false, url: "http://pibtw:8099", failure: "unreachable", reason: "unreachable at that address" }),
+  );
+  assert.equal(refused.added, false);
+  assert.equal(refused.list, list, "a refusal appends nothing - the same list comes back");
+  assert.equal(refused.probe.reason, "unreachable at that address", "the pane prints this reason");
+});
+
+test("addInstanceRow refuses a nameless add before any probe", async () => {
+  let probed = 0;
+  const outcome = await addInstanceRow([], { name: "   ", url: "pibtw:8099" }, () => {
+    probed += 1;
+    return Promise.resolve({ ok: true, url: "http://pibtw:8099" });
+  });
+  assert.equal(probed, 0, "no build saves a nameless row: the add never reaches the network");
+  assert.equal(outcome.added, false);
+  assert.equal(outcome.probe.failure, "syntax");
+  assert.match(outcome.probe.reason ?? "", /name is required/);
+});
+
+test("a passing probe on a row added anyway clears the marker", async () => {
+  const list: SavedInstance[] = [{ name: "pi", url: "http://pibtw:8099", unverified: true }];
+  const outcome = await addInstanceRow(list, { name: "pi", url: "pibtw:8099" }, () =>
+    Promise.resolve({ ok: true, url: "http://pibtw:8099" }),
+  );
+  assert.equal(outcome.added, true);
+  assert.deepEqual(outcome.list, [row("pi", "http://pibtw:8099")], "live evidence outranks the flag");
+  assert.equal("unverified" in outcome.list[0]!, false);
+});
+
+test("hatchInstanceRow lands the row stamped unverified", () => {
+  const list: SavedInstance[] = [row("laptop", "http://127.0.0.1:8099")];
+  const next = hatchInstanceRow(
+    list,
+    { name: " pi ", url: "pibtw:8099" },
+    { ok: false, url: "http://pibtw:8099", failure: "unreachable", reason: "unreachable at that address" },
+  );
+  assert.deepEqual(next, [
+    row("laptop", "http://127.0.0.1:8099"),
+    { name: "pi", url: "http://pibtw:8099", unverified: true },
+  ]);
+
+  // a no-route refusal carries the typed address: the hatch still normalizes it, and an
+  // existing spelling keeps the row's identity.
+  const same = hatchInstanceRow(
+    [{ name: "pi", url: "http://pibtw:8099", unverified: true }],
+    { name: "pi", url: "pibtw:8099" },
+    { ok: false, url: "pibtw:8099", failure: "no-route" },
+  );
+  assert.deepEqual(same, [{ name: "pi", url: "http://pibtw:8099", unverified: true }], "one row, no duplicate");
+});
+
+test("the cache round trip keeps the unverified marker", () => {
+  const store = fakeStorage();
+  const list: SavedInstance[] = [{ name: "pi", url: "http://pibtw:8099", unverified: true }, row("desk", "http://winbtw:8099")];
+  writeInstanceCache({ list, lastUsed: "http://pibtw:8099" }, store);
+  assert.deepEqual(readInstanceCache(store).list, list);
+});
+
+test("instanceAddressKey folds the spellings of one address", () => {
+  assert.equal(instanceAddressKey("pibtw:8099"), instanceAddressKey("http://pibtw:8099/"));
+  assert.equal(instanceAddressKey("HTTP://PIBTW:8099"), "http://pibtw:8099");
 });

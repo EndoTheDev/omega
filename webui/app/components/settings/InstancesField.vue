@@ -3,9 +3,14 @@
     The saved connections the status bar panel lists and switches to. This is the ONE
     write surface for the list: rows are named addresses. In a desktop window the APP
     writes them (its own home's config.yaml `desktop.instances`); in a browser tab the
-    active server does. Both ride the same validator and the same atomic writer a hand
-    edit hits, so nothing here validates a name or an address - the refusal is the only
-    refusal, and it renders as written in the alert line.
+    active server does. The pane validates no shape itself - the serve's validator is the
+    only validator, and its refusal renders as written in the alert line.
+
+    An add is a commitment, so it PROVES the address first: the serve probes it (shape,
+    liveness, omega-ness) and nothing lands on a refusal. A refusal that is not a shape
+    (down now, not omega, its Host guard, no route to check through) carries the
+    add-anyway hatch: the operator knows the address is real, and the row lands stamped
+    unverified.
   -->
   <div class="instances-editor">
     <p class="instance-hint">
@@ -53,6 +58,12 @@
           remove
         </button>
       </div>
+      <span
+        v-if="row.unverified"
+        class="instance-unverified"
+        :title="UNVERIFIED_TITLE">
+        unverified
+      </span>
     </div>
     <p
       v-if="!rows.length"
@@ -69,7 +80,8 @@
           autocomplete="off"
           spellcheck="false"
           placeholder="laptop"
-          aria-label="new connection name" />
+          aria-label="new connection name"
+          @input="refusal = null" />
       </label>
       <label class="instance-cell instance-address">
         <span>address</span>
@@ -80,21 +92,36 @@
           autocomplete="off"
           spellcheck="false"
           placeholder="http://host:port"
-          aria-label="new connection address" />
+          aria-label="new connection address"
+          @input="refusal = null" />
       </label>
       <button
         class="instance-add-btn"
         type="button"
+        :disabled="checking"
         @click="addRow">
-        add connection
+        {{ checking ? "checking..." : "add connection" }}
       </button>
     </div>
+    <p
+      v-if="refusal"
+      class="instance-error instance-probe-error"
+      role="alert">
+      <span class="instance-probe-reason">{{ refusal.reason }}</span>
+      <button
+        v-if="canAddAnyway"
+        class="instance-anyway"
+        type="button"
+        @click="addAnyway">
+        add anyway
+      </button>
+    </p>
     <p
       v-if="error"
       class="instance-error"
       role="alert">{{ error }}</p>
     <p
-      v-else
+      v-else-if="!refusal"
       class="instance-add-note">
       an existing address renames that row; the address and name save with the
       pane's save button, like every other setting
@@ -106,8 +133,10 @@
   import { computed, ref } from "vue";
   import type { SettingKnob } from "~/composables/omega";
   import {
+    addInstanceRow,
+    hatchInstanceRow,
     removeInstance,
-    upsertInstance,
+    type InstanceProbe,
     type SavedInstance,
   } from "~/composables/instances";
 
@@ -125,14 +154,17 @@
   const rows = computed<SavedInstance[]>(() => props.value ?? []);
   const draftName = ref("");
   const draftURL = ref("");
+  // the add action's own answer: the probe's refusal for the row being added, rendered
+  // beside the hatch. Cleared by the next add or by editing the draft.
+  const refusal = ref<InstanceProbe | null>(null);
+  const checking = ref(false);
 
-  // address matching, never address validation: the same address typed with or without
-  // its scheme and trailing slash is the same row, so the add renames it instead of
-  // appending a duplicate the server would refuse.
-  const addressKey = (raw: string): string => {
-    const s = raw.trim().toLowerCase().replace(/\/+$/, "");
-    return /^[a-z][a-z0-9+.-]*:\/\//.test(s) ? s : `http://${s}`;
-  };
+  const UNVERIFIED_TITLE =
+    "added anyway - nothing answered at this address when it was added";
+
+  // a shape the file's validator refuses could never be saved by any build, so the hatch is
+  // offered on every refusal but that one.
+  const canAddAnyway = computed(() => refusal.value !== null && refusal.value.failure !== "syntax");
 
   function setRow(i: number, key: "name" | "url", value: string) {
     emit(
@@ -141,17 +173,29 @@
     );
   }
 
-  function addRow() {
-    const typed = draftURL.value.trim();
-    const match = rows.value.find((row) => addressKey(row.url) === addressKey(typed));
-    emit(
-      "update",
-      upsertInstance(rows.value, {
-        name: draftName.value.trim(),
-        // the stored address stays when this is a rename, so the row keeps its identity
-        url: match ? match.url : typed,
-      }),
-    );
+  async function addRow() {
+    if (checking.value) return;
+    checking.value = true;
+    refusal.value = null;
+    try {
+      const outcome = await addInstanceRow(rows.value, { name: draftName.value, url: draftURL.value });
+      if (!outcome.added) {
+        refusal.value = outcome.probe;
+        return;
+      }
+      emit("update", outcome.list);
+      draftName.value = "";
+      draftURL.value = "";
+    } finally {
+      checking.value = false;
+    }
+  }
+
+  function addAnyway() {
+    const refused = refusal.value;
+    if (!refused) return;
+    emit("update", hatchInstanceRow(rows.value, { name: draftName.value, url: draftURL.value }, refused));
+    refusal.value = null;
     draftName.value = "";
     draftURL.value = "";
   }
@@ -178,6 +222,12 @@
     font-size: 11px;
     color: var(--text-dim);
     max-width: 52ch;
+  }
+
+  .instance-row {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
   }
 
   .instance-row-fields,
@@ -209,6 +259,50 @@
     margin: 0;
     font-size: 11px;
     color: var(--danger, #c0392b);
+  }
+
+  /* the probe's refusal line: the reason, and the hatch beside it when it is offered */
+  .instance-probe-error {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    max-width: 52ch;
+  }
+
+  .instance-anyway {
+    flex: none;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+    background: transparent;
+    color: inherit;
+    border-radius: 6px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.9em;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .instance-anyway:hover {
+    text-decoration: underline;
+  }
+
+  /* the added-anyway marker: text, never a colour - the row says why it is unproven */
+  .instance-unverified {
+    align-self: flex-start;
+    margin-left: 0.1rem;
+    padding: 0 0.3rem;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+    border-radius: 4px;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    cursor: help;
+  }
+
+  .instance-add-btn[disabled] {
+    opacity: 0.6;
+    cursor: default;
   }
 
   .instance-remove,

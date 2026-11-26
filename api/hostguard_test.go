@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 )
@@ -269,8 +270,72 @@ func TestServerServeRefusesWildcardBindWithoutPublicHosts(t *testing.T) {
 	}
 }
 
-// un-set guard (pre-Serve) fails open, so plain Handler consumers ---- --.
+// the machine's own name: every bind answers to it ------------------
 
+// ownName is the OS's own name at TEST time - never a literal, because CI hostnames differ.
+func ownName(t *testing.T) string {
+	t.Helper()
+	name, err := os.Hostname()
+	if err != nil || strings.TrimSpace(name) == "" {
+		t.Skip("this host has no name to answer to")
+	}
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+// A tailnet short name IS the machine's name: every bind shape accepts it, bare and with
+// its port, in any case - and a foreign name still dies on the same request.
+func TestGuardOwnNamePassesOnEveryBind(t *testing.T) {
+	name := ownName(t)
+	binds := []string{"127.0.0.1:8098", "192.168.1.10:8098", "localhost:8098", "[::1]:8098"}
+	for _, bind := range binds {
+		srv := guardServer(t, bind)
+		port := bind[strings.LastIndex(bind, ":")+1:]
+		for _, host := range []string{name, name + ":" + port, strings.ToUpper(name) + ":" + port} {
+			if got := doReq(t, srv, http.MethodGet, host, ""); got != http.StatusOK {
+				t.Errorf("bind %q: GET with the machine's own name %q: got %d, want 200", bind, host, got)
+			}
+		}
+		if got := doReq(t, srv, http.MethodGet, name+".evil.example:"+port, ""); got != http.StatusForbidden {
+			t.Errorf("bind %q: GET with a lookalike of the own name: got %d, want 403", bind, got)
+		}
+	}
+}
+
+// A wildcard bind cannot be enumerated, so server.public_hosts stays the declaration it
+// needs to start - and the own name rides IN ADDITION to it.
+func TestGuardOwnNameOnAWildcardBind(t *testing.T) {
+	name := ownName(t)
+	srv := guardServerPublic(t, ":8098", "omega.endothe.dev")
+	if got := doReq(t, srv, http.MethodGet, name+":8098", ""); got != http.StatusOK {
+		t.Errorf("GET the own name on a wildcard bind: got %d, want 200", got)
+	}
+	if got := doReq(t, srv, http.MethodGet, "omega.endothe.dev", ""); got != http.StatusOK {
+		t.Errorf("GET the declared public host: got %d, want 200", got)
+	}
+	// a wildcard bind still refuses to START without the declaration, own name or not.
+	if err := newGuard().bind("0.0.0.0:8098"); err == nil {
+		t.Fatal("a wildcard bind started with no server.public_hosts")
+	}
+}
+
+// The mutation law is unchanged: a write by name still needs an Origin that name owns, and
+// an empty Origin off loopback is still refused.
+func TestGuardOwnNameMutateStillNeedsTheOrigin(t *testing.T) {
+	name := ownName(t)
+	srv := guardServer(t, "192.168.1.10:8098")
+	byName := name + ":8098"
+	if got := doReq(t, srv, http.MethodPost, byName, ""); got != http.StatusForbidden {
+		t.Errorf("POST by the own name with no Origin: got %d, want 403", got)
+	}
+	if got := doReq(t, srv, http.MethodPost, byName, "http://"+byName); got != http.StatusOK {
+		t.Errorf("POST by the own name, same-origin: got %d, want 200", got)
+	}
+	if got := doReq(t, srv, http.MethodPost, byName, "http://evil.example:8098"); got != http.StatusForbidden {
+		t.Errorf("POST by the own name with a foreign Origin: got %d, want 403", got)
+	}
+}
+
+// un-set guard (pre-Serve) fails open, so plain Handler consumers ---- --.
 func TestGuardUnsetAddrFailsOpen(t *testing.T) {
 	srv := guardServer(t, "")
 	if got := doReq(t, srv, http.MethodPost, "evil.example:8098", ""); got != http.StatusOK {

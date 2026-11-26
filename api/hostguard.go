@@ -5,8 +5,11 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync/atomic"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // The Host/Origin guard. The local surface is unauthenticated by design (loopback, one
@@ -17,15 +20,22 @@ import (
 // identity owns. The SPA passes untouched: it sends the serving host:port as both.
 //
 // The bind shape decides the identity set:
+//   - every bind also answers to the MACHINE'S OWN NAME, bare and with this port: a
+//     tailnet short name (winbtw, pibtw) is exactly that, so a connection saved as
+//     `pibtw:8099` reaches the box it names. The tailnet FQDN is not derived - that one
+//     stays a server.public_hosts declaration.
 //   - loopback bind: the loopback names on the same port plus any declared public host.
 //     An empty Origin is exempt (local curl, the agent loop) - nothing off-machine
 //     reaches a loopback socket.
-//   - exact non-loopback bind (a LAN or tailnet address): that address only, plus any
-//     declared public host. An empty Origin is never exempt here, so a no-Origin LAN
-//     client cannot write.
+//   - exact non-loopback bind (a LAN or tailnet address): that address and the own name,
+//     plus any declared public host. An empty Origin is never exempt here, so a no-Origin
+//     LAN client cannot write.
 //   - wildcard bind (0.0.0.0, a bare :port): the addresses answered are not enumerable,
-//     so server.public_hosts IS the identity set, and an empty declaration refuses to
-//     start rather than fail open.
+//     so server.public_hosts IS the identity set (plus the own name), and an empty
+//     declaration refuses to start rather than fail open.
+//
+// The guard is a rebinding heuristic, never authentication: a page cannot forge Host, and
+// a rebinding attacker's Host is its own domain, not the machine's name.
 
 // mutatingRequest reports whether the method changes server state.
 func mutatingRequest(method string) bool {
@@ -83,11 +93,10 @@ func (g *hostGuard) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	loopback := !wildcard && isLoopbackName(bindHost(bind))
 	allowed := allowedHosts(bind)
 	if wildcard {
-		allowed = pub
+		allowed = unionHosts(allowed, pub)
 	}
 	if !hostAllowed(r.Host, allowed, pub) {
-		http.Error(w, "forbidden: request from a foreign host (Host guard)",
-			http.StatusForbidden)
+		http.Error(w, core.GuardHostRefusal, http.StatusForbidden)
 		return
 	}
 	if mutatingRequest(r.Method) && !originAllowed(r, allowed, pub, loopback) {
@@ -119,32 +128,74 @@ func isWildcardBind(addr string) bool {
 	return false
 }
 
-// allowedHosts derives the permitted Host values from the bind. A loopback bind allows
-// every loopback name on the same port (the operator types localhost, the SPA sees
-// 127.0.0.1, both must pass). A wildcard bind answers on 0.0.0.0 or a bare :port, cannot
-// be enumerated, and returns nil: the caller substitutes the declared public set.
+// ownHostNames is the machine's own identity as a Host header may carry it: the OS's short
+// name, bare and with this port. A tailnet short name IS that name (winbtw, pibtw), which
+// is why a connection saved as typed reaches the box it names. A FQDN from the OS keeps its
+// first label too; the tailnet DNS name is not derived - that stays a declaration.
+func ownHostNames(port string) map[string]bool {
+	set := map[string]bool{}
+	name, err := os.Hostname()
+	if err != nil {
+		return set
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return set
+	}
+	names := []string{name}
+	if i := strings.Index(name, "."); i > 0 {
+		names = append(names, name[:i])
+	}
+	for _, n := range names {
+		set[n] = true
+		if port != "" {
+			set[n+":"+port] = true
+		}
+	}
+	return set
+}
+
+// unionHosts merges the bind-derived identities with the operator's declaration. Keys are
+// lowercased because a Host header may arrive uppercased.
+func unionHosts(derived, declared map[string]bool) map[string]bool {
+	out := make(map[string]bool, len(derived)+len(declared))
+	for h := range derived {
+		out[strings.ToLower(h)] = true
+	}
+	for h := range declared {
+		out[strings.ToLower(h)] = true
+	}
+	return out
+}
+
+// allowedHosts derives the permitted Host values from the bind. Every bind answers to the
+// machine's own name; a loopback bind also allows every loopback name on the same port
+// (the operator types localhost, the SPA sees 127.0.0.1, both must pass); a wildcard bind
+// answers on 0.0.0.0 or a bare :port, cannot be enumerated, and returns only the own names
+// - the caller unions in the declared public set.
 func allowedHosts(addr string) map[string]bool {
-	host := bindHost(addr)
+	host := strings.ToLower(bindHost(addr))
 	port := ""
 	if _, p, err := net.SplitHostPort(addr); err == nil {
 		port = p
 	}
+	set := ownHostNames(port)
 	if isWildcardBind(addr) {
-		return nil
+		return set
 	}
 	if isLoopbackName(host) {
-		set := map[string]bool{
-			"127.0.0.1:" + port: true,
-			"localhost:" + port: true,
-			"[::1]:" + port:     true,
-		}
+		set["127.0.0.1:"+port] = true
+		set["localhost:"+port] = true
+		set["[::1]:"+port] = true
 		if !strings.Contains(addr, ":") {
 			set[host] = true
 		}
 		return set
 	}
-	// an exact bind (a LAN address).
-	return map[string]bool{addr: true, host: true}
+	// an exact bind (a LAN or tailnet address).
+	set[strings.ToLower(addr)] = true
+	set[host] = true
+	return set
 }
 
 func isLoopbackName(host string) bool {
@@ -152,13 +203,15 @@ func isLoopbackName(host string) bool {
 }
 
 // hostAllowed checks the request's Host header against the derived set plus the declared
-// public one. An empty set passes nothing: a bind the guard cannot map to a trusted
-// identity fails closed, and a request with no Host at all never passes (HTTP/1.1
-// requires one, and a missing Host is exactly what a raw rebinding probe looks like).
+// public one, compared lowercased (a Host header may arrive uppercased). An empty set
+// passes nothing: a bind the guard cannot map to a trusted identity fails closed, and a
+// request with no Host at all never passes (HTTP/1.1 requires one, and a missing Host is
+// exactly what a raw rebinding probe looks like).
 func hostAllowed(host string, allowed map[string]bool, public map[string]bool) bool {
 	if host == "" {
 		return false
 	}
+	host = strings.ToLower(host)
 	return allowed[host] || public[host]
 }
 
@@ -176,11 +229,13 @@ func originAllowed(r *http.Request, allowed map[string]bool, public map[string]b
 	if err != nil || u.Host == "" {
 		return false
 	}
-	if r.Host != "" && u.Host == r.Host {
+	host := strings.ToLower(r.Host)
+	origin := strings.ToLower(u.Host)
+	if host != "" && origin == host {
 		if loopback {
 			return true
 		}
-		return allowed[r.Host] || public[r.Host]
+		return allowed[host] || public[host]
 	}
-	return allowed[u.Host] || public[u.Host]
+	return allowed[origin] || public[origin]
 }

@@ -317,14 +317,27 @@ test("instancesValue coerces the rows tolerantly", () => {
   assert.match(body, /typeof r\["url"\] === "string"/);
 });
 
-test("adding a row emits the whole list - an existing address is a rename", () => {
-  assert.match(
-    instancesField,
-    /emit\(\s*"update",\s*upsertInstance\(/,
-    "add emits the WHOLE array through the shared upsert",
-  );
+test("adding a row goes through the probe, and the hatch stamps the flag", () => {
   assert.match(instancesField, /@click="addRow"/, "one add row");
   assert.match(instancesField, /ref\(""\)/, "the add row is its own draft, never a blank submitted row");
+  // the add action probes first and emits the list ONLY when one row came back added
+  assert.match(instancesField, /await addInstanceRow\(rows\.value/, "the add proves the address first");
+  assert.match(instancesField, /if \(!outcome\.added\)/, "a refusal appends nothing");
+  assert.match(instancesField, /emit\("update", outcome\.list\)/, "the passing probe's list is the write");
+  // the refusal renders inline, and the hatch rides beside it
+  assert.match(instancesField, /class="instance-error instance-probe-error"/, "the refusal line is the field's own alert");
+  assert.match(instancesField, /role="alert">\s*<span class="instance-probe-reason">/, "the reason prints as the serve wrote it");
+  assert.match(instancesField, /class="instance-anyway"/, "the hatch sits beside the reason");
+  assert.match(instancesField, /@click="addAnyway"/);
+  assert.match(instancesField, /hatchInstanceRow\(/, "the hatch lands the row stamped");
+  assert.match(
+    instancesField,
+    /refusal\.value\.failure !== "syntax"/,
+    "a shape the file refuses gets no hatch - it could never be saved",
+  );
+  // the busy state and the marker
+  assert.match(instancesField, /checking \? "checking\.\.\." : "add connection"/);
+  assert.match(instancesField, /v-if="row\.unverified"/, "the row says it was added anyway");
 });
 
 test("removing a row emits the whole list", () => {
