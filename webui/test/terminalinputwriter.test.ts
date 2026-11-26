@@ -220,6 +220,25 @@ describe("createInputWriter: one POST per burst, ordered", () => {
     assert.deepEqual(r.texts(), ["x"], "the dying session's bytes never ride a POST");
   });
 
+  it("a push after a mid-flight reset leaves on settle, with no further key", async () => {
+    const r = rig();
+    r.writer.push("abc");
+    r.window();
+    await tick();
+    assert.deepEqual(r.texts(), ["abc"], "the old session's run is in flight");
+
+    r.writer.reset(); // the session swaps while that POST is live
+    r.writer.push("ls");
+    r.writer.push("\r");
+    assert.equal(r.calls.length, 1, "the new session's bytes wait on the live flight");
+    assert.equal(r.timers, 0, "and no window is armed behind it");
+
+    await r.settle(0);
+    assert.deepEqual(r.texts(), ["abc", "ls\r"], "settle releases them at once, one POST");
+    await r.settle(1);
+    assert.equal(r.overlap, false);
+  });
+
   it("ships with a real timer and the 32KiB ceiling", async () => {
     const sent: string[] = [];
     const writer = createInputWriter({

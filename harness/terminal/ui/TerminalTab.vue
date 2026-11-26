@@ -198,15 +198,27 @@
     }
   }
 
+  // One input POST is in flight at a time, so a request that never settles would hold
+  // every later keystroke behind it - the shape a dropped packet takes on a degraded
+  // link. It gives up on its own clock instead; that burst is dropped, never replayed.
+  const INPUT_TIMEOUT_MS = 10_000;
+
   /** keystrokes ride POST /input as raw frame bodies: control chars are data. */
   async function postInput(bytes: Uint8Array): Promise<unknown> {
     const id = sessionId.value;
     if (!id || dead.value) return;
-    return fetch(`/terminal/${encodeURIComponent(id)}/input`, {
-      method: "POST",
-      headers: { "Content-Type": "application/octet-stream" },
-      body: bytes as unknown as BodyInit,
-    });
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), INPUT_TIMEOUT_MS);
+    try {
+      return await fetch(`/terminal/${encodeURIComponent(id)}/input`, {
+        method: "POST",
+        headers: { "Content-Type": "application/octet-stream" },
+        body: bytes as unknown as BodyInit,
+        signal: ctl.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // The pane's writer owns the shape of typing: printable runs coalesce into one POST,

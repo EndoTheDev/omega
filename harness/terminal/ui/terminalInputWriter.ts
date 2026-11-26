@@ -109,6 +109,10 @@ export function createInputWriter(opts: InputWriterOptions): InputWriter {
       }
     } finally {
       inFlight = false;
+      // A reset during the flight ends the old drain and drops the dying session's
+      // bytes. Whatever the next session typed while that POST was live still has to
+      // leave the moment it settles - the drain that would have carried it is gone.
+      if (pending.length > 0) void pump(generation);
     }
   }
 
