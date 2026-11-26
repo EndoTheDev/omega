@@ -1116,11 +1116,19 @@ dot, reset link, draft star, live note).
   - A build without the route answers its SPA shell: the page paints no
     dots and one muted note ("states not checked (this server's build
     predates them)"), never a guessed colour.
+  - A page that is not home inside a desktop window opens NO batch: its
+    `/instances/status` request would probe the serving server's network,
+    so a red dot beside Home would be a false health claim about the
+    shell's own machine. The rows render without dots and one muted note
+    in the same idiom - "states not checked here (this page cannot see
+    the home's network)". At home, and in a browser tab, the dots are
+    unchanged.
   Pinned by `webui/test/instancesstatus.test.ts` (the state table, the
   precedence and flag rules, the poll lifecycle) and
-  `webui/test/statusbar-zones.test.ts` (the dot markup and the accessible
-  names); journey 112 asserts the green / red / ring rows live (the orange
-  branch needs a broken provider on the lane, so the node suite owns it).
+  `webui/test/statusbar-zones.test.ts` (the dot markup, the accessible
+  names, the no-batch page and its note); journey 112 asserts the green /
+  red / ring rows live (the orange branch needs a broken provider on the
+  lane, so the node suite owns it).
 - **Home is the app's own row, marked default wherever the list renders.**
   In a desktop window the app's answer also carries the local home's
   origin. The panel then leads its switches with that row - labelled with
@@ -1129,7 +1137,16 @@ dot, reset link, draft star, live note).
   rendered, never a colour, never a tooltip-only mark). While the page IS
   home, the current row wears the same badge and no switch row is drawn;
   a stored row naming the home address folds into it, so one place never
-  renders twice. The tray's `Connection` submenu leads with the same row
+  renders twice. The row set travels to WHATEVER page is loaded, and the
+  source that fills it is decided ONCE: the shim's arm against the
+  desktopChrome bound (`shellDecision` / `whenShellDecided`), never a
+  mount-time check. The panel paints its cache while the verdict is
+  undecided and asks nothing; armed reads the app, absent reads the
+  serving server. A switch names a row KEY, and the host resolves it
+  against its own list plus home - a miss navigates nothing and its
+  refusal is rendered as words in the connection block (`role="status"`),
+  cleared by the next clean answer, while the last-used mark moves on the
+  attempt. The tray's `Connection` submenu leads with the same home row
   (`<name> - <origin> (default)`), checked while the window is on the
   active home, and it is there whether the stored list is empty,
   unreadable or belongs to another page - the tray is shell-owned, so the
@@ -1138,10 +1155,12 @@ dot, reset link, draft star, live note).
   supplied by a page. A browser tab is unchanged: its own origin is its
   home, and its fetch adds no home member. Pinned by
   `webui/test/statusbar-zones.test.ts` and `webui/test/instances.test.ts`
-  (the reply and load pass-through, the badges, the fold), and by the
-  `cmd/omega` desktop tests (the tray row on every list state, the answer
-  carry, the door refusing a page-named home); journey 112 keeps the
-  browser-tab panel green.
+  (the reply and load pass-through, the verdict-gated source, the badges,
+  the fold, the refusal note), `webui/test/windowcontrols.test.ts` (the
+  three verdict values and the late arm), and by the `cmd/omega` desktop
+  tests (the tray row on every list state, the answer carry, the switch's
+  resolution and refusal, the door refusing a page-named home); journey
+  112 keeps the browser-tab panel green.
 
 ## The Logs tab
 

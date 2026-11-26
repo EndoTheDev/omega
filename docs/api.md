@@ -636,6 +636,23 @@ origin is its home, so nothing is added. In both cases the
 source: a successful origin fetch never rewrites it, so a page on
 another origin cannot replace the app's list with a server's empty one.
 
+The page's SOURCE is decided once, by the injected runtime shim, not by a
+mount-time read: an armed page reads the app's answer for its whole life
+and an armed answer that fails or is refused keeps the cache (the panel
+says the list is stale) - it never falls back to the serving server's
+rows. A page the shim never reached reads `GET /instances`, as before.
+
+`instances:switch` keeps its member name and its `url` field, but the
+value is a row KEY, never a destination. The host resolves it against the
+SHELL's own set - the saved list plus home - by exact normalized address
+first, then by origin, and moves the window to the member's own spelling;
+a miss (an address outside the set, a lookalike home, a non-http scheme)
+answers the refusal on `omega:instances` with `error` set and the list
+unchanged, and navigates nothing. The ruled clause: "an id already in the
+shell's own list, never arbitrary URLs". `instances:save` is untouched:
+it stays the settings pane's write surface, validated by
+`core.NormalizeInstances`.
+
 `home` is the desktop's own local origin - the origin the window was
 launched on. It is DERIVED state: never a stored row, never written by a
 save, never moved by a switch, and never supplied by a page. The message

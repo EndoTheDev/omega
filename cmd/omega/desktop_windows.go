@@ -349,7 +349,8 @@ func desktopWindowAction(win *application.WebviewWindow, event string) {
 
 // The app-local surfaces the page asks for over the raw message door. Each body is one
 // JSON object whose `omega` member names it; anything that is not one of these is
-// dropped, never guessed at.
+// dropped, never guessed at. `instances:switch` keeps its member name and carries a row
+// KEY, not a destination: the host resolves it against the shell's own list.
 const (
 	desktopMessageGetInstances    = "instances:get"
 	desktopMessageSaveInstances   = "instances:save"
@@ -366,21 +367,22 @@ const (
 // is shell-side state, not page-callable: home is resolved from the launch config, held by
 // the host, and read by the tray from the shell's own store. No page message can set,
 // retarget, hide or redefine it - the message door admits four bodies and none of them is
-// home, a switch moves the active origin only, and the tray is app-level, so a loaded page
-// has no channel to it at all. The field is a READ on the answer the shell already sends
-// that page; it widens nothing beyond the connection list that answer already carries, and
-// a page that ignores it loses only its own badge, never the route.
+// home, a switch only shows a member of the shell's own set, and the tray is app-level, so
+// a loaded page has no channel to it at all. The field is a READ on the answer the shell
+// already sends that page; it widens nothing beyond the connection list that answer
+// already carries, and a page that ignores it loses only its own badge, never the route.
 type desktopInstancesReply struct {
 	Instances []core.SavedInstance `json:"instances"`
 	Error     string               `json:"error"`
 	Home      string               `json:"home"`
 }
 
-// desktopRequest is one decoded message body.
+// desktopRequest is one decoded message body. `key` is the switch body's `url` member: a
+// row key, resolved by the host against the shell's own set.
 type desktopRequest struct {
 	kind      string
 	instances []core.SavedInstance
-	url       string
+	key       string
 }
 
 // decodeDesktopRequest parses one page message. Malformed JSON and an unknown `omega`
@@ -403,7 +405,7 @@ func decodeDesktopRequest(raw string) (desktopRequest, error) {
 		if strings.TrimSpace(body.URL) == "" {
 			return desktopRequest{}, errors.New("instances:switch carries no url")
 		}
-		return desktopRequest{kind: body.Omega, url: body.URL}, nil
+		return desktopRequest{kind: body.Omega, key: body.URL}, nil
 	case "":
 		return desktopRequest{}, errors.New("not a desktop message: no omega member")
 	default:
@@ -527,7 +529,7 @@ func (h *desktopHost) Handle(info *application.OriginInfo, raw string) error {
 	case desktopMessageSaveInstances:
 		h.saveInstances(request.instances)
 	case desktopMessageSwitchInstance:
-		h.switchTo(request.url)
+		h.switchToRow(request.key)
 	case desktopMessageChromeReady:
 		h.chromeArmed()
 	}
@@ -568,8 +570,10 @@ func (h *desktopHost) saveInstances(rows []core.SavedInstance) {
 	h.emit(desktopInstancesEvent, h.instancesReply(list, ""))
 }
 
-// switchTo navigates the WINDOW: every switch inside the desktop is the host's, so the
-// active origin is never a guess. A browser tab keeps navigating itself.
+// switchTo navigates the WINDOW to an address the shell itself owns: the tray's rows come
+// from the store and from home, and every switch inside the desktop is the host's, so the
+// active origin is never a guess. The page's own switch takes switchToRow, which resolves
+// its key first. A browser tab keeps navigating itself.
 func (h *desktopHost) switchTo(raw string) {
 	rows, err := core.NormalizeInstances([]core.SavedInstance{{Name: "switch", URL: raw}})
 	if err != nil {
@@ -579,6 +583,54 @@ func (h *desktopHost) switchTo(raw string) {
 	target := rows[0].URL
 	h.setActiveOrigin(target)
 	h.navigate(target)
+}
+
+// switchToRow performs a page's switch. The body names a row KEY, never a destination:
+// the key resolves against the shell's own set and a miss navigates nothing, answering
+// the refusal on omega:instances. No loaded page can steer the window outside the list.
+func (h *desktopHost) switchToRow(key string) {
+	target, refusal := h.resolveRow(key)
+	if refusal != "" {
+		h.answerInstances(refusal)
+		return
+	}
+	h.switchTo(target)
+}
+
+// resolveRow resolves one page-supplied key against the shell's own set - home plus the
+// saved list - by exact normalized address first, then by origin. It answers the member's
+// own spelling, so the page cannot smuggle a path onto a row's address, and a miss answers
+// the refusal. An unreadable list costs only the list's members, never home.
+func (h *desktopHost) resolveRow(key string) (string, string) {
+	normalized, err := core.NormalizeInstances([]core.SavedInstance{{Name: "switch", URL: key}})
+	if err != nil {
+		return "", err.Error()
+	}
+	wanted := normalized[0].URL
+	list, listErr := h.instances.Instances()
+	members := make([]string, 0, len(list)+1)
+	if home := h.HomeOrigin(); home != "" {
+		members = append(members, home)
+	}
+	for _, row := range list {
+		members = append(members, row.URL)
+	}
+	for _, member := range members {
+		if member == wanted {
+			return member, ""
+		}
+	}
+	if wantedKey := desktopOriginKey(wanted); wantedKey != "" {
+		for _, member := range members {
+			if desktopOriginKey(member) == wantedKey {
+				return member, ""
+			}
+		}
+	}
+	if listErr != nil {
+		return "", fmt.Sprintf("%s is not one of this desktop's connections (%v)", wanted, listErr)
+	}
+	return "", fmt.Sprintf("%s is not one of this desktop's connections", wanted)
 }
 
 // beginNavigation arms the chrome bound for the page that just loaded.

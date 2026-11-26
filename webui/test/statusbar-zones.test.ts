@@ -384,19 +384,28 @@ describe("the connection list updates in place", () => {
     assert.match(bar, /window\.addEventListener\(RUNTIME_CONFIG_READY, onRuntimeReady\)/);
     assert.match(
       bar,
-      /function onRuntimeReady\(\) \{\s*if \(instancesAreAppOwned\(\)\) void refreshInstances\(\);/,
-      "the mount read ran before the shim existed, so the app's list is read again",
+      /function onRuntimeReady\(\) \{\s*void refreshInstances\(\);/,
+      "the mount read ran before the shim existed, so the verdict re-reads the source",
+    );
+    assert.match(
+      bar,
+      /async function refreshInstances\(\): Promise<void> \{\s*const loaded = await loadInstances\(\);\s*armed\.value = loaded\.shell === "armed";/,
+      "the bar keeps the verdict the load was decided by",
     );
   });
 
-  it("switches through the app in a desktop window, and navigates itself in a tab", () => {
+  it("switches through the app on an armed page, and leaves the page itself in a tab", () => {
     const bar = statusBar();
     assert.match(
       bar,
-      /if \(instancesAreAppOwned\(\)\) \{\s*switchInstancesInApp\(row\.url\);\s*return;\s*\}/,
-      "the host owns the navigation inside the window",
+      /void whenShellDecided\(\)\.then\(\(verdict\) => \{\s*if \(verdict === "armed"\) \{\s*switchInstancesInApp\(row\.url\);\s*return;\s*\}\s*navigateToInstance\(row\.url\);/,
+      "the verdict names the switch's owner - the host, or the tab itself",
     );
-    assert.match(bar, /navigateToInstance\(row\.url\)/, "a browser tab still leaves the page itself");
+    assert.doesNotMatch(
+      bar,
+      /instancesAreAppOwned\(\)/,
+      "the panel no longer takes a point-in-time read of the shim",
+    );
   });
 });
 
@@ -491,8 +500,8 @@ describe("the connection rows' state dots", () => {
 
   it("the poll opens with the panel and dies with it", () => {
     const bar = statusBar();
-    assert.match(bar, /watch\(healthOpen, \(open\) => \{/, "the panel's open state is the poll's switch");
-    assert.match(bar, /if \(open\) statusPoll\.start\(statusRows\.value\);/);
+    assert.match(bar, /watch\(\[healthOpen, honestStates\], \(\[open, honest\]\) => \{/, "the panel's open state and the dot honesty are the poll's switch");
+    assert.match(bar, /if \(open && honest\) statusPoll\.start\(statusRows\.value\);/);
     assert.match(bar, /else statusPoll\.stop\(\);/);
     assert.match(bar, /onBeforeUnmount\([\s\S]{0,400}statusPoll\.stop\(\)/, "the bar unmounts the poll");
     assert.match(bar, /v-if="statusNote"/, "an old build's muted note has a home");
@@ -500,6 +509,39 @@ describe("the connection rows' state dots", () => {
       bar,
       /const statusRows = computed<SavedInstance\[\]>\(\(\) => \{/,
       "the page's own connection rides the batch even when it is not a saved row",
+    );
+  });
+
+  it("batches no states on a page that cannot see the home's network, and says so", () => {
+    const bar = statusBar();
+    assert.match(
+      bar,
+      /const desktopOffHome = computed\(\(\) => armed\.value && !onHome\.value\);/,
+      "the dots' honesty is the verdict plus the page's own place",
+    );
+    assert.match(
+      bar,
+      /const honestStates = computed\(\(\) => decided\.value && !desktopOffHome\.value\);/,
+      "nothing is claimed before the first read carried a verdict",
+    );
+    assert.match(bar, /states not checked here \(this page cannot see the home's network\)/, "the muted note names the reason");
+    // the note rides the existing hp-note idiom, and the batch never starts while hidden
+    assert.match(bar, /v-if="desktopOffHome"\s+class="hp-note"/);
+    assert.match(bar, /if \(open && honest\) statusPoll\.start/, "no batch opens on a non-home desktop page");
+  });
+
+  it("renders a refused switch as words in the connection block", () => {
+    const bar = statusBar();
+    assert.match(bar, /const switchNote = ref\(""\);/, "the refusal has its own note");
+    assert.match(
+      bar,
+      /onInstancesReply\(\(reply\) => \{[\s\S]{0,320}switchNote\.value = reply\.error;/,
+      "the app's error reaches the panel",
+    );
+    assert.match(
+      bar,
+      /v-if="switchNote"\s+class="hp-note"\s+role="status">\s*\{\{ switchNote \}\}/,
+      "the refusal is announced, not swallowed",
     );
   });
 

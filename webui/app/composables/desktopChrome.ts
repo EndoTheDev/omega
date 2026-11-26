@@ -7,9 +7,11 @@
 // maximise, the caption system menu and the edge resize borders are the OS's too.
 //
 // The Core shim (window._wails: environment, flags, invoke) is injected at
-// NavigationCompleted, AFTER the SPA's first mount, so detection is the config-ready
-// event with a bounded poll behind it. A plain browser tab never matches, which is what
-// keeps the lane out of `omega serve`.
+// NavigationCompleted, AFTER the SPA's first mount, so detection is the config-ready event
+// with a bounded poll behind it. That one arm settles the shell verdict the whole app
+// reads - `armed` when the shim's shape is present, `absent` when the bound expires - so a
+// surface decides its source once instead of re-checking at mount. A plain browser tab
+// never arms, which is what keeps the lane out of `omega serve`.
 
 import { nextTick, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 
@@ -22,6 +24,63 @@ export const NON_CLIENT_REGION_VERSION = 1;
 /** the shim lands right after NavigationCompleted; the poll is the backstop */
 export const RUNTIME_POLL_MS = 40;
 export const RUNTIME_POLL_TRIES = 75;
+
+/** the one source decision: undecided until the shim arms or the bound expires */
+export type ShellVerdict = "undecided" | "armed" | "absent";
+
+export interface ShellDecision {
+  /** the verdict as it stands now */
+  readonly verdict: ShellVerdict;
+  /** settles on the arm or on the bound's expiry; a later arm answers "armed" */
+  when(): Promise<Exclude<ShellVerdict, "undecided">>;
+  /** the shim's shape is present */
+  arm(): void;
+  /** the bound ran out with no shim */
+  expire(): void;
+}
+
+/**
+ * createShellDecision is the verdict's whole state machine. The arm and the expiry come
+ * from useDesktopChrome's one poll, so there is no second clock; a late arm after
+ * "absent" still reports "armed", and the panel re-reads then.
+ */
+export function createShellDecision(): ShellDecision {
+  let verdict: ShellVerdict = "undecided";
+  let settle: (value: Exclude<ShellVerdict, "undecided">) => void = () => {};
+  const settled = new Promise<Exclude<ShellVerdict, "undecided">>((resolve) => {
+    settle = resolve;
+  });
+  return {
+    get verdict() {
+      return verdict;
+    },
+    when() {
+      return verdict === "undecided" ? settled : Promise.resolve(verdict);
+    },
+    arm() {
+      if (verdict === "armed") return;
+      verdict = "armed";
+      settle("armed");
+    },
+    expire() {
+      if (verdict !== "undecided") return;
+      verdict = "absent";
+      settle("absent");
+    },
+  };
+}
+
+const shell = createShellDecision();
+
+/** the verdict as it stands now - "undecided" before the arm or the bound's expiry */
+export function shellDecision(): ShellVerdict {
+  return shell.verdict;
+}
+
+/** settle on the arm or the bound's expiry; a late arm after "absent" answers "armed" */
+export function whenShellDecided(): Promise<Exclude<ShellVerdict, "undecided">> {
+  return shell.when();
+}
 
 /**
  * The page -> host "my own chrome is on screen" message. The host keeps the frameless
@@ -310,6 +369,8 @@ export function useDesktopChrome(): DesktopChrome {
     const shim = api();
     if (!live || !shim || !isDesktopWindow(globalThis)) return;
     stopPolling();
+    // the shim's shape IS the verdict: every surface reads this one arm
+    shell.arm();
     followWindowState(shim);
     announceRuntime(shim);
 
@@ -355,7 +416,15 @@ export function useDesktopChrome(): DesktopChrome {
     detach.push(() => window.removeEventListener(RUNTIME_CONFIG_READY, found));
     let tries = 0;
     timer = setInterval(() => {
-      if (found() || ++tries >= RUNTIME_POLL_TRIES) stopPolling();
+      if (found()) {
+        stopPolling();
+        return;
+      }
+      if (++tries >= RUNTIME_POLL_TRIES) {
+        stopPolling();
+        // the bound expired with no shim: a browser tab, or a page that never armed
+        shell.expire();
+      }
     }, RUNTIME_POLL_MS);
   }
 

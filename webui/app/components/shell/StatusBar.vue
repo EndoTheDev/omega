@@ -199,10 +199,21 @@
               class="hp-used">last used</span>
           </button>
           <p
+            v-if="switchNote"
+            class="hp-note"
+            role="status">
+            {{ switchNote }}
+          </p>
+          <p
             v-if="statusNote"
             class="hp-note"
             role="status">
             {{ statusNote }}
+          </p>
+          <p
+            v-if="desktopOffHome"
+            class="hp-note">
+            states not checked here (this page cannot see the home's network)
           </p>
           <p
             v-if="offline"
@@ -289,7 +300,6 @@
   import {
     INSTANCE_CHANGED_EVENT,
     instanceAddressKey,
-    instancesAreAppOwned,
     lastUsedInstance,
     loadInstances,
     navigateToInstance,
@@ -305,7 +315,7 @@
     stateView,
     type InstanceState,
   } from "../../composables/instancesStatus.ts";
-  import { RUNTIME_CONFIG_READY } from "../../composables/desktopChrome.ts";
+  import { RUNTIME_CONFIG_READY, whenShellDecided } from "../../composables/desktopChrome.ts";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   import UpdateChip from "./UpdateChip.vue";
 
@@ -415,14 +425,22 @@
   });
 
   // the connection control: the bar's dot and name ARE the switcher now. The
-  // cache paints at setup (so the label is never blank) and the list's source replaces
-  // it on mount; an unreachable source keeps the cached rows and the panel says the list
-  // is stale. In a desktop window the source is the APP (the host's own list); a browser
-  // tab reads its server's /instances.
+  // cache paints at setup (so the label is never blank) and the source the shell verdict
+  // names replaces it on mount; an unreachable source keeps the cached rows and the panel
+  // says the list is stale. The verdict is decided ONCE (desktopChrome.ts): armed = the
+  // APP's list, absent = the serving server's. An armed page never falls back to the
+  // serving server's rows, whatever the app's answer was.
   const cachedInstances = readInstanceCache();
   const rows = ref<SavedInstance[]>(cachedInstances.list);
   const lastUsed = ref(cachedInstances.lastUsed);
   const offline = ref(false);
+  // true while the app (the shell) owns the list: the switch asks the host and a failed
+  // read keeps the cache. `decided` says the first read carried a verdict, so nothing is
+  // claimed before it.
+  const armed = ref(false);
+  const decided = ref(false);
+  // the last switch's refusal, from the app's answer - cleared by the next clean answer
+  const switchNote = ref("");
   // the desktop's own home origin, from the app's answer. Home is derived state, never a
   // stored row: the app resolves it from the launch, and a browser tab has none - there
   // the page's own origin is the home.
@@ -506,12 +524,19 @@
     const word = url ? stateWord(url) : "";
     return word ? `${name} - ${word}` : name;
   }
+  // A page that is not home inside a desktop window cannot see the home's network: the
+  // batch would probe the SERVING server's loopback and paint a false health claim about
+  // the shell's machine. Dots stay exactly as they are at home and in a browser tab.
+  const desktopOffHome = computed(() => armed.value && !onHome.value);
+  const honestStates = computed(() => decided.value && !desktopOffHome.value);
   function repaintStates(): void {
     if (statusPoll.running) void statusPoll.refresh(statusRows.value);
   }
 
   async function refreshInstances(): Promise<void> {
     const loaded = await loadInstances();
+    armed.value = loaded.shell === "armed";
+    decided.value = true;
     rows.value = loaded.list;
     offline.value = loaded.offline;
     homeOrigin.value = loaded.home ?? "";
@@ -520,23 +545,29 @@
   }
 
   // switching is a full reload: a browser tab leaves the page, the app moves its window.
+  // The verdict decides which, and it is awaited so a click before the arm cannot send a
+  // desktop page off to its own origin.
   function switchTo(row: SavedInstance): void {
     lastUsed.value = row.url;
     healthOpen.value = false;
-    if (instancesAreAppOwned()) {
-      switchInstancesInApp(row.url);
-      return;
-    }
-    navigateToInstance(row.url);
+    void whenShellDecided().then((verdict) => {
+      if (verdict === "armed") {
+        switchInstancesInApp(row.url);
+        return;
+      }
+      navigateToInstance(row.url);
+    });
   }
 
   // The panel is a read of the list, so every answer the app emits repaints it, and a
-  // browser tab's own save announces itself. One subscription each, taken at mount.
+  // browser tab's own save announces itself. One subscription each, taken at mount. A
+  // refusal rides the answer's error, so a declined switch is words in the panel.
   const stopInstanceReplies = onInstancesReply((reply) => {
     rows.value = reply.instances;
     offline.value = false;
     homeOrigin.value = reply.home ?? "";
     lastUsed.value = lastUsedInstance();
+    switchNote.value = reply.error;
     repaintStates();
   });
   function onInstancesChanged() {
@@ -545,9 +576,9 @@
 
   // The Core shim is injected at NavigationCompleted, AFTER the SPA has mounted, so the
   // mount read cannot yet tell that the app owns the list and read the page's origin
-  // instead. The shim announces itself; this re-reads from the app.
+  // instead. The shim arms the one verdict; a late arm re-reads through it.
   function onRuntimeReady() {
-    if (instancesAreAppOwned()) void refreshInstances();
+    void refreshInstances();
   }
 
   const healthOpen = ref(false);
@@ -555,8 +586,9 @@
     healthOpen.value = !healthOpen.value;
   }
   // OPEN the poll with the panel, CLOSE it with the panel: a shut panel costs no traffic.
-  watch(healthOpen, (open) => {
-    if (open) statusPoll.start(statusRows.value);
+  // A page that cannot see the home's network opens no batch at all.
+  watch([healthOpen, honestStates], ([open, honest]) => {
+    if (open && honest) statusPoll.start(statusRows.value);
     else statusPoll.stop();
   });
   // outside click closes it (the WorkspaceSelect / ModelSelect family)
