@@ -126,6 +126,15 @@ body {
 .menubar .brand { margin-right: 8px; }
 .menubar-spacer { flex: 1; }
 
+/* ---- the window's drag surface (a Wails window only): the header IS the title bar,
+   so the header's band is app-region drag and every control opts back out. The window
+   is WINDOWED-hosted, so WebView2's non-client region support turns those points into
+   the native caption: the frame moves, the double-click maximises, both from the OS.
+   A browser tab ignores app-region, so the rule is inert there. ---- */
+.menubar { -webkit-app-region: drag; }
+.menubar button,
+.menubar .nav-cluster { -webkit-app-region: no-drag; }
+
 /* ---- desktop window chrome (a Wails window only): the header IS the title bar.
    Three EQUAL cells, each the header's full height, flush to the window edge - the
    lane is only ever as wide as its cells, and the nav cluster keeps its absolute

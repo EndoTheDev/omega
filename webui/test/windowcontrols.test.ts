@@ -20,6 +20,7 @@ import {
   isDesktopWindow,
   maximisedFromEvent,
   MAXIMISE_EVENT,
+  resizeEdgeOf,
   RUNTIME_POLL_TRIES,
   shellDecision,
   UNMAXIMISE_EVENT,
@@ -380,6 +381,23 @@ describe("desktopChrome.ts: the framework, not a runtime bundle", () => {
     assert.ok(src.includes("wails:non-client-region:"));
     assert.ok(src.includes("dispatchWailsEvent"), "the event entry point it installs");
     assert.ok(src.includes("wails:drag"), "the path-B drag invokes");
+  });
+
+  it("names the frameless window's own resize border", () => {
+    assert.equal(
+      resizeEdgeOf(2, 400, 1280, 860),
+      "w-resize",
+      "the left border is the window's own",
+    );
+    assert.equal(resizeEdgeOf(1279, 400, 1280, 860), "e-resize");
+    assert.equal(resizeEdgeOf(640, 2, 1280, 860), "n-resize");
+    assert.equal(resizeEdgeOf(640, 858, 1280, 860), "s-resize");
+    assert.equal(resizeEdgeOf(2, 2, 1280, 860), "nw-resize");
+    assert.equal(resizeEdgeOf(1278, 858, 1280, 860), "se-resize");
+    assert.equal(resizeEdgeOf(640, 400, 1280, 860), null, "the body is not a border");
+    assert.equal(resizeEdgeOf(2, 400, 8, 860), null, "a window narrower than two borders has none");
+    assert.match(src, /wails:resize:\$\{edge\}/, "the page names the edge the host resizes");
+    assert.match(src, /document\.addEventListener\("mousedown", down, true\)/, "the border press is captured before the page");
   });
 });
 

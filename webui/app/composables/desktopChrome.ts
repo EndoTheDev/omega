@@ -225,6 +225,39 @@ export function nonClientRegionMessage(regions: HitRegion[]): string {
   );
 }
 
+/** the frameless window's resize border, named as the cursor it paints and as the
+ *  edge the host's resize message takes */
+export type ResizeEdge =
+  | "n-resize"
+  | "ne-resize"
+  | "e-resize"
+  | "se-resize"
+  | "s-resize"
+  | "sw-resize"
+  | "w-resize"
+  | "nw-resize";
+
+/** how wide the window's own resize border is, in CSS pixels */
+export const RESIZE_EDGE_PX = 6;
+
+/** the edge a press at (x, y) grabs, or null when the point is inside the window */
+export function resizeEdgeOf(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  margin: number = RESIZE_EDGE_PX,
+): ResizeEdge | null {
+  // the two bands must not meet: a window narrower than twice the border has no border
+  if (width < margin * 2 || height < margin * 2) return null;
+  const vertical = y < margin ? "n" : y >= height - margin ? "s" : "";
+  const horizontal = x < margin ? "w" : x >= width - margin ? "e" : "";
+  if (vertical && horizontal) return `${vertical}${horizontal}-resize` as ResizeEdge;
+  if (vertical) return `${vertical}-resize` as ResizeEdge;
+  if (horizontal) return `${horizontal}-resize` as ResizeEdge;
+  return null;
+}
+
 /** the maximize state an event name carries; null for every unrelated event */
 export function maximisedFromEvent(name: unknown): boolean | null {
   if (name === MAXIMISE_EVENT) return true;
@@ -345,6 +378,43 @@ export function useDesktopChrome(): DesktopChrome {
     }
   }
 
+  // The frameless border: windowed hosting has no native frame, so the page names the
+  // edge a press grabbed and the host runs the OS resize. The same name is the cursor,
+  // so the border shows itself before the press.
+  let edgeCursorSet = false;
+  function wireResizeEdges(): void {
+    const edgeAt = (event: MouseEvent) =>
+      maximised.value
+        ? null
+        : resizeEdgeOf(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
+    const down = (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      const edge = edgeAt(event);
+      if (!edge) return;
+      event.preventDefault();
+      event.stopPropagation();
+      api()?.invoke?.(`wails:resize:${edge}`);
+    };
+    const move = (event: MouseEvent) => {
+      const edge = edgeAt(event);
+      if (!edge) {
+        if (!edgeCursorSet) return;
+        document.body.style.cursor = "";
+        edgeCursorSet = false;
+        return;
+      }
+      document.body.style.cursor = edge;
+      edgeCursorSet = true;
+    };
+    document.addEventListener("mousedown", down, true);
+    document.addEventListener("mousemove", move, true);
+    detach.push(() => {
+      document.removeEventListener("mousedown", down, true);
+      document.removeEventListener("mousemove", move, true);
+      if (edgeCursorSet) document.body.style.cursor = "";
+    });
+  }
+
   function watchResolution(): void {
     if (typeof window.matchMedia !== "function") return;
     let query: MediaQueryList | null = null;
@@ -393,11 +463,15 @@ export function useDesktopChrome(): DesktopChrome {
     }
     watchResolution();
 
+    // The lane is a render away: publish once it has its boxes. A windowed-hosted
+    // window has no framework caption route - the frame's drag is the header's
+    // app-region surface and the border is the page's own edge report - and the
+    // page-side drag stays as the last resort.
     if (hasNativeRegions(globalThis)) {
-      // the lane is a render away: publish once it has its boxes
       void nextTick(schedulePublish);
     } else {
       wireDragFallback();
+      wireResizeEdges();
     }
     // The lane is the page's own, whatever origin serves it: the caption cells name the
     // action and the host performs it, so a page whose native hit-test route is absent

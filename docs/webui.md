@@ -518,7 +518,14 @@ Everything else animates through `transition`, not keyframes.
   the separate search row below the band is dead), and the new-session
   control keeps its own full-width row under the band.
 - **Tab drag-and-drop** moves tabs between panes (edge zones split,
-  see the geometry section); sessions stay in the sidebar.
+  see the geometry section); sessions stay in the sidebar. The desktop
+  window runs the same gesture: its WebView2 is windowed-hosted, so the
+  page's own drag session owns the OS drag source (a composition-hosted
+  controller starts the drag and cancels it at once - no ghost, no caret,
+  no drop). The header keeps the window chrome through
+  `-webkit-app-region` (WebView2 non-client region support: caption drag
+  and double-click maximise), and the page reports the border edge a press
+  grabs (`wails:resize:<edge>`), so the frameless window still resizes.
 - **Boot repair**: a persisted dock shell from before a
   built host's bottom-home addition is repaired at boot - new
   bottom-home registry members are injected into the persisted bottom

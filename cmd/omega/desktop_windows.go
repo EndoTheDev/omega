@@ -293,11 +293,17 @@ func desktopLaunch(cfg Config, configPath string) error {
 
 // desktopWindowOptions is the window the desktop opens: omega's own header IS the
 // title bar. Frameless hands the whole window rect to the client, so the system caption
-// no longer stacks above the header; the page then publishes hit-test regions
-// (wails:non-client-region) and the composition-hosted controller answers WM_NCHITTEST
-// from them. That route is also what restores resize borders, the caption system menu
-// and the double-click maximise. Decorations stay on for the Win11 shadow and rounded
-// corners; resizing stays enabled.
+// no longer stacks above the header.
+//
+// The window is WINDOWED-hosted (no WebView2CompositionHosting): a composition-hosted
+// controller replays mouse input through SendMouseInput and never gives Chromium an OLE
+// drag source, so a page drag (the dock's tab move) starts and is cancelled at once -
+// dragstart then dragend, no dragover, no drop. Windowed hosting keeps the child HWND
+// that owns the drag. NonClientRegionSupport is what turns the header's app-region
+// surface into the native caption in that mode (the frame drag and the double-click
+// maximise); the border resize is the page's edge report to this window.
+//
+// Decorations stay on for the Win11 shadow and rounded corners; resizing stays enabled.
 //
 // AllowSimpleEventEmit is the caption cells' return path: a press on a minimize /
 // maximize / close region is forwarded to the page as mouse input instead of being
@@ -314,8 +320,7 @@ func desktopWindowOptions(origin string) application.WebviewWindowOptions {
 		Frameless:            true,
 		AllowSimpleEventEmit: true,
 		Windows: application.WindowsWindow{
-			NonClientRegionSupport:     true,
-			WebView2CompositionHosting: true,
+			NonClientRegionSupport: true,
 		},
 	}
 }
