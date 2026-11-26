@@ -426,7 +426,7 @@ func desktopFrameOf(chromeReady bool, activeOrigin, appOrigin string) desktopFra
 }
 
 // desktopChromeBoundWindow bounds how long a freshly loaded page gets to announce its own
-// chrome. A test seam: a timer is not a receipt.
+// chrome. A test seam: a test must not wait on a wall clock.
 var desktopChromeBoundWindow = func(d time.Duration, fn func()) *time.Timer {
 	return time.AfterFunc(d, fn)
 }

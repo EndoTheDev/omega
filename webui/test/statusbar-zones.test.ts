@@ -358,7 +358,7 @@ describe("the health facts' wiring (card t_5e2f3095)", () => {
   });
 });
 
-// the panel's rows are live: one source, one listener, no reload (card t_ce8e57f7)
+// the panel rows are live: one source, one listener, no reload
 
 describe("the connection list updates in place", () => {
   it("repaints from every answer the app emits, with one subscription at mount", () => {

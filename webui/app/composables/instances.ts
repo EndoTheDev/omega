@@ -195,7 +195,13 @@ export async function fetchInstances(): Promise<SavedInstance[]> {
 // --- the desktop host's channel ---------------------------------------------------
 
 const subscribers = new Set<(reply: InstanceReply) => void>();
-const waiters: Array<(reply: InstanceReply) => void> = [];
+// One entry per unanswered request, oldest first. A wait's own deadline is carried so a
+// request that already gave up can never take the next answer off a live one.
+export interface InstanceWaiter {
+  at: number;
+  settle: (reply: InstanceReply) => void;
+}
+const waiters: InstanceWaiter[] = [];
 let armedOn: object | null = null;
 
 function hostApi(): NonNullable<InstanceHost["_wails"]> | null {
@@ -235,9 +241,30 @@ function armHostChannel(): boolean {
     if (event?.name !== INSTANCE_EVENT) return;
     const reply = coerceReply(event.data);
     for (const fn of [...subscribers]) fn(reply);
-    waiters.shift()?.(reply);
+    nextWaiter()?.(reply);
   };
   return true;
+}
+
+// takeWaiter is the answer's consumer: the oldest request still inside its own deadline.
+// A request that already resolved on its timeout has no claim on a later answer, so it is
+// dropped rather than handed someone else's reply.
+export function takeWaiter(
+  queue: InstanceWaiter[],
+  now: number,
+  timeoutMs: number = INSTANCE_REPLY_TIMEOUT_MS,
+): InstanceWaiter | null {
+  while (queue.length > 0) {
+    const head = queue.shift();
+    if (!head) return null;
+    if (now - head.at <= timeoutMs) return head;
+  }
+  return null;
+}
+
+// nextWaiter is the channel's one door on that queue.
+function nextWaiter(): ((reply: InstanceReply) => void) | undefined {
+  return takeWaiter(waiters, Date.now())?.settle;
 }
 
 /** every answer the host emits, for a surface that only reads */
@@ -265,9 +292,10 @@ function awaitReply(): Promise<InstanceReply> {
       settled = true;
       resolve(reply);
     };
-    waiters.push(settle);
+    const entry = { at: Date.now(), settle };
+    waiters.push(entry);
     setTimeout(() => {
-      const at = waiters.indexOf(settle);
+      const at = waiters.indexOf(entry);
       if (at >= 0) waiters.splice(at, 1);
       settle({
         instances: [],

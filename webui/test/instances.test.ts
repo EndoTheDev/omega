@@ -29,6 +29,7 @@ import {
   saveInstancesInApp,
   setLastUsedInstance,
   switchInstancesInApp,
+  takeWaiter,
   upsertInstance,
   writeInstanceCache,
   type InstanceStorage,
@@ -338,6 +339,23 @@ test("the browser tab's save event has one name, shared by the pane and the bar"
   assert.match(bar, /onInstancesReply\(\(reply\) => \{/, "and every app answer repaints the rows");
   const pane = read("webui", "app", "components", "settings", "SettingsTab.vue");
   assert.match(pane, /new CustomEvent\(INSTANCE_CHANGED_EVENT\)/, "the pane announces its own save");
+});
+
+test("an answer goes to a live request, never to one that already timed out", () => {
+  const answered: string[] = [];
+  const waiter = (name: string, at: number) => ({ at, settle: () => answered.push(name) });
+
+  // the head gave up 6s ago: it is dropped, the live request behind it gets the answer
+  const queue = [waiter("stale", 1000), waiter("live", 9000)];
+  const taken = takeWaiter(queue, 7000, 5000);
+  assert.equal(taken?.at, 9000);
+  taken?.settle({ instances: [], error: "" });
+  assert.deepEqual(answered, ["live"]);
+  assert.equal(queue.length, 0);
+
+  // nothing live: the answer is dropped rather than misdelivered
+  assert.equal(takeWaiter([waiter("stale", 0)], 9000, 5000), null);
+  assert.equal(takeWaiter([], 9000, 5000), null);
 });
 
 test("switching writes lastUsed and navigates to the normalized target", () => {
