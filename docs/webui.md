@@ -107,6 +107,16 @@ browser tab renders none of it: the lane exists only where the Wails
 Core shim does (`window._wails`), which `omega serve` in a browser never
 has, so the browser header is unchanged.
 
+The lane is the PAGE's, and the frame is the HOST's. A page announces it
+with `{"omega":"chrome:ready"}` when the composable arms; the host keeps
+the window frameless for it. A page that predates the lane draws no
+cells, so at each navigation the host waits a 5s bound: nothing
+announced AND a page other than the app's own origin hands the caption
+back to the OS (`SetFrameless(false)`), which restores minimise /
+maximise / close above the page. A late announcement after that puts
+omega's own bar back. The app's own origin never un-frames - a cold
+start would flash a native bar under omega's header.
+
 **The command palette's geometry** (VS Code
 quick-open): the panel HANGS from the top bar. Its top edge is
 `var(--menubar-h)` - the same number the bar's own height reads - so the

@@ -13,6 +13,7 @@ const read = (rel: string) => readFileSync(`${root}/${rel}`, "utf8");
 
 import {
   carveCaption,
+  chromeReadyMessage,
   clampToBand,
   hasNativeRegions,
   isDesktopWindow,
@@ -333,5 +334,26 @@ describe("desktopChrome.ts: the framework, not a runtime bundle", () => {
     assert.ok(src.includes("wails:non-client-region:"));
     assert.ok(src.includes("dispatchWailsEvent"), "the event entry point it installs");
     assert.ok(src.includes("wails:drag"), "the path-B drag invokes");
+  });
+});
+
+describe("the chrome announcement the host's frame rule waits for", () => {
+  const src = read("app/composables/desktopChrome.ts");
+
+  it("says exactly what the host decodes", () => {
+    assert.equal(chromeReadyMessage(), `{"omega":"chrome:ready"}`);
+  });
+
+  it("arms the lane on ANY origin, because the shim decides what a desktop is", () => {
+    // the shim is injected at NavigationCompleted on every navigation, whatever the page
+    assert.equal(isDesktopWindow({ _wails: { environment: { OS: "windows" } } }), true);
+    assert.equal(isDesktopWindow({ _wails: { environment: { OS: "windows" } }, location: { origin: "http://192.0.2.10:8098" } }), true);
+    assert.equal(isDesktopWindow({ _wails: { environment: { OS: "darwin" } } }), false);
+  });
+
+  it("posts the announcement once per arming, before the regions", () => {
+    assert.match(src, /let chromeReadySent = false;/, "the composable remembers that it spoke");
+    assert.match(src, /if \(!chromeReadySent\) \{[\s\S]{0,120}chromeReadySent = true;[\s\S]{0,120}shim\.invoke\?\.\(chromeReadyMessage\(\)\);/, "one post per arm");
+    assert.match(src, /desktop\.value = true;/, "the lane renders on every desktop page, not only where the native route is on");
   });
 });

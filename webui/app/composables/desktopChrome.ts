@@ -23,6 +23,15 @@ export const NON_CLIENT_REGION_VERSION = 1;
 export const RUNTIME_POLL_MS = 40;
 export const RUNTIME_POLL_TRIES = 75;
 
+/**
+ * The page -> host "my own chrome is on screen" message. The host keeps the frameless
+ * frame only while a page announces it: a page that predates the title bar draws no
+ * caption cells, so the host hands that window back to the OS caption.
+ */
+export function chromeReadyMessage(): string {
+  return JSON.stringify({ omega: "chrome:ready" });
+}
+
 /** the cells carry the native hit-test kind; the strips carry the drag surface */
 export const CAPTION_ATTR = "data-caption-region";
 export const CONTROL_ATTR = "data-window-control";
@@ -191,6 +200,7 @@ export function useDesktopChrome(): DesktopChrome {
   let timer: ReturnType<typeof setInterval> | null = null;
   let frame = 0;
   let live = true;
+  let chromeReadySent = false;
   const detach: Array<() => void> = [];
 
   function stopPolling(): void {
@@ -303,6 +313,12 @@ export function useDesktopChrome(): DesktopChrome {
     followWindowState(shim);
     announceRuntime(shim);
 
+    // Once per arming: the host's bound is what a page that never sends this loses.
+    if (!chromeReadySent) {
+      chromeReadySent = true;
+      shim.invoke?.(chromeReadyMessage());
+    }
+
     const onResize = () => schedulePublish();
     window.addEventListener("resize", onResize);
     detach.push(() => window.removeEventListener("resize", onResize));
@@ -317,12 +333,15 @@ export function useDesktopChrome(): DesktopChrome {
     watchResolution();
 
     if (hasNativeRegions(globalThis)) {
-      desktop.value = true;
       // the lane is a render away: publish once it has its boxes
       void nextTick(schedulePublish);
     } else {
       wireDragFallback();
     }
+    // The lane is the page's own, whatever origin serves it: the caption cells name the
+    // action and the host performs it, so a page whose native hit-test route is absent
+    // still shows them.
+    desktop.value = true;
   }
 
   function start(): void {

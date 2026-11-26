@@ -474,7 +474,12 @@
   import ModelField from "./ModelField.vue";
   import ProvidersField from "./ProvidersField.vue";
   import InstancesField from "./InstancesField.vue";
-  import type { SavedInstance } from "~/composables/instances";
+  import {
+    INSTANCE_CHANGED_EVENT,
+    instancesAreAppOwned,
+    saveInstancesInApp,
+    type SavedInstance,
+  } from "~/composables/instances";
   import {
     NAV_STORAGE_KEY,
     MODULES_CATEGORY,
@@ -1940,10 +1945,42 @@
     }
     const changes = settingsDiff(loaded.value, draft.value);
     if (Object.keys(changes).length === 0) return;
+    // The connection list is the APP's list inside a desktop window: the page may be
+    // served by a build whose config.yaml is not where the rows live, so that one knob is
+    // written through the host. A browser tab keeps the /settings door for every knob.
+    const appRows =
+      instancesAreAppOwned() && "desktop.instances" in changes
+        ? (changes["desktop.instances"] as SavedInstance[])
+        : null;
+    if (appRows !== null) delete changes["desktop.instances"];
     saving.value = true;
     setSaveError(null);
+    let hostSaved: SavedInstance[] | null = null;
     try {
-      applyPayload(await saveSettings(changes));
+      if (appRows !== null) {
+        try {
+          hostSaved = await saveInstancesInApp(appRows);
+        } catch (err) {
+          setSaveError(err instanceof Error ? err.message : String(err), "desktop.instances");
+          return;
+        }
+      }
+      if (Object.keys(changes).length > 0) {
+        applyPayload(await saveSettings(changes));
+        // the payload carries the ACTIVE server's copy of the list: the app's own rows
+        // stay what the pane shows, or the row would read dirty straight after a save.
+        if (hostSaved !== null) {
+          loaded.value = { ...loaded.value, "desktop.instances": hostSaved };
+          draft.value = { ...draft.value, "desktop.instances": hostSaved };
+        }
+      } else if (hostSaved !== null) {
+        loaded.value = { ...loaded.value, "desktop.instances": hostSaved };
+        draft.value = { ...draft.value, "desktop.instances": hostSaved };
+      }
+      // A browser tab's own save IS the list's source: the bar re-reads without a reload.
+      if (!instancesAreAppOwned() && "desktop.instances" in changes) {
+        window.dispatchEvent(new CustomEvent(INSTANCE_CHANGED_EVENT));
+      }
     } catch (err) {
       const keys = Object.keys(changes).filter((k) => k !== "unset");
       setSaveError(

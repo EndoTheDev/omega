@@ -234,10 +234,14 @@
   import { formatCacheShare } from "../../composables/tokenstat";
   import { statMenuItems, statVisible } from "./statusStats";
   import {
+    INSTANCE_CHANGED_EVENT,
+    instancesAreAppOwned,
     lastUsedInstance,
     loadInstances,
     navigateToInstance,
+    onInstancesReply,
     readInstanceCache,
+    switchInstancesInApp,
     type SavedInstance,
   } from "../../composables/instances.ts";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
@@ -349,9 +353,10 @@
   });
 
   // the connection control: the bar's dot and name ARE the switcher now. The
-  // cache paints at setup (so the label is never blank) and the backend list
-  // replaces it on mount; an unreachable instance keeps the cached rows and the
-  // panel says the list is stale.
+  // cache paints at setup (so the label is never blank) and the list's source replaces
+  // it on mount; an unreachable source keeps the cached rows and the panel says the list
+  // is stale. In a desktop window the source is the APP (the host's own list); a browser
+  // tab reads its server's /instances.
   const cachedInstances = readInstanceCache();
   const rows = ref<SavedInstance[]>(cachedInstances.list);
   const lastUsed = ref(cachedInstances.lastUsed);
@@ -370,11 +375,26 @@
     lastUsed.value = lastUsedInstance();
   }
 
-  // switching is a full reload: navigateToInstance remembers the target first.
+  // switching is a full reload: a browser tab leaves the page, the app moves its window.
   function switchTo(row: SavedInstance): void {
     lastUsed.value = row.url;
     healthOpen.value = false;
+    if (instancesAreAppOwned()) {
+      switchInstancesInApp(row.url);
+      return;
+    }
     navigateToInstance(row.url);
+  }
+
+  // The panel is a read of the list, so every answer the app emits repaints it, and a
+  // browser tab's own save announces itself. One subscription each, taken at mount.
+  const stopInstanceReplies = onInstancesReply((reply) => {
+    rows.value = reply.instances;
+    offline.value = false;
+    lastUsed.value = lastUsedInstance();
+  });
+  function onInstancesChanged() {
+    void refreshInstances();
   }
 
   const healthOpen = ref(false);
@@ -390,9 +410,14 @@
   }
   onMounted(() => {
     document.addEventListener("mousedown", onDocClick);
+    window.addEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
     void refreshInstances();
   });
-  onBeforeUnmount(() => document.removeEventListener("mousedown", onDocClick));
+  onBeforeUnmount(() => {
+    document.removeEventListener("mousedown", onDocClick);
+    window.removeEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
+    stopInstanceReplies();
+  });
 </script>
 
 <style scoped>

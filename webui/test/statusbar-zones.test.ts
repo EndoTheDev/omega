@@ -357,3 +357,35 @@ describe("the health facts' wiring (card t_5e2f3095)", () => {
     }
   });
 });
+
+// the panel's rows are live: one source, one listener, no reload (card t_ce8e57f7)
+
+describe("the connection list updates in place", () => {
+  it("repaints from every answer the app emits, with one subscription at mount", () => {
+    const bar = statusBar();
+    assert.match(
+      bar,
+      /onInstancesReply\(\(reply\) => \{[\s\S]{0,200}rows\.value = reply\.instances;/,
+      "the host's answer IS the panel's list",
+    );
+    assert.match(bar, /offline\.value = false;/, "a answered list is not the stale one");
+    assert.match(bar, /lastUsed\.value = lastUsedInstance\(\)/);
+    assert.match(bar, /stopInstanceReplies\(\)/, "the subscription goes with the bar");
+  });
+
+  it("hears a browser tab's own save and re-reads the source", () => {
+    const bar = statusBar();
+    assert.match(bar, /window\.addEventListener\(INSTANCE_CHANGED_EVENT, onInstancesChanged\)/);
+    assert.match(bar, /async function refreshInstances\(\): Promise<void> \{\s*const loaded = await loadInstances\(\);/);
+  });
+
+  it("switches through the app in a desktop window, and navigates itself in a tab", () => {
+    const bar = statusBar();
+    assert.match(
+      bar,
+      /if \(instancesAreAppOwned\(\)\) \{\s*switchInstancesInApp\(row\.url\);\s*return;\s*\}/,
+      "the host owns the navigation inside the window",
+    );
+    assert.match(bar, /navigateToInstance\(row\.url\)/, "a browser tab still leaves the page itself");
+  });
+});

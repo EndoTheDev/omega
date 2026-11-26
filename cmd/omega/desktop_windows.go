@@ -8,13 +8,17 @@ package main
 import (
 	"context"
 	_ "embed"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
+	"sync"
 	"syscall"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -22,6 +26,7 @@ import (
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 
+	"github.com/EndoTheDev/omega/core"
 	"github.com/EndoTheDev/omega/harness/observability"
 )
 
@@ -79,6 +84,10 @@ func desktopLaunch(cfg Config, configPath string) error {
 	// A second launch restores this one; a hidden window needs Show, not just Restore.
 	var shell *desktopShell
 	var app *application.App
+	// The page -> host door: the app's own surfaces answer raw JSON, never a server's
+	// route. The handler is installed at New and bound to the window below, so a message
+	// that arrives before the window exists is dropped rather than misrouted.
+	var host *desktopHost
 	app = application.New(application.Options{
 		Name:        "omega",
 		Description: "omega desktop",
@@ -87,6 +96,14 @@ func desktopLaunch(cfg Config, configPath string) error {
 		ErrorHandler: bootErrors.Handle,
 		Services: []application.Service{
 			application.NewService(notifier),
+		},
+		RawMessageHandler: func(_ application.Window, message string, info *application.OriginInfo) {
+			if host == nil {
+				return
+			}
+			if err := host.Handle(info, message); err != nil {
+				logger.Warnf("desktop: dropped a page message: %v", err)
+			}
 		},
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: desktopSingleInstanceID,
@@ -115,6 +132,19 @@ func desktopLaunch(cfg Config, configPath string) error {
 	})
 
 	win := app.Window.NewWithOptions(desktopWindowOptions(origin))
+
+	// The app's own surfaces, bound to the window they drive: the list (stored in THIS
+	// home's config.yaml, whatever server the page came from), the origin the window is
+	// showing, and the frame state. omegaSettings is the one validator and writer.
+	host = newDesktopHost(origin, &omegaSettings{path: configPath})
+	host.emit = func(name string, payload any) { app.Event.Emit(name, payload) }
+	host.setFrameless = func(frameless bool) { win.SetFrameless(frameless) }
+	host.navigate = func(url string) { win.SetURL(url) }
+	// Every load gets its chance to announce the page's own chrome; a silent page on
+	// another origin hands the caption back to the OS.
+	win.RegisterHook(events.Windows.WebViewNavigationCompleted, func(*application.WindowEvent) {
+		host.beginNavigation()
+	})
 
 	// The caption cells' presses come back here: the hit test routes them to the page,
 	// so the page names the action and the window performs it.
@@ -152,6 +182,9 @@ func desktopLaunch(cfg Config, configPath string) error {
 		autostart,
 	)
 	shell.setUpdates(updates)
+	// The way back is the app's too: the tray's Connection rows come from the app-local
+	// list, not from whatever page the window is showing.
+	shell.setInstances(host.instances, host.ActiveOrigin, host.SwitchTo)
 	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		shell.windowClosing(event.Cancel)
 	})
@@ -170,8 +203,15 @@ func desktopLaunch(cfg Config, configPath string) error {
 		entry desktopMenuEntry
 		item  *application.MenuItem
 	}
-	rows := make([]menuRow, 0, 3)
+	rows := make([]menuRow, 0, 4)
+	var connection *application.Menu
 	for _, entry := range shell.menu() {
+		// A submenu is filled where the popup is drawn (fillConnections below): its rows
+		// are live data, not the snapshot a startup build would freeze.
+		if entry.Children != nil {
+			connection = menu.AddSubmenu(entry.Label)
+			continue
+		}
 		var item *application.MenuItem
 		if entry.Checked == nil {
 			item = menu.Add(entry.Label)
@@ -191,10 +231,35 @@ func desktopLaunch(cfg Config, configPath string) error {
 	}
 	tray.SetMenu(menu)
 
+	// Every app-local row, the window's own origin checked, one click to switch. Read at
+	// open, so a row the pane saved a moment ago is already there and the check follows a
+	// switch the page made.
+	fillConnections := func() {
+		if connection == nil {
+			return
+		}
+		connection.Clear()
+		for _, child := range shell.connectionRows() {
+			row := child
+			var item *application.MenuItem
+			if row.Checked == nil {
+				item = connection.Add(row.Label)
+			} else {
+				item = connection.AddCheckbox(row.Label, row.Checked())
+			}
+			item.OnClick(func(*application.Context) {
+				if row.Action != nil {
+					row.Action()
+				}
+			})
+		}
+	}
+
 	// The popup is a native snapshot and Wails exposes no will-open hook, so every
 	// checkable row is re-read in the click path that opens it. A registration changed
 	// outside the tray (regedit, an installer) then shows the truth.
 	tray.OnRightClick(func() {
+		fillConnections()
 		for _, row := range rows {
 			if row.entry.Checked != nil {
 				row.item.SetChecked(row.entry.Checked())
@@ -275,6 +340,268 @@ func desktopWindowAction(win *application.WebviewWindow, event string) {
 	case desktopWindowEventClose:
 		win.Close()
 	}
+}
+
+// The app-local surfaces the page asks for over the raw message door. Each body is one
+// JSON object whose `omega` member names it; anything that is not one of these is
+// dropped, never guessed at.
+const (
+	desktopMessageGetInstances    = "instances:get"
+	desktopMessageSaveInstances   = "instances:save"
+	desktopMessageSwitchInstance  = "instances:switch"
+	desktopMessageChromeReady     = "chrome:ready"
+	desktopInstancesEvent         = "omega:instances"
+	desktopChromeReadyBoundWindow = 5 * time.Second
+)
+
+// desktopInstancesReply is the answer to every instance request: the app's list and the
+// refusal when a write was declined. The pane renders the words; the bar repaints.
+type desktopInstancesReply struct {
+	Instances []core.SavedInstance `json:"instances"`
+	Error     string               `json:"error"`
+}
+
+// desktopRequest is one decoded message body.
+type desktopRequest struct {
+	kind      string
+	instances []core.SavedInstance
+	url       string
+}
+
+// decodeDesktopRequest parses one page message. Malformed JSON and an unknown `omega`
+// member are refusals carried back to the caller's log, never a silent no-op.
+func decodeDesktopRequest(raw string) (desktopRequest, error) {
+	var body struct {
+		Omega     string               `json:"omega"`
+		Instances []core.SavedInstance `json:"instances"`
+		URL       string               `json:"url"`
+	}
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return desktopRequest{}, fmt.Errorf("not a desktop message: %v", err)
+	}
+	switch body.Omega {
+	case desktopMessageGetInstances, desktopMessageChromeReady:
+		return desktopRequest{kind: body.Omega}, nil
+	case desktopMessageSaveInstances:
+		return desktopRequest{kind: body.Omega, instances: body.Instances}, nil
+	case desktopMessageSwitchInstance:
+		if strings.TrimSpace(body.URL) == "" {
+			return desktopRequest{}, errors.New("instances:switch carries no url")
+		}
+		return desktopRequest{kind: body.Omega, url: body.URL}, nil
+	case "":
+		return desktopRequest{}, errors.New("not a desktop message: no omega member")
+	default:
+		return desktopRequest{}, fmt.Errorf("unknown desktop message %q", body.Omega)
+	}
+}
+
+// desktopFrameDecision is what the host does about the caption at the end of a
+// navigation's bound.
+type desktopFrameDecision int
+
+const (
+	// desktopFrameKeep: the page carries omega's own title bar, so the frame stays off.
+	desktopFrameKeep desktopFrameDecision = iota
+	// desktopFrameRestore: nothing announced a title bar on a foreign page, so the OS
+	// draws the caption and the three cells exist again.
+	desktopFrameRestore
+)
+
+// desktopFrameOf decides the frame at the end of a navigation's bound. A page that
+// announced its chrome keeps the frameless frame; a silent page keeps it too when it is
+// the app's own origin, because a cold start must never flash a native bar under omega's
+// header.
+func desktopFrameOf(chromeReady bool, activeOrigin, appOrigin string) desktopFrameDecision {
+	if chromeReady {
+		return desktopFrameKeep
+	}
+	if desktopOriginKey(activeOrigin) == desktopOriginKey(appOrigin) {
+		return desktopFrameKeep
+	}
+	return desktopFrameRestore
+}
+
+// desktopChromeBoundWindow bounds how long a freshly loaded page gets to announce its own
+// chrome. A test seam: a timer is not a receipt.
+var desktopChromeBoundWindow = func(d time.Duration, fn func()) *time.Timer {
+	return time.AfterFunc(d, fn)
+}
+
+// desktopHost is the app behind the window: the connection list, the origin the window
+// shows, and the frame state. It takes no Wails type in its decisions, so the whole
+// surface is assertable without a window.
+type desktopHost struct {
+	mu           sync.Mutex
+	appOrigin    string
+	activeOrigin string
+	chromeReady  bool
+	bound        *time.Timer
+
+	instances    desktopInstanceStore
+	emit         func(name string, payload any)
+	setFrameless func(bool)
+	navigate     func(string)
+}
+
+func newDesktopHost(appOrigin string, store desktopInstanceStore) *desktopHost {
+	return &desktopHost{appOrigin: appOrigin, activeOrigin: appOrigin, instances: store}
+}
+
+// ActiveOrigin is the origin the window is showing: the tray's check mark and the frame
+// rule both read it.
+func (h *desktopHost) ActiveOrigin() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.activeOrigin
+}
+
+func (h *desktopHost) setActiveOrigin(origin string) {
+	h.mu.Lock()
+	h.activeOrigin = origin
+	h.mu.Unlock()
+}
+
+// SwitchTo shows url in the window. The host records it first, so the check mark and the
+// frame rule already know the page the load is about to produce.
+func (h *desktopHost) SwitchTo(url string) {
+	h.switchTo(url)
+}
+
+// accepts is the trust gate on the door: only the window's own top document may ask, and
+// a child frame is a frame whose own source differs from that document's. Windows reports
+// no main-frame bit, so the two sources ARE the main-frame test there; a platform that
+// reports one is honoured.
+func (h *desktopHost) accepts(info *application.OriginInfo) bool {
+	if info == nil {
+		return false
+	}
+	top := desktopOriginKey(info.TopOrigin)
+	if top == "" || top != desktopOriginKey(h.ActiveOrigin()) {
+		return false
+	}
+	if !info.IsMainFrame && info.Origin != "" && desktopOriginKey(info.Origin) != top {
+		return false
+	}
+	return true
+}
+
+// Handle routes one raw page message. The error is the caller's log line, never the page's
+// answer: an accepted request answers on the event.
+func (h *desktopHost) Handle(info *application.OriginInfo, raw string) error {
+	if !h.accepts(info) {
+		return fmt.Errorf("not the window's own page (%q over %q, showing %q)",
+			originOf(info), topOriginOf(info), h.ActiveOrigin())
+	}
+	request, err := decodeDesktopRequest(raw)
+	if err != nil {
+		return err
+	}
+	switch request.kind {
+	case desktopMessageGetInstances:
+		h.answerInstances("")
+	case desktopMessageSaveInstances:
+		h.saveInstances(request.instances)
+	case desktopMessageSwitchInstance:
+		h.switchTo(request.url)
+	case desktopMessageChromeReady:
+		h.chromeArmed()
+	}
+	return nil
+}
+
+// answerInstances emits the app's list, with a refusal in place of an empty error when a
+// write was declined.
+func (h *desktopHost) answerInstances(refusal string) {
+	list, err := h.instances.Instances()
+	if err != nil && refusal == "" {
+		refusal = err.Error()
+	}
+	if list == nil {
+		list = []core.SavedInstance{}
+	}
+	h.emit(desktopInstancesEvent, desktopInstancesReply{Instances: list, Error: refusal})
+}
+
+// saveInstances validates through core.NormalizeInstances and writes through the one
+// atomic writer. A refusal answers with the host's words and the list unchanged.
+func (h *desktopHost) saveInstances(rows []core.SavedInstance) {
+	list, err := core.NormalizeInstances(rows)
+	if err != nil {
+		h.answerInstances(err.Error())
+		return
+	}
+	if err := h.instances.SaveInstances(list); err != nil {
+		h.answerInstances(err.Error())
+		return
+	}
+	h.emit(desktopInstancesEvent, desktopInstancesReply{Instances: list, Error: ""})
+}
+
+// switchTo navigates the WINDOW: every switch inside the desktop is the host's, so the
+// active origin is never a guess. A browser tab keeps navigating itself.
+func (h *desktopHost) switchTo(raw string) {
+	rows, err := core.NormalizeInstances([]core.SavedInstance{{Name: "switch", URL: raw}})
+	if err != nil {
+		h.answerInstances(err.Error())
+		return
+	}
+	target := rows[0].URL
+	h.setActiveOrigin(target)
+	h.navigate(target)
+}
+
+// beginNavigation arms the chrome bound for the page that just loaded.
+func (h *desktopHost) beginNavigation() {
+	h.mu.Lock()
+	if h.bound != nil {
+		h.bound.Stop()
+	}
+	h.chromeReady = false
+	h.bound = desktopChromeBoundWindow(desktopChromeReadyBoundWindow, h.expireChromeBound)
+	h.mu.Unlock()
+}
+
+// expireChromeBound is what the bound runs: a silent page on another origin gets the OS
+// caption. It is a method rather than a closure so the test drives it without a clock.
+func (h *desktopHost) expireChromeBound() {
+	h.mu.Lock()
+	ready := h.chromeReady
+	active := h.activeOrigin
+	h.bound = nil
+	h.mu.Unlock()
+	if desktopFrameOf(ready, active, h.appOrigin) == desktopFrameRestore {
+		h.setFrameless(false)
+	}
+}
+
+// chromeArmed answers the page's announcement: the frame goes frameless (already is, on a
+// cold start) and the bound stands down. A late arm after the OS took the caption puts
+// omega's own title bar back.
+func (h *desktopHost) chromeArmed() {
+	h.mu.Lock()
+	h.chromeReady = true
+	if h.bound != nil {
+		h.bound.Stop()
+		h.bound = nil
+	}
+	h.mu.Unlock()
+	h.setFrameless(true)
+}
+
+// originOf / topOriginOf keep the refusal message honest when a nil record arrives.
+func originOf(info *application.OriginInfo) string {
+	if info == nil {
+		return ""
+	}
+	return info.Origin
+}
+
+func topOriginOf(info *application.OriginInfo) string {
+	if info == nil {
+		return ""
+	}
+	return info.TopOrigin
 }
 
 // wailsAutostart is the production autostartBackend: Wails v3 owns the registration
