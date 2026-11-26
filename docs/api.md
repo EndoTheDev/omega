@@ -35,6 +35,19 @@ alone never authorises a write off loopback - that pair is exactly the
 DNS-rebinding shape. Loopback-only installs need no declaration and are
 unchanged.
 
+EVERY bind also answers to the machine's own name, bare and with its port:
+`os.Hostname()`, plus its first label when the OS reports a dotted name. That
+is what makes a tailnet short name (`winbtw`, `pibtw`, `macbtw`) work end to
+end - a saved connection stored as typed reaches the box it names, and that
+box's own guard accepts the Host header. Keys compare lowercased, because a
+Host header may arrive uppercased. A wildcard bind still refuses to start
+without `server.public_hosts`; the own name rides in addition to the
+declaration, never instead of it. The tailnet FQDN
+(`pibtw.tailec55f3.ts.net`) is NOT derived - declare it in
+`server.public_hosts` if a connection needs it. The guard remains a
+rebinding heuristic, not authentication: a page cannot forge Host, and a
+rebinding attacker's Host is its own domain, not the machine's name.
+
 | Route                                     | Methods            | Notes                                                                                                                                                                                                                                                       |
 | ----------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/health`                                 | GET                | liveness                                                                                                                                                                                                                                                    |
@@ -109,6 +122,7 @@ unchanged.
 | `/settings/raw`                           | GET, PUT           | the config file as YAML, secrets masked / write a whole document through the same validator + writer + hot-apply                                                                                                                                            |
 | `/settings/reset`                         | POST               | restore the host's defaults for every knob that has one (the config.yaml-only doors are kept)                                                                                                                                                               |
 | `/instances`                              | GET, PUT           | the connection switcher's saved-instance list (`config.yaml desktop.instances`): `{"instances":[{name,url}]}`, PUT replaces it whole and answers the normalized list; 400 on a bad row, 501 without the host's list face                                                                                                       |
+| `/instances/probe`                        | GET                | the add-time check: `?url=<address>` answers one JSON envelope - `{ok:true,url,state:"omega",facts}` or `{ok:false,url,failure,reason}` with `failure` in `syntax\|unreachable\|not-omega\|guard`; never writes, never caches                                                                                                    |
 | `/themes`                                 | GET                | user theme tokens (`<home>/themes/*.yaml`)                                                                                                                                                                                                                  |
 | `/`                                       | GET                | embedded SPA catch-all (history-mode fallback)                                                                                                                                                                                                              |
 
@@ -643,6 +657,55 @@ path of its own: the status bar panel only reads the list and switches.
   named and the file untouched.
 - A host whose settings seam does not carry the list answers **501** on
   both methods - the same nil-safe floor `/settings` keeps.
+
+A row added through the add-anyway hatch carries `"unverified": true`
+(`core.SavedInstance`): the operator knows the address is real and it is down
+right now. The flag is a note about the last check, never a verdict - a later
+contact that answers makes the row healthy whatever it says, and an add whose
+probe passes clears it. Both the settings pane and the status-bar panel render
+the marker as text, with the reason in its tooltip. A payload that sets it to
+anything but a boolean is refused.
+
+### GET /instances/probe (does this address answer as omega)
+
+Adding a connection is a commitment, so the settings pane asks the SERVE to
+check the address before the row lands: a browser cannot read another origin's
+`/health` body (this surface sends no CORS headers, by design), so the fetch has
+to be the server's own. The route answers one envelope, always **200**, with
+`Cache-Control: no-store`, and never writes:
+
+- `{"ok":true,"url":"<normalized>","state":"omega","facts":{...}}` - `facts` is
+  the health body as that instance served it (`status`, `uptime_seconds`, and
+  the optional provider / database / last-error facts).
+- `{"ok":false,"url":"<normalized, or the typed value when it never parsed>","failure":"...","reason":"<one line>"}`.
+
+The checks run in order, and the first that fails is the answer:
+
+- **syntax** - `core.NormalizeInstances` on one row: the same validator a hand
+  edit and a `PUT /instances` ride. The reason is the validator's own sentence,
+  so the pane can never accept a shape the file refuses.
+- **unreachable** - `GET <url>/health` within 5s (3s to dial), no redirect hops
+  followed (a hop is a different address than the one named), body read capped
+  at 64 KiB, http/https only. DNS, dial, TLS and timeout failures land here,
+  with the clamped cause in the reason.
+- **not-omega** - anything that is not an object carrying `status: "ok"` and a
+  numeric `uptime_seconds`: a foreign JSON body, an SPA page (200 and HTML), a
+  403 without the guard's sentence. The reason names the code it answered with.
+- **guard** - a 403 carrying the Host guard's own sentence IS an omega instance
+  refusing the NAME it was called by. Its own class, because folding it into
+  not-omega would report a real server as not one: the reason names the host and
+  the cure (that box needs a build with the own-name allowance, or
+  `<host:port>` in its `server.public_hosts`).
+
+This route fetches an operator-typed address, so it deliberately does NOT borrow
+`/attach-image`'s internal-address refusal - a tailnet or LAN address is the
+whole point of the list. Its guards are the four classes above plus the shell's
+Host/Origin guard, and loopback stays the default bind.
+
+A build with no probe route answers its SPA catch-all instead: **200** with
+HTML. The client reads a body that is not this envelope as `no-route` ("this
+server cannot check addresses (its build predates the check)") - never as a
+pass, and never as a guessed colour.
 
 The client never fetches a remote origin (CORS): a browser tab's switch
 writes the `omega.instances` localStorage cache's `lastUsed` and
