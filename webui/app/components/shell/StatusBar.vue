@@ -244,6 +244,7 @@
     switchInstancesInApp,
     type SavedInstance,
   } from "../../composables/instances.ts";
+  import { RUNTIME_CONFIG_READY } from "../../composables/desktopChrome.ts";
   import WorkspaceSelect from "../chat/WorkspaceSelect.vue";
   import UpdateChip from "./UpdateChip.vue";
 
@@ -397,6 +398,13 @@
     void refreshInstances();
   }
 
+  // The Core shim is injected at NavigationCompleted, AFTER the SPA has mounted, so the
+  // mount read cannot yet tell that the app owns the list and read the page's origin
+  // instead. The shim announces itself; this re-reads from the app.
+  function onRuntimeReady() {
+    if (instancesAreAppOwned()) void refreshInstances();
+  }
+
   const healthOpen = ref(false);
   function toggleHealth() {
     healthOpen.value = !healthOpen.value;
@@ -411,11 +419,13 @@
   onMounted(() => {
     document.addEventListener("mousedown", onDocClick);
     window.addEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
+    window.addEventListener(RUNTIME_CONFIG_READY, onRuntimeReady);
     void refreshInstances();
   });
   onBeforeUnmount(() => {
     document.removeEventListener("mousedown", onDocClick);
     window.removeEventListener(INSTANCE_CHANGED_EVENT, onInstancesChanged);
+    window.removeEventListener(RUNTIME_CONFIG_READY, onRuntimeReady);
     stopInstanceReplies();
   });
 </script>

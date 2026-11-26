@@ -379,6 +379,16 @@ describe("the connection list updates in place", () => {
     assert.match(bar, /async function refreshInstances\(\): Promise<void> \{\s*const loaded = await loadInstances\(\);/);
   });
 
+  it("re-reads when the Wails shim arms, because it lands after the SPA mounts", () => {
+    const bar = statusBar();
+    assert.match(bar, /window\.addEventListener\(RUNTIME_CONFIG_READY, onRuntimeReady\)/);
+    assert.match(
+      bar,
+      /function onRuntimeReady\(\) \{\s*if \(instancesAreAppOwned\(\)\) void refreshInstances\(\);/,
+      "the mount read ran before the shim existed, so the app's list is read again",
+    );
+  });
+
   it("switches through the app in a desktop window, and navigates itself in a tab", () => {
     const bar = statusBar();
     assert.match(

@@ -253,6 +253,9 @@ func desktopLaunch(cfg Config, configPath string) error {
 				}
 			})
 		}
+		// The tray's popup is its own native snapshot, so a row added to this tree stays
+		// invisible until the popup is rebuilt from it. Update is that lever.
+		application.InvokeSync(func() { menu.Update() })
 	}
 
 	// The popup is a native snapshot and Wails exposes no will-open hook, so every
