@@ -129,10 +129,14 @@ def seed_shared(names, files):
                 if m and name in m.group(3).lower() and m.group(3).lower().endswith("config"):
                     SharedFields[name].add(m.group(1))
 
-def scrub(text, modules, carried=None):
+def scrub(text, modules, carried=None, carried_methods=None):
     """modules: list of module names. carried: func names a prior
-    scrub pass deleted in ANOTHER file. Returns (text, removed):
-    the scrubbed text and the func names deleted whole here."""
+    scrub pass deleted in ANOTHER file. carried_methods: METHOD names
+    a prior pass deleted elsewhere - Go method names live in their
+    receiver's method set, never in package scope, so they are dot
+    vocabulary only. Returns (text, removed, removed_methods): the
+    scrubbed text, the package-scope names deleted whole here, and
+    the method names deleted whole here."""
     mnames = [m for m in modules]
     lines = text.split("\n")
     dead_ids = set()
@@ -147,6 +151,15 @@ def scrub(text, modules, carried=None):
     # capsule's config, and every caller of both survived into the
     # scrubbed tree).
     dead_members = set()
+    # removed_methods: method names deleted whole here. A Go method name
+    # is not package vocabulary (it sits in its receiver's method set),
+    # so a method sighting is ALWAYS a selector - `.name` - and a bare
+    # token of the same spelling is a different symbol: the interface
+    # method a host-owned seam declares, or a method on another type.
+    # Feeding the name into dead_ids lets the value rule read that
+    # declaration as a use and delete it, which empties the interface,
+    # its implementers and every consumer behind them.
+    removed_methods = set()
 
     # the module itself, plus its host config vocabulary (the
     # <Noun>Config struct type and the aggregate field naming it)
@@ -159,6 +172,8 @@ def scrub(text, modules, carried=None):
         # a name carried in from ANOTHER file's cascade is a removed
         # declaration there, so its member sites here are wires too
         dead_members.update(carried)
+    if carried_methods:
+        dead_members.update(carried_methods)
 
     # 1. import lines + alias discovery (file-level)
     keep = []
@@ -421,7 +436,12 @@ def scrub(text, modules, carried=None):
                         # every caller.
                         fm = re.match(r"^\s*func\s+(?:\([^)]*\)\s*)?([A-Za-z_]\w*)", ln)
                         if fm:
-                            removed.add(fm.group(1))
+                            # a receiver means METHOD: its name is dot
+                            # vocabulary only, never package scope
+                            if re.match(r"^\s*func\s+\(", ln):
+                                removed_methods.add(fm.group(1))
+                            else:
+                                removed.add(fm.group(1))
                         j2 = i + 1
                         d3 = delta
                         while d3 > 0 and j2 < n:
@@ -722,7 +742,12 @@ def scrub(text, modules, carried=None):
                 interior = [x for x in chunk[scan + 1:e6]
                             if x.strip() and not x.strip().startswith("//")]
                 if not interior:
-                    removed.add(decl.group(1))
+                    # a receiver means METHOD (dot vocabulary only), an
+                    # interface name is package-scope TYPE vocabulary
+                    if re.match(r"^\s*func\s+\(", ln2):
+                        removed_methods.add(decl.group(1))
+                    else:
+                        removed.add(decl.group(1))
                     s3 = scan
                     while s3 > 0 and chunk[s3 - 1].lstrip().startswith("//"):
                         s3 -= 1
@@ -743,11 +768,17 @@ def scrub(text, modules, carried=None):
     # a func whose body emptied left whole (scrub_chunk above) is dead
     # vocabulary now, and its call sites sit in EARLIER chunks of this
     # file. Feed the name back and re-run until no func leaves whole.
+    # A removed METHOD feeds dead_members only, and its own removal has
+    # to trigger the re-run just the same: the `.name` call sites sit
+    # in earlier chunks too.
     rounds = 0
-    while removed and rounds < 8:
+    seen_methods = set()
+    while (removed or removed_methods - seen_methods) and rounds < 8:
         rounds += 1
         dead_ids.update(removed)
         dead_members.update(removed)
+        dead_members.update(removed_methods)
+        seen_methods = set(removed_methods)
         removed = set()
         out2 = []
         for ch in split_chunks(out):
@@ -811,7 +842,7 @@ def scrub(text, modules, carried=None):
         if not hits:
             continue
         pruned.append(ln)
-    return "\n".join(pruned), all_removed
+    return "\n".join(pruned), all_removed, set(removed_methods)
 
 if __name__ == "__main__":
     modspecs = [s.split("=")[-1] for s in sys.argv[2:]]
@@ -819,32 +850,68 @@ if __name__ == "__main__":
     seed_shared(modspecs, files)
     # a func whose body emptied dies whole (scrub_chunk); its name is
     # dead vocabulary for OTHER files too (a call site across the file
-    # boundary never sees one file's dead_ids). Pass over the file set
-    # until the deletion frontier is quiet (bounded, like the chunk
-    # re-run inside scrub()).
+    # boundary never sees one file's dead_ids). Method names travel on
+    # their own channel: another file's `.name` sites are the wire, its
+    # bare tokens are declarations of a different symbol. Pass over the
+    # file set until the deletion frontier is quiet (bounded, like the
+    # chunk re-run inside scrub()).
     carried = set()
+    carried_methods = set()
     for _pass in range(6):
         grew = False
         for fname in files:
             with open(fname) as f:
                 text = f.read()
-            text2, rem = scrub(text, modspecs, carried)
+            text2, rem, rem_methods = scrub(text, modspecs, carried, carried_methods)
             fresh = rem - carried
+            fresh_methods = rem_methods - carried_methods
             # a `_test.go` file's removed names are FIXTURE vocabulary:
             # the host never calls a double, so a name one buries must
             # not cross into the production files' dead vocabulary
             # (t_388a2884 - the cron double's SetRunTimeout burial killed
             # the live face's interface method in settings.go).
-            if fresh and fname.endswith("_test.go"):
+            if fname.endswith("_test.go"):
                 fresh = set()
-            if fresh:
+                fresh_methods = set()
+            if fresh or fresh_methods:
                 grew = True
                 carried |= fresh
+                carried_methods |= fresh_methods
             if text2 != text:
                 with open(fname, "w") as f:
                     f.write(text2)
         if not grew:
             break
+PYEOF
+# strand.py: name the declaration a failed build points at. A scrub that
+# over-deletes reports a bare compiler position in the SCRUBBED copy -
+# "missing return" names no source line a reader can act on. The position
+# already sits in the stranded declaration's body, so walk up to the
+# nearest `func` and print it beside the message.
+cat > "$TMP/strand.py" <<'PYEOF'
+import re, sys, os
+
+work, logpath = sys.argv[1], sys.argv[2]
+seen = set()
+for ln in open(logpath, errors="replace"):
+    m = re.match(r"^(\S+\.go):(\d+)(?::\d+)?:\s*(.*)$", ln.strip())
+    if not m:
+        continue
+    rel, num, msg = m.group(1).replace("\\", "/"), int(m.group(2)), m.group(3)
+    if (rel, num) in seen:
+        continue
+    seen.add((rel, num))
+    try:
+        lines = open(os.path.join(work, rel), errors="replace").read().split("\n")
+    except OSError:
+        continue
+    for k in range(min(num, len(lines)) - 1, -1, -1):
+        if lines[k].startswith("func "):
+            decl = lines[k].rstrip().rstrip("{").strip()
+            print("stranded: %s (%s:%d) <- %s" % (decl, rel, k + 1, msg))
+            break
+    else:
+        print("stranded: no enclosing func (%s:%d) <- %s" % (rel, num, msg))
 PYEOF
 # go files that may carry wires: cmd/ (the binary). Engine layers and
 # core importing a module is illegal already - the purity law says SO,
@@ -878,6 +945,11 @@ for MOD in "${MODULES[@]}"; do
   if [ "$build" != ok ]; then
     echo "nm-purity [$MOD]: FAIL - the scrubbed tree does not compile (a wire the scrubber does not model, or a leaked noun):" >&2
     sed 's/^/    /' "$TMP/$MOD.build.log" | head -10 >&2
+    # name the declaration each compiler position sits in - the position
+    # is in the SCRUBBED copy, and "missing return" alone sends the
+    # reader hunting a source line the cascade already rewritten
+    python3 "$(nat "$TMP/strand.py")" "$(nat "$WORK")" "$(nat "$TMP/$MOD.build.log")" 2>/dev/null \
+      | sed 's/^/    /' >&2 || true
     fails=$((fails+1)); continue
   fi
   # the symbol table reads once into a file; every check below greps

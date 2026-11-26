@@ -1071,6 +1071,76 @@ for f in "$TESTDIR/config.go" "$TESTDIR/knobs.go"; do
 done
 rm -rf "$TESTDIR" "$SCRUBPY"
 
+# 20. the method-name strand (this capsule's native sink): a shell type
+# whose method body speaks the capsule is a genuine wire, so the method
+# declaration dies whole - but a Go method name lives in its RECEIVER's
+# method set, never in package scope. Filing it as package vocabulary
+# made the value rule read the host interface's same-named method
+# DECLARATION as a use, emptied the interface, then the field typed by
+# it, then the funcs taking it - and the consumer that hands one back
+# lost its terminating statement ("missing return", a position in the
+# scrubbed copy that names no source line).
+TESTDIR="$(mktemp -d)"
+cat > "$TESTDIR/native.go" <<'EOF'
+package main
+
+import "example.com/x/harness/notify"
+
+type toastSink interface {
+	SendToast(id, title string) error
+}
+
+type wailsSink struct {
+	svc *notify.Service
+}
+
+func (s wailsSink) SendToast(id, title string) error {
+	return s.svc.Send(notify.Options{ID: id, Title: title})
+}
+
+type consumer struct {
+	sink toastSink
+}
+
+func (c *consumer) run() bool {
+	return pump(c.sink)
+}
+
+func pump(sink toastSink) bool {
+	_ = sink.SendToast("1", "t")
+	return true
+}
+EOF
+SCRUBPY="$(mktemp)"
+awk '/^cat > "\$TMP\/scrub.py"/{f=1;next} /^PYEOF$/{f=0} f' "$PURITY" > "$SCRUBPY"
+scrub "native.go" notify >/dev/null || bad "scrub pass exited nonzero (method-name fixture) - see stderr above"
+if ! grep -q 'func (s wailsSink) SendToast' "$TESTDIR/native.go" \
+  && ! grep -q 'notify\.' "$TESTDIR/native.go" \
+  && grep -q 'SendToast(id, title string) error' "$TESTDIR/native.go" \
+  && grep -q 'sink toastSink' "$TESTDIR/native.go" \
+  && grep -q 'func pump(sink toastSink) bool' "$TESTDIR/native.go" \
+  && grep -q 'return pump(c.sink)' "$TESTDIR/native.go" \
+  && grep -q 'return true' "$TESTDIR/native.go"; then
+  ok
+else
+  bad "a removed METHOD's name read as package vocabulary and ate the host interface, its field, its consumers and a terminating return: $(cat "$TESTDIR/native.go" 2>/dev/null)"
+fi
+# TEETH: the method sighting is still the wire. `sink.SendToast(...)` calls
+# the same-named method on ANOTHER type, but a `.name` site whose method
+# died is a selector - leaving it behind compiles and proves nothing, so
+# the dot site must go with the declaration.
+if grep -q '\.SendToast(' "$TESTDIR/native.go"; then
+  bad "the removed method's selector call site survived - dead_members lost its teeth"
+else
+  ok
+fi
+if ! gofmt -e "$TESTDIR/native.go" > /dev/null 2>"$TESTDIR/gofmt.err"; then
+  bad "scrubbed fixture does not parse: $(cat "$TESTDIR/gofmt.err")"
+else
+  ok
+fi
+rm -rf "$TESTDIR" "$SCRUBPY"
+
 if [ "$fail" -gt 0 ]; then
   echo "nm-purity_test: $pass ok, $fail FAIL" >&2
   exit 1
