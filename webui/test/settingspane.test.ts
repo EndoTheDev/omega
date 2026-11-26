@@ -363,8 +363,8 @@ test("the pane's save sends desktop.instances to the app inside a desktop window
   // the host's answer replaces the ACTIVE server's copy of the list in the pane's truth
   assert.equal(
     (paneSource.match(/"desktop\.instances": hostSaved/g) ?? []).length,
-    4,
-    "loaded and draft both adopt the host's rows, in the save-with-other-knobs path and alone",
+    2,
+    "loaded and draft both adopt the host's rows",
   );
 });
 

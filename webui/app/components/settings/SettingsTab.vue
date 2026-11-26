@@ -1965,15 +1965,10 @@
           return;
         }
       }
-      if (Object.keys(changes).length > 0) {
-        applyPayload(await saveSettings(changes));
-        // the payload carries the ACTIVE server's copy of the list: the app's own rows
-        // stay what the pane shows, or the row would read dirty straight after a save.
-        if (hostSaved !== null) {
-          loaded.value = { ...loaded.value, "desktop.instances": hostSaved };
-          draft.value = { ...draft.value, "desktop.instances": hostSaved };
-        }
-      } else if (hostSaved !== null) {
+      if (Object.keys(changes).length > 0) applyPayload(await saveSettings(changes));
+      // A save that also landed other knobs re-reads the ACTIVE server's copy of this
+      // list: the app's own rows stay what the pane shows, or the row reads dirty again.
+      if (hostSaved !== null) {
         loaded.value = { ...loaded.value, "desktop.instances": hostSaved };
         draft.value = { ...draft.value, "desktop.instances": hostSaved };
       }
