@@ -49,10 +49,12 @@ export type InstanceRequest =
   | { omega: "instances:save"; instances: SavedInstance[] }
   | { omega: "instances:switch"; url: string };
 
-/** the answer body: the app's list, and the refusal when a write was declined */
+/** the answer body: the app's list, the refusal when a write was declined, and the
+ * desktop's own home origin (absent in a browser tab - the tab's own origin is its home) */
 export interface InstanceReply {
   instances: SavedInstance[];
   error: string;
+  home?: string;
 }
 
 /** the host's patience with one raw-message round trip */
@@ -388,7 +390,7 @@ export function instancesAreAppOwned(host: unknown = globalThis): boolean {
 }
 
 function coerceReply(data: unknown): InstanceReply {
-  const doc = (data ?? {}) as { instances?: unknown; error?: unknown };
+  const doc = (data ?? {}) as { instances?: unknown; error?: unknown; home?: unknown };
   const instances: SavedInstance[] = [];
   if (Array.isArray(doc.instances)) {
     for (const item of doc.instances) {
@@ -396,7 +398,9 @@ function coerceReply(data: unknown): InstanceReply {
       if (row) instances.push(row);
     }
   }
-  return { instances, error: typeof doc.error === "string" ? doc.error : "" };
+  const reply: InstanceReply = { instances, error: typeof doc.error === "string" ? doc.error : "" };
+  if (typeof doc.home === "string" && doc.home) reply.home = doc.home;
+  return reply;
 }
 
 // armHostChannel hooks the one event entry point the Wails shim delivers on. The shim
@@ -506,17 +510,20 @@ export function switchInstancesInApp(url: string, storage: InstanceStorage | nul
 export interface InstanceLoad {
   list: SavedInstance[];
   offline: boolean;
+  /** the desktop's own home origin; a browser tab has none (its own origin is home) */
+  home?: string;
 }
 
 // loadInstances reads whichever source is in charge. A desktop window asks the app; a
-// browser tab fetches its own origin and leaves the app's cache alone.
+// browser tab fetches its own origin and leaves the app's cache alone. The app's answer
+// also carries the desktop's home origin - derived state the page only displays.
 export async function loadInstances(storage: InstanceStorage | null = defaultStorage()): Promise<InstanceLoad> {
   const cache = readInstanceCache(storage);
   if (instancesAreAppOwned()) {
     const reply = await requestInstances();
-    if (reply.error) return { list: cache.list, offline: true };
+    if (reply.error) return { list: cache.list, offline: true, home: reply.home };
     adoptInstances(reply.instances, storage);
-    return { list: reply.instances, offline: false };
+    return { list: reply.instances, offline: false, home: reply.home };
   }
   try {
     const list = await fetchInstances();

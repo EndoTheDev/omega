@@ -413,6 +413,74 @@ func TestDesktopHostSwitchIsTheHostsNavigation(t *testing.T) {
 	}
 }
 
+// TestDesktopHostHomeIsShellState: home is the launch origin - answered with every list,
+// outside the message door, and untouched by a switch. A page that names a home of its own
+// either gets its body refused or has the field dropped; the answer keeps the launch
+// origin either way.
+func TestDesktopHostHomeIsShellState(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	const other = "http://192.0.2.10:8098"
+	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	page := func(at string) *application.OriginInfo {
+		return &application.OriginInfo{Origin: at + "/", TopOrigin: at + "/"}
+	}
+	last := func() desktopInstancesReply {
+		if len(probe.events) == 0 {
+			t.Fatal("the host answered nothing")
+		}
+		return probe.events[len(probe.events)-1].payload.(desktopInstancesReply)
+	}
+
+	if got := host.HomeOrigin(); got != origin {
+		t.Fatalf("HomeOrigin = %q, want the launch origin", got)
+	}
+	if err := host.Handle(page(origin), `{"omega":"instances:get"}`); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got := last().Home; got != origin {
+		t.Fatalf("the answer carries home %q, want the launch origin", got)
+	}
+
+	// a page-named home is not a body the door knows
+	if err := host.Handle(page(origin), `{"omega":"instances:home","home":"http://198.51.100.7:1234"}`); err == nil {
+		t.Fatal("a page message naming home was accepted")
+	}
+	// and the same field smuggled onto a known body is dropped, not read
+	if err := host.Handle(page(origin), `{"omega":"instances:get","home":"http://198.51.100.7:1234"}`); err != nil {
+		t.Fatalf("get with an extra member: %v", err)
+	}
+	if got := last().Home; got != origin {
+		t.Fatalf("a page-supplied home reached the answer: %q", got)
+	}
+
+	// a switch moves the active origin only
+	if err := host.Handle(page(origin), `{"omega":"instances:switch","url":"http://192.0.2.10:8098"}`); err != nil {
+		t.Fatalf("switch: %v", err)
+	}
+	if got := host.HomeOrigin(); got != origin {
+		t.Fatalf("a switch rewrote home to %q", got)
+	}
+	if got := host.ActiveOrigin(); got != other {
+		t.Fatalf("active origin = %q, want the switch target", got)
+	}
+
+	// the remote page's own answer still carries the desktop's home
+	if err := host.Handle(page(other), `{"omega":"instances:get"}`); err != nil {
+		t.Fatalf("the page the window shows was refused: %v", err)
+	}
+	if got := last().Home; got != origin {
+		t.Fatalf("the answer on another origin carries home %q, want the launch origin", got)
+	}
+
+	// a save answers the same home: home is never a row a write can move
+	if err := host.Handle(page(other), `{"omega":"instances:save","instances":[{"name":"pi","url":"http://192.0.2.10:8098"}]}`); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if got := last().Home; got != origin {
+		t.Fatalf("a save's answer carries home %q, want the launch origin", got)
+	}
+}
+
 // TestDesktopFrameOf is the frame policy table: the page's own announcement wins, and the
 // app's own origin never un-frames.
 func TestDesktopFrameOf(t *testing.T) {

@@ -1121,6 +1121,27 @@ dot, reset link, draft star, live note).
   `webui/test/statusbar-zones.test.ts` (the dot markup and the accessible
   names); journey 112 asserts the green / red / ring rows live (the orange
   branch needs a broken provider on the lane, so the node suite owns it).
+- **Home is the app's own row, marked default wherever the list renders.**
+  In a desktop window the app's answer also carries the local home's
+  origin. The panel then leads its switches with that row - labelled with
+  a stored row's name when one names the address exactly, else `Home` -
+  and badges it `default` as TEXT (the `hp-unverified` idiom: always
+  rendered, never a colour, never a tooltip-only mark). While the page IS
+  home, the current row wears the same badge and no switch row is drawn;
+  a stored row naming the home address folds into it, so one place never
+  renders twice. The tray's `Connection` submenu leads with the same row
+  (`<name> - <origin> (default)`), checked while the window is on the
+  active home, and it is there whether the stored list is empty,
+  unreadable or belongs to another page - the tray is shell-owned, so the
+  way back survives any page. Home is DERIVED from the launch: never a
+  stored row, never written by a save, never moved by a switch, never
+  supplied by a page. A browser tab is unchanged: its own origin is its
+  home, and its fetch adds no home member. Pinned by
+  `webui/test/statusbar-zones.test.ts` and `webui/test/instances.test.ts`
+  (the reply and load pass-through, the badges, the fold), and by the
+  `cmd/omega` desktop tests (the tray row on every list state, the answer
+  carry, the door refusing a page-named home); journey 112 keeps the
+  browser-tab panel green.
 
 ## The Logs tab
 
@@ -1257,8 +1278,9 @@ entry - the tab hosts nothing, same shape as a removed panel capsule.
   `NavCluster` (back / forward / the palette seat - clock closed, the
   palette's own field open, in place - / the Ctrl+K trigger, dead
   center), `StatusBar` (the connection control - the health dot and the
-  connected instance's name - whose one panel leads with the saved-instance
-  list and keeps the health facts below it; token/ctx/rate telemetry, build
+  connected instance's name - whose one panel leads with the home row and
+  the saved-instance list, and keeps the health facts below it;
+  token/ctx/rate telemetry, build
   version), `SearchInput`,
   `PaneDivider`, `TabBand` (the universal panel top bar: title left,
   actions right, outside every scrollport), `TogglePill` (the one

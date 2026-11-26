@@ -183,8 +183,10 @@ func desktopLaunch(cfg Config, configPath string) error {
 	)
 	shell.setUpdates(updates)
 	// The way back is the app's too: the tray's Connection rows come from the app-local
-	// list, not from whatever page the window is showing.
+	// list, not from whatever page the window is showing, and home is the origin this
+	// launch resolved - the one row no list and no page can take away.
 	shell.setInstances(host.instances, host.ActiveOrigin, host.SwitchTo)
+	shell.setHome(host.HomeOrigin)
 	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
 		shell.windowClosing(event.Cancel)
 	})
@@ -359,9 +361,19 @@ const (
 
 // desktopInstancesReply is the answer to every instance request: the app's list and the
 // refusal when a write was declined. The pane renders the words; the bar repaints.
+//
+// `home` is the desktop's own local origin, the one place this window was launched on. It
+// is shell-side state, not page-callable: home is resolved from the launch config, held by
+// the host, and read by the tray from the shell's own store. No page message can set,
+// retarget, hide or redefine it - the message door admits four bodies and none of them is
+// home, a switch moves the active origin only, and the tray is app-level, so a loaded page
+// has no channel to it at all. The field is a READ on the answer the shell already sends
+// that page; it widens nothing beyond the connection list that answer already carries, and
+// a page that ignores it loses only its own badge, never the route.
 type desktopInstancesReply struct {
 	Instances []core.SavedInstance `json:"instances"`
 	Error     string               `json:"error"`
+	Home      string               `json:"home"`
 }
 
 // desktopRequest is one decoded message body.
@@ -459,6 +471,15 @@ func (h *desktopHost) ActiveOrigin() string {
 	return h.activeOrigin
 }
 
+// HomeOrigin is the origin the window was launched on. It never moves - a switch rewrites
+// the active origin only - and it is the ONE holder of the value: the tray's home row and
+// the instances answer's `home` member both read it here.
+func (h *desktopHost) HomeOrigin() string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.appOrigin
+}
+
 func (h *desktopHost) setActiveOrigin(origin string) {
 	h.mu.Lock()
 	h.activeOrigin = origin
@@ -520,10 +541,16 @@ func (h *desktopHost) answerInstances(refusal string) {
 	if err != nil && refusal == "" {
 		refusal = err.Error()
 	}
+	h.emit(desktopInstancesEvent, h.instancesReply(list, refusal))
+}
+
+// instancesReply is the one shape of every instance answer, so a read, a save and a
+// refusal all carry the same list, the same words and the same home.
+func (h *desktopHost) instancesReply(list []core.SavedInstance, refusal string) desktopInstancesReply {
 	if list == nil {
 		list = []core.SavedInstance{}
 	}
-	h.emit(desktopInstancesEvent, desktopInstancesReply{Instances: list, Error: refusal})
+	return desktopInstancesReply{Instances: list, Error: refusal, Home: h.HomeOrigin()}
 }
 
 // saveInstances validates through core.NormalizeInstances and writes through the one
@@ -538,7 +565,7 @@ func (h *desktopHost) saveInstances(rows []core.SavedInstance) {
 		h.answerInstances(err.Error())
 		return
 	}
-	h.emit(desktopInstancesEvent, desktopInstancesReply{Instances: list, Error: ""})
+	h.emit(desktopInstancesEvent, h.instancesReply(list, ""))
 }
 
 // switchTo navigates the WINDOW: every switch inside the desktop is the host's, so the

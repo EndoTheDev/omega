@@ -170,26 +170,29 @@ func TestDesktopTrayAutostartRow(t *testing.T) {
 }
 
 // newConnectionShell is the production shape: a store bound, the window's origin behind a
-// pointer the test moves, and the switch recorded.
-func newConnectionShell(store desktopInstanceStore, active *string) (*desktopShell, *[]string) {
+// pointer the test moves, the launch origin the tray reads, and the switch recorded.
+func newConnectionShell(store desktopInstanceStore, active *string, home string) (*desktopShell, *[]string) {
 	shell, _, _, _ := newTrayShellWithAutostart()
 	switched := &[]string{}
 	shell.setInstances(store, func() string { return *active }, func(url string) {
 		*switched = append(*switched, url)
 	})
+	shell.setHome(func() string { return home })
 	return shell, switched
 }
 
-// TestDesktopTrayConnectionRows: the Connection submenu is the app's own list - every
-// row, the window's own origin checked, one click naming its URL. The rows are read where
-// the popup is drawn, so a save that landed a moment ago is already there.
+// TestDesktopTrayConnectionRows: the Connection submenu is the app's own list - the home
+// row first, then every saved row, the window's own origin checked, one click naming its
+// URL. The rows are read where the popup is drawn, so a save that landed a moment ago is
+// already there.
 func TestDesktopTrayConnectionRows(t *testing.T) {
+	home := "http://127.0.0.1:18101"
 	store := &fakeInstanceStore{list: []core.SavedInstance{
-		{Name: "main", URL: "http://127.0.0.1:18101"},
+		{Name: "main", URL: home},
 		{Name: "pi", URL: "http://192.0.2.10:8098"},
 	}}
-	active := "http://127.0.0.1:18101"
-	shell, switched := newConnectionShell(store, &active)
+	active := home
+	shell, switched := newConnectionShell(store, &active, home)
 
 	menu := shell.menu()
 	want := []string{"Open omega", desktopConnectionLabel, autostartItemLabel, "Quit"}
@@ -207,10 +210,13 @@ func TestDesktopTrayConnectionRows(t *testing.T) {
 
 	rows := shell.connectionRows()
 	if len(rows) != 2 {
-		t.Fatalf("connection rows = %d, want the two saved rows", len(rows))
+		t.Fatalf("connection rows = %d, want the home row and the one other saved row", len(rows))
 	}
-	if rows[0].Label != "main - http://127.0.0.1:18101" {
-		t.Fatalf("row 0 = %q, want the name and its address", rows[0].Label)
+	if rows[0].Label != "main - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("row 0 = %q, want the home row with the stored name and the default mark", rows[0].Label)
+	}
+	if rows[1].Label != "pi - http://192.0.2.10:8098" {
+		t.Fatalf("row 1 = %q, want the saved name and its address", rows[1].Label)
 	}
 	if rows[0].Checked == nil || rows[1].Checked == nil {
 		t.Fatal("a connection row is not checkable: the popup cannot show the active one")
@@ -241,24 +247,94 @@ func TestDesktopTrayConnectionRows(t *testing.T) {
 	}
 }
 
-// TestDesktopTrayConnectionRowsTellTheGap: an unreadable or empty list still answers a row,
-// so the submenu is never a dead arrow with nothing to say.
-func TestDesktopTrayConnectionRowsTellTheGap(t *testing.T) {
-	active := "http://127.0.0.1:18101"
+// TestDesktopTrayHomeRow is the way back: the launch origin leads the submenu whatever the
+// list holds, a stored row naming that address lends its name, the mark follows the active
+// origin, and a click names the home origin. A saved path under home is another place and
+// a second row for the home address never renders.
+func TestDesktopTrayHomeRow(t *testing.T) {
+	const home = "http://127.0.0.1:18101"
+	const homePage = "http://127.0.0.1:18102"
 
-	shell, _ := newConnectionShell(&fakeInstanceStore{list: []core.SavedInstance{}}, &active)
+	// no stored row names home: the label falls back to the word, and the click goes home
+	active := homePage
+	shell, switched := newConnectionShell(&fakeInstanceStore{}, &active, home)
 	rows := shell.connectionRows()
-	if len(rows) != 1 || rows[0].Label != "no saved connections" {
-		t.Fatalf("empty list rows = %+v, want the one plain row", rows)
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want the home row plus the empty-list note", len(rows))
 	}
-	if rows[0].Action != nil || rows[0].Checked != nil {
+	if rows[0].Label != "Home - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("home row = %q, want Home and the launch origin", rows[0].Label)
+	}
+	if rows[0].Checked() {
+		t.Error("the home row is checked while the window is on another origin")
+	}
+	rows[0].Action()
+	if len(*switched) != 1 || (*switched)[0] != home {
+		t.Fatalf("the home row's click named %q, want the launch origin", *switched)
+	}
+	active = home
+	if rows = shell.connectionRows(); !rows[0].Checked() {
+		t.Fatal("the home row is not checked while the window is on home")
+	}
+
+	// a saved path under home is another place: it keeps its own row and lends no name
+	shell, _ = newConnectionShell(&fakeInstanceStore{list: []core.SavedInstance{
+		{Name: "sub", URL: home + "/ui"},
+	}}, &active, home)
+	rows = shell.connectionRows()
+	if len(rows) != 2 || rows[1].Label != "sub - "+home+"/ui" {
+		t.Fatalf("rows = %+v, want the home row and the path row beside it", rows)
+	}
+	if rows[0].Label != "Home - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("home row = %q, want Home: a saved path does not name the home address", rows[0].Label)
+	}
+
+	// a stored row naming the home address exactly lends its name - and renders once
+	active = homePage
+	shell, _ = newConnectionShell(&fakeInstanceStore{list: []core.SavedInstance{
+		{Name: "winbtw", URL: home},
+		{Name: "pi", URL: "http://192.0.2.10:8098"},
+	}}, &active, home)
+	rows = shell.connectionRows()
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want the home row and pi: the home address never renders twice", len(rows))
+	}
+	if rows[0].Label != "winbtw - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("home row = %q, want the stored name", rows[0].Label)
+	}
+	for _, row := range rows[1:] {
+		if row.Label == "winbtw - "+home {
+			t.Fatal("the home address rendered a second time as a saved row")
+		}
+	}
+}
+
+// TestDesktopTrayConnectionRowsTellTheGap: an unreadable or empty list still answers rows,
+// so the submenu is never a dead arrow with nothing to say - and a broken list never takes
+// the way home with it.
+func TestDesktopTrayConnectionRowsTellTheGap(t *testing.T) {
+	const home = "http://127.0.0.1:18101"
+	active := home
+
+	shell, _ := newConnectionShell(&fakeInstanceStore{list: []core.SavedInstance{}}, &active, home)
+	rows := shell.connectionRows()
+	if len(rows) != 2 || rows[0].Label != "Home - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("empty list rows = %+v, want the home row first", rows)
+	}
+	if rows[1].Label != "no saved connections" {
+		t.Fatalf("empty list note = %q, want the plain row", rows[1].Label)
+	}
+	if rows[1].Action != nil || rows[1].Checked != nil {
 		t.Fatal("the empty-list row is clickable; it must only say so")
 	}
 
-	shell, _ = newConnectionShell(&fakeInstanceStore{readErr: errors.New("config.yaml is unreadable")}, &active)
+	shell, _ = newConnectionShell(&fakeInstanceStore{readErr: errors.New("config.yaml is unreadable")}, &active, home)
 	rows = shell.connectionRows()
-	if len(rows) != 1 || rows[0].Label != "list unavailable: config.yaml is unreadable" {
-		t.Fatalf("refusal rows = %+v, want the host's words", rows)
+	if len(rows) != 2 || rows[0].Label != "Home - http://127.0.0.1:18101 (default)" {
+		t.Fatalf("refusal rows = %+v, want the home row first: a broken config keeps the way home", rows)
+	}
+	if rows[1].Label != "list unavailable: config.yaml is unreadable" {
+		t.Fatalf("refusal row = %q, want the host's words", rows[1].Label)
 	}
 }
 

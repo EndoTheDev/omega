@@ -146,12 +146,33 @@
             <span class="hp-cname">{{ instanceName }}</span>
             <span class="hp-curl">{{ currentOrigin || "this page" }}</span>
             <span
+              v-if="onHome"
+              class="hp-default">
+              default
+            </span>
+            <span
               v-if="currentUnverified"
               class="hp-unverified"
               :title="UNVERIFIED_TITLE">
               unverified
             </span>
           </div>
+          <button
+            v-if="homeRow"
+            type="button"
+            class="hp-crow hp-switch"
+            :title="connectionTitle(homeRow.name, homeRow.url)"
+            :aria-label="connectionLabel(`Switch to ${homeRow.name}`, homeRow.url)"
+            @click="switchTo(homeRow)">
+            <span
+              v-if="stateOf(homeRow.url)"
+              class="dot hp-dot"
+              :class="dotClass(homeRow.url)"
+              aria-hidden="true" />
+            <span class="hp-cname">{{ homeRow.name }}</span>
+            <span class="hp-curl">{{ homeRow.url }}</span>
+            <span class="hp-default">default</span>
+          </button>
           <button
             v-for="row in savedRows"
             :key="row.url"
@@ -402,12 +423,32 @@
   const rows = ref<SavedInstance[]>(cachedInstances.list);
   const lastUsed = ref(cachedInstances.lastUsed);
   const offline = ref(false);
+  // the desktop's own home origin, from the app's answer. Home is derived state, never a
+  // stored row: the app resolves it from the launch, and a browser tab has none - there
+  // the page's own origin is the home.
+  const homeOrigin = ref("");
 
-  const instanceName = computed(
-    () => rows.value.find((row) => row.url === props.currentOrigin)?.name ?? "This instance",
+  const homeName = computed(
+    () => rows.value.find((row) => row.url === homeOrigin.value)?.name ?? "Home",
   );
-  // the current connection has its own marked row; the rest are the switches.
-  const savedRows = computed(() => rows.value.filter((row) => row.url !== props.currentOrigin));
+  const onHome = computed(() => !!homeOrigin.value && props.currentOrigin === homeOrigin.value);
+  const instanceName = computed(() => {
+    if (onHome.value) return homeName.value;
+    return rows.value.find((row) => row.url === props.currentOrigin)?.name ?? "This instance";
+  });
+  // the current connection has its own marked row; the rest are the switches. A stored row
+  // naming the home address is the home row - one place never renders twice.
+  const savedRows = computed(() =>
+    rows.value.filter(
+      (row) => row.url !== props.currentOrigin && !(homeOrigin.value && row.url === homeOrigin.value),
+    ),
+  );
+  // the way back, first among the switches: the app's home when the page is not on it.
+  const homeRow = computed<SavedInstance | null>(() =>
+    homeOrigin.value && props.currentOrigin !== homeOrigin.value
+      ? { name: homeName.value, url: homeOrigin.value }
+      : null,
+  );
   // the marker is one field on the row (the row type both surfaces read), never a colour.
   const UNVERIFIED_TITLE = "added anyway - nothing answered at this address when it was added";
   const currentUnverified = computed(
@@ -431,9 +472,17 @@
   // the batch's rows: the list plus this page's own connection, which may not be a saved
   // row at all (a desktop window's list is the app's) - the bar's row still gets a dot.
   const statusRows = computed<SavedInstance[]>(() => {
+    const known = new Set(rows.value.map((row) => row.url));
+    const extra: SavedInstance[] = [];
+    if (homeOrigin.value && !known.has(homeOrigin.value)) {
+      extra.push({ name: homeName.value, url: homeOrigin.value });
+      known.add(homeOrigin.value);
+    }
     const origin = props.currentOrigin;
-    if (!origin || rows.value.some((row) => row.url === origin)) return rows.value;
-    return [...rows.value, { name: instanceName.value, url: origin }];
+    if (origin && !known.has(origin)) {
+      extra.push({ name: instanceName.value, url: origin });
+    }
+    return extra.length ? [...rows.value, ...extra] : rows.value;
   });
   function stateWord(url: string): string {
     const state = stateOf(url);
@@ -465,6 +514,7 @@
     const loaded = await loadInstances();
     rows.value = loaded.list;
     offline.value = loaded.offline;
+    homeOrigin.value = loaded.home ?? "";
     lastUsed.value = lastUsedInstance();
     repaintStates();
   }
@@ -485,6 +535,7 @@
   const stopInstanceReplies = onInstancesReply((reply) => {
     rows.value = reply.instances;
     offline.value = false;
+    homeOrigin.value = reply.home ?? "";
     lastUsed.value = lastUsedInstance();
     repaintStates();
   });
@@ -608,6 +659,17 @@
     letter-spacing: 0.02em;
     opacity: 0.8;
     cursor: help;
+  }
+  /* the home row's mark: text, always rendered - the default is never a colour alone. */
+  .hp-default {
+    flex: none;
+    font-size: 9.5px;
+    padding: 0 0.25rem;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.35));
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    opacity: 0.8;
   }
   /* a stale cached list reads dim: absence is not a health claim. */
   .dot.offline {
