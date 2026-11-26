@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"golang.org/x/sys/windows"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 const instanceJobHelperEnv = "OMEGA_INSTANCE_JOB_HELPER"
@@ -203,5 +206,299 @@ func TestDesktopWindowOptionsIsAFramelessNativeHitTestTitleBar(t *testing.T) {
 	}
 	if opts.URL != origin {
 		t.Errorf("URL = %q, want %q", opts.URL, origin)
+	}
+}
+
+// hostProbe records what the desktop host asked the window to do. The seams are set by
+// newTestDesktopHost, so every assertion below is a value, not a Wails call.
+type hostProbe struct {
+	events []hostEvent
+	frames []bool
+	navs   []string
+}
+
+type hostEvent struct {
+	name    string
+	payload any
+}
+
+func newTestDesktopHost(origin string, store desktopInstanceStore) (*desktopHost, *hostProbe) {
+	probe := &hostProbe{}
+	host := newDesktopHost(origin, store)
+	host.emit = func(name string, payload any) {
+		probe.events = append(probe.events, hostEvent{name: name, payload: payload})
+	}
+	host.setFrameless = func(frameless bool) { probe.frames = append(probe.frames, frameless) }
+	host.navigate = func(url string) { probe.navs = append(probe.navs, url) }
+	return host, probe
+}
+
+// TestDecodeDesktopRequest pins the raw message grammar: three members, the chrome
+// greeting, and a refusal for everything else.
+func TestDecodeDesktopRequest(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		want    string
+		wantErr string
+	}{
+		{name: "get", raw: `{"omega":"instances:get"}`, want: desktopMessageGetInstances},
+		{name: "save", raw: `{"omega":"instances:save","instances":[{"name":"pi","url":"http://192.0.2.10:8098"}]}`, want: desktopMessageSaveInstances},
+		{name: "save empty", raw: `{"omega":"instances:save","instances":[]}`, want: desktopMessageSaveInstances},
+		{name: "switch", raw: `{"omega":"instances:switch","url":"http://127.0.0.1:18101"}`, want: desktopMessageSwitchInstance},
+		{name: "chrome ready", raw: `{"omega":"chrome:ready"}`, want: desktopMessageChromeReady},
+		{name: "unknown member", raw: `{"omega":"instances:delete"}`, wantErr: "unknown desktop message"},
+		{name: "malformed json", raw: `{"omega":`, wantErr: "not a desktop message"},
+		{name: "not an object", raw: `"instances:get"`, wantErr: "not a desktop message"},
+		{name: "no omega member", raw: `{"instances":[]}`, wantErr: "no omega member"},
+		{name: "switch without a url", raw: `{"omega":"instances:switch"}`, wantErr: "carries no url"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := decodeDesktopRequest(tc.raw)
+			if tc.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("decodeDesktopRequest(%s) error = %v, want it to name %q", tc.raw, err, tc.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decodeDesktopRequest(%s): %v", tc.raw, err)
+			}
+			if got.kind != tc.want {
+				t.Fatalf("kind = %q, want %q", got.kind, tc.want)
+			}
+		})
+	}
+
+	saved, err := decodeDesktopRequest(`{"omega":"instances:save","instances":[{"name":"pi","url":"http://192.0.2.10:8098"}]}`)
+	if err != nil || len(saved.instances) != 1 || saved.instances[0].Name != "pi" {
+		t.Fatalf("the save body did not carry its rows: %+v, %v", saved, err)
+	}
+}
+
+// TestDesktopHostServesTheAppLocalList is the whole round trip without a window: the page
+// asks, the host answers with the app's rows; a save is validated and written; a refusal
+// answers with the host's words and the list unchanged.
+func TestDesktopHostServesTheAppLocalList(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	store := &fakeInstanceStore{list: []core.SavedInstance{{Name: "main", URL: origin}}}
+	host, probe := newTestDesktopHost(origin, store)
+	page := &application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}
+
+	if err := host.Handle(page, `{"omega":"instances:get"}`); err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if len(probe.events) != 1 || probe.events[0].name != desktopInstancesEvent {
+		t.Fatalf("events = %+v, want one %q", probe.events, desktopInstancesEvent)
+	}
+	first, ok := probe.events[0].payload.(desktopInstancesReply)
+	if !ok {
+		t.Fatalf("payload type = %T, want desktopInstancesReply", probe.events[0].payload)
+	}
+	if first.Error != "" || len(first.Instances) != 1 || first.Instances[0].Name != "main" {
+		t.Fatalf("get answered %+v, want the app's one row and no error", first)
+	}
+
+	// a save lands through the one writer, normalized on the way in
+	if err := host.Handle(page, `{"omega":"instances:save","instances":[{"name":" pi ","url":"HTTP://192.0.2.10:8098/"}]}`); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if len(store.saved) != 1 || store.saved[0] != (core.SavedInstance{Name: "pi", URL: "http://192.0.2.10:8098"}) {
+		t.Fatalf("saved = %+v, want the normalized row", store.saved)
+	}
+	if last := probe.events[len(probe.events)-1].payload.(desktopInstancesReply); last.Error != "" {
+		t.Fatalf("a clean save refused: %q", last.Error)
+	}
+
+	// a refused save answers the validator's words and leaves the list alone
+	before := store.saved
+	if err := host.Handle(page, `{"omega":"instances:save","instances":[{"name":"","url":"http://192.0.2.10:8099"}]}`); err != nil {
+		t.Fatalf("a refused save is the page's answer, not a dropped message: %v", err)
+	}
+	refusal := probe.events[len(probe.events)-1].payload.(desktopInstancesReply)
+	if !strings.Contains(refusal.Error, "name is required") {
+		t.Fatalf("refusal = %q, want the validator's words", refusal.Error)
+	}
+	if len(refusal.Instances) != 1 || refusal.Instances[0] != before[0] {
+		t.Fatalf("a refused save answered %+v, want the unchanged list", refusal.Instances)
+	}
+	if len(store.saved) != len(before) {
+		t.Fatal("a refused save still reached the writer")
+	}
+
+	// the writer's own refusal is carried the same way
+	store.saveErr = errors.New("config.yaml is read-only")
+	if err := host.Handle(page, `{"omega":"instances:save","instances":[]}`); err != nil {
+		t.Fatalf("writer refusal: %v", err)
+	}
+	if got := probe.events[len(probe.events)-1].payload.(desktopInstancesReply); !strings.Contains(got.Error, "read-only") {
+		t.Fatalf("writer refusal answered %q, want the writer's words", got.Error)
+	}
+}
+
+// TestDesktopHostRefusesEveryOtherPage is the door's trust gate: the window's own top
+// document may ask; a foreign page and a child frame may not.
+func TestDesktopHostRefusesEveryOtherPage(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	const foreign = "http://192.0.2.10:8098"
+	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	host.setFrameless = func(bool) { t.Error("a foreign frame changed the frame state") }
+
+	cases := []struct {
+		name string
+		info *application.OriginInfo
+	}{
+		{"nil record", nil},
+		{"foreign page", &application.OriginInfo{Origin: foreign + "/", TopOrigin: foreign + "/"}},
+		{"child frame on a foreign page", &application.OriginInfo{Origin: foreign + "/frame", TopOrigin: foreign + "/"}},
+		{"child frame on this page", &application.OriginInfo{Origin: foreign + "/frame", TopOrigin: origin + "/"}},
+		{"no top origin", &application.OriginInfo{Origin: origin + "/"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := host.Handle(tc.info, `{"omega":"instances:get"}`); err == nil {
+				t.Fatal("a message outside the window's own top document was accepted")
+			}
+		})
+	}
+	if len(probe.events) != 0 {
+		t.Fatalf("refused messages emitted %+v", probe.events)
+	}
+
+	// a main-frame record on the platform that reports the bit is honoured
+	if err := host.Handle(&application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/", IsMainFrame: true}, `{"omega":"instances:get"}`); err != nil {
+		t.Fatalf("the window's own main frame was refused: %v", err)
+	}
+	if len(probe.events) != 1 {
+		t.Fatalf("the accepted message answered %+v, want one event", probe.events)
+	}
+}
+
+// TestDesktopHostSwitchIsTheHostsNavigation: a page switch is the host's SetURL, and the
+// active origin follows it - which is what the tray's check mark and the frame rule read.
+func TestDesktopHostSwitchIsTheHostsNavigation(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	const other = "http://192.0.2.10:8098"
+	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+
+	if err := host.Handle(&application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}, `{"omega":"instances:switch","url":"HTTP://192.0.2.10:8098/"}`); err != nil {
+		t.Fatalf("switch: %v", err)
+	}
+	if len(probe.navs) != 1 || probe.navs[0] != other {
+		t.Fatalf("navigations = %q, want the one normalized target", probe.navs)
+	}
+	if got := host.ActiveOrigin(); got != other {
+		t.Fatalf("active origin = %q, want %q", got, other)
+	}
+
+	// the page the window now shows is the one allowed to ask, and the old one is not
+	if err := host.Handle(&application.OriginInfo{Origin: other + "/", TopOrigin: other + "/"}, `{"omega":"instances:get"}`); err != nil {
+		t.Fatalf("the page the window shows was refused: %v", err)
+	}
+	if err := host.Handle(&application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}, `{"omega":"instances:get"}`); err == nil {
+		t.Fatal("the origin the window left could still ask")
+	}
+
+	// a switch to nothing names the refusal instead of navigating
+	before := len(probe.navs)
+	if err := host.Handle(&application.OriginInfo{Origin: other + "/", TopOrigin: other + "/"}, `{"omega":"instances:switch","url":"javascript:alert(1)"}`); err != nil {
+		t.Fatalf("a bad switch is the page's answer, not a dropped message: %v", err)
+	}
+	if len(probe.navs) != before {
+		t.Fatal("a refused switch still navigated the window")
+	}
+	if got := probe.events[len(probe.events)-1].payload.(desktopInstancesReply); !strings.Contains(got.Error, "http") {
+		t.Fatalf("a refused switch answered %q, want the validator's words", got.Error)
+	}
+}
+
+// TestDesktopFrameOf is the frame policy table: the page's own announcement wins, and the
+// app's own origin never un-frames.
+func TestDesktopFrameOf(t *testing.T) {
+	const app = "http://127.0.0.1:18101"
+	const foreign = "http://192.0.2.10:8098"
+	cases := []struct {
+		name        string
+		chromeReady bool
+		active      string
+		want        desktopFrameDecision
+	}{
+		{"app origin, armed", true, app, desktopFrameKeep},
+		{"app origin, silent", false, app, desktopFrameKeep},
+		{"app origin with a path, silent", false, app + "/index.html", desktopFrameKeep},
+		{"foreign origin, armed", true, foreign, desktopFrameKeep},
+		{"foreign origin, silent", false, foreign, desktopFrameRestore},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := desktopFrameOf(tc.chromeReady, tc.active, app); got != tc.want {
+				t.Fatalf("desktopFrameOf(%v, %q) = %v, want %v", tc.chromeReady, tc.active, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestDesktopChromeBound: a page that announces its chrome keeps the frameless frame, a
+// silent page on another origin gets the OS caption, and a late announcement puts omega's
+// own bar back.
+func TestDesktopChromeBound(t *testing.T) {
+	const app = "http://127.0.0.1:18101"
+	const foreign = "http://192.0.2.10:8098"
+
+	if desktopChromeReadyBoundWindow != 5*time.Second {
+		t.Fatalf("the chrome bound is %s, want the 5s window", desktopChromeReadyBoundWindow)
+	}
+
+	// a fake clock: the bound records what it was armed with and never runs on its own
+	var armed time.Duration
+	var fired []func()
+	old := desktopChromeBoundWindow
+	t.Cleanup(func() { desktopChromeBoundWindow = old })
+	desktopChromeBoundWindow = func(d time.Duration, fn func()) *time.Timer {
+		armed = d
+		fired = append(fired, fn)
+		return time.NewTimer(time.Hour)
+	}
+
+	host, probe := newTestDesktopHost(app, &fakeInstanceStore{})
+	host.beginNavigation()
+	if armed != 5*time.Second || len(fired) != 1 {
+		t.Fatalf("beginNavigation armed %s / %d bounds, want one 5s bound", armed, len(fired))
+	}
+	if err := host.Handle(&application.OriginInfo{Origin: app + "/", TopOrigin: app + "/"}, `{"omega":"chrome:ready"}`); err != nil {
+		t.Fatalf("chrome:ready: %v", err)
+	}
+	if len(probe.frames) != 1 || probe.frames[0] != true {
+		t.Fatalf("the announcement asked for frames %v, want one frameless request", probe.frames)
+	}
+	fired[0]()
+	if len(probe.frames) != 1 {
+		t.Fatalf("an announced page was un-framed anyway: %v", probe.frames)
+	}
+
+	// the app's own origin never un-frames, announced or not
+	host, probe = newTestDesktopHost(app, &fakeInstanceStore{})
+	host.beginNavigation()
+	fired[1]()
+	if len(probe.frames) != 0 {
+		t.Fatalf("a silent cold start un-framed the app's own page: %v", probe.frames)
+	}
+
+	// a silent foreign page gets the OS caption
+	host, probe = newTestDesktopHost(app, &fakeInstanceStore{})
+	host.SwitchTo(foreign)
+	host.beginNavigation()
+	fired[2]()
+	if len(probe.frames) != 1 || probe.frames[0] != false {
+		t.Fatalf("a silent foreign page asked for frames %v, want the caption back", probe.frames)
+	}
+
+	// a late announcement after the caption returned puts omega's bar back
+	if err := host.Handle(&application.OriginInfo{Origin: foreign + "/", TopOrigin: foreign + "/"}, `{"omega":"chrome:ready"}`); err != nil {
+		t.Fatalf("late chrome:ready: %v", err)
+	}
+	if len(probe.frames) != 2 || probe.frames[1] != true {
+		t.Fatalf("the late announcement asked for frames %v, want frameless again", probe.frames)
 	}
 }

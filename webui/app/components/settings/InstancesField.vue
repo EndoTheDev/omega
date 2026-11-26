@@ -1,10 +1,11 @@
 <template>
   <!--
     The saved connections the status bar panel lists and switches to. This is the ONE
-    write surface for the list: rows are named addresses, and the whole array rides the
-    pane's save path into config.yaml `desktop.instances` (the same writer and the same
-    validator a hand edit hits). Nothing here validates a name or an address - the
-    server's refusal is the only refusal, and it renders as written in the alert line.
+    write surface for the list: rows are named addresses. In a desktop window the APP
+    writes them (its own home's config.yaml `desktop.instances`); in a browser tab the
+    active server does. Both ride the same validator and the same atomic writer a hand
+    edit hits, so nothing here validates a name or an address - the refusal is the only
+    refusal, and it renders as written in the alert line.
   -->
   <div class="instances-editor">
     <p class="instance-hint">

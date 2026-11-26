@@ -218,7 +218,7 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 			Knobs: []core.SettingsKnob{
 				{Key: "desktop.instances", Label: "instances", Type: "instances",
 					Value: desktopInstancesKnob(cfg), Default: desktopInstancesKnob(&def), Live: true,
-					Help: "the saved connections the status bar panel lists and switches to; each row is a name and an address; the same list a hand edit of config.yaml desktop.instances carries; applies live"},
+					Help: "the saved connections the status bar panel lists and switches to; each row is a name and an address; the same list a hand edit of config.yaml desktop.instances carries; applies live. a desktop window keeps its own copy in the app's home and saves this knob there, so the page may show a different server's rows"},
 			},
 		},
 		{
@@ -1129,8 +1129,10 @@ func (s *omegaSettings) Save(values map[string]any) (*core.SettingsSchema, error
 	return saveSettings(s.path, s.pctx, s.setFilesWorkspace, s.setChannelWorkspace, s.setTerminalWorkspace, s.setAgentConfig, values)
 }
 
-// Instances reads the saved connections for the webui's switcher. The config file is the
-// only home, so a hand edit lands on the next read rather than on a restart.
+// Instances reads this home's saved connections. The config file is the only home, so a
+// hand edit lands on the next read rather than on a restart. The desktop host is the one
+// caller that answers a PAGE from here: it is the app's own list, whatever server that
+// page was served by.
 func (s *omegaSettings) Instances() ([]core.SavedInstance, error) {
 	cfg, err := LoadConfig(s.path)
 	if err != nil {

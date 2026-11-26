@@ -1,8 +1,10 @@
 package api
 
-// The connection switcher's backend: GET/PUT /instances. The list's home is
-// config.yaml (`desktop.instances`); the host's Settings implementation owns the write
-// (one atomic writer, one validation pass), this file owns the wire shape.
+// The connection switcher's backend: GET/PUT /instances, a SERVE's own list. The list's
+// home is config.yaml (`desktop.instances`); the host's Settings implementation owns the
+// write (one atomic writer, one validation pass), this file owns the wire shape. A desktop
+// window never calls this door: its own list is answered by the app (desktop_windows.go),
+// because the page it is showing may have been served by an older build.
 
 import (
 	"encoding/json"

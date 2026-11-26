@@ -606,13 +606,28 @@ through the same `Settings` implementation (`omegaSettings.Instances` /
 `SaveInstances`), so there is one atomic writer, one validation pass and
 one hot-apply.
 
+A DESKTOP WINDOW does not read this endpoint. The window's own list is
+the app's: its local home's `config.yaml`, answered over the raw message
+channel (`{"omega":"instances:get"|"instances:save"|"instances:switch"}`)
+and emitted back on the `omega:instances` event as
+`{"instances":[...],"error":""}`. That is what keeps a page served by an
+older build - one with no switcher of its own - listing and switching
+the app's connections, and it is why a switch inside the window is the
+host's `SetURL` rather than the page's navigation. A plain browser tab
+still reads `GET /instances` from the serve it came from. In both cases
+the `omega.instances` localStorage cache is a paint-first copy of that
+one source: a successful origin fetch never rewrites it, so a page on
+another origin cannot replace the app's list with a server's empty one.
+
 The list is WRITTEN in the settings pane (`desktop.instances`, a knob of
 type `instances` beside the provider list) or by `omega settings set
 desktop.instances '<json array>'` - both ride the same settings seam and
 the same `core.NormalizeInstances` pass, so they land identical rows.
-`PUT /instances` stays the wire for the same list (the pane's save path
-is `/settings`); no new endpoint exists. The webui itself has no write
-path: the status bar panel only reads the list and switches.
+Inside a desktop window that knob's save goes to the APP's home instead
+(every other knob keeps the active server), and a refusal answers on the
+same event with the host's words. `PUT /instances` stays the wire for a
+serve's own list; no new endpoint exists. The webui itself has no write
+path of its own: the status bar panel only reads the list and switches.
 
 - `GET /instances` - `{"instances":[{"name":"laptop","url":"http://127.0.0.1:8099"}]}`,
   never a bare array and never `null`. Rows come back normalized
@@ -629,9 +644,11 @@ path: the status bar panel only reads the list and switches.
 - A host whose settings seam does not carry the list answers **501** on
   both methods - the same nil-safe floor `/settings` keeps.
 
-The client never fetches a remote origin (CORS): switching writes the
-`omega.instances` localStorage cache's `lastUsed` and navigates, which
-reloads the window exactly as a browser does when the origin changes.
+The client never fetches a remote origin (CORS): a browser tab's switch
+writes the `omega.instances` localStorage cache's `lastUsed` and
+navigates, which reloads the window exactly as a browser does when the
+origin changes. Inside the desktop window that switch is the host's
+`SetURL`, and the window's next page asks the app for the list again.
 
 ### The registry-browser toggles and the agent editor
 

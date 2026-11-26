@@ -12,16 +12,24 @@ import { dirname, join } from "node:path";
 
 import {
   INSTANCE_CACHE_KEY,
+  INSTANCE_CHANGED_EVENT,
+  INSTANCE_EVENT,
   MAX_INSTANCES,
   fetchInstances,
+  instancesAreAppOwned,
   lastUsedInstance,
   loadInstances,
   navigateToInstance,
   normalizeInstanceName,
   normalizeInstanceURL,
+  onInstancesReply,
   readInstanceCache,
   removeInstance,
+  requestInstances,
+  saveInstancesInApp,
   setLastUsedInstance,
+  switchInstancesInApp,
+  takeWaiter,
   upsertInstance,
   writeInstanceCache,
   type InstanceStorage,
@@ -178,21 +186,176 @@ test("a failed fetch keeps the cache and reports the offline list", async () => 
   }
 });
 
-test("a good fetch replaces the cache with the backend list", async () => {
+test("a successful origin fetch never rewrites the app's cache", async () => {
   const storage = fakeStorage();
-  writeInstanceCache({ list: [row("stale", "http://old.test")], lastUsed: "http://old.test" }, storage);
+  writeInstanceCache({ list: [row("app", "http://127.0.0.1:18101")], lastUsed: "http://old.test" }, storage);
 
+  let fetched = 0;
   const realFetch = globalThis.fetch;
-  globalThis.fetch = (() =>
-    Promise.resolve(new Response(JSON.stringify({ instances: [row("laptop", "http://a.test")] }), { status: 200 }))) as typeof globalThis.fetch;
+  globalThis.fetch = (() => {
+    fetched++;
+    return Promise.resolve(new Response(JSON.stringify({ instances: [row("remote", "http://192.0.2.10:8098")] }), { status: 200 }));
+  }) as typeof globalThis.fetch;
   try {
     const loaded = await loadInstances(storage);
     assert.equal(loaded.offline, false);
-    assert.deepEqual(loaded.list, [row("laptop", "http://a.test")]);
-    assert.deepEqual(readInstanceCache(storage), { list: [row("laptop", "http://a.test")], lastUsed: "http://old.test" });
+    assert.equal(fetched, 1, "a browser tab reads its own origin");
+    assert.deepEqual(loaded.list, [row("remote", "http://192.0.2.10:8098")], "the panel shows what this serve answers");
+    assert.deepEqual(
+      readInstanceCache(storage),
+      { list: [row("app", "http://127.0.0.1:18101")], lastUsed: "http://old.test" },
+      "the app's list is not the origin fetch's to overwrite - the cache is a copy of its own source",
+    );
   } finally {
     globalThis.fetch = realFetch;
   }
+});
+
+// --- the desktop host's channel: the app owns the list -----------------------------
+
+// fakeDesktopHost installs a Wails shim on globalThis whose invoke records the raw body
+// and answers through the same dispatchWailsEvent entry point the real shim delivers on.
+function fakeDesktopHost(answer?: (message: Record<string, unknown>) => unknown) {
+  const sent: Record<string, unknown>[] = [];
+  const api = {
+    environment: { OS: "windows" },
+    invoke(message: string) {
+      const body = JSON.parse(message) as Record<string, unknown>;
+      sent.push(body);
+      const reply = answer?.(body);
+      if (reply) api.dispatchWailsEvent({ name: INSTANCE_EVENT, data: reply });
+    },
+    dispatchWailsEvent(_event: { name?: unknown; data?: unknown }) {
+      // replaced by the composable's own hook on first use
+    },
+  };
+  (globalThis as unknown as { _wails?: unknown })._wails = api;
+  return { sent, api };
+}
+
+function clearDesktopHost(): void {
+  delete (globalThis as unknown as { _wails?: unknown })._wails;
+}
+
+test("a desktop window takes the app's list, never the active server's", async () => {
+  const storage = fakeStorage();
+  const app = [row("main", "http://127.0.0.1:18101"), row("pi", "http://192.0.2.10:8098")];
+  const { sent } = fakeDesktopHost((body) => (body.omega === "instances:get" ? { instances: app, error: "" } : null));
+  let fetched = 0;
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (() => {
+    fetched++;
+    return Promise.resolve(new Response(JSON.stringify({ instances: [] }), { status: 200 }));
+  }) as typeof globalThis.fetch;
+  try {
+    assert.equal(instancesAreAppOwned(), true, "the shim is the desktop");
+    const loaded = await loadInstances(storage);
+    assert.equal(fetched, 0, "a desktop page never asks its own origin - that page may be an older build");
+    assert.equal(loaded.offline, false);
+    assert.deepEqual(loaded.list, app);
+    assert.deepEqual(sent, [{ omega: "instances:get" }], "the page asked the app");
+    assert.deepEqual(readInstanceCache(storage).list, app, "the app's list is the cache's source");
+  } finally {
+    globalThis.fetch = realFetch;
+    clearDesktopHost();
+  }
+});
+
+test("a silent app answers the cached list as offline", async () => {
+  const storage = fakeStorage();
+  writeInstanceCache({ list: [row("main", "http://127.0.0.1:18101")], lastUsed: "" }, storage);
+  fakeDesktopHost(() => null);
+  try {
+    const loaded = await loadInstances(storage);
+    assert.equal(loaded.offline, true, "an unanswered host is not an empty list");
+    assert.deepEqual(loaded.list, [row("main", "http://127.0.0.1:18101")]);
+  } finally {
+    clearDesktopHost();
+  }
+});
+
+test("a save goes to the app and a refusal throws the host's words", async () => {
+  const storage = fakeStorage();
+  const saved = [row("laptop", "http://127.0.0.1:18101")];
+  let refusal = "";
+  const { sent } = fakeDesktopHost((body) =>
+    body.omega === "instances:save" ? { instances: refusal ? [] : saved, error: refusal } : null,
+  );
+  try {
+    assert.deepEqual(await saveInstancesInApp([row(" laptop ", "HTTP://127.0.0.1:18101/")]), saved);
+    assert.deepEqual(sent.at(-1), {
+      omega: "instances:save",
+      instances: [row(" laptop ", "HTTP://127.0.0.1:18101/")],
+    }, "the rows ride the raw body - the host is the validator");
+
+    refusal = "row 0: name is required";
+    await assert.rejects(() => saveInstancesInApp([row("", "http://127.0.0.1:18101")]), /name is required/);
+  } finally {
+    clearDesktopHost();
+    void storage;
+  }
+});
+
+test("a switch names the normalized address to the app", () => {
+  const storage = fakeStorage();
+  const { sent } = fakeDesktopHost();
+  try {
+    switchInstancesInApp("HTTP://192.0.2.10:8098/", storage);
+    assert.deepEqual(sent, [{ omega: "instances:switch", url: "http://192.0.2.10:8098" }]);
+    assert.equal(lastUsedInstance(storage), "http://192.0.2.10:8098", "the target is remembered first");
+  } finally {
+    clearDesktopHost();
+  }
+});
+
+test("every answer the app emits reaches the bar's one listener", async () => {
+  const seen: unknown[] = [];
+  const { api } = fakeDesktopHost((body) => (body.omega === "instances:get" ? { instances: [row("main", "http://127.0.0.1:18101")], error: "" } : null));
+  const off = onInstancesReply((reply) => seen.push(reply));
+  try {
+    const reply = await requestInstances();
+    assert.equal(reply.error, "");
+    assert.equal(reply.instances.length, 1);
+    assert.equal(seen.length, 1, "the subscription and the request share the one answer");
+
+    // an event nobody asked for still repaints: the pane's save lands while the bar is idle
+    api.dispatchWailsEvent({
+      name: INSTANCE_EVENT,
+      data: { instances: [row("pi", "http://192.0.2.10:8098")], error: "" },
+    });
+    assert.equal(seen.length, 2);
+    assert.deepEqual((seen[1] as { instances: SavedInstance[] }).instances, [row("pi", "http://192.0.2.10:8098")]);
+  } finally {
+    off();
+    clearDesktopHost();
+  }
+});
+
+test("the browser tab's save event has one name, shared by the pane and the bar", () => {
+  assert.equal(INSTANCE_CHANGED_EVENT, "omega:instances-changed");
+  const bar = read("webui", "app", "components", "shell", "StatusBar.vue");
+  assert.match(bar, /window\.addEventListener\(INSTANCE_CHANGED_EVENT, onInstancesChanged\)/, "the bar hears a tab's save");
+  assert.match(bar, /window\.removeEventListener\(INSTANCE_CHANGED_EVENT, onInstancesChanged\)/);
+  assert.match(bar, /onInstancesReply\(\(reply\) => \{/, "and every app answer repaints the rows");
+  const pane = read("webui", "app", "components", "settings", "SettingsTab.vue");
+  assert.match(pane, /new CustomEvent\(INSTANCE_CHANGED_EVENT\)/, "the pane announces its own save");
+});
+
+test("an answer goes to a live request, never to one that already timed out", () => {
+  const answered: string[] = [];
+  const waiter = (name: string, at: number) => ({ at, settle: () => answered.push(name) });
+
+  // the head gave up 6s ago: it is dropped, the live request behind it gets the answer
+  const queue = [waiter("stale", 1000), waiter("live", 9000)];
+  const taken = takeWaiter(queue, 7000, 5000);
+  assert.equal(taken?.at, 9000);
+  taken?.settle({ instances: [], error: "" });
+  assert.deepEqual(answered, ["live"]);
+  assert.equal(queue.length, 0);
+
+  // nothing live: the answer is dropped rather than misdelivered
+  assert.equal(takeWaiter([waiter("stale", 0)], 9000, 5000), null);
+  assert.equal(takeWaiter([], 9000, 5000), null);
 });
 
 test("switching writes lastUsed and navigates to the normalized target", () => {
