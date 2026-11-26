@@ -266,6 +266,39 @@ test("a desktop window takes the app's list, never the active server's", async (
   }
 });
 
+test("the app's home origin rides the answer and the load, and a tab's fetch answers none", async () => {
+  const home = "http://127.0.0.1:18101";
+  const storage = fakeStorage();
+  const reply = { instances: [row("main", home)], error: "", home };
+  fakeDesktopHost((body) => (body.omega === "instances:get" ? reply : null));
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = ((url: string | URL) =>
+    String(url) === "/instances"
+      ? Promise.resolve(new Response(JSON.stringify({ instances: [row("remote", "http://192.0.2.10:8098")] }), { status: 200 }))
+      : Promise.reject(new Error("unexpected fetch"))) as typeof globalThis.fetch;
+  try {
+    const asked = await requestInstances();
+    assert.equal(asked.home, home, "the reply carries the desktop's home origin");
+
+    const loaded = await loadInstances(storage);
+    assert.equal(loaded.home, home, "loadInstances passes it through");
+
+    // the browser tab's path: its own origin is the home, so there is nothing to add
+    clearDesktopHost();
+    const tab = await loadInstances(storage);
+    assert.equal(tab.offline, false);
+    assert.equal(tab.home, undefined, "a browser tab's fetch answers no home");
+
+    // an older answer that predates the member reads as no home, never as a guess
+    fakeDesktopHost((body) => (body.omega === "instances:get" ? { instances: [], error: "" } : null));
+    const old = await requestInstances();
+    assert.equal(old.home, undefined);
+  } finally {
+    globalThis.fetch = realFetch;
+    clearDesktopHost();
+  }
+});
+
 test("a silent app answers the cached list as offline", async () => {
   const storage = fakeStorage();
   writeInstanceCache({ list: [row("main", "http://127.0.0.1:18101")], lastUsed: "" }, storage);

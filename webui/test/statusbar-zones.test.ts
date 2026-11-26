@@ -400,9 +400,73 @@ describe("the connection list updates in place", () => {
   });
 });
 
-// the per-row state dots: one batch read, one dot per row, never colour alone
+// the default marking: home is the app's own origin, marked wherever the app's list renders
+
+describe("the panel marks home as the default", () => {
+  it("pins the home row FIRST among the switches, with its default badge", () => {
+    const bar = statusBar();
+    const panel = bar.slice(bar.indexOf('class="hp-conn"'));
+    const home = panel.indexOf('v-if="homeRow"');
+    const saved = panel.indexOf('v-for="row in savedRows"');
+    assert.ok(home > 0, "the panel renders a home switch row");
+    assert.ok(home < saved, "the home row leads the other saved rows");
+    const block = panel.slice(home, saved);
+    assert.match(block, /class="hp-crow hp-switch"/, "the home row is a switch, not a label");
+    assert.match(block, /@click="switchTo\(homeRow\)"/, "clicking it switches home");
+    assert.match(block, /<span class="hp-default">default<\/span>/, "the home row carries the default badge");
+    assert.match(
+      panel,
+      /v-if="onHome"\s+class="hp-default">\s*default\s*<\/span>/,
+      "the current row is badged default when the page is on home",
+    );
+  });
+
+  it("renders the badge as TEXT, never a colour and never a tooltip-only mark", () => {
+    const bar = statusBar();
+    assert.equal(
+      (bar.match(/class="hp-default">\s*default\s*<\/span>/g) ?? []).length,
+      2,
+      "both home rows carry the word",
+    );
+    // a badge whose only carrier were a title would fail here: the text is in the DOM
+    assert.doesNotMatch(bar, /class="hp-default"[^>]*title=/, "the badge is not a tooltip-only marker");
+    assert.match(bar, /\.hp-default \{/, "the badge has its own chip style");
+    assert.doesNotMatch(bar, /\.hp-default[^}]*#[0-9a-fA-F]{3,8}/, "the badge paints no colour literal");
+  });
+
+  it("keeps the current home row inert and marked, and the switch row one click away", () => {
+    const bar = statusBar();
+    assert.match(bar, /class="hp-crow hp-cur"[\s\S]{0,120}aria-current="true"/, "the current row is still the marked group");
+    assert.match(bar, /const onHome = computed\(\(\) => !!homeOrigin\.value && props\.currentOrigin === homeOrigin\.value\)/);
+    assert.match(
+      bar,
+      /homeOrigin\.value && props\.currentOrigin !== homeOrigin\.value\s*\?\s*\{ name: homeName\.value, url: homeOrigin\.value \}\s*:\s*null/,
+      "no home switch row is drawn while the page IS home",
+    );
+  });
+
+  it("takes home from the app's answer only, so a browser tab's list is unchanged", () => {
+    const bar = statusBar();
+    assert.match(bar, /const homeOrigin = ref\(""\);/, "a page starts with no home");
+    assert.equal(
+      (bar.match(/homeOrigin\.value = (loaded|reply)\.home \?\? ""/g) ?? []).length,
+      2,
+      "home is read from the load and every app answer - never from a stored row",
+    );
+    assert.match(bar, /const homeName = computed\(\s*\(\) => rows\.value\.find\(\(row\) => row\.url === homeOrigin\.value\)\?\.name \?\? "Home"/);
+    assert.match(
+      bar,
+      /row\.url !== props\.currentOrigin && !\(homeOrigin\.value && row\.url === homeOrigin\.value\)/,
+      "a stored row naming the home address is folded into the home row",
+    );
+    // a tab has no home: both gates fall back to the page's own connection
+    assert.match(bar, /return rows\.value\.find\(\(row\) => row\.url === props\.currentOrigin\)\?\.name \?\? "This instance"/);
+  });
+});
 
 const settingsField = () => src("components/settings/InstancesField.vue");
+
+// the per-row state dots: one batch read, one dot per row, never colour alone
 
 describe("the connection rows' state dots", () => {
   it("the panel paints a dot per row and names the state in the row's title", () => {

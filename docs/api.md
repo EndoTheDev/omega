@@ -625,14 +625,25 @@ A DESKTOP WINDOW does not read this endpoint. The window's own list is
 the app's: its local home's `config.yaml`, answered over the raw message
 channel (`{"omega":"instances:get"|"instances:save"|"instances:switch"}`)
 and emitted back on the `omega:instances` event as
-`{"instances":[...],"error":""}`. That is what keeps a page served by an
-older build - one with no switcher of its own - listing and switching
-the app's connections, and it is why a switch inside the window is the
-host's `SetURL` rather than the page's navigation. A plain browser tab
-still reads `GET /instances` from the serve it came from. In both cases
-the `omega.instances` localStorage cache is a paint-first copy of that
-one source: a successful origin fetch never rewrites it, so a page on
+`{"instances":[...],"error":"","home":"<the local home's origin>"}`. That
+is what keeps a page served by an older build - one with no switcher of
+its own - listing and switching the app's connections, and it is why a
+switch inside the window is the host's `SetURL` rather than the page's
+navigation. A plain browser tab still reads `GET /instances` from the
+serve it came from, and that body keeps its exact shape: a tab's own
+origin is its home, so nothing is added. In both cases the
+`omega.instances` localStorage cache is a paint-first copy of that one
+source: a successful origin fetch never rewrites it, so a page on
 another origin cannot replace the app's list with a server's empty one.
+
+`home` is the desktop's own local origin - the origin the window was
+launched on. It is DERIVED state: never a stored row, never written by a
+save, never moved by a switch, and never supplied by a page. The message
+door admits the four bodies above and none of them is home, a switch
+rewrites the active origin only, and the tray holds the same value from
+the launch, so a page can read it and cannot change it. A page that
+ignores the member loses only its own default badge, never the route
+home.
 
 The list is WRITTEN in the settings pane (`desktop.instances`, a knob of
 type `instances` beside the provider list) or by `omega settings set
