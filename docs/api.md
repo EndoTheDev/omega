@@ -595,12 +595,14 @@ home.
 
 ### GET/PUT /instances (the connection switcher's list)
 
-The saved connection list the webui's menubar switcher renders. It works
-in a plain browser against any `serve`, so it lives in the shell ring,
-not in the desktop shell. The rows' durable home is `config.yaml` under
-`desktop.instances` (the store's index is DERIVED - a `/reindex` would
-throw a table there away), and the host writes them through the same
-`Settings` implementation (`omegaSettings.Instances` /
+The saved connection list the webui's status bar panel renders: the
+bottom-left health dot carries the connected instance's name, and one
+click opens the panel with that instance marked and the saved rows one
+click away. It works in a plain browser against any `serve`, so it lives
+in the shell ring, not in the desktop shell. The rows' durable home is
+`config.yaml` under `desktop.instances` (the store's index is DERIVED - a
+`/reindex` would throw a table there away), and the host writes them
+through the same `Settings` implementation (`omegaSettings.Instances` /
 `SaveInstances`), so there is one atomic writer, one validation pass and
 one hot-apply.
 
@@ -609,7 +611,8 @@ type `instances` beside the provider list) or by `omega settings set
 desktop.instances '<json array>'` - both ride the same settings seam and
 the same `core.NormalizeInstances` pass, so they land identical rows.
 `PUT /instances` stays the wire for the same list (the pane's save path
-is `/settings`); no new endpoint exists.
+is `/settings`); no new endpoint exists. The webui itself has no write
+path: the status bar panel only reads the list and switches.
 
 - `GET /instances` - `{"instances":[{"name":"laptop","url":"http://127.0.0.1:8099"}]}`,
   never a bare array and never `null`. Rows come back normalized
@@ -619,7 +622,7 @@ is `/settings`); no new endpoint exists.
   the same function `Config.Validate` runs on a hand edit: name trimmed,
   non-empty, at most 64 characters; URL parsed with scheme `http` or
   `https` and a non-empty host, no spaces; a bare `host:port` takes
-  `http` (the shorthand the webui's add row accepts), and a bare
+  `http` (the shorthand the settings editor accepts), and a bare
   non-http scheme is refused; a duplicate URL is refused (one row per
   endpoint); at most 32 rows. Any violation answers **400** with the row
   named and the file untouched.

@@ -1,7 +1,9 @@
-// omega webui: the connection switcher's client half. The saved list is BACKEND state
-// (config.yaml `desktop.instances`, served by GET/PUT /instances); localStorage under
-// `omega.instances` is only the cache that makes the menu render before the fetch lands.
-// Switching never fetches the remote origin (CORS): it navigates, and the page reloads.
+// omega webui: the connection list's client half. The status bar control READS this
+// list and switches; the settings pane writes it. The saved list is BACKEND state
+// (config.yaml `desktop.instances`, served by GET /instances); localStorage under
+// `omega.instances` is only the cache that lets the control paint before the fetch
+// lands. Switching never fetches the remote origin (CORS): it navigates, and the page
+// reloads. There is no client write path here - settings owns every write.
 
 export interface SavedInstance {
   name: string;
@@ -80,7 +82,7 @@ export function normalizeInstanceURL(raw: string): string {
 }
 
 // upsertInstance replaces the row with the same URL in place, else appends. Re-adding a
-// saved address is how a row is RENAMED - the menu keeps one edit surface.
+// saved address is how a row is RENAMED - the settings pane keeps one edit surface.
 export function upsertInstance(list: SavedInstance[], row: SavedInstance): SavedInstance[] {
   const out: SavedInstance[] = [];
   let replaced = false;
@@ -150,28 +152,13 @@ export async function fetchInstances(): Promise<SavedInstance[]> {
   return Array.isArray(body?.instances) ? (body.instances as SavedInstance[]) : [];
 }
 
-// saveInstances replaces the list and answers what the host stored (normalized).
-export async function saveInstances(list: SavedInstance[]): Promise<SavedInstance[]> {
-  const r = await fetch("/instances", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ instances: list }),
-  });
-  if (!r.ok) {
-    const detail = await r.text().catch(() => "");
-    throw new Error(detail.trim() || `instances: ${r.status}`);
-  }
-  const body = (await r.json()) as { instances?: unknown };
-  return Array.isArray(body?.instances) ? (body.instances as SavedInstance[]) : [];
-}
-
 export interface InstanceLoad {
   list: SavedInstance[];
   offline: boolean;
 }
 
 // loadInstances fetches the backend list and refreshes the cache. A failed fetch is not
-// an empty list: the cached rows stay and the menu says so.
+// an empty list: the cached rows stay and the control says so.
 export async function loadInstances(storage: InstanceStorage | null = defaultStorage()): Promise<InstanceLoad> {
   const cache = readInstanceCache(storage);
   try {

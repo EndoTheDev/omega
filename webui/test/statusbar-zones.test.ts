@@ -2,7 +2,9 @@
 // The rulings this pins, one test each:
 //   1. TWO zones - LEFT work context (workdir), RIGHT live metrics + build.
 //   2. the workdir selector lives in the bar (the composer chip is gone).
-//   3. the CLICKABLE SET IS CLOSED: workdir, health, pending.
+//   3. the CLICKABLE SET IS CLOSED: workdir, health, pending. The health segment is
+//      the CONNECTION control (dot + instance name) and its open panel carries its
+//      own buttons - panel content is not a bar segment.
 //   4. a live `N pending` segment, scoped to the OPEN session, click = jump.
 //   5. NO model segment in the bar.
 //   6. narrow collapses to health dot + workdir (hide-sm on the rest).
@@ -167,13 +169,22 @@ describe("the bar's zones and the closed clickable set", () => {
 
   it("the clickable set is CLOSED: workdir, health, pending - nothing else", () => {
     const bar = statusBar();
-    const buttons = [...bar.matchAll(/<button[\s\S]*?class="([^"]*)"/g)].map((m) => m[1]);
+    // the bar's own buttons: everything before the open panel. A button INSIDE the
+    // open panel (the connection switches) is panel content, not a bar segment.
+    const segments = bar.slice(0, bar.indexOf('class="health-pop"'));
+    const buttons = [...segments.matchAll(/<button[\s\S]*?class="([^"]*)"/g)].map((m) => m[1]);
     assert.deepEqual(
       buttons.sort(),
       ["seg seg-btn health", "seg seg-btn pending hide-sm"],
       "exactly the health + pending segments are buttons (workdir rides the picker component)",
     );
-    const blocks = [...bar.matchAll(/<button[\s\S]*?<\/button>/g)].map((m) => m[0]);
+    const panel = bar.slice(bar.indexOf('class="health-pop"'));
+    const panelButtons = [...panel.matchAll(/<button[\s\S]*?class="([^"]*)"/g)].map((m) => m[1]);
+    assert.ok(panelButtons.length > 0, "the panel carries its own buttons");
+    for (const cls of panelButtons) {
+      assert.ok(!/(^|\s)seg-btn(\s|$)/.test(cls), `a panel button is never a bar segment: ${cls}`);
+    }
+    const blocks = [...segments.matchAll(/<button[\s\S]*?<\/button>/g)].map((m) => m[0]);
     for (const title of ["tokens used, active session", "model context window", "generation speed, last run", "chunks per second, last run"]) {
       assert.ok(bar.includes(`title="${title}"`), `segment missing: ${title}`);
       for (const b of blocks) assert.ok(!b.includes(title), `${title} must stay a span, never a button`);
@@ -229,6 +240,34 @@ describe("narrow collapse (ruling 6)", () => {
 // 5.
 
 describe("the health popover", () => {
+  it("the control is the connection: the dot and the instance's name", () => {
+    const bar = statusBar();
+    assert.match(bar, /:aria-label="`Connection: \$\{instanceName\}`"/, "the accessible name is the connection");
+    assert.match(
+      bar,
+      /:title="`\$\{instanceName\} - click for connections and server health`"/,
+      "the title names the instance and the click",
+    );
+    assert.doesNotMatch(bar, /aria-label="server health"/, "the old server-health name is gone");
+    assert.match(bar, /<span class="hide-sm">\{\{ instanceName \}\}<\/span>/, "the label is the instance's name");
+    assert.doesNotMatch(bar, /"online" : "offline"/, "the online/offline words are gone - the dot is the state");
+    assert.match(bar, /:class="\[healthy \? 'ok' : 'down', \{ offline \}\]"/, "the dot keeps ok/down, plus offline for a stale list");
+  });
+
+  it("lists the connections ABOVE the facts, the current row marked and inert", () => {
+    const bar = statusBar();
+    const panel = bar.slice(bar.indexOf('class="health-pop"'));
+    assert.ok(panel.indexOf("hp-conn") < panel.indexOf('class="hp-key">server'), "connections lead the panel");
+    assert.match(panel, /<span class="hp-head">connections<\/span>/);
+    assert.match(panel, /class="hp-crow hp-cur"\s+aria-current="true"/, "the current row is marked");
+    assert.match(panel, /v-for="row in savedRows"/, "the saved rows render as switches");
+    assert.match(panel, /v-if="row\.url === lastUsed"/, "the last switch is named on a non-current row");
+    assert.match(panel, /offline - showing the cached list/, "a stale cached list says so");
+    assert.doesNotMatch(panel, /<form|<input/, "no add form - settings owns writes");
+    assert.doesNotMatch(panel, /(aria-label|title)="[^"]*remove per-row|Remove \$\{/i, "no per-row remove button");
+    assert.doesNotMatch(panel, /(aria-label|title)="[^"]*reconnect/i, "no reconnect control");
+  });
+
   it("opens from the health segment and names its role + state to AT", () => {
     const bar = statusBar();
     assert.match(bar, /aria-haspopup="dialog"/);
