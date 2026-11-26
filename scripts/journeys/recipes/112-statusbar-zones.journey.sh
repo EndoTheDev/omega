@@ -26,14 +26,16 @@
 #              not - the probe accepts either, and the "no source" note
 #              must render exactly when at least one row is unsourced.
 #   dots     - every connection row carries a state dot fed by ONE batch read
-#              of the health body (/instances/status): green for the row that
-#              answers (this lane's own origin), red for a dead port, a hollow
-#              ring for a dead port the operator added anyway (unverified).
-#              The state WORD rides the row's accessible name - never colour
-#              alone. The ORANGE (warning) branch is not journey-seeded: a
-#              degraded provider needs a broken provider on the lane, so the
-#              node suite pins that table (webui/test/instancesstatus.test.ts)
-#              and this recipe leaves it out.
+#              of the health body (/instances/status): the origin wears what
+#              its OWN health body says, red for a dead port, a hollow ring for
+#              a dead port the operator added anyway (unverified). The state
+#              WORD rides the row's accessible name - never colour alone. The
+#              origin is the state law, not a constant: warning when the body
+#              SOURCES provider.reachable === false or database.healthy ===
+#              false, healthy otherwise (an absent fact is unknown, never
+#              degraded) - the zero-provider CI/nightly lane exercises the
+#              orange branch on every run, a reachable provider the green one,
+#              and webui/test/instancesstatus.test.ts pins the mapping.
 #   narrow   - at 700px: every .hide-sm segment is gone, the health DOT and
 #              the workdir chip are still there. At 340px the dot is alone
 #              and the open panel is a bar-wide sheet inside the viewport.
@@ -177,10 +179,41 @@ step "ok: the panel lists the connections above the facts - current instance mar
 
 # --- 4c. the per-row state dots (card t_0d90c69a) ---------------------------
 # The panel opened above and its poll read every listed address once. The seed
-# guarantees three dots to read: the origin (green), the dead port (red), and
-# the add-anyway dead port (the hollow ring). Each row's accessible name and
-# title carry the state WORD and the reason - the assertion never trusts the
-# colour alone.
+# guarantees three dots to read: the origin, the dead port (red), and the
+# add-anyway dead port (the hollow ring). Each row's accessible name and title
+# carry the state WORD and the reason - the assertion never trusts the colour
+# alone.
+#
+# The origin's dot is NOT pinned green - its state is the lane's own fact.
+# classifyInstance (webui/app/composables/instancesStatus.ts) degrades an omega
+# answer to warning when a SOURCED fact is false (provider.reachable === false
+# or database.healthy === false) and reads an absent fact as unknown, never
+# broken; the zero-provider lane (the CI/nightly config's provider host) is the
+# warning case by construction. So the expectation below comes from the lane's
+# own /health body under that same predicate.
+origin_state=$(curl -s -m 10 "${JOURNEY_BASE_URL}/health" | python3 -c '
+import sys, json
+try:
+    sys.stdout.reconfigure(newline="\n")
+except Exception:
+    pass
+try:
+    body = json.load(sys.stdin)
+except Exception:
+    body = None
+if not isinstance(body, dict):
+    print("unreadable")
+    raise SystemExit
+def sourced_false(section, key):
+    group = body.get(section)
+    return isinstance(group, dict) and group.get(key) is False
+print("warning" if sourced_false("provider", "reachable") or sourced_false("database", "healthy") else "healthy")
+')
+case "$origin_state" in
+  healthy) ORIGIN_DOT_CLASS=ok; ORIGIN_DOT_WORD=healthy ;;
+  warning) ORIGIN_DOT_CLASS=warn; ORIGIN_DOT_WORD=warning ;;
+  *) die "the lane's /health body is unreadable, so the origin's state is unknown: [$origin_state]" ;;
+esac
 if ! poll_js '(()=>{const p=document.querySelector(".health-pop");if(!p)return false;const cur=p.querySelector(".hp-crow[aria-current=\"true\"] .dot");const dots=[...p.querySelectorAll(".hp-switch .dot")];return !!cur&&dots.length>=2})()' 40; then
   die "the panel's state dots never landed (the batch read answered nothing): $(jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "no-panel";return "current="+!!p.querySelector(".hp-crow[aria-current=\"true\"] .dot")+" saved="+p.querySelectorAll(".hp-switch .dot").length})()' 2>&1 | tr -d '\"')"
 fi
@@ -190,8 +223,8 @@ const byName=n=>[...p.querySelectorAll('.hp-switch')].find(b=>((b.querySelector(
 const cur=p.querySelector('.hp-crow[aria-current=\"true\"]');
 if(!cur)return 'no-current';
 const curDot=cur.querySelector('.dot');
-if(!curDot||!curDot.classList.contains('ok'))return 'origin-not-green:'+(curDot?curDot.className:'missing');
-if(((cur.getAttribute('aria-label')||'')).indexOf('healthy')<0)return 'origin-word-missing:'+(cur.getAttribute('aria-label')||'');
+if(!curDot||!curDot.classList.contains('$ORIGIN_DOT_CLASS'))return 'origin-dot-mismatch:want-$ORIGIN_DOT_CLASS:got:'+(curDot?curDot.className:'missing');
+if(((cur.getAttribute('aria-label')||'')).indexOf('$ORIGIN_DOT_WORD')<0)return 'origin-word-missing:want-$ORIGIN_DOT_WORD:got:'+(cur.getAttribute('aria-label')||'');
 const dead=byName('$DOT_DEAD_NAME');
 if(!dead)return 'dead-row-missing';
 const deadDot=dead.querySelector('.dot');
@@ -205,8 +238,8 @@ if(((hatch.getAttribute('aria-label')||'')).indexOf('unverified')<0)return 'hatc
 return 'ok'})()"
 }
 v=$(probe_dots | tr -d '"')
-assert_eq "$v" "ok" "the origin row is green, the dead port red, the add-anyway row a hollow ring, each naming its state"
-step "ok: panel dots - origin healthy (green), dead port error (red), add-anyway unverified (ring); words ride the row's accessible name"
+assert_eq "$v" "ok" "each row names its state - origin $origin_state ($ORIGIN_DOT_CLASS/$ORIGIN_DOT_WORD), dead port red, add-anyway row a hollow ring"
+step "ok: panel dots - origin $origin_state (lane's own /health), dead port error (red), add-anyway unverified (ring); words ride the row's accessible name"
 # the reasons are the tooltip: the dead row's title names why it is red
 dead_title=$(jsq "(()=>{const p=document.querySelector('.health-pop');const b=[...p.querySelectorAll('.hp-switch')].find(x=>((x.querySelector('.hp-cname')||{}).textContent||'').trim()==='$DOT_DEAD_NAME');return b?((b.getAttribute('title')||'')):'missing'})()" 2>&1 | tail -1 | tr -d '"')
 case "$dead_title" in
