@@ -170,6 +170,12 @@ rows = (json.load(sys.stdin) or {}).get("instances") or []
 print(len(rows), len([r for r in rows if (r.get("url") or "").rstrip("/") != base]))' "${JOURNEY_BASE_URL}" 2>/dev/null)
 [ -n "$counts" ] || die "the lane answered no /instances body - the panel's list has no source"
 saved_other=${counts#* }
+# The panel's list is a network read: a browser tab parks it behind the shell verdict
+# (~3s), so a fast lane would grade the count before anything was asked. Wait for the
+# panel's own pending note to clear, then grade the exact count as before.
+if ! poll_js '(()=>{const p=document.querySelector(".health-pop");return !!p&&!p.querySelector(".hp-pending")})()' 40; then
+  die "the panel's connection list never settled: $(jsq '(()=>{const p=document.querySelector(".health-pop");if(!p)return "no-panel";return (p.querySelector(".hp-pending")?"still-checking":"settled")+" rows="+p.querySelectorAll(".hp-crow").length})()' 2>&1 | tr -d '\"')"
+fi
 probe_connections() {
   jsq "(()=>{const p=document.querySelector('.health-pop');if(!p)return 'no-panel';const head=p.querySelector('.hp-head');if(!head||head.textContent.trim().toLowerCase()!=='connections')return 'no-heading';const cur=p.querySelector('.hp-crow[aria-current=\"true\"]');if(!cur)return 'unmarked-current';const cname=((cur.querySelector('.hp-cname')||{}).textContent||'').trim();if(!cname)return 'current-unnamed';const bar=document.querySelector('.statusbar .seg.seg-btn.health');const label=(bar&&bar.getAttribute('aria-label'))||'';if(label!=='Connection: '+cname)return 'label['+label+']name['+cname+']';const rows=[...p.querySelectorAll('.hp-switch')];if(rows.length!==$saved_other)return 'rows['+rows.length+'/'+'$saved_other'+']';for(const r of rows){const n=((r.querySelector('.hp-cname')||{}).textContent||'').trim();const u=((r.querySelector('.hp-curl')||{}).textContent||'').trim();if(!n||!u)return 'row-incomplete['+(r.textContent||'').replace(/\\s+/g,' ')+']'}const bad=[...p.querySelectorAll('*')].filter(e=>/reconnect/i.test(((e.getAttribute('aria-label')||'')+(e.getAttribute('title')||'')+(e.tagName==='BUTTON'?(e.textContent||''):''))));if(bad.length)return 'reconnect-control';return 'ok'})()"
 }
