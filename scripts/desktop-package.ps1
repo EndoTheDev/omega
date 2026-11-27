@@ -23,6 +23,14 @@ $name = "omega-$Version-windows-desktop"
 $stage = Join-Path $OutDir $name
 $zip = Join-Path $OutDir "$name.zip"
 
+# The image itself is the contract: a console subsystem allocates a terminal
+# behind every windowed start, so refuse one before anything is staged. The
+# reader is the same tool that proves the icon group - one header walk.
+& go run ./scripts/desktopicon -subsystem $Exe
+if ($LASTEXITCODE -ne 0) {
+	throw "desktop-package: refusing to pack $Exe (windowed-subsystem gate exited $LASTEXITCODE)"
+}
+
 if (Test-Path $stage) { Remove-Item -Recurse -Force $stage }
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 

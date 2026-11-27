@@ -153,6 +153,9 @@ jobs:
           # the icon group is a PE resource: the cross build needs the syso too
           go run ./scripts/desktopicon -syso
           GOOS=windows GOARCH=amd64 go build -ldflags "-H=windowsgui -X main.omegaVersion=$VERSION" -o dist/omega-$VERSION-windows_amd64/omega.exe ./cmd/omega
+          # the packer's invariant, on the zip this build makes: a console image
+          # allocates a terminal behind every windowed start
+          go run ./scripts/desktopicon -subsystem dist/omega-$VERSION-windows_amd64/omega.exe
           cp cmd/omega/omega.cmd dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/config.yaml.example dist/omega-$VERSION-windows_amd64/
           cp cmd/omega/examples/mcp.yaml.example dist/omega-$VERSION-windows_amd64/

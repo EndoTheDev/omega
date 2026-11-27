@@ -493,12 +493,21 @@ dev tip (pinned - scheduled runs otherwise default to master):
 
 Every tag also ships `omega-<version>-windows-desktop.zip`. The
 `desktop-windows` job in `release.yml` (windows-latest) builds the SPA,
-compiles `omega.exe` with the tag baked in, then
+compiles `omega.exe` with the tag baked in and the windowed subsystem
+(`-ldflags "-H=windowsgui"`), then
 `scripts/desktop-package.ps1` packs the portable tree with
 `install.ps1` and `uninstall.ps1`: install copies into
 `%LOCALAPPDATA%\Programs\omega`, writes a Start Menu shortcut that runs
 `omega desktop`, and writes the HKCU uninstall entry; uninstall removes
 all three.
+
+The packer reads the image before it stages anything:
+`scripts/desktopicon -subsystem` refuses a PE whose subsystem is not 2
+(`IMAGE_SUBSYSTEM_WINDOWS_GUI`), naming the subsystem it found and the
+`-ldflags "-H=windowsgui"` fix. A console image allocates a terminal behind
+every windowed start, so handing the packer one is a red step with nothing
+staged, not a release note. The `windows_amd64` cross build does not use the
+packer, so its step runs the same read on its own exe before the zip.
 
 The copy-boot gate runs BEFORE anything publishes:
 
@@ -632,7 +641,7 @@ stable channel from ever seeing a nightly.
 | `scripts/store-fixture-extract.py` | sanitize a real legacy store into a committable fixture + its manifest    |
 | `scripts/prod-deploy.sh`        | the push word's deploy leg: eight steps, copy-boot before the flip          |
 | `.github/workflows/release.yml` | the tag push's release: five platform assets + the copy-booted desktop asset, checksums, publish |
-| `scripts/desktop-package.ps1`   | packs the Windows desktop asset: portable tree + `install.ps1`/`uninstall.ps1` |
+| `scripts/desktop-package.ps1`   | packs the Windows desktop asset: portable tree + `install.ps1`/`uninstall.ps1`, refusing an exe that is not a windowed image |
 
 Journeys (run 3b) wire their suite in as `scripts/journeys/run.sh`;
 train-pass already calls that path when it exists.
