@@ -1,9 +1,12 @@
-// Command desktopicon owns the omega mark: it renders the icon set, embeds the
-// set in the executable as a PE resource, and verifies the built binary.
+// Command desktopicon owns the desktop exe's build invariants: it renders the
+// omega mark, embeds the icon group in the executable as a PE resource, and
+// verifies that the built image carries both - the icon group the shell draws
+// and the windowed subsystem that keeps a console off every launch.
 //
-//	desktopicon -ico <path>   render the icon set into <path>
-//	desktopicon -syso         embed cmd/omega/assets/omega.ico as a resource
-//	desktopicon -check <exe>  report the executable's icon group
+//	desktopicon -ico <path>       render the icon set into <path>
+//	desktopicon -syso             embed cmd/omega/assets/omega.ico as a resource
+//	desktopicon -check <exe>      report the executable's icon group
+//	desktopicon -subsystem <exe>  refuse an executable that is not a windowed image
 package main
 
 import (
@@ -73,6 +76,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	icoOut := flags.String("ico", "", "render the icon set to this path")
 	syso := flags.Bool("syso", false, "write "+sysoPath+" from "+assetPath)
 	check := flags.String("check", "", "report the icon group of this executable")
+	subsystem := flags.String("subsystem", "", "refuse this executable unless it is a windowed image")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -86,6 +90,12 @@ func run(args []string, stdout, stderr io.Writer) int {
 	case *check != "":
 		var report string
 		report, err = checkExe(*check)
+		if err == nil {
+			fmt.Fprint(stdout, report)
+		}
+	case *subsystem != "":
+		var report string
+		report, err = checkSubsystem(*subsystem)
 		if err == nil {
 			fmt.Fprint(stdout, report)
 		}
@@ -349,6 +359,43 @@ func checkExe(path string) (string, error) {
 		fmt.Fprintf(&report, "RT_ICON %d: %dx%d %dbpp %d bytes\n", leaf.name, width, height, bits, len(leaf.data))
 	}
 	return report.String(), nil
+}
+
+// checkSubsystem reads the image's PE subsystem and refuses anything but the
+// windowed one. A console subsystem allocates a terminal behind every windowed
+// start, so the packaging gate stages only an image this accepts.
+func checkSubsystem(path string) (string, error) {
+	file, err := pe.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("%s: not a PE image: %w", path, err)
+	}
+	defer file.Close()
+
+	var subsystem uint16
+	switch header := file.OptionalHeader.(type) {
+	case *pe.OptionalHeader64:
+		subsystem = header.Subsystem
+	case *pe.OptionalHeader32:
+		subsystem = header.Subsystem
+	default:
+		return "", fmt.Errorf("%s carries no PE optional header", path)
+	}
+
+	report := fmt.Sprintf("subsystem %d (%s)\n", subsystem, subsystemName(subsystem))
+	if subsystem != pe.IMAGE_SUBSYSTEM_WINDOWS_GUI {
+		return "", fmt.Errorf("%s: PE subsystem %d (%s), want 2 (IMAGE_SUBSYSTEM_WINDOWS_GUI): a desktop asset must not allocate a console - rebuild with -ldflags \"-H=windowsgui\"", path, subsystem, subsystemName(subsystem))
+	}
+	return report, nil
+}
+
+func subsystemName(subsystem uint16) string {
+	switch subsystem {
+	case pe.IMAGE_SUBSYSTEM_WINDOWS_GUI:
+		return "IMAGE_SUBSYSTEM_WINDOWS_GUI"
+	case pe.IMAGE_SUBSYSTEM_WINDOWS_CUI:
+		return "IMAGE_SUBSYSTEM_WINDOWS_CUI"
+	}
+	return "unrecognized subsystem"
 }
 
 // iconEntryInfo reports an icon entry's shape: a 32bpp DIB carries its size in

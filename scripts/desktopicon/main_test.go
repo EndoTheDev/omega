@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"debug/pe"
 	"encoding/binary"
 	"os"
 	"os/exec"
@@ -180,5 +181,89 @@ func TestCheckAcceptsTheBuiltExecutable(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "icon group 1: 16 24 32 48 64 128 256") {
 		t.Fatalf("icon group report is %q", stdout.String())
+	}
+}
+
+// writePEFixture writes the smallest image the header walk reads: a DOS stub
+// pointing at a PE32+ optional header with the given subsystem, no sections
+// and no code. The gate reads bytes, so the subsystem cases need neither a
+// windows host nor a real build.
+func writePEFixture(t *testing.T, subsystem uint16) string {
+	t.Helper()
+	const (
+		dosSize  = 0x80
+		signSize = 4
+	)
+
+	optional := pe.OptionalHeader64{Magic: 0x20b, Subsystem: subsystem}
+	optional.NumberOfRvaAndSizes = uint32(len(optional.DataDirectory))
+	var optionalBytes bytes.Buffer
+	if err := binary.Write(&optionalBytes, binary.LittleEndian, &optional); err != nil {
+		t.Fatalf("encode the optional header: %v", err)
+	}
+	fileHeader := pe.FileHeader{
+		Machine:              pe.IMAGE_FILE_MACHINE_AMD64,
+		SizeOfOptionalHeader: uint16(optionalBytes.Len()),
+	}
+	var fileHeaderBytes bytes.Buffer
+	if err := binary.Write(&fileHeaderBytes, binary.LittleEndian, &fileHeader); err != nil {
+		t.Fatalf("encode the file header: %v", err)
+	}
+
+	image := make([]byte, dosSize+signSize+fileHeaderBytes.Len()+optionalBytes.Len())
+	copy(image, "MZ")
+	binary.LittleEndian.PutUint32(image[0x3c:], dosSize)
+	copy(image[dosSize:], "PE\x00\x00")
+	copy(image[dosSize+signSize:], fileHeaderBytes.Bytes())
+	copy(image[dosSize+signSize+fileHeaderBytes.Len():], optionalBytes.Bytes())
+
+	path := filepath.Join(t.TempDir(), "omega.exe")
+	if err := os.WriteFile(path, image, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestSubsystemGateAcceptsTheWindowedImage(t *testing.T) {
+	exe := writePEFixture(t, pe.IMAGE_SUBSYSTEM_WINDOWS_GUI)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-subsystem", exe}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("-subsystem exited %d on a windowed image; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "subsystem 2 (IMAGE_SUBSYSTEM_WINDOWS_GUI)") {
+		t.Fatalf("subsystem report is %q", stdout.String())
+	}
+}
+
+func TestSubsystemGateRefusesAConsoleImage(t *testing.T) {
+	exe := writePEFixture(t, pe.IMAGE_SUBSYSTEM_WINDOWS_CUI)
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-subsystem", exe}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("-subsystem exited %d on a console image, want 1; stderr: %s", code, stderr.String())
+	}
+	for _, want := range []string{"subsystem 3", "IMAGE_SUBSYSTEM_WINDOWS_CUI", exe, "-H=windowsgui"} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr does not carry %q: %s", want, stderr.String())
+		}
+	}
+}
+
+func TestSubsystemGateRefusesANonPE(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "omega.exe")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"-subsystem", path}, &stdout, &stderr)
+	if code != 1 {
+		t.Fatalf("-subsystem exited %d on a non-PE file, want 1; stderr: %s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "not a PE image") {
+		t.Fatalf("stderr does not name the missing PE: %s", stderr.String())
 	}
 }
