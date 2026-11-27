@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -703,6 +704,21 @@ func serveBinds(cfg Config) []string {
 	return out
 }
 
+// dialableBind folds a wildcard bind to loopback for an in-process probe: Windows refuses
+// a dial to 0.0.0.0 or :: (WSAEADDRNOTAVAIL), and a bare :port names no host at all. An
+// exact bind stays exact - a loopback dial would find no listener on that address.
+func dialableBind(addr string) string {
+	i := strings.LastIndex(addr, ":")
+	if i < 0 {
+		return addr
+	}
+	switch host := addr[:i]; host {
+	case "", "0.0.0.0", "::", "[::]":
+		return net.JoinHostPort("127.0.0.1", addr[i+1:])
+	}
+	return addr
+}
+
 // serveBanner is the boot line a person can read.
 func serveBanner(version string, channels int, binds []string, configPath, dataDir, model string) string {
 	return fmt.Sprintf("omega %s · serving %d channel(s) on %s · config %s · data %s · model %s",
@@ -803,7 +819,7 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 	// The update engine: ONE per serving process, behind the shell's /updates routes. The
 	// graceful stop is the runtime's own shutdown, so a finalize releases the port and the
 	// store before the platform mechanism restarts the binary.
-	updater := newUpdateManager(configFile, "http://"+binds[0], rt.shutdown)
+	updater := newUpdateManager(configFile, "http://"+dialableBind(binds[0]), rt.shutdown)
 	rt.updater = updater
 	for _, ch := range pctx.Channels {
 		deps := core.ChannelDeps{
@@ -839,7 +855,7 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 		return nil, fmt.Errorf("start module lifecycle: %w", err)
 	}
 
-	rt.URL = "http://" + binds[0]
+	rt.URL = "http://" + dialableBind(binds[0])
 	banner := serveBanner(omegaVersion, len(pctx.Channels), binds,
 		configFile, canonPath(datadir.Dir(omegaHome())), ag.ModelName())
 	fmt.Println(banner)
@@ -849,7 +865,7 @@ func startRuntimeWithin(cfg Config, configPath string, appendPrompts []string, t
 	// The auto-check ladder is host work, started after the fence: it reads the same
 	// manager the routes serve.
 	go updater.runAutoUpdates(ctx)
-	return waitHealthy(rt, binds[0], healthTimeout)
+	return waitHealthy(rt, dialableBind(binds[0]), healthTimeout)
 }
 
 // waitHealthy polls /health until the body reports status ok, or a channel fails, or
@@ -885,7 +901,14 @@ func waitHealthy(rt *serveRuntime, addr string, timeout time.Duration) (*serveRu
 
 // healthBody reads one /health body.
 func healthBody(client *http.Client, url string) (string, error) {
-	resp, err := client.Get(url + "/health")
+	req, err := http.NewRequest(http.MethodGet, url+"/health", nil)
+	if err != nil {
+		return "", err
+	}
+	if h := probeHost(url); h != "" {
+		req.Host = h
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -898,6 +921,40 @@ func healthBody(client *http.Client, url string) (string, error) {
 		return string(body), fmt.Errorf("/health answered %s", resp.Status)
 	}
 	return string(body), nil
+}
+
+// probeHost is the Host an in-process probe sends: the machine's own name on the serve's
+// port when the dial is loopback, "" for any other target. The guard derives that name for
+// every bind shape, while a wildcard bind answers a loopback Host with 403 - so the folded
+// dial alone would still be refused.
+func probeHost(origin string) string {
+	host, port, err := net.SplitHostPort(hostPort(origin))
+	if err != nil || !isLoopbackHost(host) {
+		return ""
+	}
+	return selfHost(port)
+}
+
+// selfHost is the machine's own Host identity: the OS name lowercased, on this port. It
+// needs no config entry and no DNS lookup because the guard derives the same name.
+func selfHost(port string) string {
+	name, err := os.Hostname()
+	if err != nil {
+		return ""
+	}
+	name = strings.ToLower(strings.TrimSpace(name))
+	if name == "" {
+		return ""
+	}
+	return net.JoinHostPort(name, port)
+}
+
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 // shutdown tears the runtime down: channel Stop, cron Stop, the module dismount (the

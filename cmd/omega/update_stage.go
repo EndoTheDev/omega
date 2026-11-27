@@ -560,6 +560,9 @@ func probeServeVersion(ctx context.Context, origin, want string) error {
 	if err != nil {
 		return err
 	}
+	if h := probeHost(origin); h != "" {
+		req.Host = h
+	}
 	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
 	if err != nil {
 		return err
