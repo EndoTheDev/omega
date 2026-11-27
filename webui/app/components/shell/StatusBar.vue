@@ -222,6 +222,12 @@
             offline - showing the cached list
           </p>
           <p
+            v-else-if="listPending"
+            class="hp-note hp-pending"
+            role="status">
+            checking saved connections
+          </p>
+          <p
             v-else-if="!rows.length"
             class="hp-note">
             no saved connections yet
@@ -434,6 +440,9 @@
   const rows = ref<SavedInstance[]>(cachedInstances.list);
   const lastUsed = ref(cachedInstances.lastUsed);
   const offline = ref(false);
+  // true until the first read settles: the verdict bound parks the read in a browser tab,
+  // and the panel must not call an unread list empty
+  const listPending = ref(true);
   // true while the app (the shell) owns the list: the switch asks the host and a failed
   // read keeps the cache. `decided` says the first read carried a verdict, so nothing is
   // claimed before it.
@@ -539,6 +548,7 @@
     decided.value = true;
     rows.value = loaded.list;
     offline.value = loaded.offline;
+    listPending.value = false;
     homeOrigin.value = loaded.home ?? "";
     lastUsed.value = lastUsedInstance();
     repaintStates();
@@ -565,6 +575,7 @@
   const stopInstanceReplies = onInstancesReply((reply) => {
     rows.value = reply.instances;
     offline.value = false;
+    listPending.value = false;
     homeOrigin.value = reply.home ?? "";
     lastUsed.value = lastUsedInstance();
     switchNote.value = reply.error;

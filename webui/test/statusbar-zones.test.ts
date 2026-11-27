@@ -263,6 +263,20 @@ describe("the health popover", () => {
     assert.match(panel, /v-for="row in savedRows"/, "the saved rows render as switches");
     assert.match(panel, /v-if="row\.url === lastUsed"/, "the last switch is named on a non-current row");
     assert.match(panel, /offline - showing the cached list/, "a stale cached list says so");
+    // an in-flight read is not an empty list: the pending branch precedes the empty one,
+    // so a panel that has asked nothing can never read "no saved connections yet"
+    assert.match(
+      panel,
+      /v-else-if="listPending"\s+class="hp-note hp-pending"\s+role="status">\s*checking saved connections/,
+      "the pending read names itself",
+    );
+    const notes = panel.slice(panel.indexOf("offline - showing the cached list"));
+    assert.ok(
+      notes.indexOf("checking saved connections") < notes.indexOf("no saved connections yet"),
+      "empty is the LAST branch - pending never falls through to it",
+    );
+    assert.match(panel, /const listPending = ref\(true\);/, "the state starts pending");
+    assert.equal((panel.match(/listPending\.value = false;/g) ?? []).length, 2, "both read landings settle it - the load and the app's reply");
     assert.doesNotMatch(panel, /<form|<input/, "no add form - settings owns writes");
     assert.doesNotMatch(panel, /(aria-label|title)="[^"]*remove per-row|Remove \$\{/i, "no per-row remove button");
     assert.doesNotMatch(panel, /(aria-label|title)="[^"]*reconnect/i, "no reconnect control");
