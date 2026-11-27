@@ -314,10 +314,13 @@ func desktopLaunch(cfg Config, configPath string) error {
 // channel the whole app already trusts.
 func desktopWindowOptions(origin string) application.WebviewWindowOptions {
 	return application.WebviewWindowOptions{
-		Title:                "omega",
-		URL:                  origin,
-		Width:                1280,
-		Height:               860,
+		Title:  "omega",
+		URL:    origin,
+		Width:  1280,
+		Height: 860,
+		// 340 is the floor the SPA's narrow layout is designed for (narrow.ts NARROW_MAX_PX = 360).
+		MinWidth:             340,
+		MinHeight:            480,
 		Frameless:            true,
 		AllowSimpleEventEmit: true,
 		Windows: application.WindowsWindow{
