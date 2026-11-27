@@ -15,6 +15,8 @@ sessions, context compaction and the in-process module system in all
 three. No screen furniture in
 the terminal: the browser, or the desktop window, is the app.
 
+![the omega desktop app - sessions, chat and the code explorer](docs/screenshots/desktop-app.png)
+
 The web interface is a VS Code-style dock: draggable panes with
 honest per-pane floors, live-streaming chat with retry and image
 attachments, sessions with search and pinning, settings, cron,
