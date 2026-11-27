@@ -260,7 +260,18 @@ tar -C "$DEPLOY_HOME" --exclude=./logs --exclude=./backups -cf - . \
 [ -d "$copy/data" ] || { echo "copy-boot: the copy carries no data/ directory" >&2; exit 1; }
 legacy=0
 if [ -f "$copy/data/omega.db" ]; then
-	legacy=1
+	# The product's own rule (harness/store/legacy.go isLegacyStore): a store is
+	# legacy when it has a sessions table and no session_files watermark table.
+	# A migrated store KEEPS omega.db (session metadata) - file existence is not
+	# the signal; the two tables are.
+	legacy=$(python3 - "$copy/data/omega.db" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
+def has(t):
+    return db.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (t,)).fetchone()[0] > 0
+print(1 if (has("sessions") and not has("session_files")) else 0)
+PY
+)
 fi
 
 # The pre-boot hashes: every session file the copy already carries.
