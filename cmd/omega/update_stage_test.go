@@ -11,11 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -445,6 +447,26 @@ func TestProbeServeVersionRequiresNewVersion(t *testing.T) {
 	defer devStamp.Close()
 	if err := probeServeVersion(context.Background(), devStamp.URL, "v0.19.0"); err != nil {
 		t.Fatalf("a build-hash stamp of the new release failed the window: %v", err)
+	}
+}
+
+// TestProbeServeVersionSendsSelfHost: the post-restart probe must reach a wildcard bind,
+// whose guard refuses a loopback Host - the version confirmation would fail otherwise.
+func TestProbeServeVersionSendsSelfHost(t *testing.T) {
+	var want string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != want {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"status":"ok","version":"v0.19.0"}`)
+	}))
+	defer ts.Close()
+	want = selfHost(strconv.Itoa(ts.Listener.Addr().(*net.TCPAddr).Port))
+
+	if err := probeServeVersion(context.Background(), ts.URL, "v0.19.0"); err != nil {
+		t.Fatalf("probeServeVersion: %v", err)
 	}
 }
 

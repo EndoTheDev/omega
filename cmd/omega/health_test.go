@@ -5,9 +5,81 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
+
+// TestDialableBind: a wildcard bind folds to loopback for the probe dial; an exact bind
+// stays exact because a loopback dial finds no listener there.
+func TestDialableBind(t *testing.T) {
+	tests := []struct{ addr, want string }{
+		{":8099", "127.0.0.1:8099"},
+		{"0.0.0.0:8099", "127.0.0.1:8099"},
+		{":::8099", "127.0.0.1:8099"},
+		{"[::]:8099", "127.0.0.1:8099"},
+		{"100.64.1.2:8099", "100.64.1.2:8099"},
+		{"127.0.0.1:8099", "127.0.0.1:8099"},
+	}
+	for _, tt := range tests {
+		if got := dialableBind(tt.addr); got != tt.want {
+			t.Errorf("dialableBind(%q) = %q, want %q", tt.addr, got, tt.want)
+		}
+	}
+}
+
+// TestSelfHost: the probe's Host is the machine's own name on the serve's port - the one
+// identity the guard derives for every bind shape.
+func TestSelfHost(t *testing.T) {
+	name, err := os.Hostname()
+	if err != nil {
+		t.Fatalf("os.Hostname: %v", err)
+	}
+	want := strings.ToLower(strings.TrimSpace(name)) + ":8099"
+	if got := selfHost("8099"); got != want {
+		t.Fatalf("selfHost(8099) = %q, want %q", got, want)
+	}
+	if got := selfHost("8099"); strings.HasPrefix(got, ":") {
+		t.Fatalf("selfHost(8099) = %q, want a non-empty machine name", got)
+	}
+}
+
+// TestHealthBodySendsSelfHost: a wildcard-bound serve refuses a loopback Host, so the
+// probe must carry the machine's own name or the boot gate tears down a healthy serve.
+func TestHealthBodySendsSelfHost(t *testing.T) {
+	var want string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Host != want {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		fmt.Fprint(w, `{"status":"ok"}`)
+	}))
+	defer ts.Close()
+	want = selfHost(strconv.Itoa(ts.Listener.Addr().(*net.TCPAddr).Port))
+
+	body, err := healthBody(&http.Client{Timeout: 2 * time.Second}, ts.URL)
+	if err != nil {
+		t.Fatalf("healthBody: %v", err)
+	}
+	if !strings.Contains(body, `"status":"ok"`) {
+		t.Fatalf("healthBody body = %q, want the healthy answer", body)
+	}
+}
+
+// TestHealthBodySurfacesRefusal: a refused Host is an error, never a silent pass.
+func TestHealthBodySurfacesRefusal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+	}))
+	defer ts.Close()
+
+	if _, err := healthBody(&http.Client{Timeout: 2 * time.Second}, ts.URL); err == nil || !strings.Contains(err.Error(), "403") {
+		t.Fatalf("healthBody error = %v, want the 403 surfaced", err)
+	}
+}
 
 // TestCmdHealthOK verifies cmdHealth returns nil when a server responds with 200 OK.
 func TestCmdHealthOK(t *testing.T) {
