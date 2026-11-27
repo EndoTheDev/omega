@@ -93,6 +93,10 @@ html[data-theme='light'] {
 html, body, #__nuxt {
   margin: 0;
   height: 100%;
+  /* The SPA is window chrome, not a document: the root never scrolls, in a
+     browser tab or in the embedded desktop window. Inner surfaces own their
+     scroll (transcript, session list, settings body, files, code blocks). */
+  overflow: hidden;
 }
 
 body {
@@ -105,8 +109,15 @@ body {
 /* ---- shell: menu bar / pane area / status bar ---- */
 .shell {
   display: grid;
+  /* minmax(0, 1fr): the single column is never sized by a child's
+     min-content, so the menubar band cannot push the frame wider than the
+     viewport (a plain 1fr column takes the band's min-content as its floor
+     and the overflow lands on the document). */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr auto;
   height: 100dvh;
+  /* the frame is the clip boundary, one level above .pane-area */
+  overflow: hidden;
 }
 
 /* ---- layer 0: menu bar (canvas-colored chrome, no rounding) ---- */
@@ -114,6 +125,7 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   height: var(--menubar-h);
   padding: 0 12px;
   background: var(--z0);
@@ -167,7 +179,13 @@ body {
    press goes through the page; the page names the action and the host performs it. ---- */
 .window-controls {
   display: flex;
-  flex: none;
+  /* Shrinkable, unlike the other chrome: the three caption cells are the
+     band's widest fixed block (138px), so a squeezed band compresses them
+     instead of overflowing the frame. The definite width keeps the cells at
+     their 46px seat; flex-shrink is what a narrower band consumes. */
+  width: 138px;
+  flex: 0 1 auto;
+  min-width: 0;
   align-items: stretch;
   align-self: stretch;
   position: relative;
@@ -178,6 +196,7 @@ body {
 }
 .win-cell {
   width: 46px;
+  min-width: 0;
   height: var(--menubar-h);
   display: grid;
   place-items: center;

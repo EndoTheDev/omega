@@ -57,6 +57,20 @@ the others:
 | Gutter (divider)  | 8px   |
 | Mobile breakpoint | 768px |
 
+**The document root never scrolls.** `.shell` is the app frame: the
+root (`html, body, #__nuxt`), `.shell` and `.pane-area` each clip, and
+inner surfaces own their own scroll - the transcript, the session list,
+the settings body, the file tree and a fenced code block all scroll
+inside their box. Two rules hold it: `.shell`'s column is
+`minmax(0, 1fr)` (a plain `1fr` takes the widest child's min-content
+as its floor, so the top bar's chrome pushed the frame past the
+viewport) and the bar's caption lane shrinks (the three 46px cells
+compress when the band is narrower than its chrome). Without the pin
+one overflow manufactures the second axis: a host drawing CLASSIC
+scrollbars takes width for the vertical one, height for the
+horizontal one, and `100dvh` still resolves to the full layout
+viewport, so the whole SPA slides inside its own window.
+
 **Top bar seats**: three regions
 on the 35px bar. The BRAND is ONE element far left - `Ωmega`, the glyph
 and the word in a single span whose text is its accessible name (the old
