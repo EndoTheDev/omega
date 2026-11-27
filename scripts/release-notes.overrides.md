@@ -27,6 +27,15 @@ Rules for the text:
 - Do not restate the stats line - the script prints it from the commit log.
 - User-facing omega changes only (Endo 2026-11-23): factory, pipeline and internal-hygiene lines stay out of the hook and the bullets; the mechanical changelog block stays complete.
 
+## v0.19.0
+
+hook: omega comes to the desktop - a native Windows app that holds your whole agent, with live switching between every omega you run.
+
+- omega now runs as a native desktop app: its own window, tray control, no browser needed
+- connect to more than one omega in the same window and switch between them live, each connection showing its own health
+- a new connection proves its address before it lands, so a typo never becomes a dead row
+- the window behaves like a proper app: tabs drag to rearrange, resize from any edge, and it never shrinks below usable
+
 ## v0.18.1
 
 hook: A fix for the update path - omega now starts cleanly on data carried over from older versions.
