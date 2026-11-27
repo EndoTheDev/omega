@@ -401,7 +401,10 @@ func TestRestoreSnapshotBothFiles(t *testing.T) {
 		t.Fatalf("damage config: %v", err)
 	}
 
-	restored := restoreSnapshot(snap)
+	restored, restoreErr := restoreSnapshot(snap)
+	if restoreErr != nil {
+		t.Fatalf("restoreSnapshot: %v", restoreErr)
+	}
 	if len(restored) != 2 {
 		t.Fatalf("restored = %q, want omega.db and config.yaml", restored)
 	}

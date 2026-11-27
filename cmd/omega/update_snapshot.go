@@ -4,11 +4,12 @@ package main
 // config.yaml into <data>/.pre-<newversion>. Retention is ONE - the latest snapshot only,
 // matching the one-generation omega.bak contract; older .pre-* directories are deleted in
 // the same step. A window pass keeps the snapshot as the retained backup; a window fail
-// restores it.
+// restores it, and so does the manual rollback.
 
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -128,32 +129,79 @@ func pruneSnapshots(dataDir, keep string) error {
 	return nil
 }
 
+// snapshotForRollback finds the one retained snapshot beside the store. Retention is ONE,
+// so zero means the home never finalized; more than one is a broken invariant, never a
+// guess about which generation pairs with omega.bak. A directory without the store file
+// is no rollback point either.
+func snapshotForRollback(dbPath, configPath string) (*updateSnapshot, error) {
+	if dbPath == "" {
+		return nil, nil
+	}
+	dataDir := filepath.Dir(dbPath)
+	entries, err := os.ReadDir(dataDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if e.IsDir() && strings.HasPrefix(e.Name(), snapshotPrefix) {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Strings(names)
+	switch len(names) {
+	case 0:
+		return nil, nil
+	case 1:
+	default:
+		return nil, fmt.Errorf("%d store snapshots beside %s (%s) - retention is one: remove the stale ones or roll forward", len(names), dbPath, strings.Join(names, ", "))
+	}
+	dir := filepath.Join(dataDir, names[0])
+	db := filepath.Join(dir, filepath.Base(dbPath))
+	if _, err := os.Stat(db); err != nil {
+		return nil, nil
+	}
+	return &updateSnapshot{
+		Dir:        dir,
+		DB:         db,
+		Config:     filepath.Join(dir, "config.yaml"),
+		LiveDB:     dbPath,
+		LiveConfig: configPath,
+		Version:    strings.TrimPrefix(names[0], snapshotPrefix),
+	}, nil
+}
+
 // restoreSnapshot puts the retained snapshot back: the store file (and its WAL sidecars,
 // removed first so a stale -wal can never graft onto the restored file) and config.yaml.
-// It returns the labels of what it actually restored, for the receipt.
-func restoreSnapshot(snap *updateSnapshot) []string {
+// It returns the labels of what it restored plus whatever failed, so a caller that must
+// not proceed on a half restore can stop before it moves anything else.
+func restoreSnapshot(snap *updateSnapshot) ([]string, error) {
 	if snap == nil {
-		return nil
+		return nil, nil
 	}
 	var restored []string
+	var failures []error
 	if _, err := os.Stat(snap.DB); err == nil {
 		for _, sidecar := range []string{snap.LiveDB + "-wal", snap.LiveDB + "-shm"} {
 			_ = os.Remove(sidecar)
 		}
 		if err := copyFile(snap.DB, snap.LiveDB); err != nil {
-			fmt.Fprintf(os.Stderr, "omega update: rollback could not restore %s: %v\n", snap.LiveDB, err)
+			failures = append(failures, fmt.Errorf("restore %s: %w", snap.LiveDB, err))
 		} else {
 			restored = append(restored, "omega.db")
 		}
 	}
-	if snap.Config != "" {
+	if snap.Config != "" && snap.LiveConfig != "" {
 		if _, err := os.Stat(snap.Config); err == nil {
 			if err := copyFile(snap.Config, snap.LiveConfig); err != nil {
-				fmt.Fprintf(os.Stderr, "omega update: rollback could not restore %s: %v\n", snap.LiveConfig, err)
+				failures = append(failures, fmt.Errorf("restore %s: %w", snap.LiveConfig, err))
 			} else {
 				restored = append(restored, "config.yaml")
 			}
 		}
 	}
-	return restored
+	return restored, errors.Join(failures...)
 }
