@@ -22,6 +22,13 @@ send_journey_message "$SID" "meta seed - reply with one word"
 pinned_now=$(poll_js_value '(()=>{const rows = Array.from(document.querySelectorAll(".session-list li")); const r = rows.find(x => (x.innerText || "").includes("(journey) sessions-reload")); if (!r) return 0; const b = r.querySelector("button.row-status"); if (!b) return 0; const al = b.getAttribute("aria-label") || ""; b.click(); return al.includes("Pin") ? 1 : 0;})()' -eq 1)
 assert_eq "$pinned_now" "1" "row pin affordance available and clicked"
 
+# The click's flip is optimistic (togglePin rolls back on throw), so the DOM
+# answers before the PATCH lands. Wait on the SERVER holding the pin: a reload
+# issued against an in-flight write comes back with the row in TODAY.
+# GET /sessions is one compact JSON array, so id and pinned sit in one object.
+poll_http "$JOURNEY_BASE_URL/sessions" "\"id\":\"$SID\"[^}]*\"pinned\":true" 10 \
+  || die "pin never persisted: GET /sessions never showed $SID pinned"
+
 # reload: the pin survives and the row now sits in the PINNED bucket.
 open_app
 # Poll: the sidebar's session list re-fetches after boot - a one-shot
