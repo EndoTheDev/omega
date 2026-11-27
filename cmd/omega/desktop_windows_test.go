@@ -193,6 +193,12 @@ func TestDesktopWindowOptionsIsAFramelessHostOwnedTitleBar(t *testing.T) {
 	if opts.DisableResize {
 		t.Error("DisableResize is on: a frameless window then has no resize borders")
 	}
+	if opts.MinWidth != 340 {
+		t.Errorf("MinWidth = %d, want 340: the window can be dragged below the 340px narrow floor", opts.MinWidth)
+	}
+	if opts.MinHeight != 480 {
+		t.Errorf("MinHeight = %d, want 480: header, one message row, composer and statusbar need that height", opts.MinHeight)
+	}
 	if !opts.AllowSimpleEventEmit {
 		t.Error("AllowSimpleEventEmit is off: the caption cells' presses never reach the host")
 	}
