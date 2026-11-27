@@ -23,7 +23,7 @@ omega settings [get [<key>]]       config knobs: all, or one dotted key
 omega settings set <key> <value>   write one knob (the webui's own validation)
 omega update              report N versions behind + prompt y/N
 omega update --yes        install the latest stable without a prompt
-omega update --rollback   swap back to omega.bak + health-verify
+omega update --rollback   restore the store snapshot, swap back to omega.bak + health-verify
 omega rollback            alias for omega update --rollback
 omega health          check the server at the configured port
 omega kanban          the task board registry (see: omega kanban --help)
@@ -383,8 +383,9 @@ omega update                      # report N versions behind, then prompt y/N
 omega update --yes                # install without a prompt
 omega update --nightly            # newest -nightly.* prerelease (same prompt contract)
 omega update --allow-downgrade    # permit installing a lower version
-omega update --rollback           # swap back to omega.bak, verify it runs
-omega rollback                    # same swap
+omega update --rollback           # restore the store snapshot, then swap back to omega.bak
+omega update --rollback --force   # the same, under a live run
+omega rollback                    # same restore + swap
 ```
 
 Prompt contract: a bare update never installs silently. It fetches,
@@ -396,9 +397,17 @@ binary; `--yes` is the scripted path and consults no terminal.
 
 Downgrade protection: an offered tag older than the running version is
 refused (a stale mirror must never quietly revert a box) unless
-`--allow-downgrade` is passed. Rollback verifies the restored binary by
-executing `omega --version` before declaring success. Unknown flags
-after `update` are errors, not silent falls through to a plain update.
+`--allow-downgrade` is passed. Rollback is one operation with two
+halves, store first: it restores `<data>/.pre-<version>` (omega.db and
+config.yaml, the one generation the finalize retained), and only then
+swaps `omega.bak` into the executable slot and verifies it by
+executing `omega --version`. A home with no retained snapshot gets the
+binary swap alone, with a warning that the store was not restored. A
+failed store restore stops before the swap. The path refuses a live run
+(the finalize's own quiet gate, bypassed by `--force`) and refuses the
+store half while an `omega serve` answers on the configured port - stop
+it first, since it holds the sqlite handle. Unknown flags after
+`update` are errors, not silent falls through to a plain update.
 
 Version resolution: builds carry the version via ldflags
 (`-X main.omegaVersion=<tag>-<shorthash>`, per build.sh); `go install`
@@ -436,9 +445,10 @@ checksum handling).
   snapshot, restores `omega.bak`, respawns the old binary, and records the
   receipt (version, why, what was restored) beside the store as
   `.update-receipt.json`.
-- `omega update --rollback` stays the manual swap-back for a later
-  rollback. That path costs the writes since the snapshot, so roll forward
-  is always preferred.
+- `omega update --rollback` stays the manual one-generation undo: it
+  restores the retained snapshot (store and config), then swaps
+  `omega.bak` back. That path costs the writes since the snapshot, so roll
+  forward is always preferred.
 
 Config knobs (`config.yaml`, live unless noted):
 

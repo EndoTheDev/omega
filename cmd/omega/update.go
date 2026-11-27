@@ -17,6 +17,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/EndoTheDev/omega/core"
 )
 
 // githubRelease represents the subset of the GitHub releases API response that omega.
@@ -56,6 +58,7 @@ type updateOptions struct {
 	rollback       bool // swap back to omega.bak
 	allowDowngrade bool // permit installing a version lower than the running one
 	yes            bool // auto-accept the install prompt (unattended-safe install)
+	force          bool // rollback: proceed under a live run (never under a live serve)
 }
 
 // parseUpdateFlags parses the flags accepted after "update".
@@ -73,11 +76,16 @@ func parseUpdateFlags(args []string) (updateOptions, error) {
 			opts.allowDowngrade = true
 		case "--yes", "-y":
 			opts.yes = true
+		case "--force":
+			opts.force = true
 		default:
 			if strings.HasPrefix(a, "-") {
-				return opts, fmt.Errorf("unknown update flag %q (known: --nightly, --rollback, --allow-downgrade, --yes)", a)
+				return opts, fmt.Errorf("unknown update flag %q (known: --nightly, --rollback, --force, --allow-downgrade, --yes)", a)
 			}
 		}
+	}
+	if opts.force && !opts.rollback {
+		return opts, fmt.Errorf("--force applies to --rollback only (a plain update never forces a restart)")
 	}
 	return opts, nil
 }
@@ -263,7 +271,7 @@ func cmdUpdate(rest []string) error {
 		return err
 	}
 	if opts.rollback {
-		return cmdRollback()
+		return cmdRollback(opts.force)
 	}
 
 	channel := "stable"
@@ -468,8 +476,19 @@ func boolChannel(nightly bool) string {
 	return "stable"
 }
 
-// cmdRollback swaps the current binary back to omega.bak.
-func cmdRollback() error {
+// rollbackRequest is the one manual rollback: the executable slot, the home the update
+// code resolved for it, and the operator's force.
+type rollbackRequest struct {
+	ExePath    string
+	Origin     string // the serve origin to probe; empty when no config resolved
+	DBPath     string
+	ConfigPath string
+	Force      bool
+}
+
+// cmdRollback restores the retained store snapshot, then swaps omega.bak into the
+// executable slot.
+func cmdRollback(force bool) error {
 	if base := os.Getenv("OMEGA_UPDATE_API_BASE"); base != "" {
 		githubAPIBase = base // keep the env seam consistent, though fetch is unused
 	}
@@ -477,44 +496,126 @@ func cmdRollback() error {
 	if err != nil {
 		return fmt.Errorf("resolve executable: %w", err)
 	}
-	return rollbackTo(exePath)
+	req := rollbackRequest{ExePath: exePath, Force: force}
+	// The home comes from the loaded config, never from the exe's directory: a
+	// PATH-style install keeps its store in ~/.omega while the binary lives in go/bin.
+	if configPath := resolveConfigPath(""); configPath != "" {
+		cfg, cfgErr := LoadConfig(configPath)
+		if cfgErr == nil {
+			cfgErr = resolveHomePaths(&cfg)
+		}
+		if cfgErr != nil {
+			fmt.Fprintf(os.Stderr, "omega: warning - %v: the store half cannot be resolved, this rollback swaps the binary only\n", cfgErr)
+		} else {
+			req.Origin = fmt.Sprintf("http://127.0.0.1:%d", cfg.Server.Port)
+			req.DBPath = cfg.Store.DBPath
+			req.ConfigPath = configPath
+		}
+	}
+	return rollbackTo(req)
 }
 
-// rollbackTo is the platform-independent core of rollback, given the executable path.
-var rollbackTo = func(exePath string) error {
-	bakPath := exePath + ".bak"
+// rollbackTo is the platform-independent core of rollback. The store goes back FIRST: an
+// old binary booting against a new store is the boot-kill this path exists to prevent,
+// while a new binary against an old store re-runs its own migrations.
+var rollbackTo = func(req rollbackRequest) error {
+	bakPath := req.ExePath + ".bak"
 	if _, err := os.Stat(bakPath); err != nil {
-		return fmt.Errorf("no omega.bak beside %s — nothing to roll back to", exePath)
+		return fmt.Errorf("no omega.bak beside %s - nothing to roll back to", req.ExePath)
 	}
 
-	fmt.Fprintf(os.Stderr, "omega: rolling back %s...\n", exePath)
-	if err := rollbackSwap(exePath, bakPath); err != nil {
+	live, active := rollbackProbe(req.Origin)
+	if active > 0 && !req.Force {
+		return busyRefusal(active)
+	}
+
+	snap, err := rollbackFindSnapshot(req.DBPath, req.ConfigPath)
+	if err != nil {
+		return fmt.Errorf("rollback: %w", err)
+	}
+	switch {
+	case snap == nil && req.DBPath == "":
+		fmt.Fprintf(os.Stderr, "omega: warning - no store resolved (no config.yaml in the home): the store is NOT restored, this rollback swaps the binary only\n")
+	case snap == nil:
+		fmt.Fprintf(os.Stderr, "omega: warning - no store snapshot beside %s: the store is NOT restored, this rollback swaps the binary only\n", req.DBPath)
+	case live:
+		// Force cannot help: the serve holds the sqlite handle, so a copy under it races
+		// a write in flight against the file being replaced.
+		return fmt.Errorf("omega serve is answering at %s - the store cannot be swapped under a live serve: stop it (Ctrl-C in its terminal, or quit the desktop window), then run the rollback again", req.Origin)
+	default:
+		fmt.Fprintf(os.Stderr, "omega: restoring %s from %s...\n", req.DBPath, snap.Dir)
+		restored, restoreErr := rollbackRestore(snap)
+		if restoreErr != nil {
+			return fmt.Errorf("rollback stopped before the binary swap: %w", restoreErr)
+		}
+		fmt.Printf("omega: restored store: %s\n", strings.Join(restored, ", "))
+	}
+
+	fmt.Fprintf(os.Stderr, "omega: rolling back %s...\n", req.ExePath)
+	if err := rollbackSwap(req.ExePath, bakPath); err != nil {
 		return fmt.Errorf("rollback: %w", err)
 	}
 
-	out, err := verifyBinaryHealth(exePath)
+	out, err := verifyBinaryHealth(req.ExePath)
 	if err != nil {
-		return fmt.Errorf("rollback installed, but the restored binary failed its health check: %w\nomega.bak and the previous binary are intact — try again", err)
+		return fmt.Errorf("rollback installed, but the restored binary failed its health check: %w\nomega.bak and the previous binary are intact - try again", err)
 	}
 	fmt.Printf("omega: rolled back to %s\n", strings.TrimSpace(out))
 	return nil
 }
 
-// rollbackSwap moves the backup into the executable slot and the replaced binary.
-func rollbackSwap(exePath, bakPath string) error {
-	side := exePath + ".rollback"
-	if err := os.Rename(exePath, side); err != nil {
-		return fmt.Errorf("move running binary aside: %w", err)
+// The rollback's seams: a test drives every half without a real install, a real serve or
+// a real store.
+var (
+	rollbackFindSnapshot = snapshotForRollback
+	rollbackRestore      = restoreSnapshot
+	rollbackProbe        = probeLiveServe
+	rollbackSwap         = func(exePath, bakPath string) error {
+		side := exePath + ".rollback"
+		if err := os.Rename(exePath, side); err != nil {
+			return fmt.Errorf("move running binary aside: %w", err)
+		}
+		if err := os.Rename(bakPath, exePath); err != nil {
+			os.Rename(side, exePath) // put the running binary back
+			return fmt.Errorf("install omega.bak: %w", err)
+		}
+		if err := copyFile(side, bakPath); err != nil {
+			fmt.Fprintf(os.Stderr, "omega: warning - could not record replaced version into omega.bak: %v\n", err)
+		}
+		os.Remove(side)
+		return nil
 	}
-	if err := os.Rename(bakPath, exePath); err != nil {
-		os.Rename(side, exePath) // put the running binary back
-		return fmt.Errorf("install omega.bak: %w", err)
+)
+
+// probeLiveServe reports whether an omega serve answers on origin and how many runs it
+// holds. Reachability is the fact the store half needs - the serve owns the sqlite handle -
+// and the run count only decides whether force may proceed.
+func probeLiveServe(origin string) (bool, int) {
+	if origin == "" {
+		return false, 0
 	}
-	if err := copyFile(side, bakPath); err != nil {
-		fmt.Fprintf(os.Stderr, "omega: warning — could not record replaced version into omega.bak: %v\n", err)
+	client := &http.Client{Timeout: 2 * time.Second}
+	body, err := healthBody(client, origin)
+	if err != nil || !strings.Contains(body, `"status":"ok"`) {
+		return false, 0
 	}
-	os.Remove(side)
-	return nil
+	req, err := http.NewRequest(http.MethodGet, strings.TrimSuffix(origin, "/")+"/updates/status", nil)
+	if err != nil {
+		return true, 0
+	}
+	if h := probeHost(origin); h != "" {
+		req.Host = h
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return true, 0
+	}
+	defer resp.Body.Close()
+	var st core.UpdateStatus
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&st); err != nil {
+		return true, 0
+	}
+	return true, st.ActiveRuns
 }
 
 // verifyBinaryHealth runs the binary with --version to confirm it executes, returning.

@@ -6,8 +6,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
+
+// busyRefusal is the quiet gate's one line: the automatic finalize and the manual rollback
+// both refuse a live home with it, and both accept force.
+func busyRefusal(active int) error {
+	return fmt.Errorf("%d run(s) active - the restart waits for idle, or force it", active)
+}
 
 // runAutoUpdates is started by the host after the channels are up (the goroutine fence is
 // for modules; this is host work). It never blocks the boot and stops with the process.

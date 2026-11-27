@@ -96,7 +96,7 @@ func (m *updateManager) Finalize(ctx context.Context, force bool) (core.UpdateSt
 		// auto-update never restarts under a live run. A human may force it.
 		st := m.st
 		m.mu.Unlock()
-		return st, fmt.Errorf("%d run(s) active - the restart waits for idle, or force it", active)
+		return st, busyRefusal(active)
 	}
 	m.busy = true
 	m.st.State = updateFinalizing
@@ -153,7 +153,7 @@ func (m *updateManager) finalizeRun(req finalizeRequest, snap *updateSnapshot, a
 		m.exit(0)
 		return
 	}
-	restored := restoreSnapshot(snap)
+	restored, restoreErr := restoreSnapshot(snap)
 	receipt := core.UpdateReceipt{
 		Version:  req.NewVersion,
 		Outcome:  "rollback",
@@ -164,6 +164,9 @@ func (m *updateManager) finalizeRun(req finalizeRequest, snap *updateSnapshot, a
 	m.recordReceipt(receipt)
 	os.Remove(req.StagedPath)
 	m.logf("update %s rolled back: %v (restored: %s)", req.NewVersion, err, strings.Join(restored, ", "))
+	if restoreErr != nil {
+		m.logf("update %s rollback: the store restore failed: %v", req.NewVersion, restoreErr)
+	}
 	if outcome.Serving {
 		// Nothing was stopped (the Unix exec path refused): keep serving, let the user retry.
 		m.set(func(s *core.UpdateStatus) {

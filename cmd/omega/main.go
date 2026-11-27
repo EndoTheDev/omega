@@ -114,7 +114,7 @@ Usage:
                             installs without an explicit y (or --yes)
   omega update --yes        install the latest stable release without a prompt
   omega update --nightly    check the newest -nightly.* prerelease channel instead
-  omega update --rollback   swap back to omega.bak + verify it runs
+  omega update --rollback   restore the store snapshot, swap omega.bak back, verify it runs
   omega rollback            same as omega update --rollback
   omega health          check the server at the configured port
 
@@ -209,7 +209,7 @@ func run(args []string) error {
 		return cmdUpdate(rest)
 	case "rollback":
 		// Alias for `omega update --rollback` — same one-generation swap back.
-		return cmdRollback()
+		return cmdRollback(hasFlag(rest, "--force"))
 	case "chat", "":
 		// The chat subcommand is a legacy alias for the CLI loop. A bare SHELL launch
 		// (a double-click or a file-manager open, with no parent console to attach to)
