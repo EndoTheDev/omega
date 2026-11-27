@@ -167,6 +167,25 @@ fail_step() { echo "$2" >"$CASE/$1.rc"; }
 payload() { cat "$CASE/payload.$1"; }
 cmdline() { cat "$CASE/cmd.$1"; }
 
+# seed_legacy_store <db-path> - the fake homes need a REAL legacy store: the
+# copy-boot reads the store's shape through sqlite (a sessions table, no
+# session_files watermark - isLegacyStore's rule, re-worded 2026-11-27), and a
+# text stub is not a database. One sessions row keeps the shape honest.
+seed_legacy_store() {
+	local db=$1
+	case "$(uname -s)" in
+	MSYS*|CYGWIN*) db=$(cygpath -m "$db") ;; # native python needs a windows path
+	esac
+	python3 - "$db" <<'PY'
+import sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE sessions (id TEXT PRIMARY KEY, label TEXT)")
+db.execute("INSERT INTO sessions (id, label) VALUES ('72863811adb93cd5ca47642c9b8393f6', 'legacy row')")
+db.commit()
+db.close()
+PY
+}
+
 # copyboot_fixture <id> - a fixture home + staging tree the copy-boot payload can
 # work on, plus a fake binary that behaves like the shipped one.
 #   mode=green   the staged binary migrates the legacy store and serves
@@ -184,7 +203,7 @@ copyboot_fixture() {
 	green)
 		# a legacy store that migrates cleanly: the source archived aside and the
 		# known-broken record written with equal stamps
-		printf 'not-a-db' >"$CASE/home/data/omega.db"
+		seed_legacy_store "$CASE/home/data/omega.db"
 		cat >"$CASE/stage/omega-v0.99.0-linux_arm64/omega" <<'FAKEBIN'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -197,7 +216,7 @@ sleep 30
 FAKEBIN
 		;;
 	slow)
-		printf 'not-a-db' >"$CASE/home/data/omega.db"
+		seed_legacy_store "$CASE/home/data/omega.db"
 		cat >"$CASE/stage/omega-v0.99.0-linux_arm64/omega" <<'FAKEBIN'
 #!/usr/bin/env bash
 set -uo pipefail
@@ -206,7 +225,7 @@ sleep 30
 FAKEBIN
 		;;
 	rewrite)
-		printf 'not-a-db' >"$CASE/home/data/omega.db"
+		seed_legacy_store "$CASE/home/data/omega.db"
 		cat >"$CASE/stage/omega-v0.99.0-linux_arm64/omega" <<'FAKEBIN'
 #!/usr/bin/env bash
 set -uo pipefail

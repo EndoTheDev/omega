@@ -264,7 +264,11 @@ if [ -f "$copy/data/omega.db" ]; then
 	# legacy when it has a sessions table and no session_files watermark table.
 	# A migrated store KEEPS omega.db (session metadata) - file existence is not
 	# the signal; the two tables are.
-	legacy=$(python3 - "$copy/data/omega.db" <<'PY'
+	db_path="$copy/data/omega.db"
+	case "$(uname -s)" in
+	MSYS*|CYGWIN*) db_path=$(cygpath -m "$db_path") ;; # native python needs a windows path
+	esac
+	legacy=$(python3 - "$db_path" <<'PY'
 import sqlite3, sys
 db = sqlite3.connect(f"file:{sys.argv[1]}?mode=ro", uri=True)
 def has(t):
