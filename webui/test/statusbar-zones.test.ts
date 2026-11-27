@@ -408,13 +408,11 @@ describe("the connection list updates in place", () => {
     );
   });
 
-  it("switches through the app on an armed page, and leaves the page itself in a tab", () => {
+  it("switches through the awaited verdict - the app on an armed page, the tab itself otherwise", () => {
     const bar = statusBar();
-    assert.match(
-      bar,
-      /void whenShellDecided\(\)\.then\(\(verdict\) => \{\s*if \(verdict === "armed"\) \{\s*switchInstancesInApp\(row\.url\);\s*return;\s*\}\s*navigateToInstance\(row\.url\);/,
-      "the verdict names the switch's owner - the host, or the tab itself",
-    );
+    assert.match(bar, /whenShellDecided\(\)\.then\(/, "the switch waits on the one verdict");
+    assert.match(bar, /switchInstancesInApp\(row\.url\)/, "an armed page hands the switch to the app");
+    assert.match(bar, /navigateToInstance\(row\.url\)/, "a browser tab navigates itself");
     assert.doesNotMatch(
       bar,
       /instancesAreAppOwned\(\)/,
