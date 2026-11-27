@@ -8,11 +8,12 @@
 
 omega is an AI assistant that reads files, runs
 commands, and edits code. It talks to LLM providers (Ollama, OpenAI,
-Anthropic) and streams responses in real time. Single binary, two
-faces: a plain CLI agent loop (first run walks you through setup) and
-a served webui - persistent sessions, context compaction, and an
-in-process module system on both. No screen furniture in the
-terminal: the browser is the app.
+Anthropic) and streams responses in real time. Single binary, three
+faces: a plain CLI agent loop (first run walks you through setup), a
+served webui, and a native desktop app for Windows - persistent
+sessions, context compaction and the in-process module system in all
+three. No screen furniture in
+the terminal: the browser, or the desktop window, is the app.
 
 The web interface is a VS Code-style dock: draggable panes with
 honest per-pane floors, live-streaming chat with retry and image
@@ -21,7 +22,9 @@ logs, a file manager with image previews, a terminal pane, an
 embedded browser, the approval gate and a kanban board - all
 embedded, no separate frontend to
 run (`omega serve`). Conversations branch: every retry is a sibling
-variant you can switch between. Agents can ask mid-run via verdict
+variant you can switch between. The desktop app and the webui can also
+connect to other omega instances and switch between them live, each
+connection showing its own health. Agents can ask mid-run via verdict
 cards (single- or multi-choice, or free text), risky shell commands
 pass the approval gate, finished tasks land in the notifications feed, chats can be
 ephemeral (in-memory only, nothing on disk), and multiple named
@@ -60,6 +63,9 @@ export PATH="$HOME/go/bin:$PATH"   # add to ~/.bashrc or ~/.zshrc
 
 Releases also ship prebuilt binaries for all platforms (with the webui
 embedded) at [github.com/EndoTheDev/omega/releases](https://github.com/EndoTheDev/omega/releases).
+Windows users can also grab the desktop zip from the same releases
+page - unpack it anywhere, run omega.exe, and the app window opens
+with tray control and the setup wizard on first run.
 
 ### Runtime layout & update
 
@@ -96,6 +102,7 @@ All modules are in-process Go packages under `harness/`. See
 | Topic            | File                                               |
 | ---------------- | -------------------------------------------------- |
 | CLI              | [docs/cli.md](docs/cli.md)                         |
+| Desktop app      | [docs/cli.md](docs/cli.md) (the `omega desktop` command) |
 | Configuration    | [docs/configuration.md](docs/configuration.md)     |
 | HTTP API         | [docs/api.md](docs/api.md)                         |
 | Web UI           | [docs/webui.md](docs/webui.md)                     |
