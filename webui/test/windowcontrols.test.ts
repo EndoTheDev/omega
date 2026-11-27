@@ -283,9 +283,15 @@ describe("main.css: the lane geometry", () => {
     assert.ok(cell.includes("width: 46px"));
   });
 
-  it("reserves no fixed lane width: three equal cells size it", () => {
+  it("seats the lane on its three cells and lets a squeezed band compress it", () => {
     assert.ok(lane.length > 0, "the lane has its own rule");
-    assert.ok(!/(^|\s)width:/.test(lane), "the lane's width comes from its cells");
+    // The seat is still the three 46px cells, now stated on the lane so the
+    // cells keep it; flex-shrink is what a band narrower than the chrome
+    // consumes. A bare flex:none lane could not shrink, so the band pushed the
+    // frame past the viewport (and the document scrolled) at narrow widths.
+    assert.match(lane, /width:\s*138px/);
+    assert.match(lane, /flex:\s*0 1 auto/);
+    assert.match(lane, /min-width:\s*0/);
   });
 
   it("reaches the window edge and hovers to the error token on close", () => {
