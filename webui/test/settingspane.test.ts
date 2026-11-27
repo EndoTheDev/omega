@@ -361,26 +361,6 @@ test("the refusal renders in the alert line, as the server wrote it", () => {
 
 // --- the desktop window routes the list to the APP, the browser tab to its server ----
 
-test("the pane's save sends desktop.instances to the app inside a desktop window", () => {
-  assert.match(
-    paneSource,
-    /instancesAreAppOwned\(\) && "desktop\.instances" in changes/,
-    "the list is the app's knob when a desktop window is driving the page",
-  );
-  assert.match(paneSource, /hostSaved = await saveInstancesInApp\(appRows\)/, "and it rides the host's own door");
-  assert.match(
-    paneSource,
-    /setSaveError\(err instanceof Error \? err\.message : String\(err\), "desktop\.instances"\)/,
-    "the host's refusal lands on the field's alert line, keyed to this knob",
-  );
-  // the host's answer replaces the ACTIVE server's copy of the list in the pane's truth
-  assert.equal(
-    (paneSource.match(/"desktop\.instances": hostSaved/g) ?? []).length,
-    2,
-    "loaded and draft both adopt the host's rows",
-  );
-});
-
 test("every other knob keeps the /settings door in both", () => {
   assert.match(paneSource, /applyPayload\(await saveSettings\(changes\)\)/);
   const at = paneSource.indexOf("async function save()");

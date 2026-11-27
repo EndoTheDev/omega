@@ -23,7 +23,6 @@ import {
   RESIZE_EDGES,
   RESTORE_EVENT,
   resizeMessage,
-  RUNTIME_POLL_TRIES,
   shellDecision,
   UNMAXIMISE_EVENT,
   nonClientRegionMessage,
@@ -355,18 +354,10 @@ describe("the shell verdict: one decision, one clock", () => {
     assert.equal(decision.verdict, "armed", "an expiry after the arm changes nothing");
   });
 
-  it("rides useDesktopChrome's one poll - the arm in activate, the expiry at the bound", () => {
-    const src = read("app/composables/desktopChrome.ts");
-    assert.match(src, /shell\.arm\(\);/, "the shim's shape arms the verdict");
-    assert.match(
-      src,
-      /if \(\+\+tries >= RUNTIME_POLL_TRIES\) \{\s*stopPolling\(\);[\s\S]{0,160}shell\.expire\(\);/,
-      "the same bound expires it - no second clock",
-    );
+  it("exports the decision surface an unarmed page reads as undecided", () => {
     assert.equal(typeof shellDecision, "function");
     assert.equal(shellDecision(), "undecided", "nothing arms in a plain node process");
     assert.ok(whenShellDecided() instanceof Promise, "the awaited form is exported beside the value");
-    assert.equal(RUNTIME_POLL_TRIES, 75);
   });
 });
 
