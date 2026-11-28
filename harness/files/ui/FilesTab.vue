@@ -193,10 +193,11 @@
     const id = focusedSession?.value ?? null;
     return id ? (chatHost?.sessionRow(id)?.workspace ?? null) : null;
   });
+  // the row is written from the server's list, never optimistically: a row flipped ahead
+  // of the store spends this one read on the old root and the pane sticks.
   watch([sessionId, rowWorkspace], () => {
     void refreshFiles();
   });
-
 
   function onSelect(sel: SelectedNode) {
     selected.value = sel;
