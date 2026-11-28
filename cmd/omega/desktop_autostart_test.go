@@ -65,7 +65,8 @@ func newFakeControl() (*autostartControl, *fakeAutostart, *reportLog) {
 func TestAutostartEnableCarriesDesktop(t *testing.T) {
 	control, backend, log := newFakeControl()
 
-	if !control.flip() {
+	control.flip()
+	if !backend.enabled {
 		t.Fatal("flip did not enable a disabled registration")
 	}
 	if backend.enableCalls != 1 {
@@ -129,14 +130,15 @@ func TestAutostartEnableErrorReportsAndRereads(t *testing.T) {
 	writeErr := errors.New("registry: access is denied")
 	backend.enableErr = writeErr
 
-	if control.flip() {
-		t.Fatal("flip reported the registration as on after a failed write")
+	control.flip()
+	if backend.statusCalls != 2 {
+		t.Fatalf("status calls = %d, want 2 (flip's read plus the post-write re-read)", backend.statusCalls)
+	}
+	if control.checked() {
+		t.Fatal("the row read on after a failed write: it must follow status, not the click")
 	}
 	if len(log.errs) != 1 || !errors.Is(log.errs[0], writeErr) {
 		t.Fatalf("reported %v, want the write error once", log.errs)
-	}
-	if backend.statusCalls != 2 {
-		t.Fatalf("status calls = %d, want 2 (flip's read plus the post-write re-read)", backend.statusCalls)
 	}
 }
 
