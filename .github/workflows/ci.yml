@@ -25,6 +25,10 @@ jobs:
           go-version: '1.26'
       - run: go vet ./...
       - run: go test ./...
+      # CGO_ENABLED=1 is explicit: -race needs a cgo toolchain, and a host
+      # without one silently drops the race build. No -count=1 (gate law).
+      - name: Race detector (CGO_ENABLED=1 go test -race ./...)
+        run: CGO_ENABLED=1 go test -race ./...
       - name: Binary-purity canary (scripts/nm-purity.sh - the kanban module must never survive its own removal build)
         run: scripts/nm-purity.sh
       - name: Shell scratch-repo suite (drift gate + release suggest + release notes + purity negatives + checksum emission + the git fence + dependency drift + the store-fixture extractor + the prod deploy leg)
