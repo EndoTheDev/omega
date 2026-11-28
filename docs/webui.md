@@ -157,18 +157,21 @@ or split that cannot seat every pane's floor does not squeeze into a
 lie: it is refused and the shell surfaces the one-line toast
 "no room - close a pane first" (app.vue) instead of a sub-floor pane.
 
-The gutter divider (`PaneDivider`) retains its magnetic snap rebase
-mechanics. On a drag between two FLEXIBLE panes the shares re-derive
-from the frozen pre-drag baseline (c50b749) - the squeeze chain is
-dead: a divider never pushes a third pane around (the wall-law). A divider with a FIXED pane on one side writes that pane's
-px and the ADJACENT neighbor absorbs the change 1:1 - every other
-flexible sibling holds its measured px (before it, the
-flex reflow spread the delta over the whole flex space, so a small
-pane beside a big one tracked the pointer at a fraction of the drag).
-Fixed panes drag down to the shared 128 floor. Below the
-mobile breakpoint the sidebars collapse into slide-in drawers over a
-scrim; chrome (menu/status bar) rides above all overlays: drawers z12,
-scrim z10.
+The gutter divider (`PaneDivider`) retains its snap rebase mechanics:
+the sidebars keep the +320 ladder (a rung at 320, 640, ... absorbs a drag
+within +/-15px), and on a drag between two FLEXIBLE panes the shares
+re-derive from the frozen pre-drag baseline (c50b749) - the squeeze chain
+is dead: a divider never pushes a third pane around (the wall-law). A
+divider with a FIXED pane on one side writes that pane's px and the
+ADJACENT neighbor absorbs the change 1:1 - every other flexible sibling
+holds its measured px (before it, the flex reflow spread the delta over
+the whole flex space, so a small pane beside a big one tracked the
+pointer at a fraction of the drag). Fixed panes drag down to the shared
+128 floor. The BOTTOM edge has no ladder: it follows the pointer 1:1
+between that floor and its cap (the chat floor above, the 50% max
+share), so there is no rung to fight. Below the mobile breakpoint the
+sidebars collapse into slide-in drawers over a scrim; chrome
+(menu/status bar) rides above all overlays: drawers z12, scrim z10.
 
 **Same-pane split drag** (the VS Code read): tab
 drag-and-drop runs ONE pure formula behind both the commit and the

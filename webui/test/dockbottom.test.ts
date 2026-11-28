@@ -38,7 +38,7 @@ import {
   type DockSplit,
 } from "../app/composables/dock.ts";
 import { defaultHostTabs, hostsOf } from "../app/composables/dockables.ts";
-import { snapCandidateAt, BOTTOM_SNAP_STEP } from "../app/composables/panes.ts";
+import { snapCandidateAt, SNAP_STEP } from "../app/composables/panes.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -527,15 +527,18 @@ describe("the horizontal divider drag (the bottom shell)", () => {
     assert.ok(d.collapsedPaneId, "collapse intent: 200 - 120 < 128");
   });
 
-  it("snaps on the +200 ladder (200/400/600), not the sidebars' +320", () => {
+  it("follows the pointer 1:1 between its floors - no ladder to fight", () => {
     const { split, startPx, contentPx } = column(200);
-    assert.equal(BOTTOM_SNAP_STEP, 200);
     const d = dragSplitDivider(split, 1, startPx, -190, contentPx);
     const bottom = (d.split as DockSplit).children[1] as DockPane;
-    assert.equal(bottom.fixed, 400, "snapped to rung 400");
+    assert.equal(bottom.fixed, 390, "a -190 drag lands at 390, not on a rung");
+    // 210 sits inside the old ladder's zone around 200 and must stay 210
+    const near = dragSplitDivider(split, 1, startPx, -10, contentPx);
+    const bottomNear = (near.split as DockSplit).children[1] as DockPane;
+    assert.equal(bottomNear.fixed, 210, "210 stays 210");
     const free = dragSplitDivider(split, 1, startPx, -100, contentPx);
     const bottomFree = (free.split as DockSplit).children[1] as DockPane;
-    assert.equal(bottomFree.fixed, 300, "between rungs the drag is free");
+    assert.equal(bottomFree.fixed, 300, "a -100 drag lands at 300");
   });
 
   it("the chat (the absorbing neighbor above) keeps its 320 floor", () => {
@@ -614,13 +617,12 @@ describe("the registry's home rulings", () => {
     assert.equal(strip.fixed, BOTTOM_DEFAULT_PX);
   });
 
-  it("snapCandidateAt answers the bottom ladder (+200) and the sidebars' ladder keeps +320", () => {
-    assert.equal(snapCandidateAt(400, 200), 400);
-    assert.equal(snapCandidateAt(390, 200), 400);
-    assert.equal(snapCandidateAt(414, 200), 400);
+  it("the sidebars' +320 ladder still answers; the bottom edge reads no rung", () => {
+    assert.equal(SNAP_STEP, 320);
     // the zone is ±15 INCLUSIVE (one past the zone stays free)
-    assert.equal(snapCandidateAt(384, 200), null);
-    assert.equal(snapCandidateAt(416, 200), null);
-    assert.equal(snapCandidateAt(320, 320), 320); // sidebar behavior unchanged
+    assert.equal(snapCandidateAt(305, SNAP_STEP), 320);
+    assert.equal(snapCandidateAt(640, SNAP_STEP), 640);
+    assert.equal(snapCandidateAt(304, SNAP_STEP), null);
+    assert.equal(snapCandidateAt(336, SNAP_STEP), null);
   });
 });
