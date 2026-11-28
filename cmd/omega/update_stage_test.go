@@ -330,7 +330,45 @@ type fakeChild struct{}
 
 func (fakeChild) Kill() error { return nil }
 
-// mustCfg loads the manager's config with resolved home paths.
+// TestFinalizeKeptServingCarriesReceiptOnly: a finalize that failed without stopping
+// anything keeps the home serving, and the receipt is the why's ONE carrier - a second
+// copy in the status error made the pane render the same sentence three times.
+func TestFinalizeKeptServingCarriesReceiptOnly(t *testing.T) {
+	m, _ := updateTestManager(t)
+	exe := filepath.Join(t.TempDir(), "omega.exe")
+	m.exePath = func() (string, error) { return exe, nil }
+	if err := os.WriteFile(exe, []byte("old-binary"), 0o700); err != nil {
+		t.Fatalf("exe: %v", err)
+	}
+	if err := os.WriteFile(exe+stagedSuffix, []byte("new-binary"), 0o700); err != nil {
+		t.Fatalf("staged: %v", err)
+	}
+	cfg := mustCfg(t, m)
+	makeTestStore(t, cfg.Store.DBPath)
+	m.set(func(s *core.UpdateStatus) { s.State = updateReady; s.StagedVer = "v9.9.9" })
+	m.activeRuns = func() int { return 0 }
+	m.finalizeStep = func(finalizeRequest) (finalizeOutcome, error) {
+		// The platform half refused before stopping anything: the old process still serves.
+		return finalizeOutcome{Serving: true}, errors.New("install the staged binary: access is denied")
+	}
+
+	if _, err := m.Finalize(context.Background(), true); err != nil {
+		t.Fatalf("Finalize: %v", err)
+	}
+	m.waitFinalize()
+
+	st := m.Status()
+	if st.State != updateFailed {
+		t.Fatalf("state = %q after the kept-serving failure, want failed", st.State)
+	}
+	if st.Receipt == nil || st.Receipt.Outcome != "rollback" || !strings.Contains(st.Receipt.Why, "access is denied") {
+		t.Fatalf("receipt = %+v, want the rollback receipt carrying the why", st.Receipt)
+	}
+	if st.Error != "" {
+		t.Fatalf("status error = %q, want empty: the receipt is the why's one carrier", st.Error)
+	}
+}
+
 func mustCfg(t *testing.T, m *updateManager) Config {
 	t.Helper()
 	cfg, err := m.loadConfig()

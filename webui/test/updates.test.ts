@@ -80,6 +80,31 @@ test("a rollback receipt names version, why and what was restored", () => {
   );
 });
 
+test("a failed finalize renders its why once - the receipt line is the carrier", () => {
+  // The pane has three carriers: the headline, the error paragraph (the status error it
+  // copies) and the receipt line. A failed finalize answers with the receipt only, so the
+  // why must appear exactly once across all three.
+  const st = status({
+    state: "failed",
+    receipt: {
+      version: "v0.20.0",
+      outcome: "rollback",
+      why: "health window failed after 30s",
+      restored: ["omega.db"],
+      at: 1,
+    },
+  });
+  const why = "health window failed after 30s";
+  const carriers = (s: UpdateStatus) =>
+    [updateHeadline(s), s.error ?? "", updateReceiptLine(s.receipt)].join("\n");
+  assert.equal(carriers(st).split(why).length - 1, 1, `rendered:\n${carriers(st)}`);
+
+  // The same status carrying the why in its error too is what rendered it three times:
+  // the server's duplicate field, not the pane, was the defect.
+  const doubled = status({ ...st, error: why });
+  assert.equal(carriers(doubled).split(why).length - 1, 3);
+});
+
 test("the restart prompt counts the live runs (R7: never a silent restart)", () => {
   assert.match(updateRestartPrompt(status({ active_runs: 0 })), /Restart omega now\?/);
   assert.match(updateRestartPrompt(status({ active_runs: 1 })), /1 run active/);

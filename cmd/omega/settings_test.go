@@ -1259,7 +1259,7 @@ func TestSettingsSetDesktopInstances(t *testing.T) {
 	}
 	want := []core.SavedInstance{
 		{Name: "laptop", URL: "http://127.0.0.1:8099"},
-		{Name: "pi", URL: "https://Omega.Example.Test"},
+		{Name: "pi", URL: "https://omega.example.test"},
 	}
 	if !reflect.DeepEqual(cfg.Desktop.Instances, want) {
 		t.Fatalf("config rows = %+v, want the normalized list", cfg.Desktop.Instances)
@@ -1316,7 +1316,7 @@ func TestDesktopInstancesOneWriter(t *testing.T) {
 	}
 	want := []map[string]any{
 		{"name": "laptop", "url": "http://127.0.0.1:8099"},
-		{"name": "pi", "url": "https://Omega.Example.Test"},
+		{"name": "pi", "url": "https://omega.example.test"},
 	}
 	if !reflect.DeepEqual(knob.Value, want) {
 		t.Fatalf("pane knob = %#v, want the normalized rows", knob.Value)

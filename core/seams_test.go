@@ -17,7 +17,7 @@ func TestNormalizeInstancesAddressShorthand(t *testing.T) {
 		{"bare scheme-less host and port", "127.0.0.1:8099", "http://127.0.0.1:8099"},
 		{"named host shorthand", "laptop:8099", "http://laptop:8099"},
 		{"bare host", "omega.example.test", "http://omega.example.test"},
-		{"explicit scheme is kept", "HTTPS://Omega.Example.Test/", "https://Omega.Example.Test"},
+		{"explicit scheme is kept", "HTTPS://Omega.Example.Test/", "https://omega.example.test"},
 		{"path prefix survives", "127.0.0.1:8099/omega", "http://127.0.0.1:8099/omega"},
 	}
 	for _, tc := range cases {
@@ -51,6 +51,28 @@ func TestNormalizeInstancesAddressShorthand(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "listed twice") {
 		t.Fatalf("duplicate error = %v, want the duplicate refusal", err)
+	}
+}
+
+// TestNormalizeInstancesFoldsHostCase: a host is case-insensitive, so two spellings of one
+// host are one row - the webui's own address key lowercases the whole address, and the
+// validator must not admit a duplicate the pane would refuse. A path is case-sensitive:
+// only the host folds.
+func TestNormalizeInstancesFoldsHostCase(t *testing.T) {
+	_, err := NormalizeInstances([]SavedInstance{
+		{Name: "a", URL: "http://EXAMPLE.com:8099"},
+		{Name: "b", URL: "http://example.com:8099"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "listed twice") {
+		t.Fatalf("duplicate error = %v, want the two case spellings of one host refused", err)
+	}
+
+	out, err := NormalizeInstances([]SavedInstance{{Name: "row", URL: "http://Omega.Example.Test/API/v1/"}})
+	if err != nil {
+		t.Fatalf("row refused: %v", err)
+	}
+	if got, want := out[0].URL, "http://omega.example.test/API/v1"; got != want {
+		t.Fatalf("url = %q, want %q (the host folds, the path keeps its case)", got, want)
 	}
 }
 

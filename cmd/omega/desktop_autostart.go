@@ -48,15 +48,16 @@ func (c *autostartControl) checked() bool {
 	return on
 }
 
-// flip inverts the live registration and returns the state it reports afterwards. A
-// status failure is reported and writes nothing - the direction is unknown.
-func (c *autostartControl) flip() bool {
+// flip inverts the live registration. A status failure is reported and writes nothing -
+// the direction is unknown; a clean write is re-read by apply, and the row's own Checked
+// read is what shows the state.
+func (c *autostartControl) flip() {
 	on, err := c.backend.Status()
 	if err != nil {
 		c.report(err)
-		return false
+		return
 	}
-	return c.apply(!on)
+	c.apply(!on)
 }
 
 // apply sets the registration, then re-reads: a failed write is reported, and the row

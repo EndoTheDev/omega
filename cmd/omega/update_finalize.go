@@ -34,6 +34,11 @@ type finalizeRequest struct {
 	// Stop gracefully stops the serving runtime (the parent must release the port and the
 	// store before the child boots). Unix exec needs none: the image is replaced.
 	Stop func()
+	// Checkpoint re-takes the store snapshot once Stop has closed the store: the serve
+	// accepted writes until that moment, and a row committed before the stop must still be
+	// in the rollback point. Unix exec has no stop to hook, so its snapshot stays the
+	// pre-finalize copy.
+	Checkpoint func() error
 	// Probe reads one /health answer and requires the new version.
 	Probe func(ctx context.Context, origin, want string) error
 	// Spawn starts the binary at ExePath detached and returns its handle.
@@ -123,6 +128,7 @@ func (m *updateManager) Finalize(ctx context.Context, force bool) (core.UpdateSt
 		PortAddr:   hostPort(m.origin),
 		Window:     m.healthWindow,
 		Stop:       m.stopServing,
+		Checkpoint: func() error { return recheckpointSnapshot(snap) },
 		Probe:      m.probeVersion,
 		Spawn:      m.spawn,
 		Swap:       m.swap,
@@ -168,10 +174,12 @@ func (m *updateManager) finalizeRun(req finalizeRequest, snap *updateSnapshot, a
 		m.logf("update %s rollback: the store restore failed: %v", req.NewVersion, restoreErr)
 	}
 	if outcome.Serving {
-		// Nothing was stopped (the Unix exec path refused): keep serving, let the user retry.
+		// Nothing was stopped (the Unix exec path refused): keep serving, let the user
+		// retry. The receipt is the why's one carrier - the status error stays empty, so the
+		// pane does not render the same sentence in the headline and in the receipt line.
 		m.set(func(s *core.UpdateStatus) {
 			s.State = updateFailed
-			s.Error = err.Error()
+			s.Error = ""
 			s.Receipt = &receipt
 		})
 		m.mu.Lock()

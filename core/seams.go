@@ -208,9 +208,12 @@ var (
 )
 
 // normalizeInstanceURL accepts an http/https origin (a path prefix is allowed) and
-// returns it with a lowercased scheme and no trailing slash. A bare `host:port` and a
-// bare host are the http shorthand; the webui's own add row and this validator must
-// accept the same addresses or the pane teaches a spelling the file refuses.
+// returns it with a lowercased scheme and host and no trailing slash. The host folds
+// because a host is case-insensitive - the webui's own key lowercases the whole address,
+// and two spellings of one host would otherwise dodge the duplicate check. A path is
+// case-sensitive and keeps its case. A bare `host:port` and a bare host are the http
+// shorthand; the webui's own add row and this validator must accept the same addresses
+// or the pane teaches a spelling the file refuses.
 func normalizeInstanceURL(raw string) (string, error) {
 	s := strings.TrimSpace(raw)
 	if s == "" {
@@ -238,6 +241,7 @@ func normalizeInstanceURL(raw string) (string, error) {
 		return "", fmt.Errorf("url needs a host")
 	}
 	u.Scheme = scheme
+	u.Host = strings.ToLower(u.Host)
 	u.Path = strings.TrimSuffix(u.Path, "/")
 	return u.String(), nil
 }
