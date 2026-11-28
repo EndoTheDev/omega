@@ -32,6 +32,9 @@ func settingsKnobKeys(t *testing.T) map[string]bool {
 		"provider.approvals_model":       true,
 		"provider.instances":             true,
 		"desktop.instances":              true,
+		"desktop.start_minimized":        true,
+		"desktop.minimize_to_tray":       true,
+		"desktop.close_to_tray":          true,
 		"server.port":                    true,
 		"server.bind":                    true,
 		"server.run_timeout":             true,
@@ -1178,6 +1181,129 @@ func TestDesktopInstancesKnobShape(t *testing.T) {
 	}
 	if !reflect.DeepEqual(knob.Default, []map[string]any{}) {
 		t.Fatalf("default = %#v, want the empty list", knob.Default)
+	}
+}
+
+// TestDesktopWindowKnobs pins the pane's desktop group: the list editor plus the three
+// window toggles, one section, and the defaults the shell honors - an untouched config
+// reads false/false/true, so the close keeps hiding.
+func TestDesktopWindowKnobs(t *testing.T) {
+	cfg := DefaultConfig()
+	var keys []string
+	for _, g := range settingGroups(&cfg) {
+		if g.Key != "desktop" {
+			continue
+		}
+		for _, k := range g.Knobs {
+			keys = append(keys, k.Key)
+			if k.Key == "desktop.instances" {
+				continue
+			}
+			if k.Type != "toggle" {
+				t.Errorf("%s is a %q knob, want a toggle", k.Key, k.Type)
+			}
+		}
+	}
+	want := []string{
+		"desktop.instances",
+		"desktop.start_minimized",
+		"desktop.minimize_to_tray",
+		"desktop.close_to_tray",
+	}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("desktop knobs = %v, want %v", keys, want)
+	}
+
+	def := defaultConfig()
+	if def.Desktop.StartMinimized || def.Desktop.MinimizeToTray || !def.Desktop.CloseToTray {
+		t.Fatalf("desktop defaults = %+v, want start_minimized false, minimize_to_tray false, close_to_tray true",
+			def.Desktop)
+	}
+}
+
+// TestDesktopWindowOptionsRoundTrip saves each window toggle through the app's own store -
+// the door the embedded window's pane writes through - and reads each back from the file.
+func TestDesktopWindowOptionsRoundTrip(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	store := &omegaSettings{path: path}
+
+	// A YAML that never named the keys loads the defaults.
+	options, err := store.WindowOptions()
+	if err != nil {
+		t.Fatalf("window options: %v", err)
+	}
+	if options.StartMinimized || options.MinimizeToTray || !options.CloseToTray {
+		t.Fatalf("a file without the keys = %+v, want false/false/true", options)
+	}
+
+	for _, tc := range []struct {
+		key  string
+		on   bool
+		want DesktopConfig
+	}{
+		{"start_minimized", true, DesktopConfig{StartMinimized: true, CloseToTray: true}},
+		{"minimize_to_tray", true, DesktopConfig{StartMinimized: true, MinimizeToTray: true, CloseToTray: true}},
+		{"close_to_tray", false, DesktopConfig{StartMinimized: true, MinimizeToTray: true}},
+	} {
+		if err := store.SaveWindowOption(tc.key, tc.on); err != nil {
+			t.Fatalf("save %s=%v: %v", tc.key, tc.on, err)
+		}
+		got, err := store.WindowOptions()
+		if err != nil {
+			t.Fatalf("read %s back: %v", tc.key, err)
+		}
+		got.Instances = nil
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Fatalf("after saving %s=%v the file answers %+v, want %+v", tc.key, tc.on, got, tc.want)
+		}
+	}
+
+	// The file is the receipt, and it carries all three keys.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"start_minimized: true", "minimize_to_tray: true", "close_to_tray: false"} {
+		if !strings.Contains(string(data), key) {
+			t.Fatalf("config.yaml lost %q:\n%s", key, data)
+		}
+	}
+
+	// The four row names are the only window options the door admits; the registration is
+	// not a config key.
+	if err := store.SaveWindowOption("start_with_system", true); err == nil {
+		t.Fatal("the autostart row saved a config key, want a refusal")
+	}
+}
+
+// TestDesktopWindowOptionsSettingsDoor pins the browser tab's door: the same three knobs
+// over PUT /settings, one writer, the same file.
+func TestDesktopWindowOptionsSettingsDoor(t *testing.T) {
+	path := writeTestConfig(t, testConfigYAML)
+	pane, err := saveSettings(path, nil, nil, nil, nil, nil, map[string]any{
+		"desktop.minimize_to_tray": true,
+		"desktop.close_to_tray":    false,
+	})
+	if err != nil {
+		t.Fatalf("pane save: %v", err)
+	}
+	knob, ok := pane.Knob("desktop.minimize_to_tray")
+	if !ok {
+		t.Fatal("the refreshed payload lost desktop.minimize_to_tray")
+	}
+	if knob.Value != true {
+		t.Fatalf("minimize_to_tray = %#v, want true", knob.Value)
+	}
+	if knob, ok = pane.Knob("desktop.close_to_tray"); !ok || knob.Value != false {
+		t.Fatalf("close_to_tray = %#v (present %v), want false", knob.Value, ok)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Desktop.MinimizeToTray || cfg.Desktop.CloseToTray {
+		t.Fatalf("config = %+v, want minimize on and close off", cfg.Desktop)
 	}
 }
 

@@ -219,6 +219,15 @@ func settingGroups(cfg *Config) []core.SettingsGroup {
 				{Key: "desktop.instances", Label: "instances", Type: "instances",
 					Value: desktopInstancesKnob(cfg), Default: desktopInstancesKnob(&def), Live: true,
 					Help: "the saved connections the status bar panel lists and switches to; each row is a name and an address; the same list a hand edit of config.yaml desktop.instances carries; applies live. a desktop window keeps its own copy in the app's home and saves this knob there, so the page may show a different server's rows"},
+				{Key: "desktop.start_minimized", Label: "start minimized", Type: "toggle",
+					Value: cfg.Desktop.StartMinimized, Default: def.Desktop.StartMinimized,
+					Help: "launch to the tray: the window is created without a show, so a launch is the tray icon alone until a tray click (or Open omega) opens it; applies on the next desktop launch - the window reads it once at launch"},
+				{Key: "desktop.minimize_to_tray", Label: "minimize to tray", Type: "toggle",
+					Value: cfg.Desktop.MinimizeToTray, Default: def.Desktop.MinimizeToTray, Live: true,
+					Help: "the caption's minimize press hides the window instead of minimizing it to the taskbar; a tray click restores it; applies at once - the press reads the setting"},
+				{Key: "desktop.close_to_tray", Label: "close to tray", Type: "toggle",
+					Value: cfg.Desktop.CloseToTray, Default: def.Desktop.CloseToTray, Live: true,
+					Help: "closing the window hides it and the agent keeps running; off lets the close through and the desktop exits (a spawned agent dies with it); on by default; applies at once - the close reads the setting"},
 			},
 		},
 		{
@@ -624,7 +633,8 @@ func applySettingValues(cfg *Config, values map[string]any) error {
 			err = setInt(&cfg.Sessions.SummarizeAfterHours, key, raw, 0, math.MaxInt32) // 0 = the default
 		case "compaction.enabled", "memory.enabled", "memory.user_profile_enabled",
 			"logging.enabled", "approvals.judge_fail_closed",
-			"updates.auto_check", "updates.auto_update":
+			"updates.auto_check", "updates.auto_update",
+			"desktop.start_minimized", "desktop.minimize_to_tray", "desktop.close_to_tray":
 			err = setBool(cfg, key, raw)
 		case "compaction.threshold":
 			err = setFloat(&cfg.Compaction.Threshold, key, raw, 0.05, 1)
@@ -974,6 +984,12 @@ func setBool(cfg *Config, key string, raw any) error {
 		cfg.Updates.AutoCheck = b
 	case "updates.auto_update":
 		cfg.Updates.AutoUpdate = b
+	case "desktop.start_minimized":
+		cfg.Desktop.StartMinimized = b
+	case "desktop.minimize_to_tray":
+		cfg.Desktop.MinimizeToTray = b
+	case "desktop.close_to_tray":
+		cfg.Desktop.CloseToTray = b
 	default:
 		return fmt.Errorf("unknown setting: %s", key)
 	}
@@ -1163,6 +1179,30 @@ func (s *omegaSettings) Instances() ([]core.SavedInstance, error) {
 // validation pass and the same hot-apply as every other knob.
 func (s *omegaSettings) SaveInstances(list []core.SavedInstance) error {
 	_, err := s.Save(map[string]any{"desktop.instances": list})
+	return err
+}
+
+// WindowOptions reads the app's own window options. The desktop host answers the pane's
+// window rows from here, so an embedded window shows its own config.yaml whatever server
+// served the page; a hand edit lands on the next read.
+func (s *omegaSettings) WindowOptions() (DesktopConfig, error) {
+	cfg, err := LoadConfig(s.path)
+	if err != nil {
+		return DesktopConfig{}, err
+	}
+	return cfg.Desktop, nil
+}
+
+// SaveWindowOption writes one window option THROUGH saveSettings: the same atomic writer,
+// the same validation pass, the same materialized file as every other knob. The keys are
+// the pane rows' own names, so the door and the schema cannot drift.
+func (s *omegaSettings) SaveWindowOption(key string, on bool) error {
+	switch key {
+	case desktopOptionStartMinimized, desktopOptionMinimizeToTray, desktopOptionCloseToTray:
+	default:
+		return fmt.Errorf("%s is not a desktop window option", key)
+	}
+	_, err := s.Save(map[string]any{"desktop." + key: on})
 	return err
 }
 

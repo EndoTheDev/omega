@@ -256,6 +256,10 @@ func TestDecodeDesktopRequest(t *testing.T) {
 		{name: "save empty", raw: `{"omega":"instances:save","instances":[]}`, want: desktopMessageSaveInstances},
 		{name: "switch", raw: `{"omega":"instances:switch","url":"http://127.0.0.1:18101"}`, want: desktopMessageSwitchInstance},
 		{name: "chrome ready", raw: `{"omega":"chrome:ready"}`, want: desktopMessageChromeReady},
+		{name: "window get", raw: `{"omega":"window:get"}`, want: desktopMessageGetWindow},
+		{name: "window set", raw: `{"omega":"window:set","key":"close_to_tray","value":false}`, want: desktopMessageSetWindow},
+		{name: "window set without a key", raw: `{"omega":"window:set","value":true}`, wantErr: "carries no key"},
+		{name: "window set without a value", raw: `{"omega":"window:set","key":"close_to_tray"}`, wantErr: "carries no value"},
 		{name: "unknown member", raw: `{"omega":"instances:delete"}`, wantErr: "unknown desktop message"},
 		{name: "malformed json", raw: `{"omega":`, wantErr: "not a desktop message"},
 		{name: "not an object", raw: `"instances:get"`, wantErr: "not a desktop message"},
@@ -283,6 +287,11 @@ func TestDecodeDesktopRequest(t *testing.T) {
 	saved, err := decodeDesktopRequest(`{"omega":"instances:save","instances":[{"name":"pi","url":"http://192.0.2.10:8098"}]}`)
 	if err != nil || len(saved.instances) != 1 || saved.instances[0].Name != "pi" {
 		t.Fatalf("the save body did not carry its rows: %+v, %v", saved, err)
+	}
+
+	set, err := decodeDesktopRequest(`{"omega":"window:set","key":"close_to_tray","value":false}`)
+	if err != nil || set.key != "close_to_tray" || set.value {
+		t.Fatalf("the window body did not carry its row and state: %+v, %v", set, err)
 	}
 }
 
@@ -641,5 +650,163 @@ func TestDesktopChromeBound(t *testing.T) {
 	}
 	if len(probe.frames) != 2 || probe.frames[1] != true {
 		t.Fatalf("the late announcement asked for frames %v, want frameless again", probe.frames)
+	}
+}
+
+// fakeWindowStore is the app's own window options behind the door: three booleans and the
+// writes that landed.
+type fakeWindowStore struct {
+	options DesktopConfig
+	saved   map[string]bool
+	err     error
+}
+
+func (f *fakeWindowStore) WindowOptions() (DesktopConfig, error) {
+	if f.err != nil {
+		return DesktopConfig{}, f.err
+	}
+	return f.options, nil
+}
+
+func (f *fakeWindowStore) SaveWindowOption(key string, on bool) error {
+	if f.err != nil {
+		return f.err
+	}
+	if f.saved == nil {
+		f.saved = make(map[string]bool, 3)
+	}
+	f.saved[key] = on
+	switch key {
+	case desktopOptionStartMinimized:
+		f.options.StartMinimized = on
+	case desktopOptionMinimizeToTray:
+		f.options.MinimizeToTray = on
+	case desktopOptionCloseToTray:
+		f.options.CloseToTray = on
+	}
+	return nil
+}
+
+// TestDesktopHostServesTheWindowOptions is the pane's four-row surface without a window:
+// the read answers the registration and the app's three config values, a write lands
+// through the one store (or the ONE autostart control the tray row flips), and a refusal
+// answers with the writer's words.
+func TestDesktopHostServesTheWindowOptions(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	store := &fakeWindowStore{options: DesktopConfig{CloseToTray: true}}
+	backend := &fakeAutostart{}
+	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	host.setWindowOptions(store, newAutostartControl(backend, nil))
+	page := &application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}
+
+	last := func() desktopWindowReply {
+		t.Helper()
+		if len(probe.events) == 0 {
+			t.Fatal("the host answered nothing")
+		}
+		event := probe.events[len(probe.events)-1]
+		if event.name != desktopWindowOptionsEvent {
+			t.Fatalf("event = %q, want %q", event.name, desktopWindowOptionsEvent)
+		}
+		reply, ok := event.payload.(desktopWindowReply)
+		if !ok {
+			t.Fatalf("payload type = %T, want desktopWindowReply", event.payload)
+		}
+		return reply
+	}
+
+	if err := host.Handle(page, `{"omega":"window:get"}`); err != nil {
+		t.Fatalf("window:get: %v", err)
+	}
+	first := last()
+	if first.Error != "" || first.StartWithSystem || first.StartMinimized || first.MinimizeToTray || !first.CloseToTray {
+		t.Fatalf("the first answer = %+v, want the registration off and the app's false/false/true", first)
+	}
+
+	// a config row writes through the store and the answer is the re-read state
+	if err := host.Handle(page, `{"omega":"window:set","key":"minimize_to_tray","value":true}`); err != nil {
+		t.Fatalf("window:set minimize: %v", err)
+	}
+	if !store.saved[desktopOptionMinimizeToTray] {
+		t.Fatalf("the write did not reach the store: %+v", store.saved)
+	}
+	if got := last(); !got.MinimizeToTray {
+		t.Fatalf("the answer after the write = %+v, want minimize_to_tray on", got)
+	}
+
+	// start with system flips the SAME registration the tray row flips
+	if err := host.Handle(page, `{"omega":"window:set","key":"start_with_system","value":true}`); err != nil {
+		t.Fatalf("window:set autostart: %v", err)
+	}
+	if !backend.enabled {
+		t.Fatal("the pane's Start with Windows row did not write the registration")
+	}
+	if len(backend.args) != 1 || len(backend.args[0]) != 1 || backend.args[0][0] != autostartDesktopArg {
+		t.Fatalf("registration args = %q, want exactly [%q]", backend.args, autostartDesktopArg)
+	}
+	if got := last(); !got.StartWithSystem {
+		t.Fatalf("the answer after the autostart flip = %+v, want start_with_system on", got)
+	}
+	if _, configWrite := store.saved[desktopOptionStartWithSystem]; configWrite {
+		t.Fatal("the autostart row wrote a config key")
+	}
+
+	// a refused write answers the writer's words; the read behind the same broken store
+	// cannot answer a state either, so the rows fall to their zero values under the error
+	// line - never a row that silently reads the pre-write state as truth
+	store.err = errors.New("config.yaml is read-only")
+	if err := host.Handle(page, `{"omega":"window:set","key":"close_to_tray","value":false}`); err != nil {
+		t.Fatalf("window:set refusal: %v", err)
+	}
+	if got := last(); !strings.Contains(got.Error, "read-only") {
+		t.Fatalf("a refused write answered %+v, want the writer's words", got)
+	}
+}
+
+// TestDesktopHostWindowOptionsWithoutASurface: a host built without the store answers the
+// refusal instead of guessing a state - never a row that silently reads off.
+func TestDesktopHostWindowOptionsWithoutASurface(t *testing.T) {
+	const origin = "http://127.0.0.1:18101"
+	host, probe := newTestDesktopHost(origin, &fakeInstanceStore{})
+	page := &application.OriginInfo{Origin: origin + "/", TopOrigin: origin + "/"}
+
+	if err := host.Handle(page, `{"omega":"window:get"}`); err != nil {
+		t.Fatalf("window:get: %v", err)
+	}
+	reply := probe.events[len(probe.events)-1].payload.(desktopWindowReply)
+	if !strings.Contains(reply.Error, "no options surface") {
+		t.Fatalf("a host without a surface answered %+v, want the refusal", reply)
+	}
+}
+
+// fakeCaptionWindow counts the caption presses that reached the window itself.
+type fakeCaptionWindow struct{ minimised, toggled, closed int }
+
+func (f *fakeCaptionWindow) Minimise() application.Window { f.minimised++; return nil }
+func (f *fakeCaptionWindow) ToggleMaximise()              { f.toggled++ }
+func (f *fakeCaptionWindow) Close()                       { f.closed++ }
+
+// TestDesktopCaptionPressesReachTheShell: the minimize cell asks the shell, so
+// minimize-to-tray hides and never touches the window's own minimize; the other two cells
+// are the window's.
+func TestDesktopCaptionPressesReachTheShell(t *testing.T) {
+	win := &fakeCaptionWindow{}
+	shell, probe := newTrayShell()
+	shell.setWindowPolicy(func() desktopWindowPolicy {
+		return desktopWindowPolicy{MinimizeToTray: true}
+	})
+
+	desktopWindowAction(win, shell, desktopWindowEventMinimise)
+	if win.minimised != 0 {
+		t.Fatalf("the caption's minimize called the window's own minimize (%d times)", win.minimised)
+	}
+	if probe.hidden != 1 {
+		t.Fatalf("hides = %d, want 1", probe.hidden)
+	}
+
+	desktopWindowAction(win, shell, desktopWindowEventToggleMaximise)
+	desktopWindowAction(win, shell, desktopWindowEventClose)
+	if win.toggled != 1 || win.closed != 1 {
+		t.Fatalf("toggles = %d closes = %d, want one each", win.toggled, win.closed)
 	}
 }
