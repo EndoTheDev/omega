@@ -8,10 +8,12 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -76,6 +78,63 @@ func TestFinalizePlatformSwapSpawnSupervise(t *testing.T) {
 	}
 	if body, _ := os.ReadFile(exe + ".bak"); string(body) != "old" {
 		t.Fatalf("omega.bak = %q, want the replaced binary", body)
+	}
+}
+
+// TestFinalizePlatformRecheckpointsAfterStop: the store copy is re-taken between the stop
+// and the port wait, so a row the old serve committed after the pre-finalize snapshot is
+// in the rollback point - and a write attempted after the stop cannot land at all.
+func TestFinalizePlatformRecheckpointsAfterStop(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "omega.exe")
+	staged := exe + stagedSuffix
+	if err := os.WriteFile(exe, []byte("old"), 0o700); err != nil {
+		t.Fatalf("exe: %v", err)
+	}
+	if err := os.WriteFile(staged, []byte("new"), 0o700); err != nil {
+		t.Fatalf("staged: %v", err)
+	}
+	dbPath := filepath.Join(dir, "omega.db")
+	makeTestStore(t, dbPath) // probes(n) with the marker row n = 1
+	snap, err := snapshotBeforeFinalize(dbPath, "", "v9.9.9")
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	// The old serve accepts a write after the copy and before the stop.
+	execStore(t, dbPath, `INSERT INTO probes (n) VALUES (2)`)
+
+	live, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("live store: %v", err)
+	}
+	var afterStopErr error
+	req := finalizeRequest{
+		ExePath:    exe,
+		StagedPath: staged,
+		NewVersion: "v9.9.9",
+		Origin:     "http://127.0.0.1:1",
+		PortAddr:   closedPortAddr(t),
+		Window:     time.Second,
+		Stop: func() {
+			// The runtime's shutdown closes the store; a write after it fails.
+			live.Close()
+			_, afterStopErr = live.Exec(`INSERT INTO probes (n) VALUES (3)`)
+		},
+		Checkpoint: func() error { return recheckpointSnapshot(snap) },
+		Probe:      func(context.Context, string, string) error { return nil },
+		Spawn:      func(string) (finalizeChild, error) { return fakeChild{}, nil },
+		Swap:       replaceBinary,
+		Rollback:   rollbackSwap,
+		Sleep:      func(time.Duration) {},
+	}
+	if _, err := finalizePlatform(req); err != nil {
+		t.Fatalf("finalizePlatform: %v", err)
+	}
+	if afterStopErr == nil {
+		t.Fatal("the store accepted a write after the stop: the re-checkpoint bounds nothing")
+	}
+	if rows := storeRows(t, snap.DB); !reflect.DeepEqual(rows, []int{1, 2}) {
+		t.Fatalf("snapshot rows = %v, want [1 2]: the row the serve accepted before the stop is missing from the rollback point", rows)
 	}
 }
 

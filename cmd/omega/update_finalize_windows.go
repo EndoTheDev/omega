@@ -22,6 +22,14 @@ func finalizePlatform(req finalizeRequest) (finalizeOutcome, error) {
 	if req.Stop != nil {
 		req.Stop()
 	}
+	// The store is closed now: re-take the snapshot so a row the old serve committed before
+	// the stop is still in the rollback point.
+	if req.Checkpoint != nil {
+		if err := req.Checkpoint(); err != nil {
+			_ = req.Rollback(req.ExePath, req.ExePath+".bak")
+			return finalizeOutcome{}, fmt.Errorf("re-checkpoint the rollback snapshot: %w", err)
+		}
+	}
 	// The child binds the same port: the parent's listener must be released first.
 	if err := waitPortFree(req.PortAddr, 20*time.Second); err != nil {
 		_ = req.Rollback(req.ExePath, req.ExePath+".bak")

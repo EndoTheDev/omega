@@ -4,7 +4,9 @@ package main
 // config.yaml into <data>/.pre-<newversion>. Retention is ONE - the latest snapshot only,
 // matching the one-generation omega.bak contract; older .pre-* directories are deleted in
 // the same step. A window pass keeps the snapshot as the retained backup; a window fail
-// restores it, and so does the manual rollback.
+// restores it, and so does the manual rollback. The store copy is taken twice: before the
+// restart begins, and again after the old serve stops, so no write the old serve accepted
+// is missing from the rollback point.
 
 import (
 	"context"
@@ -85,6 +87,29 @@ func snapshotBeforeFinalize(dbPath, configPath, version string) (*updateSnapshot
 		}
 	}
 	return snap, nil
+}
+
+// recheckpointSnapshot re-takes the store half of a snapshot once the serving runtime has
+// stopped. The pre-finalize copy is taken while the old serve still accepts writes, so a
+// row committed before the stop would be missing from a rollback; the stop closes the
+// store, so the copy taken here is the whole state.
+func recheckpointSnapshot(snap *updateSnapshot) error {
+	if snap == nil {
+		return nil
+	}
+	if err := checkpointStore(snap.LiveDB); err != nil {
+		return err
+	}
+	if _, err := os.Stat(snap.LiveDB); err != nil {
+		return nil // never ran: the first copy is the whole state
+	}
+	if err := copyFile(snap.LiveDB, snap.DB); err != nil {
+		return fmt.Errorf("re-checkpoint snapshot store: %w", err)
+	}
+	if err := validateSnapshot(snap.DB); err != nil {
+		return fmt.Errorf("re-checkpointed snapshot is not a database: %w", err)
+	}
+	return nil
 }
 
 // validateSnapshot opens the copy and reads its schema: a torn copy fails here, while the
