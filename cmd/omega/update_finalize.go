@@ -174,10 +174,12 @@ func (m *updateManager) finalizeRun(req finalizeRequest, snap *updateSnapshot, a
 		m.logf("update %s rollback: the store restore failed: %v", req.NewVersion, restoreErr)
 	}
 	if outcome.Serving {
-		// Nothing was stopped (the Unix exec path refused): keep serving, let the user retry.
+		// Nothing was stopped (the Unix exec path refused): keep serving, let the user
+		// retry. The receipt is the why's one carrier - the status error stays empty, so the
+		// pane does not render the same sentence in the headline and in the receipt line.
 		m.set(func(s *core.UpdateStatus) {
 			s.State = updateFailed
-			s.Error = err.Error()
+			s.Error = ""
 			s.Receipt = &receipt
 		})
 		m.mu.Lock()
