@@ -281,9 +281,10 @@ export function dropQueuedRow(current: QueuedRow[], id: string): QueuedRow[] {
 /** switchWorkspace moves a session's root: the store first, the row second. The row's
     workspace is the FILES tab's only re-root trigger, so a write sent before the PATCH
     answers spends the pane's one read on the OLD store row - and the confirmed value
-    that lands after it equals what the row already shows, so the stale root survives a
-    reload. `refresh` is the shell's server-read of the session list; it runs on both
-    outcomes, so a refused switch restores the row instead of leaving a lie in it. */
+    that lands after it equals what the row already shows, so the stale root sticks until
+    a reload. An empty target clears the pin, exactly as the PATCH reads it. `refresh` is
+    the shell's server-read of the session list; it runs on both outcomes, so a refused
+    switch restores the row instead of leaving a lie in it. */
 export async function switchWorkspace(
   row: { id: string; workspace?: string | null },
   workspace: string,
@@ -292,7 +293,7 @@ export async function switchWorkspace(
     refresh(): void | Promise<void>;
   },
 ): Promise<boolean> {
-  if (!workspace || row.workspace === workspace) return false;
+  if ((row.workspace ?? "") === workspace) return false;
   try {
     await deps.patch(row.id, workspace);
     return true;
