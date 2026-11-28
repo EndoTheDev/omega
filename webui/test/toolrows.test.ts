@@ -73,8 +73,9 @@ test("ToolCallLine pins a manual toggle and recomputes around it", () => {
 
 test("ChatMessage copies the RAW message content, never rendered HTML", () => {
   const m = src("components/chat/ChatMessage.vue");
-  // the ONE copy path: the helper, awaited, verdict- branched - never a direct.
-  assert.match(m, /const raw = await copyText\(props\.content\)/);
+  // the ONE copy path: the helper, awaited, verdict- branched - never a direct. The user
+  // branch copies the stamp-free text (the day stamp is history, not the reader's).
+  assert.match(m, /const raw = await copyText\(userText\.value\)/);
   assert.match(m, /if \(!raw\) \{/);
   assert.doesNotMatch(m, /navigator\.clipboard/);
   // the copy glyph must not bubble into bubble-level handlers
