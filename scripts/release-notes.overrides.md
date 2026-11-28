@@ -27,6 +27,16 @@ Rules for the text:
 - Do not restate the stats line - the script prints it from the commit log.
 - User-facing omega changes only (Endo 2026-11-23): factory, pipeline and internal-hygiene lines stay out of the hook and the bullets; the mechanical changelog block stays complete.
 
+## v0.19.1
+
+hook: The polish round: settings get one home, the desktop gets smoother, and updates now protect your data.
+
+- one settings section holds all four window options, in the webui and the desktop
+- the bottom pane's divider tracks the pointer with no dead zone
+- a session that crosses midnight shows a day divider, never bubble text
+- picking a workspace re-roots the files tab to it
+- a failed update rolls your data back together with the binary
+
 ## v0.19.0
 
 hook: omega comes to the desktop - a native Windows app that holds your whole agent, with live switching between every omega you run.
