@@ -20,51 +20,58 @@
         </p>
         <template v-if="appearance === 'stacked'">
           <!-- a run is one block's subtree: runs never span blocks -->
-          <div
+          <template
             v-for="block in groupedBlocks"
-            :key="blockKey(block)"
-            class="msg-block">
-            <template
-              v-for="(entry, index) in block"
-              :key="entryKey(entry)">
-              <ToolGroup
-                v-if="isToolRun(entry)"
-                :items="entry.items"
-                :gate-cards="entry.items.map(gateCardForItem)"
-                :session-id="sessionId"
-                :fold-key="groupFoldKey(entry.items)"
-                :live="busy" />
-              <div
-                v-else-if="pinnedSlot(block, index)"
-                class="live-pin">
+            :key="blockKey(block)">
+            <div
+              v-if="blockDay(block)"
+              class="day-divider">{{ blockDay(block) }}</div>
+            <div class="msg-block">
+              <template
+                v-for="(entry, index) in block"
+                :key="entryKey(entry)">
+                <ToolGroup
+                  v-if="isToolRun(entry)"
+                  :items="entry.items"
+                  :gate-cards="entry.items.map(gateCardForItem)"
+                  :session-id="sessionId"
+                  :fold-key="groupFoldKey(entry.items)"
+                  :live="busy" />
+                <div
+                  v-else-if="pinnedSlot(block, index)"
+                  class="live-pin">
+                  <ChatItem
+                    :item="entry"
+                    :gate-card="gateCardForItem(entry)"
+                    :session-id="sessionId"
+                    :fold-key="rowFoldKey(entry)"
+                    :show-thinking="showThinking"
+                    @select="onSelect"
+                    @fork="onFork" />
+                </div>
                 <ChatItem
+                  v-else
                   :item="entry"
+                  :variant="variantOfItem(entry)"
+                  :retryable="retryableOfItem(entry)"
                   :gate-card="gateCardForItem(entry)"
                   :session-id="sessionId"
                   :fold-key="rowFoldKey(entry)"
                   :show-thinking="showThinking"
                   @select="onSelect"
-                  @fork="onFork" />
-              </div>
-              <ChatItem
-                v-else
-                :item="entry"
-                :variant="variantOfItem(entry)"
-                :retryable="retryableOfItem(entry)"
-                :gate-card="gateCardForItem(entry)"
-                :session-id="sessionId"
-                :fold-key="rowFoldKey(entry)"
-                :show-thinking="showThinking"
-                @select="onSelect"
-                @fork="onFork"
-                @retry="onRetry" />
-            </template>
-          </div>
+                  @fork="onFork"
+                  @retry="onRetry" />
+              </template>
+            </div>
+          </template>
         </template>
         <template v-else>
           <template
             v-for="entry in groupedTranscript"
             :key="entryKey(entry)">
+            <div
+              v-if="entryDay(entry)"
+              class="day-divider">{{ entryDay(entry) }}</div>
             <ToolGroup
               v-if="isToolRun(entry)"
               :items="entry.items"
@@ -222,6 +229,7 @@
   import { dispatchCommand } from "../composables/commands";
   import type { DockTab } from "../composables/dock";
   import { groupToolRuns, isToolRun, foldAddress, type ChatEntry } from "../composables/toolGroup";
+  import { userDayStamp } from "../composables/datestamp";
   import { pendingVerdictList, refreshNotifications } from "./shell/notificationFeed";
   import AppComposer from "./chat/AppComposer.vue";
   import ChatItem from "./ChatItem.vue";
@@ -785,6 +793,18 @@
   // entry keys ride ITEM identity.
   function entryKey(entry: ChatEntry): number {
     return isToolRun(entry) ? itemKey(entry.items[0]!) : itemKey(entry);
+  }
+
+  // The day divider's datum IS the wire's stamp: one stamped user message opens each
+  // day, so the divider rides that row (flat) or its block's head entry (stacked). Row
+  // timestamps are never a second source of truth.
+  function entryDay(entry: ChatEntry | undefined): string | null {
+    if (!entry || isToolRun(entry)) return null;
+    if (entry.kind !== "message" || entry.role !== "user") return null;
+    return userDayStamp(entry.content);
+  }
+  function blockDay(block: ChatEntry[]): string | null {
+    return entryDay(block[0]);
   }
 
   function onSelect(messageId: string, index: number) {

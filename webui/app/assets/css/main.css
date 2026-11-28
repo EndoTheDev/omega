@@ -2316,6 +2316,26 @@ labels stopped short of the right edge. */
   padding-left: 4px;
 }
 
+/* the day divider: the wire's [YYYY-MM-DD] stamp drawn as the day's opening rule, one
+   per stamped day above its first user row. The stamp stays history on the wire
+   (agent/datestamp.go); the bubble never prints it. The column's own gap (8px stacked,
+   12px flat) sets the breathing room on both sides. */
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  user-select: none;
+}
+.day-divider::before,
+.day-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--stroke);
+}
+
 /* streaming cursor — one of the two permitted motions */
 .cursor {
   display: inline-block;

@@ -101,6 +101,7 @@
     splitRefSegments,
     type RefToken,
   } from "../../composables/pills";
+  import { stripDayStamp } from "../../composables/datestamp";
   import {
     attachmentIcon,
     attachmentSizeLabel,
@@ -140,10 +141,16 @@
     (e: "retry"): void;
   }>();
 
+  // The wire's day stamp is history, not prose: the bubble renders and copies the text
+  // WITHOUT it (the transcript draws it as the day divider), and a leading /skill pills
+  // at text start again. The assistant path never strips - markdown reads the raw content.
+  const userText = computed(() =>
+    props.role === "user" ? stripDayStamp(props.content) : props.content,
+  );
   // Pills are USER-only, and the scan is the shared token model (pills.ts), not
   // a transcript heuristic: pills exist exactly where the invocation grammar is.
   const msgParts = computed(() =>
-    props.role === "user" ? splitRefSegments(props.content) : null,
+    props.role === "user" ? splitRefSegments(userText.value) : null,
   );
   // the pill's open: the app always provides the viewer opener (FilesTab rides it).
   const openViewerRef = inject(DOCK_VIEWER_OPEN_KEY, null);
@@ -188,14 +195,14 @@
   const timeTitle = computed(() => (props.time ? formatMsgTime(props.time) : null));
 
   // The bubble's RAW text reaches the clipboard - markdown source for assistant
-  // bubbles, plain text for user ones - never the rendered HTML (codeblock copy
-  // already handles its own raw source).
+  // bubbles, plain text (stamp-free) for user ones - never the rendered HTML (codeblock
+  // copy already handles its own raw source).
   const copied = ref(false);
   const copyFailed = ref(false);
   let copyTimer: number | undefined;
   async function copyMessage() {
     // the ONE copy path: report the real verdict, never a blind "copied"
-    const raw = await copyText(props.content);
+    const raw = await copyText(userText.value);
     if (!raw) {
       copyFailed.value = true;
       window.clearTimeout(copyTimer);
