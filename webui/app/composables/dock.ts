@@ -7,12 +7,12 @@
 // with `fixed` px ignores its fraction (flex: 0 0 Npx); the flexible children
 // share the rest proportionally (flex-grow: fraction, flex-basis: 0), so one
 // flexible child absorbs all remainder. Dividers adjust px for fixed panes
-// (320/640 snap attractor, 128px floor) and fractions for flexible pairs.
+// (the sidebars' 320/640 snap attractor, the 128px floor; the bottom edge is
+// free within its floors) and fractions for flexible pairs.
 
 import {
   PANE_OPEN_MIN,
   SNAP_STEP,
-  BOTTOM_SNAP_STEP,
   openClamp,
   snapCandidate,
   snapCandidateAt,
@@ -1851,9 +1851,9 @@ export function dragSplitDivider(
   const room = Math.max(0, contentPx - othersPx);
 
   const capFor = (floorOther: number) => Math.max(MIN_PANE_PX, room - floorOther);
-  const applySnap = (px: number, lo: number, hi: number, step: number = SNAP_STEP): number => {
+  const applySnap = (px: number, lo: number, hi: number): number => {
     // attractor first, then the floors: a snap past the cap lands ON the cap
-    const snapped = snapCandidateAt(px, step);
+    const snapped = snapCandidateAt(px, SNAP_STEP);
     return clamp(snapped ?? px, lo, hi);
   };
   const pxOf = (k: number): number => startPx[k]!;
@@ -1873,7 +1873,8 @@ export function dragSplitDivider(
     return { split: next, collapsedPaneId: null };
   }
   if (isPane(rp) && rp.fixed !== null) {
-    // BOTTOM EDGE: the bottom shell is anchored to the viewport's BOTTOM.
+    // BOTTOM EDGE: the bottom shell is anchored to the viewport's BOTTOM. It follows the
+    // pointer 1:1 inside its floors - the ladder belongs to the sidebars alone.
     if (split.direction === "column") {
       const req = pxOf(i) - deltaPx;
       if (req < MIN_PANE_PX) {
@@ -1883,7 +1884,7 @@ export function dragSplitDivider(
         capFor(contractFloorOf(lp)),
         Math.max(MIN_PANE_PX, Math.floor(contentPx * BOTTOM_MAX_FRACTION)),
       );
-      (next.children[i] as DockPane).fixed = applySnap(req, MIN_PANE_PX, hi, BOTTOM_SNAP_STEP);
+      (next.children[i] as DockPane).fixed = clamp(req, MIN_PANE_PX, hi);
       absorbNeighbor(next, i, li, startPx, room);
       return { split: next, collapsedPaneId: null };
     }

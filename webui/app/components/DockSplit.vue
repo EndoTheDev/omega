@@ -63,7 +63,7 @@
 
 <script setup lang="ts">
   import { inject, onBeforeUnmount, onMounted, ref } from "vue";
-  import { snapCandidateAt, travelSnapAt, SNAP_STEP, BOTTOM_SNAP_STEP } from "../composables/panes";
+  import { snapCandidateAt, travelSnapAt, SNAP_STEP } from "../composables/panes";
   import { dividerDelta, type DividerPointerState } from "../composables/dividerGesture";
   import {
     DOCK_API_KEY,
@@ -164,11 +164,14 @@
         : fixedPane(i)
           ? startPx[i] - cumulative
           : startPx[li] + cumulative;
-    const step = bottomCase ? BOTTOM_SNAP_STEP : SNAP_STEP;
+    const step = SNAP_STEP;
     const bothFlexible = !fixedPane(li) && !fixedPane(i);
-    const attract = bothFlexible
-      ? travelSnapAt(startPx[li], px, step)
-      : snapCandidateAt(px, step);
+    // the bottom edge is free within its floors, so it never reports a snap
+    const attract = bottomCase
+      ? null
+      : bothFlexible
+        ? travelSnapAt(startPx[li], px, step)
+        : snapCandidateAt(px, step);
     snappedIdx.value = attract !== null ? dividerIndex : null;
   }
 

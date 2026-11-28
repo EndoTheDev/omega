@@ -9,9 +9,6 @@ export const SNAP_ZONE = 15;
 // open-clamp: a collapsed sidebar with a stale sub-floor width reopens at this width
 export const PANE_OPEN_MIN = 320;
 
-// the bottom panel's ladder is every +200
-export const BOTTOM_SNAP_STEP = 200;
-
 /** returns the exact snap size when the drag is inside a zone, else null */
 export function snapCandidateAt(px: number, step: number): number | null {
   const n = Math.round(px / step);
