@@ -53,6 +53,7 @@ func MountAllAPI(plugins []Plugin, ctx *Context, refusals core.RefusalSink, disa
 		refusals = NewRefusalLedger()
 	}
 	ctx.InitInventory()
+	ctx.InitServices()
 	enabled, err := filterDisabled(plugins, disabled)
 	if err != nil {
 		return nil, err

@@ -23,8 +23,10 @@ type Context struct {
 	// Panel providers (additive - the canvas contract).
 	PanelProviders []PanelProvider
 
-	services *Services
-
+	// svc is the guarded seam-registry pointer: an offer or drop swaps it whole while
+	// concurrent binds resolve through it - one Context is shared by every channel
+	// goroutine, so the pointer needs the same lock shape the inventory ledger carries.
+	svc *servicesLedger
 
 	Channels []Channel
 
@@ -123,32 +125,82 @@ func (c *Context) UpdateInfos(fn func([]ExtensionInfo) []ExtensionInfo) []Extens
 }
 
 // Scoped returns the Context copy a remount mounts into: its own inventory (a panicked
-// mount leaves the live one untouched) and no fence (a fresh run-group is the proxy's).
+// mount leaves the live one untouched), its own registry ledger seeded from the live one
+// (a proxy offer replays forward at commit, never lands on the pointer a serving goroutine
+// resolves), and no fence (a fresh run-group is the proxy's).
 func (c *Context) Scoped() Context {
 	out := *c
 	out.Lifecycle = nil
 	out.inv = &infoLedger{infos: c.Inventory()}
+	out.svc = &servicesLedger{reg: c.registry()}
 	return out
+}
+
+// servicesLedger guards the Context's seam registry pointer. The registry value behind
+// it is immutable (With/Without copy), so a reader only needs the pointer read under the
+// lock; a writer swaps it whole.
+type servicesLedger struct {
+	mu  sync.RWMutex
+	reg *Services
+}
+
+// InitServices allocates the seam-registry ledger. MountAllAPI calls it before the first
+// mount, so the ledger every serving goroutine later resolves through is fixed before a
+// goroutine runs.
+func (c *Context) InitServices() {
+	if c.svc == nil {
+		c.svc = &servicesLedger{}
+	}
+}
+
+// svcLedger returns the seam-registry ledger, creating it for a hand-built Context. The
+// first write to such a Context is its mount - boot-serially, before any reader exists.
+func (c *Context) svcLedger() *servicesLedger {
+	if c.svc == nil {
+		c.svc = &servicesLedger{}
+	}
+	return c.svc
+}
+
+// registry returns the current registry pointer without creating one: the scoped proxy
+// seeds its own ledger from it.
+func (c *Context) registry() *Services {
+	l := c.svcLedger()
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	return l.reg
 }
 
 // applyOffer lands one validated offer on this Context's registry.
 func (c *Context) ApplyOffer(key, module string, svc any) {
-	if ns, err := c.Services().With(key, module, svc); err == nil {
-		c.services = ns
+	l := c.svcLedger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if ns, err := l.reg.With(key, module, svc); err == nil {
+		l.reg = ns
 	}
 }
 
 // dropOffer is the mount journal's offer undo.
 func (c *Context) DropOffer(key, module string) {
-	c.services = c.Services().Without(key, module)
+	l := c.svcLedger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.reg = l.reg.Without(key, module)
 }
 
 // Services returns the Context's universal seam registry, creating it on first use.
 func (c *Context) Services() *Services {
-	if c.services == nil {
-		c.services = NewServices()
+	if reg := c.registry(); reg != nil {
+		return reg
 	}
-	return c.services
+	l := c.svcLedger()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.reg == nil {
+		l.reg = NewServices()
+	}
+	return l.reg
 }
 
 // RunGroup returns the Context's fence run-group.
