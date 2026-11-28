@@ -545,6 +545,7 @@
     FOCUSED_SESSION_EVENT,
     FOCUSED_SESSION_QUERY_EVENT,
     createChatHost,
+    switchWorkspace,
     type ChatState,
   } from "./composables/chat";
   import {
@@ -1624,11 +1625,13 @@
   }
   function onChatWorkspace(tab: { sessionRef?: string | null }, v: string) {
     const s = chatSession(tab);
-    if (!s || s.workspace === v) return;
-    s.workspace = v;
-    setSessionContext(s.id, undefined, v)
-      .then(refreshSessions)
-      .catch(() => refreshSessions());
+    if (!s) return;
+    // the row is written from the server's list, never optimistically (composables/chat.ts
+    // switchWorkspace): the row's workspace is the FILES tab's one re-root trigger.
+    void switchWorkspace(s, v, {
+      patch: (id, workspace) => setSessionContext(id, undefined, workspace),
+      refresh: refreshSessions,
+    });
   }
 
   // the menubar toggles are BACK - on desktop they drive the dock tree (toggleEdge /
