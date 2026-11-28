@@ -132,11 +132,22 @@ func desktopLaunch(cfg Config, configPath string) error {
 	})
 
 	win := app.Window.NewWithOptions(desktopWindowOptions(origin))
+	// Launch to tray: the window is created without a show. Hide before Run sets the
+	// option the Wails Windows host reads at CreateWindowEx - no WS_VISIBLE, so no flash
+	// and no taskbar seat - and a window that was never meant to show is not a boot
+	// failure, so the gate stands down.
+	if desktopStartsHidden(cfg) {
+		win.Hide()
+		bootErrors.WindowUp()
+	}
 
 	// The app's own surfaces, bound to the window they drive: the list (stored in THIS
-	// home's config.yaml, whatever server the page came from), the origin the window is
-	// showing, and the frame state. omegaSettings is the one validator and writer.
-	host = newDesktopHost(origin, &omegaSettings{path: configPath})
+	// home's config.yaml, whatever server the page came from), the window options, the
+	// origin the window is showing, and the frame state. omegaSettings is the one
+	// validator and writer.
+	appSettings := &omegaSettings{path: configPath}
+	host = newDesktopHost(origin, appSettings)
+	host.setWindowOptions(appSettings, autostart)
 	host.emit = func(name string, payload any) { app.Event.Emit(name, payload) }
 	host.setFrameless = func(frameless bool) { win.SetFrameless(frameless) }
 	host.navigate = func(url string) { win.SetURL(url) }
@@ -147,10 +158,11 @@ func desktopLaunch(cfg Config, configPath string) error {
 	})
 
 	// The caption cells' presses come back here: the hit test routes them to the page,
-	// so the page names the action and the window performs it.
+	// so the page names the action and the shell decides it. shell is bound below, before
+	// Run - no press can arrive earlier.
 	for _, event := range desktopWindowEvents {
 		app.Event.On(event, func(*application.CustomEvent) {
-			desktopWindowAction(win, event)
+			desktopWindowAction(win, shell, event)
 		})
 	}
 
@@ -182,6 +194,15 @@ func desktopLaunch(cfg Config, configPath string) error {
 		autostart,
 	)
 	shell.setUpdates(updates)
+	// Both window decisions are read per press from the app's own config, so a save in
+	// the pane (or a hand edit) applies at once; an unreadable file keeps this snapshot.
+	launchPolicy := desktopWindowPolicy{
+		MinimizeToTray: cfg.Desktop.MinimizeToTray,
+		CloseToTray:    cfg.Desktop.CloseToTray,
+	}
+	shell.setWindowPolicy(func() desktopWindowPolicy {
+		return desktopWindowPolicyNow(configPath, launchPolicy)
+	})
 	// The way back is the app's too: the tray's Connection rows come from the app-local
 	// list, not from whatever page the window is showing, and home is the origin this
 	// launch resolved - the one row no list and no page can take away.
@@ -343,12 +364,21 @@ var desktopWindowEvents = []string{
 	desktopWindowEventClose,
 }
 
-// desktopWindowAction performs one caption-cell press on the window. Close rides the
-// existing WindowClosing hook, so the close cell still hides to the tray.
-func desktopWindowAction(win *application.WebviewWindow, event string) {
+// captionWindow is the slice of the Wails window the caption cells drive. A test counts
+// the calls instead of moving a window.
+type captionWindow interface {
+	Minimise() application.Window
+	ToggleMaximise()
+	Close()
+}
+
+// desktopWindowAction performs one caption-cell press. The minimize press asks the shell
+// - hide to the tray, or the OS minimize - so that decision has one home; close rides the
+// existing WindowClosing hook, so the close cell follows close-to-tray too.
+func desktopWindowAction(win captionWindow, shell *desktopShell, event string) {
 	switch event {
 	case desktopWindowEventMinimise:
-		win.Minimise()
+		shell.minimizeWindow(func() { win.Minimise() })
 	case desktopWindowEventToggleMaximise:
 		win.ToggleMaximise()
 	case desktopWindowEventClose:
@@ -360,12 +390,16 @@ func desktopWindowAction(win *application.WebviewWindow, event string) {
 // JSON object whose `omega` member names it; anything that is not one of these is
 // dropped, never guessed at. `instances:switch` keeps its member name and carries a row
 // KEY, not a destination: the host resolves it against the shell's own list.
+// `window:set` names one window row and its new state.
 const (
 	desktopMessageGetInstances    = "instances:get"
 	desktopMessageSaveInstances   = "instances:save"
 	desktopMessageSwitchInstance  = "instances:switch"
 	desktopMessageChromeReady     = "chrome:ready"
+	desktopMessageGetWindow       = "window:get"
+	desktopMessageSetWindow       = "window:set"
 	desktopInstancesEvent         = "omega:instances"
+	desktopWindowOptionsEvent     = "omega:window-options"
 	desktopChromeReadyBoundWindow = 5 * time.Second
 )
 
@@ -386,12 +420,24 @@ type desktopInstancesReply struct {
 	Home      string               `json:"home"`
 }
 
-// desktopRequest is one decoded message body. `key` is the switch body's `url` member: a
-// row key, resolved by the host against the shell's own set.
+// desktopWindowReply is the answer to every window-options request: the four rows'
+// states, re-read, and the refusal when a write was declined. Start with system is the
+// OS registration the tray row reads too; the other three are the app's config.yaml.
+type desktopWindowReply struct {
+	StartWithSystem bool   `json:"start_with_system"`
+	StartMinimized  bool   `json:"start_minimized"`
+	MinimizeToTray  bool   `json:"minimize_to_tray"`
+	CloseToTray     bool   `json:"close_to_tray"`
+	Error           string `json:"error"`
+}
+
+// desktopRequest is one decoded message body. `key` is a row key: the switch body's `url`
+// member, or the window body's row name. `value` is the window body's new state.
 type desktopRequest struct {
 	kind      string
 	instances []core.SavedInstance
 	key       string
+	value     bool
 }
 
 // decodeDesktopRequest parses one page message. Malformed JSON and an unknown `omega`
@@ -401,12 +447,14 @@ func decodeDesktopRequest(raw string) (desktopRequest, error) {
 		Omega     string               `json:"omega"`
 		Instances []core.SavedInstance `json:"instances"`
 		URL       string               `json:"url"`
+		Key       string               `json:"key"`
+		Value     *bool                `json:"value"`
 	}
 	if err := json.Unmarshal([]byte(raw), &body); err != nil {
 		return desktopRequest{}, fmt.Errorf("not a desktop message: %v", err)
 	}
 	switch body.Omega {
-	case desktopMessageGetInstances, desktopMessageChromeReady:
+	case desktopMessageGetInstances, desktopMessageChromeReady, desktopMessageGetWindow:
 		return desktopRequest{kind: body.Omega}, nil
 	case desktopMessageSaveInstances:
 		return desktopRequest{kind: body.Omega, instances: body.Instances}, nil
@@ -415,6 +463,14 @@ func decodeDesktopRequest(raw string) (desktopRequest, error) {
 			return desktopRequest{}, errors.New("instances:switch carries no url")
 		}
 		return desktopRequest{kind: body.Omega, key: body.URL}, nil
+	case desktopMessageSetWindow:
+		if strings.TrimSpace(body.Key) == "" {
+			return desktopRequest{}, errors.New("window:set carries no key")
+		}
+		if body.Value == nil {
+			return desktopRequest{}, fmt.Errorf("window:set for %s carries no value", body.Key)
+		}
+		return desktopRequest{kind: body.Omega, key: body.Key, value: *body.Value}, nil
 	case "":
 		return desktopRequest{}, errors.New("not a desktop message: no omega member")
 	default:
@@ -454,9 +510,16 @@ var desktopChromeBoundWindow = func(d time.Duration, fn func()) *time.Timer {
 	return time.AfterFunc(d, fn)
 }
 
-// desktopHost is the app behind the window: the connection list, the origin the window
-// shows, and the frame state. It takes no Wails type in its decisions, so the whole
-// surface is assertable without a window.
+// desktopWindowStore is the app's own window options: three booleans in its config.yaml,
+// read and written through the one settings store (the same atomic writer as every knob).
+type desktopWindowStore interface {
+	WindowOptions() (DesktopConfig, error)
+	SaveWindowOption(key string, on bool) error
+}
+
+// desktopHost is the app behind the window: the connection list, the window options, the
+// origin the window shows, and the frame state. It takes no Wails type in its decisions,
+// so the whole surface is assertable without a window.
 type desktopHost struct {
 	mu           sync.Mutex
 	appOrigin    string
@@ -465,6 +528,8 @@ type desktopHost struct {
 	bound        *time.Timer
 
 	instances    desktopInstanceStore
+	windows      desktopWindowStore
+	autostart    *autostartControl
 	emit         func(name string, payload any)
 	setFrameless func(bool)
 	navigate     func(string)
@@ -472,6 +537,14 @@ type desktopHost struct {
 
 func newDesktopHost(appOrigin string, store desktopInstanceStore) *desktopHost {
 	return &desktopHost{appOrigin: appOrigin, activeOrigin: appOrigin, instances: store}
+}
+
+// setWindowOptions binds the pane's four-row surface: the app's own config store, and the
+// ONE autostart control the tray row also flips. Nil leaves the rows absent - a hand-built
+// host in a test answers the refusal instead of guessing a state.
+func (h *desktopHost) setWindowOptions(store desktopWindowStore, autostart *autostartControl) {
+	h.windows = store
+	h.autostart = autostart
 }
 
 // ActiveOrigin is the origin the window is showing: the tray's check mark and the frame
@@ -541,8 +614,56 @@ func (h *desktopHost) Handle(info *application.OriginInfo, raw string) error {
 		h.switchToRow(request.key)
 	case desktopMessageChromeReady:
 		h.chromeArmed()
+	case desktopMessageGetWindow:
+		h.answerWindowOptions("")
+	case desktopMessageSetWindow:
+		h.setWindowOption(request.key, request.value)
 	}
 	return nil
+}
+
+// answerWindowOptions is the one shape of every window-options answer: the four states,
+// re-read, and the refusal when a write was declined. Start with system reads the OS
+// registration on every answer - nothing here caches either.
+func (h *desktopHost) answerWindowOptions(refusal string) {
+	reply := desktopWindowReply{Error: refusal}
+	if h.autostart != nil {
+		reply.StartWithSystem = h.autostart.checked()
+	}
+	if h.windows == nil {
+		if reply.Error == "" {
+			reply.Error = "this window has no options surface"
+		}
+	} else if options, err := h.windows.WindowOptions(); err != nil {
+		if reply.Error == "" {
+			reply.Error = err.Error()
+		}
+	} else {
+		reply.StartMinimized = options.StartMinimized
+		reply.MinimizeToTray = options.MinimizeToTray
+		reply.CloseToTray = options.CloseToTray
+	}
+	h.emit(desktopWindowOptionsEvent, reply)
+}
+
+// setWindowOption flips one row. Start with system is the registration the tray row flips
+// (the same autostartControl); the other three are the app's own config, written through
+// the same atomic writer every knob uses.
+func (h *desktopHost) setWindowOption(key string, on bool) {
+	if h.windows == nil || h.autostart == nil {
+		h.answerWindowOptions("this window has no options surface")
+		return
+	}
+	if key == desktopOptionStartWithSystem {
+		h.autostart.apply(on)
+		h.answerWindowOptions("")
+		return
+	}
+	if err := h.windows.SaveWindowOption(key, on); err != nil {
+		h.answerWindowOptions(err.Error())
+		return
+	}
+	h.answerWindowOptions("")
 }
 
 // answerInstances emits the app's list, with a refusal in place of an empty error when a

@@ -15,6 +15,8 @@ import (
 	"sync"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/EndoTheDev/omega/agent"
 )
 
@@ -98,6 +100,33 @@ func cmdDesktop(args []string) error {
 		return desktopHeadless(cfg, cfgPath)
 	}
 	return desktopLaunch(cfg, cfgPath)
+}
+
+// desktopStartsHidden is the launch decision: a start-minimized config creates the window
+// without showing it, so the launch is the tray icon alone. Read once at launch - the
+// settings pane says so.
+func desktopStartsHidden(cfg Config) bool { return cfg.Desktop.StartMinimized }
+
+// desktopWindowPolicyNow re-reads the two per-press window decisions from the app's own
+// config. A minimize or a close is decided per press, so a settings save - or a hand edit
+// of config.yaml - lands under the next press. The document decodes over the defaults, so
+// a file that never named the keys keeps close-to-tray on; an unreadable or unparseable
+// file keeps the launch's snapshot.
+func desktopWindowPolicyNow(path string, fallback desktopWindowPolicy) desktopWindowPolicy {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fallback
+	}
+	doc := struct {
+		Desktop DesktopConfig `yaml:"desktop"`
+	}{Desktop: DefaultConfig().Desktop}
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return fallback
+	}
+	return desktopWindowPolicy{
+		MinimizeToTray: doc.Desktop.MinimizeToTray,
+		CloseToTray:    doc.Desktop.CloseToTray,
+	}
 }
 
 // desktopHeadless is the release-gate surface: boot the runtime in THIS process, print

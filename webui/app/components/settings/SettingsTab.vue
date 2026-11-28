@@ -217,6 +217,13 @@
         {{ section.label }}
         <span class="settings-knob-count">{{ section.count }}</span>
       </h2>
+      <!-- the desktop window's own four rows: the app answers them in the embedded window,
+           a browser tab gets the reason the autostart row is absent and edits the three
+           config toggles below -->
+      <DesktopWindowField
+        v-if="section.id === 'desktop'"
+        :app-owned="desktopWindowOwned"
+        :knobs="desktopWindowKnobs" />
       <div
         v-for="block in section.blocks"
         :key="block.id"
@@ -225,7 +232,12 @@
         :data-section="block.id">
       <h3 v-if="block.heading" class="settings-subgroup-title">{{ block.label }}</h3>
         <template v-for="knob in block.knobs" :key="knob.key">
-        <div v-if="knob.type === 'toggle'" class="setting-row setting-toggle">
+        <!-- the app answers the desktop window's three config toggles in an embedded
+             window (DesktopWindowField above); the generic renderer keeps the dot and the
+             reset in a browser tab -->
+        <div
+          v-if="knob.type === 'toggle' && !desktopWindowOwnedKnob(knob.key)"
+          class="setting-row setting-toggle">
           <label class="setting-toggle-main">
             <input
               type="checkbox"
@@ -252,7 +264,7 @@
             </button>
           </span>
         </div>
-        <div v-else class="setting-item">
+        <div v-else-if="knob.type !== 'toggle'" class="setting-item">
           <div class="setting-head">
             <span>{{ knob.label }}</span>
             <span class="setting-badges">
@@ -480,6 +492,9 @@
     saveInstancesInApp,
     type SavedInstance,
   } from "~/composables/instances";
+  import { whenShellDecided } from "~/composables/desktopChrome";
+  import { DESKTOP_CONFIG_ROWS } from "~/composables/desktopWindow";
+  import DesktopWindowField from "./DesktopWindowField.vue";
   import {
     NAV_STORAGE_KEY,
     MODULES_CATEGORY,
@@ -1513,6 +1528,25 @@
   // foot line's.
   const fieldError = (knob: SettingKnob): string | null =>
     saveError.value !== null && saveErrorKey.value === knob.key ? saveError.value : null;
+
+  // The desktop window's own options. Inside the embedded window the APP owns the four
+  // rows (its own config.yaml and the OS registration), so the section renders
+  // DesktopWindowField and the three config toggles stand down; a browser tab keeps the
+  // toggles, which are the serving server's config.yaml. The verdict lands after the
+  // first mount - the shim arrives at NavigationCompleted - so the pane watches it.
+  const desktopWindowOwned = ref(instancesAreAppOwned());
+  if (!desktopWindowOwned.value) {
+    void whenShellDecided().then((verdict) => {
+      if (verdict === "armed") desktopWindowOwned.value = true;
+    });
+  }
+  const desktopWindowKnobs = computed<SettingKnob[]>(
+    () => groups.value.find((group) => group.key === "desktop")?.knobs ?? [],
+  );
+  // the three toggles the app answers in an embedded window, by their dotted key
+  const desktopWindowOwnedKnob = (key: string): boolean =>
+    desktopWindowOwned.value &&
+    DESKTOP_CONFIG_ROWS.some((row) => `desktop.${row}` === key);
 
   // inlineErrorShown: the foot line yields to a knob type that renders the refusal itself.
   const inlineErrorShown = computed(() => {

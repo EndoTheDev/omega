@@ -1088,6 +1088,20 @@ dot, reset link, draft star, live note).
   larger document is refused with 413). Scope-aware: the main tab edits
   `config.yaml`; an agent scope tab edits its own layer. The endpoints are
   documented in `api.md`.
+- **The desktop window's own options sit in the same section.** The desktop
+  section carries four rows - start with system, start minimized, minimize to
+  tray, close to tray - rendered by `DesktopWindowField.vue` from ONE source
+  per mode. Inside the embedded window the page asks the app over the raw
+  message door (`window:get` / `window:set`, answered on
+  `omega:window-options`): the three config toggles live in the app's own
+  `config.yaml` and the registration is the OS's, and the pane's server may be
+  another home entirely. The autostart row flips the SAME `autostartControl`
+  the tray's Start with Windows row flips, so the two surfaces cannot
+  disagree. A browser tab has no host to ask and no registration to read: it
+  renders the three config toggles through `/settings` (the serving server's
+  `config.yaml`) plus the one-line reason, the same split `desktop.instances`
+  already carries. Pinned by `webui/test/settingspane.test.ts` (the row
+  census, the checked state following the door's answer, the pane's handoff).
 - **The connections editor proves the address before the row lands.**
   The `desktop.instances` knob renders `InstancesField.vue`: one row per
   saved connection, plus a draft row for the add. The add is a COMMITMENT,

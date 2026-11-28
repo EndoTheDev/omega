@@ -93,6 +93,60 @@ func TestDesktopShellQuitLetsCloseThrough(t *testing.T) {
 	}
 }
 
+// TestDesktopShellMinimizePress is the caption's minimize cell: minimize-to-tray hides the
+// window through the shell and never asks the OS to minimize it; off is the OS's minimize
+// and never a hide.
+func TestDesktopShellMinimizePress(t *testing.T) {
+	shell, probe := newTrayShell()
+	shell.setWindowPolicy(func() desktopWindowPolicy {
+		return desktopWindowPolicy{MinimizeToTray: true}
+	})
+
+	minimised := 0
+	shell.minimizeWindow(func() { minimised++ })
+	if probe.hidden != 1 {
+		t.Fatalf("hides = %d, want 1: minimize-to-tray must route through the shell", probe.hidden)
+	}
+	if minimised != 0 {
+		t.Fatalf("minimize-to-tray still called the window's own minimize (%d times)", minimised)
+	}
+
+	shell.setWindowPolicy(func() desktopWindowPolicy { return desktopWindowPolicy{} })
+	shell.minimizeWindow(func() { minimised++ })
+	if minimised != 1 {
+		t.Fatalf("a plain minimize press called the window's minimize %d times, want 1", minimised)
+	}
+	if probe.hidden != 1 {
+		t.Fatalf("a plain minimize press hid the window (hide count %d)", probe.hidden)
+	}
+}
+
+// TestDesktopShellCloseFollowsCloseToTray: with close-to-tray off the close goes through
+// and nothing hides - the documented lifetime law, the process exits. The untouched
+// config's policy (no reader bound) keeps hiding.
+func TestDesktopShellCloseFollowsCloseToTray(t *testing.T) {
+	shell, probe := newTrayShell()
+	shell.setWindowPolicy(func() desktopWindowPolicy { return desktopWindowPolicy{} })
+
+	cancelled := false
+	shell.windowClosing(func() { cancelled = true })
+	if cancelled {
+		t.Fatal("close-to-tray off still cancelled the close: the window would survive")
+	}
+	if probe.hidden != 0 {
+		t.Fatalf("close-to-tray off hid the window (hide count %d)", probe.hidden)
+	}
+
+	// No reader bound is today's behavior: an untouched shell hides on close.
+	plain, plainProbe := newTrayShell()
+	cancelled = false
+	plain.windowClosing(func() { cancelled = true })
+	if !cancelled || plainProbe.hidden != 1 {
+		t.Fatalf("the default policy answered cancelled=%v hides=%d, want a hidden window and a cancelled close",
+			cancelled, plainProbe.hidden)
+	}
+}
+
 func TestDesktopTrayMenuShape(t *testing.T) {
 	shell, probe := newTrayShell()
 

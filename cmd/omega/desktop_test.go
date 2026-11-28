@@ -46,6 +46,50 @@ server:
 `, port))
 }
 
+// TestDesktopStartsHidden pins the launch decision: only the config value decides it, and
+// an untouched config shows the window.
+func TestDesktopStartsHidden(t *testing.T) {
+	if desktopStartsHidden(DefaultConfig()) {
+		t.Fatal("an untouched config launches to the tray")
+	}
+	cfg := DefaultConfig()
+	cfg.Desktop.StartMinimized = true
+	if !desktopStartsHidden(cfg) {
+		t.Fatal("start_minimized did not decide a hidden launch")
+	}
+}
+
+// TestDesktopWindowPolicyNow pins the per-press read: a save (or a hand edit) lands under
+// the next press, a file that never named the keys keeps close-to-tray on, and an
+// unreadable file keeps the launch snapshot.
+func TestDesktopWindowPolicyNow(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("provider:\n  model_name: m\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got := desktopWindowPolicyNow(path, desktopPolicyToday)
+	if got.MinimizeToTray || !got.CloseToTray {
+		t.Fatalf("a file without the keys = %+v, want minimize off and close on", got)
+	}
+
+	body := "desktop:\n  minimize_to_tray: true\n  close_to_tray: false\n"
+	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	got = desktopWindowPolicyNow(path, desktopPolicyToday)
+	if !got.MinimizeToTray || got.CloseToTray {
+		t.Fatalf("the file's keys = %+v, want minimize on and close off", got)
+	}
+
+	fallback := desktopWindowPolicy{MinimizeToTray: true}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if got = desktopWindowPolicyNow(path, fallback); got != fallback {
+		t.Fatalf("an unreadable file answered %+v, want the launch snapshot %+v", got, fallback)
+	}
+}
+
 // fakeInstance is the detached-serve handle a test injects.
 type fakeInstance struct {
 	err  error

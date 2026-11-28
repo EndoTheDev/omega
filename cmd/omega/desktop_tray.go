@@ -14,6 +14,27 @@ import (
 // desktopConnectionLabel is the submenu that carries the app's own connection list.
 const desktopConnectionLabel = "Connection"
 
+// desktopWindowPolicy is the two window decisions a press asks the shell. Both are read
+// per press, so a settings save applies at once - and both have their default here, in
+// one home, so a shell built without a reader behaves exactly like today's.
+type desktopWindowPolicy struct {
+	MinimizeToTray bool
+	CloseToTray    bool
+}
+
+// desktopPolicyToday is the untouched config's policy: a close hides, a minimize is the
+// OS's.
+var desktopPolicyToday = desktopWindowPolicy{CloseToTray: true}
+
+// The four window rows' wire names - the pane's message door and the app's config keys
+// use one spelling each.
+const (
+	desktopOptionStartWithSystem = "start_with_system"
+	desktopOptionStartMinimized  = "start_minimized"
+	desktopOptionMinimizeToTray  = "minimize_to_tray"
+	desktopOptionCloseToTray     = "close_to_tray"
+)
+
 // desktopInstanceStore is the app-local connection list: the host's Settings
 // implementation is the ONE validator (core.NormalizeInstances) and the ONE atomic
 // writer, so the tray, the pane and the raw message door all go through it.
@@ -32,6 +53,7 @@ type desktopShell struct {
 	show      func()
 	hide      func()
 	quit      func()
+	policy    func() desktopWindowPolicy
 
 	instances desktopInstanceStore
 	active    func() string
@@ -60,6 +82,18 @@ func (s *desktopShell) setInstances(store desktopInstanceStore, active func() st
 // the way back.
 func (s *desktopShell) setHome(home func() string) { s.home = home }
 
+// setWindowPolicy binds the live read of the two per-press decisions. Nil keeps today's
+// policy: a close hides, a minimize is the OS's.
+func (s *desktopShell) setWindowPolicy(policy func() desktopWindowPolicy) { s.policy = policy }
+
+// windowPolicy is the shell's current decision, read at the press.
+func (s *desktopShell) windowPolicy() desktopWindowPolicy {
+	if s.policy == nil {
+		return desktopPolicyToday
+	}
+	return s.policy()
+}
+
 // openWindow backs the "Open omega" item and a tray click.
 func (s *desktopShell) openWindow() { s.show() }
 
@@ -72,7 +106,9 @@ func (s *desktopShell) quitApp() {
 	s.quit()
 }
 
-// windowClosing is the close-to-tray hook: hide, then cancel the native close.
+// windowClosing is the close cell's and the OS caption's close: with close-to-tray on
+// the window hides and the native close is cancelled; with it off the close goes through
+// and the process exits.
 func (s *desktopShell) windowClosing(cancelClose func()) {
 	s.mu.Lock()
 	quitting := s.quitting
@@ -80,8 +116,22 @@ func (s *desktopShell) windowClosing(cancelClose func()) {
 	if quitting {
 		return
 	}
+	if !s.windowPolicy().CloseToTray {
+		return
+	}
 	s.hide()
 	cancelClose()
+}
+
+// minimizeWindow is the minimize press's one decision: minimize-to-tray hides the window
+// (the tray's Open row is the way back), otherwise the OS minimizes it. The window's own
+// act is passed in, so a test counts the call instead of moving a window.
+func (s *desktopShell) minimizeWindow(minimise func()) {
+	if s.windowPolicy().MinimizeToTray {
+		s.hide()
+		return
+	}
+	minimise()
 }
 
 // desktopMenuEntry is one tray item: a label, the action behind it, and - for a checkable

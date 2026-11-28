@@ -98,9 +98,16 @@ omega desktop --headless-health   # boot, print /health, shut down, exit 0/1
 - Lifetime follows ownership. A server this launch started dies with the desktop
   process - tray Quit, a crash, a hard kill: one Job Object carries kill-on-close, so
   the next launch starts a fresh one. A server the launch found running is connected
-  to and never touched. Closing the window kills nothing: it hides to the tray, so a
-  running turn survives. The tray menu carries the start-with-Windows row, and a boot
-  launch arrives as `omega desktop`.
+  to and never touched. Closing the window hides it to the tray by default
+  (`desktop.close_to_tray`, on) so a running turn survives; with that key off the close
+  goes through and the desktop exits. `desktop.minimize_to_tray` routes the caption's
+  minimize press through the same hide (a tray click restores the window) instead of
+  the taskbar minimize, and `desktop.start_minimized` makes the launch a tray icon
+  alone: the window is created without a show and never draws. The four window options
+  - start with system, start minimized, minimize to tray, close to tray - sit in one
+  settings section; inside the window the desktop answers them from its own
+  config.yaml, and the tray keeps its Start with Windows row. A boot launch arrives as
+  `omega desktop`.
 - A second launch focuses the running window (one instance lock) and starts nothing.
 - Release asset: `omega-vX.Y.Z-windows-desktop.zip` carries the portable tree plus
   `install.ps1` (copies to `%LOCALAPPDATA%\Programs\omega`, adds a Start Menu

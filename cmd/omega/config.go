@@ -354,8 +354,20 @@ type ServerConfig struct {
 // DesktopConfig is the desktop shell's config. Ruling 15: there is no desktop port - the
 // window loads the instance's own origin (server.port). The instance list is the
 // connection switcher's durable home; the store's index is derived and would be rebuilt.
+// The three window options are the shell's own behavior: a tray-only launch, what the
+// caption's minimize press does, and whether a close hides the window.
 type DesktopConfig struct {
 	Instances []core.SavedInstance `yaml:"instances,omitempty"`
+	// StartMinimized creates the window without showing it: the launch is a tray icon and
+	// nothing else until a tray click opens the window. Read once at launch.
+	StartMinimized bool `yaml:"start_minimized"`
+	// MinimizeToTray routes the caption's minimize press through the hide path instead of
+	// the OS minimize. Decided per press.
+	MinimizeToTray bool `yaml:"minimize_to_tray"`
+	// CloseToTray hides the window on close and keeps the process alive. Off lets the
+	// close through; a spawned agent dies with the process (the job object). Decided per
+	// close, and on by default.
+	CloseToTray bool `yaml:"close_to_tray"`
 }
 
 // UpdatesConfig is the update channel's own config. managed declares release-managed:
@@ -469,6 +481,9 @@ func DefaultConfig() Config {
 			Mode:    "manual",
 			Monitor: approval.MonitorLogOnly,
 		},
+		// The desktop window options: today's behavior is the default, so an untouched
+		// config keeps hiding on close and never launches to the tray.
+		Desktop: DesktopConfig{CloseToTray: true},
 	}
 }
 
